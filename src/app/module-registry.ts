@@ -44,6 +44,8 @@ export interface ModuleDefinition {
   readonly shortcut: string;
   /** Hash rotası (`#/` sonrası bölüm). */
   readonly hash: string;
+  /** Komut paleti aramasında eşleşen anahtar kelimeler (modülle birlikte tek kaynak). */
+  readonly keywords: readonly string[];
   /** Aktifken listelenen sayaç türü; tanımsızsa sayaç yok. */
   readonly counter?: 'myList';
 }
@@ -59,6 +61,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     Icon: Compass,
     shortcut: '1',
     hash: 'discover',
+    keywords: ['katalog', 'trend', 'öneri', 'discover'],
   },
   {
     id: 'list',
@@ -67,6 +70,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     Icon: Bookmark,
     shortcut: '2',
     hash: 'list',
+    keywords: ['kütüphane', 'izlediklerim', 'list'],
     counter: 'myList',
   },
   {
@@ -76,6 +80,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     Icon: Fingerprint,
     shortcut: '3',
     hash: 'taste-map',
+    keywords: ['zevkim', 'kimliğim', 'istatistik', 'tat', 'dna'],
     Section: lazyWithRetry(
       () => import('../modules/taste-map/TasteMapSection.tsx')
     ) as unknown as React.ComponentType<any>,
@@ -87,6 +92,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     Icon: Network,
     shortcut: '4',
     hash: 'relationships',
+    keywords: ['ilişkiler', 'ağ', 'evrenler', 'relationships'],
     Section: lazyWithRetry(
       () => import('../modules/relationships/RelationshipsSection.tsx')
     ) as unknown as React.ComponentType<any>,
