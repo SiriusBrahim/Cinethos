@@ -15,6 +15,7 @@ import { Toast, type ToastEntry, type ToastKind } from './components/Toast.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { AuthTokenModal } from './components/AuthTokenModal.tsx';
+import { ArchiveRestorePreviewModal } from './components/ArchiveRestorePreviewModal.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 import { BRAND_NAME } from './shared/brand.ts';
 import { useAppModals } from './hooks/useAppModals.ts';
@@ -106,7 +107,11 @@ import {
   pushCatalogItems,
   pushDerivedProfileData,
   downloadSqliteArchive,
-  restoreSqliteArchive,
+  prepareSqliteArchiveRestore,
+  restorePreparedSqliteArchive,
+  rollbackSqliteArchiveRestore,
+  SqliteArchiveInspect,
+  SqliteArchivePrepareResult,
   TmdbSourceMeta,
   ServerConflictDetail,
 } from './services/api.ts';
@@ -3236,20 +3241,58 @@ export function App() {
   }, [buildCurrentLivePayloadFromRefs, showToast]);
 
   /** SQLite arşivinden profilleri, stok görsellerini ve tüm yan verileri geri yükler. */
+  // P1-04: Dosya seçimi yalnızca ön izleme üretir; veri onaydan sonra yazılır.
+  const [archivePreview, setArchivePreview] = useState<{
+    fileName: string;
+    restoreId: string;
+    inspect: SqliteArchiveInspect;
+    current?: SqliteArchivePrepareResult['current'];
+  } | null>(null);
+  const [archiveRestoreBusy, setArchiveRestoreBusy] = useState(false);
+
   const handleRestoreSqliteArchive = useCallback(
     async (file: File) => {
-      const result = await restoreSqliteArchive(file);
+      const prepared = await prepareSqliteArchiveRestore(file);
+      if (!prepared.ok || !prepared.restoreId || !prepared.inspect) {
+        const message = prepared.message || 'SQLite arşivi incelenemedi.';
+        showToast(message, 'error');
+        throw new Error(message);
+      }
+      setArchivePreview({
+        fileName: file.name,
+        restoreId: prepared.restoreId,
+        inspect: prepared.inspect,
+        current: prepared.current,
+      });
+    },
+    [showToast]
+  );
+
+  const confirmRestoreSqliteArchive = useCallback(async () => {
+    if (!archivePreview || archiveRestoreBusy) return;
+    setArchiveRestoreBusy(true);
+    try {
+      const result = await restorePreparedSqliteArchive(archivePreview.restoreId);
       if (!result.ok || !result.dataDocument) {
         const message = result.message || 'SQLite arşivi geri yüklenemedi.';
-        showToast(message);
+        showToast(message, 'error');
         throw new Error(message);
       }
 
-      // DATA-02: aşamalı geri yükleme. Yan veriler (zevk haritaları, stok) yazılıp
-      // kalıcılıkları doğrulanmadan "tam geri yükleme" denmez.
+      // DATA-02 / P0-01: yan veriler yazılmadan önce mevcut durumun kopyası alınır.
       const failedSections: string[] = [];
+      const tasteProfileIds = Object.keys(result.tasteMaps || {});
+      const previousTasteMaps = new Map<string, PersistentTasteMapData>();
+      for (const profileId of tasteProfileIds) {
+        previousTasteMaps.set(profileId, loadPersistentTasteMap(profileId));
+      }
+      let previousStock: Awaited<ReturnType<typeof loadStockIdb>> | null = null;
+      try {
+        previousStock = await loadStockIdb();
+      } catch (error) {
+        console.warn('[SQLiteRestore] Önceki stok okunamadı:', error);
+      }
 
-      // 1) Zevk haritaları — state uygulanmadan önce yazılmalı.
       for (const [profileId, payload] of Object.entries(result.tasteMaps || {})) {
         try {
           savePersistentTasteMap(profileId, payload as PersistentTasteMapData);
@@ -3259,7 +3302,6 @@ export function App() {
         }
       }
 
-      // 2) Stok — IndexedDB yazımının gerçekten kalıcı olduğunu doğrula.
       if (result.stock) {
         const stockWrite = await saveStockIdb({
           movies: (result.stock.movies || []) as any[],
@@ -3273,28 +3315,60 @@ export function App() {
         }
       }
 
-      // 3) Ana belge + türetilmiş state.
-      applyDataDocumentToState(result.dataDocument);
-      setTasteMap(loadPersistentTasteMap(result.dataDocument.activeProfileId));
-
-      const counts = result.counts;
       if (failedSections.length > 0) {
+        // Telafi: istemci yan verilerini ve sunucu belgesini eski hâline döndür.
+        if (previousStock) {
+          try {
+            await saveStockIdb(previousStock);
+          } catch (error) {
+            console.warn('[SQLiteRestore] Stok geri alınamadı:', error);
+          }
+        }
+        for (const [profileId, previous] of previousTasteMaps) {
+          try {
+            savePersistentTasteMap(profileId, previous);
+          } catch (error) {
+            console.warn('[SQLiteRestore] Zevk haritası geri alınamadı:', profileId, error);
+          }
+        }
+        const rollback = result.rollbackId
+          ? await rollbackSqliteArchiveRestore(result.rollbackId)
+          : { ok: false, message: 'Geri alma kimliği yok.' };
         const detail = failedSections.join(', ');
         showToast(
-          `SQLite arşivi kısmen geri yüklendi. Başarısız bölümler: ${detail}. Sunucu verisi yazıldı; bu bölümler için arşivi yeniden yükleyin.`,
+          rollback.ok
+            ? `SQLite arşivi geri yüklenemedi (${detail}); tüm veriler önceki hâline döndürüldü.`
+            : `SQLite arşivi kısmen uygulandı (${detail}); sunucu geri alınamadı: ${rollback.message || 'bilinmeyen hata'}. Arşivi yeniden yükleyin.`,
           'error'
         );
         throw new Error(`Kısmi geri yükleme: ${detail}`);
       }
 
+      applyDataDocumentToState(result.dataDocument);
+      setTasteMap(loadPersistentTasteMap(result.dataDocument.activeProfileId));
+
+      const counts = result.counts;
+      const posterNote =
+        result.postersSkipped && result.postersSkipped > 0
+          ? ` ${result.postersWritten ?? 0} poster yazıldı, ${result.postersSkipped} poster atlandı.`
+          : '';
       showToast(
         counts
-          ? `SQLite arşivi geri yüklendi ve doğrulandı: ${counts.profiles} profil, ${counts.items} kayıt, ${counts.stockMovies}+${counts.stockTv} stok, ${result.postersWritten ?? 0} poster geri yazıldı.`
-          : 'SQLite arşivi geri yüklendi ve doğrulandı.'
+          ? `SQLite arşivi geri yüklendi ve doğrulandı: ${counts.profiles} profil, ${counts.items} kayıt, ${counts.stockMovies}+${counts.stockTv} stok.${posterNote}`
+          : `SQLite arşivi geri yüklendi ve doğrulandı.${posterNote}`,
+        posterNote ? 'info' : 'success'
       );
-    },
-    [applyDataDocumentToState, showToast]
-  );
+      setArchivePreview(null);
+    } catch (error: any) {
+      if (!error?.__reported) {
+        // Yukarıda toast gösterildi; burada yalnızca istemi kapat.
+        setArchivePreview(null);
+      }
+      throw error;
+    } finally {
+      setArchiveRestoreBusy(false);
+    }
+  }, [archivePreview, archiveRestoreBusy, applyDataDocumentToState, showToast]);
 
   // Background fetch for any missing disliked items when entering disliked tab
   const dislikedHydrationTried = useRef<Set<string>>(new Set());
@@ -4524,6 +4598,22 @@ export function App() {
         isOpen={Boolean(pendingBackup)}
         onClose={() => setPendingBackup(null)}
         onConfirm={handleConfirmImport}
+      />
+
+      <ArchiveRestorePreviewModal
+        open={Boolean(archivePreview)}
+        fileName={archivePreview?.fileName || ''}
+        inspect={archivePreview?.inspect || null}
+        current={archivePreview?.current}
+        busy={archiveRestoreBusy}
+        onConfirm={() => {
+          void confirmRestoreSqliteArchive().catch(() => {
+            /* hata toast ile bildirildi */
+          });
+        }}
+        onCancel={() => {
+          if (!archiveRestoreBusy) setArchivePreview(null);
+        }}
       />
 
       <AuthTokenModal

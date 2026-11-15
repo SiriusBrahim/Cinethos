@@ -44,6 +44,21 @@ export function offlineQueueBackoffMs(attempts: number): number {
 let memoryFallbackSnapshot: QueuedSyncSnapshot | null = null;
 let lastPersistFailed = false;
 
+/**
+ * P0-03: Aynı anda gelen iki enqueue ve bir clear birbirinin üzerine yazmasın.
+ * Tüm kuyruk yazmaları tek bir sıraya (serializer) bağlanır.
+ */
+let queueWriteChain: Promise<unknown> = Promise.resolve();
+
+function serializeQueueWrite<T>(task: () => Promise<T>): Promise<T> {
+  const run = queueWriteChain.then(task, task);
+  queueWriteChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 export function hasUnpersistedOfflineFallback(): boolean {
   return lastPersistFailed && memoryFallbackSnapshot !== null;
 }
@@ -168,23 +183,25 @@ async function persistSnapshotDurably(entry: QueuedSyncSnapshot): Promise<Offlin
 }
 
 /**
- * DATA-01: kalıcılığı doğrulayan kuyruk yazımı. `enqueueOfflineSyncSnapshot`'ın
- * senkron sürümü testler ve Node ortamı için korunur; istemci bu sürümü kullanır.
+ * DATA-01: kalıcılığı doğrulayan ve serileştirilmiş kuyruk yazımı. Kalıcılık
+ * doğrulaması olmayan eski senkron sürüm P0-03 ile kaldırıldı.
  */
 export async function enqueueOfflineSyncSnapshotDurable(
   payload: DataDocument,
   baseRevision: number | null
 ): Promise<EnqueueOfflineResult> {
-  const existing = loadOfflineSyncSnapshot();
-  const entry: QueuedSyncSnapshot = {
-    queuedAt: new Date().toISOString(),
-    baseRevision: baseRevision !== null ? baseRevision : existing ? existing.baseRevision : null,
-    payload,
-    attempts: existing?.attempts ?? 0,
-    lastAttemptAt: existing?.lastAttemptAt ?? null,
-  };
-  const storage = await persistSnapshotDurably(entry);
-  return { ...entry, persisted: storage !== 'memory', storage };
+  return serializeQueueWrite(async () => {
+    const existing = loadOfflineSyncSnapshot();
+    const entry: QueuedSyncSnapshot = {
+      queuedAt: new Date().toISOString(),
+      baseRevision: baseRevision !== null ? baseRevision : existing ? existing.baseRevision : null,
+      payload,
+      attempts: existing?.attempts ?? 0,
+      lastAttemptAt: existing?.lastAttemptAt ?? null,
+    };
+    const storage = await persistSnapshotDurably(entry);
+    return { ...entry, persisted: storage !== 'memory', storage };
+  });
 }
 
 /** Başarısız gönderimde deneme sayacını artırır ve bir sonraki bekleme süresini döner. */
@@ -194,100 +211,53 @@ export async function recordOfflineQueueAttempt(): Promise<{
   exhausted: boolean;
   persisted: boolean;
 }> {
-  const existing = (await loadOfflineSyncSnapshotAsync()) || loadOfflineSyncSnapshot();
-  if (!existing) {
-    return { attempts: 0, nextDelayMs: 0, exhausted: false, persisted: false };
-  }
-  const attempts = (existing.attempts ?? 0) + 1;
-  const entry: QueuedSyncSnapshot = {
-    ...existing,
-    attempts,
-    lastAttemptAt: new Date().toISOString(),
-  };
-  const storage = await persistSnapshotDurably(entry);
-  const exhausted = attempts >= OFFLINE_QUEUE_MAX_ATTEMPTS;
-  const nextDelayMs = exhausted ? 0 : offlineQueueBackoffMs(attempts);
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent(OFFLINE_QUEUE_FAILED_EVENT, {
-        detail: { attempts, nextDelayMs, exhausted, persisted: storage !== 'memory' },
-      })
-    );
-  }
-  return { attempts, nextDelayMs, exhausted, persisted: storage !== 'memory' };
+  return serializeQueueWrite(async () => {
+    const existing = (await loadOfflineSyncSnapshotAsync()) || loadOfflineSyncSnapshot();
+    if (!existing) {
+      return { attempts: 0, nextDelayMs: 0, exhausted: false, persisted: false };
+    }
+    const attempts = (existing.attempts ?? 0) + 1;
+    const entry: QueuedSyncSnapshot = {
+      ...existing,
+      attempts,
+      lastAttemptAt: new Date().toISOString(),
+    };
+    const storage = await persistSnapshotDurably(entry);
+    const exhausted = attempts >= OFFLINE_QUEUE_MAX_ATTEMPTS;
+    const nextDelayMs = exhausted ? 0 : offlineQueueBackoffMs(attempts);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(OFFLINE_QUEUE_FAILED_EVENT, {
+          detail: { attempts, nextDelayMs, exhausted, persisted: storage !== 'memory' },
+        })
+      );
+    }
+    return { attempts, nextDelayMs, exhausted, persisted: storage !== 'memory' };
+  });
 }
 
-export function enqueueOfflineSyncSnapshot(
-  payload: DataDocument,
-  baseRevision: number | null
-): EnqueueOfflineResult {
-  const existing = loadOfflineSyncSnapshot();
-  const effectiveBaseRevision =
-    baseRevision !== null ? baseRevision : existing ? existing.baseRevision : null;
-
-  const entry: QueuedSyncSnapshot = {
-    queuedAt: new Date().toISOString(),
-    baseRevision: effectiveBaseRevision,
-    payload,
-  };
-
-  // Primary persistent storage in browser: IndexedDB via idb-keyval (BUG-02 — zero localStorage bloat)
-  const store = getIdbStore();
-  if (store) {
-    memoryFallbackSnapshot = entry;
+export async function clearOfflineSyncSnapshot(): Promise<void> {
+  // P0-03: silme de aynı yazma sırasına girer; eşzamanlı enqueue onu geçemez.
+  return serializeQueueWrite(async () => {
+    memoryFallbackSnapshot = null;
     lastPersistFailed = false;
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem(OFFLINE_QUEUE_STORAGE_KEY);
       }
     } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-    pendingIdbWrite = set('latest_offline_snapshot', entry, store)
-      .catch((e) => {
-        console.warn('[OfflineQueue] IndexedDB persist failed:', e);
-        lastPersistFailed = true;
-      })
-      .finally(() => {
+
+    const store = getIdbStore();
+    if (store) {
+      const task = del('latest_offline_snapshot', store).catch((e) => {
+        console.warn('[OfflineQueue] Kuyruk silinemedi:', e);
+      });
+      pendingIdbWrite = task.finally(() => {
         pendingIdbWrite = null;
       });
-    return { ...entry, persisted: true, storage: 'indexeddb' };
-  }
-
-  // Fallback for Node.js test environments where indexedDB is undefined
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(OFFLINE_QUEUE_STORAGE_KEY, JSON.stringify(entry));
-      memoryFallbackSnapshot = null;
-      lastPersistFailed = false;
-      return { ...entry, persisted: true, storage: 'localstorage' };
+      await pendingIdbWrite;
     }
-  } catch (err) {
-    console.warn('Cinethos: çevrimdışı kuyruk localStorage kotasına takıldı; bellek yedeği kullanılıyor.', err);
-  }
-
-  memoryFallbackSnapshot = entry;
-  lastPersistFailed = true;
-  return { ...entry, persisted: false, storage: 'memory' };
-}
-
-export async function clearOfflineSyncSnapshot(): Promise<void> {
-  memoryFallbackSnapshot = null;
-  lastPersistFailed = false;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(OFFLINE_QUEUE_STORAGE_KEY);
-    }
-  } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-
-  const store = getIdbStore();
-  if (store) {
-    const task = del('latest_offline_snapshot', store).catch((e) => {
-      console.warn('[OfflineQueue] Kuyruk silinemedi:', e);
-    });
-    pendingIdbWrite = task.finally(() => {
-      pendingIdbWrite = null;
-    });
-    await pendingIdbWrite;
-  }
+  });
 }
 
 export function hasPendingOfflineSync(): boolean {

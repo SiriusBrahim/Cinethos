@@ -854,6 +854,18 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
   // SEC-05: giriş sayısı tek başına yetmez; 300 × 8 MB = 2,4 GB teorik RSS demek.
   // Toplam bayt bütçesi tutulur ve LRU sırası en son kullanılanla tazelenir.
   const MAX_IMAGE_CACHE_BYTES = 64 * 1024 * 1024;
+  /** P1-02: tek bir upstream görselin üst sınırı (bayt). */
+  const MAX_IMAGE_RESPONSE_BYTES = 8 * 1024 * 1024;
+  const MAX_CONCURRENT_IMAGE_FETCHES = 8;
+  const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/avif',
+    'image/gif',
+  ]);
+  const inFlightImages = new Map<string, Promise<{ buffer: Buffer; contentType: string }>>();
+  let activeImageFetches = 0;
   let imageCacheBytes = 0;
 
   const evictImageCacheToBudget = () => {
@@ -921,30 +933,105 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
         return;
       }
 
-      const upstream = await fetchImpl(targetUrl, {
-        signal: AbortSignal.timeout(10000),
-        headers: {
-          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-          'User-Agent': 'Cinethos-Proxy/1.0',
-        },
-      });
-
-      if (!upstream.ok) {
-        res.status(upstream.status).json({ error: 'Resim yüklenemedi.' });
+      // P1-02: eşzamanlı upstream indirmeleri sınırla; aynı URL için tek istek.
+      const inflight = inFlightImages.get(targetUrl);
+      if (!inflight && activeImageFetches >= MAX_CONCURRENT_IMAGE_FETCHES) {
+        res.status(429).json({ error: 'Çok fazla eşzamanlı görsel isteği; biraz sonra deneyin.' });
         return;
       }
 
-      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
-      const arrayBuf = await upstream.arrayBuffer();
-      const buffer = Buffer.from(arrayBuf);
+      const fetchImage = async (): Promise<{ buffer: Buffer; contentType: string }> => {
+        activeImageFetches += 1;
+        try {
+          const upstream = await fetchImpl(targetUrl, {
+            signal: AbortSignal.timeout(10000),
+            headers: {
+              Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8',
+              'User-Agent': 'Cinethos-Proxy/1.0',
+            },
+          });
 
-      if (buffer.byteLength <= 8 * 1024 * 1024) {
+          if (!upstream.ok) {
+            throw Object.assign(new Error(`upstream_${upstream.status}`), {
+              code: 'upstream_status',
+              status: upstream.status,
+            });
+          }
+
+          const contentType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+          if (!ALLOWED_IMAGE_CONTENT_TYPES.has(contentType)) {
+            await upstream.body?.cancel().catch(() => {
+              // iptal en iyi çaba
+            });
+            throw Object.assign(new Error('image_mime_not_allowed'), { code: 'image_mime_not_allowed' });
+          }
+
+          // Content-Length varsa gövdeyi okumadan reddet.
+          const declared = Number(upstream.headers.get('content-length') || 0);
+          if (Number.isFinite(declared) && declared > MAX_IMAGE_RESPONSE_BYTES) {
+            await upstream.body?.cancel().catch(() => {
+              // iptal en iyi çaba
+            });
+            throw Object.assign(new Error('image_too_large'), { code: 'image_too_large' });
+          }
+
+          // Boyut sınırı akış sırasında uygulanır: tek bir dev yanıt RAM'i şişirmez.
+          const reader = upstream.body?.getReader();
+          if (!reader) {
+            throw Object.assign(new Error('image_body_missing'), { code: 'image_body_missing' });
+          }
+          const chunks: Buffer[] = [];
+          let total = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+            total += value.byteLength;
+            if (total > MAX_IMAGE_RESPONSE_BYTES) {
+              await reader.cancel().catch(() => {
+                // iptal en iyi çaba
+              });
+              throw Object.assign(new Error('image_too_large'), { code: 'image_too_large' });
+            }
+            chunks.push(Buffer.from(value));
+          }
+
+          return { buffer: Buffer.concat(chunks, total), contentType };
+        } finally {
+          activeImageFetches -= 1;
+        }
+      };
+
+      const pending =
+        inflight ||
+        fetchImage().finally(() => {
+          inFlightImages.delete(targetUrl);
+        });
+      if (!inflight) inFlightImages.set(targetUrl, pending);
+
+      let fetched: { buffer: Buffer; contentType: string };
+      try {
+        fetched = await pending;
+      } catch (error: any) {
+        if (error?.code === 'image_too_large' || error?.code === 'image_mime_not_allowed') {
+          res.status(502).json({ error: 'Görsel sunucudan güvenli boyutta alınamadı.' });
+          return;
+        }
+        if (error?.code === 'upstream_status' && Number(error.status) === 404) {
+          res.status(404).json({ error: 'Görsel bulunamadı.' });
+          return;
+        }
+        throw error;
+      }
+      const { buffer, contentType } = fetched;
+
+      if (buffer.byteLength <= MAX_IMAGE_RESPONSE_BYTES) {
         rememberImage(targetUrl, { at: Date.now(), buffer, contentType });
       }
 
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-      res.setHeader('X-CineTrack-Image-Proxy', 'miss');
+      res.setHeader('X-CineTrack-Image-Proxy', inflight ? 'shared' : 'miss');
       res.send(buffer);
     } catch (err: any) {
       console.warn('TMDB image proxy error:', err?.message || err);

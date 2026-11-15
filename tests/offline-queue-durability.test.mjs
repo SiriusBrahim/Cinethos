@@ -4,7 +4,9 @@ import {
   OFFLINE_QUEUE_MAX_ATTEMPTS,
   clearOfflineSyncSnapshot,
   enqueueOfflineSyncSnapshotDurable,
+  hasUnpersistedOfflineFallback,
   loadOfflineSyncSnapshot,
+  loadOfflineSyncSnapshotAsync,
   offlineQueueBackoffMs,
   recordOfflineQueueAttempt,
   resetOfflineQueueForTests,
@@ -85,4 +87,109 @@ test('SEC-04: deneme sınırı aşıldığında exhausted işaretlenir', async (
   assert.equal(last.nextDelayMs, 0, 'tükenince otomatik deneme durur');
   await clearOfflineSyncSnapshot();
   resetOfflineQueueForTests();
+});
+
+// ---------------------------------------------------------------------------
+// P0-03: gerçek IndexedDB yolu (fake-indexeddb) — başarı, kota hatası, ikisi de
+// başarısız, yeniden yükleme sonrası okuma ve eşzamanlı enqueue/clear sırası.
+// ---------------------------------------------------------------------------
+
+test('P0-03: IndexedDB yazımı başarılıysa kalıcı kayıt yeniden yüklemede bulunur', async () => {
+  const { indexedDB } = await import('fake-indexeddb');
+  const previous = globalThis.indexedDB;
+  globalThis.indexedDB = indexedDB;
+  installLocalStorageMock();
+  resetOfflineQueueForTests();
+  try {
+    const enq = await enqueueOfflineSyncSnapshotDurable(DOC, 11);
+    assert.equal(enq.storage, 'indexeddb');
+    assert.equal(enq.persisted, true);
+
+    // "Sayfa yenilendi": modül içi bellek sıfırlanır, IDB kalır.
+    resetOfflineQueueForTests();
+    const reloaded = await loadOfflineSyncSnapshotAsync();
+    assert.equal(reloaded?.baseRevision, 11);
+    assert.equal(reloaded?.payload.revision, DOC.revision);
+
+    await clearOfflineSyncSnapshot();
+    resetOfflineQueueForTests();
+    assert.equal(await loadOfflineSyncSnapshotAsync(), null, 'silme IDB kaydını da kaldırır');
+  } finally {
+    globalThis.indexedDB = previous;
+  }
+});
+
+test('P0-03: IndexedDB yazımı hata verirse doğrulanmış localStorage yedeği kullanılır', async () => {
+  const previous = globalThis.indexedDB;
+  const broken = {
+    open() {
+      throw new Error('QuotaExceededError');
+    },
+  };
+  globalThis.indexedDB = broken;
+  installLocalStorageMock();
+  resetOfflineQueueForTests();
+  try {
+    const enq = await enqueueOfflineSyncSnapshotDurable(DOC, 5);
+    assert.equal(enq.storage, 'localstorage');
+    assert.equal(enq.persisted, true, 'yalnızca geri okuma doğrulandıktan sonra true');
+    assert.equal(loadOfflineSyncSnapshot()?.baseRevision, 5);
+  } finally {
+    globalThis.indexedDB = previous;
+    resetOfflineQueueForTests();
+  }
+});
+
+test('P0-03: iki depolama da başarısızsa persisted:false ve açık uyarı durumu', async () => {
+  const previousIdb = globalThis.indexedDB;
+  const previousLs = globalThis.localStorage;
+  globalThis.indexedDB = {
+    open() {
+      throw new Error('IDB kapalı');
+    },
+  };
+  globalThis.localStorage = {
+    getItem: () => null,
+    setItem: () => {
+      const err = new Error('QuotaExceededError');
+      err.name = 'QuotaExceededError';
+      throw err;
+    },
+    removeItem: () => {},
+    clear: () => {},
+    key: () => null,
+    length: 0,
+  };
+  resetOfflineQueueForTests();
+  try {
+    const enq = await enqueueOfflineSyncSnapshotDurable(DOC, 1);
+    assert.equal(enq.storage, 'memory');
+    assert.equal(enq.persisted, false);
+    assert.equal(hasUnpersistedOfflineFallback(), true);
+  } finally {
+    globalThis.indexedDB = previousIdb;
+    globalThis.localStorage = previousLs;
+    resetOfflineQueueForTests();
+  }
+});
+
+test('P0-03: eşzamanlı enqueue ve clear tek sıraya girer, eski veri dirilmez', async () => {
+  const { indexedDB } = await import('fake-indexeddb');
+  const previous = globalThis.indexedDB;
+  globalThis.indexedDB = indexedDB;
+  installLocalStorageMock();
+  resetOfflineQueueForTests();
+  try {
+    await enqueueOfflineSyncSnapshotDurable({ ...DOC, revision: 1 }, 1);
+    const writePromise = enqueueOfflineSyncSnapshotDurable({ ...DOC, revision: 2 }, 2);
+    const clearPromise = clearOfflineSyncSnapshot();
+    await Promise.all([writePromise, clearPromise]);
+
+    resetOfflineQueueForTests();
+    const after = await loadOfflineSyncSnapshotAsync();
+    assert.equal(after, null, 'clear sonrası eski snapshot geri gelmemeli');
+  } finally {
+    globalThis.indexedDB = previous;
+    resetOfflineQueueForTests();
+  }
 });

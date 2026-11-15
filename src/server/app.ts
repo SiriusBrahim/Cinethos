@@ -6,6 +6,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import {
   dedupeItems,
   normalizeDeletedKeys,
+  normalizeDataDocument,
   normalizeFavoriteActors,
   normalizePreferences,
   normalizeSavedItem,
@@ -31,6 +32,7 @@ import {
   type TokenSourceKind,
 } from './persistent-store.ts';
 import { CorruptJsonFileError } from './atomic-json.ts';
+import { hashDocument } from './archive-integrity.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';
 
 /** SQLite arşivi yüklemesi: gövde diske akıtılır, bellekte tamponlanmaz (SEC-01). */
@@ -40,6 +42,11 @@ function formatMegabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
+/**
+ * P0-04: Gövdeyi diske akıtırken yarıda kesilme, soket hatası ve boyut aşımını
+ * birlikte yönetir. Fonksiyon HER durumda sonuçlanır; geçici dosya çağıran
+ * tarafından silinir, kilit `finally` bloğunda serbest kalır.
+ */
 function streamRequestBodyToFile(
   req: Request,
   filePath: string,
@@ -50,40 +57,52 @@ function streamRequestBodyToFile(
     let settled = false;
     const out = createWriteStream(filePath, { mode: 0o600 });
 
-    const fail = (error: Error) => {
+    const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
-      out.destroy();
-      reject(error);
+      req.pause();
+      if (error) {
+        out.destroy();
+        reject(error);
+      } else {
+        out.end(() => resolve(total));
+      }
     };
 
-    out.on('error', fail);
-    req.on('error', fail);
+    out.on('error', (error) => finish(error));
+    req.on('error', (error) => finish(error));
+    // İstemci yükleme ortasında bağlantıyı kapatırsa promise asılı kalmasın.
+    req.on('aborted', () =>
+      finish(Object.assign(new Error('upload_aborted'), { code: 'upload_aborted' }))
+    );
+    req.on('close', () => {
+      if (!req.complete) {
+        finish(Object.assign(new Error('upload_aborted'), { code: 'upload_aborted' }));
+      }
+    });
 
     req.on('data', (chunk: Buffer) => {
       if (settled) return;
       total += chunk.length;
       if (total > maxBytes) {
-        req.unpipe?.();
-        req.destroy();
-        fail(Object.assign(new Error('archive_too_large'), { code: 'archive_too_large' }));
+        finish(Object.assign(new Error('archive_too_large'), { code: 'archive_too_large' }));
         return;
       }
       if (!out.write(chunk)) {
         req.pause();
-        out.once('drain', () => req.resume());
+        out.once('drain', () => {
+          if (!settled) req.resume();
+        });
       }
     });
 
     req.on('end', () => {
       if (settled) return;
-      out.end(() => {
-        settled = true;
-        resolve(total);
-      });
+      finish();
     });
   });
 }
+
 import {
   executeProfileBackupExport,
   buildProfileBackupDataset,
@@ -543,119 +562,358 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
+  // === P0-01 / P0-04: inspect → prepare → commit (rollback'li) ===
+  interface PreparedArchiveRestore {
+    filePath: string;
+    createdAt: number;
+    byteLength: number;
+    documentHash: string;
+    archive: Awaited<ReturnType<typeof readSqliteArchive>>;
+  }
+
+  const preparedRestores = new Map<string, PreparedArchiveRestore>();
+  /**
+   * P0-01: commit sonrası istemci yan verileri (stok/zevk haritası) yazamazsa
+   * sunucudaki önceki belgeye dönebilmek için kısa ömürlü snapshot.
+   */
+  const rollbackSnapshots = new Map<string, { document: DataDocument; createdAt: number }>();
+  const PREPARED_RESTORE_TTL_MS = 10 * 60_000;
   let archiveRestoreInFlight = false;
+
+  const archiveUploadDir = path.join(resolvedDataDir, 'archives');
+
+  /** Yarıda kalmış eski yüklemeleri temizle: disk şişmesin, eski dosya geri yüklenmesin. */
+  async function cleanupStaleArchiveUploads(): Promise<void> {
+    try {
+      const entries = await fsPromises.readdir(archiveUploadDir);
+      const cutoff = Date.now() - 60 * 60_000;
+      await Promise.all(
+        entries
+          .filter((name) => /^(restore|prepare)-.+\.sqlite$/.test(name))
+          .map(async (name) => {
+            const fullPath = path.join(archiveUploadDir, name);
+            try {
+              const stat = await fsPromises.stat(fullPath);
+              if (stat.mtimeMs < cutoff) await fsPromises.rm(fullPath, { force: true });
+            } catch {
+              // dosya bu arada silinmiş olabilir
+            }
+          })
+      );
+    } catch {
+      // arşiv klasörü henüz yok
+    }
+  }
+
+  function prunePreparedRestores(): void {
+    const cutoff = Date.now() - PREPARED_RESTORE_TTL_MS;
+    for (const [id, entry] of preparedRestores) {
+      if (entry.createdAt >= cutoff) continue;
+      preparedRestores.delete(id);
+      void fsPromises.rm(entry.filePath, { force: true }).catch(() => {
+        // geçici dosya zaten silinmiş olabilir
+      });
+    }
+    for (const [id, entry] of rollbackSnapshots) {
+      if (entry.createdAt < cutoff) rollbackSnapshots.delete(id);
+    }
+  }
+
+  void cleanupStaleArchiveUploads();
+
+  const ARCHIVE_CONTENT_TYPES = new Set([
+    'application/octet-stream',
+    'application/vnd.sqlite3',
+    'application/x-sqlite3',
+  ]);
+
+  function respondArchiveTooLarge(req: Request, res: Response): void {
+    // Gövde akışı yarıda kesildiği için bağlantı tekrar kullanılmamalı; yanıt
+    // gönderildikten sonra soket kapatılır (istemci deterministik 413 görür).
+    if (!res.headersSent) {
+      res.setHeader('Connection', 'close');
+      res.status(413).json({
+        status_message: `Arşiv dosyası en fazla ${formatMegabytes(MAX_SQLITE_ARCHIVE_UPLOAD_BYTES)} olabilir.`,
+        code: 'archive_too_large',
+      });
+    }
+    res.once('finish', () => {
+      req.destroy();
+    });
+  }
+
+  type ArchiveUploadResult =
+    | { ok: true; filePath: string; byteLength: number }
+    | { ok: false; status: number; code: string; message: string };
+
+  async function receiveArchiveUpload(req: Request): Promise<ArchiveUploadResult> {
+    const contentType = String(req.headers['content-type'] || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    if (!ARCHIVE_CONTENT_TYPES.has(contentType)) {
+      return {
+        ok: false,
+        status: 415,
+        code: 'unsupported_media_type',
+        message: 'SQLite arşivi application/octet-stream olarak gönderilmeli.',
+      };
+    }
+
+    const declaredBytes = Number(req.headers['content-length'] || 0);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_SQLITE_ARCHIVE_UPLOAD_BYTES) {
+      return {
+        ok: false,
+        status: 413,
+        code: 'archive_too_large',
+        message: `Arşiv dosyası en fazla ${formatMegabytes(MAX_SQLITE_ARCHIVE_UPLOAD_BYTES)} olabilir.`,
+      };
+    }
+
+    await fsPromises.mkdir(archiveUploadDir, { recursive: true });
+    const filePath = path.join(
+      archiveUploadDir,
+      `prepare-${process.pid}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.sqlite`
+    );
+    let byteLength: number;
+    try {
+      byteLength = await streamRequestBodyToFile(
+        req,
+        filePath,
+        MAX_SQLITE_ARCHIVE_UPLOAD_BYTES
+      );
+    } catch (error) {
+      // P0-04: yarıda kesilen/boyutu aşan yükleme geçici dosya bırakmaz.
+      await fsPromises.rm(filePath, { force: true }).catch(() => {
+        // temizlik en iyi çaba
+      });
+      throw error;
+    }
+
+    const headerHandle = await fsPromises.open(filePath, 'r');
+    const signature = Buffer.alloc(16);
+    try {
+      await headerHandle.read(signature, 0, 16, 0);
+    } finally {
+      await headerHandle.close();
+    }
+    if (signature.toString('utf8') !== 'SQLite format 3\u0000') {
+      await fsPromises.rm(filePath, { force: true });
+      return {
+        ok: false,
+        status: 400,
+        code: 'invalid_archive_file',
+        message: 'Gönderilen dosya geçerli bir SQLite arşivi değil.',
+      };
+    }
+
+    return { ok: true, filePath, byteLength };
+  }
+
+  /**
+   * P0-01: Arşiv belgesinin özeti, yazma yolunun uygulayacağı normalizasyondan
+   * geçirilerek hesaplanır. Aksi hâlde normalize edilen belge arşivdeki ham
+   * belgeden farklı görünür ve doğrulama yanlış yere kırmızı olur.
+   */
+  function archiveDocumentHash(document: DataDocument): string {
+    const normalized =
+      normalizeDataDocument(document, {
+        maxProfiles: options.maxProfiles,
+        maxItems: options.maxItemsPerProfile,
+      }) || document;
+    return hashDocument(normalized);
+  }
+
+  function describeArchive(entry: PreparedArchiveRestore) {
+    const { archive } = entry;
+    return {
+      schemaVersion: archive.schemaVersion,
+      createdAt: archive.createdAt,
+      appVersion: archive.appVersion,
+      counts: archive.counts,
+      documentHash: entry.documentHash,
+      byteLength: entry.byteLength,
+      profiles: archive.dataDocument.profiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+        items: Array.isArray(profile.items) ? profile.items.length : 0,
+      })),
+    };
+  }
+
+  async function rollbackArchiveRestore(
+    beforeDocument: DataDocument
+  ): Promise<boolean> {
+    try {
+      const restored = await storage.saveDataSerialized(beforeDocument, {
+        forceOverwrite: true,
+        confirmBulkDelete: true,
+        requirePrecondition: false,
+      });
+      return restored.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function commitArchiveRestore(
+    entry: PreparedArchiveRestore,
+    res: Response
+  ): Promise<void> {
+    const { archive } = entry;
+    const beforeDocument = await storage.readDataAsync();
+    const rollbackId = crypto.randomUUID();
+    rollbackSnapshots.set(rollbackId, { document: beforeDocument, createdAt: Date.now() });
+
+    const saved = await storage.saveDataSerialized(archive.dataDocument, {
+      forceOverwrite: true,
+      confirmBulkDelete: true,
+      requirePrecondition: false,
+    });
+    if (!saved.ok) {
+      res.status(saved.status).json({ status_message: saved.message, code: saved.code });
+      return;
+    }
+
+    const writtenProfiles = Array.isArray(saved.document?.profiles) ? saved.document.profiles : [];
+    const writtenItems = countTotalItems(saved.document);
+    const writtenHash = hashDocument(saved.document);
+
+    if (
+      writtenProfiles.length !== archive.counts.profiles ||
+      writtenItems !== archive.counts.items ||
+      writtenHash !== entry.documentHash
+    ) {
+      const rolledBack = await rollbackArchiveRestore(beforeDocument);
+      res.status(500).json({
+        status_message: rolledBack
+          ? 'Arşiv doğrulanamadı (profil/kayıt veya içerik özeti uyuşmuyor); önceki veriler geri yüklendi.'
+          : 'Arşiv doğrulanamadı (profil/kayıt veya içerik özeti uyuşmuyor); önceki veriler geri alınamadı.',
+        code: 'archive_restore_verification_failed',
+        rolledBack,
+        expectedHash: entry.documentHash,
+        actualHash: writtenHash,
+        expectedCounts: archive.counts,
+        actualCounts: {
+          profiles: writtenProfiles.length,
+          items: writtenItems,
+        },
+      });
+      return;
+    }
+
+    let posters: { written: number; skipped: number };
+    try {
+      posters = await restoreArchivePostersToCache(
+        archive.posters,
+        path.join(resolvedDataDir, 'cache', 'posters')
+      );
+    } catch (error: any) {
+      const rolledBack = await rollbackArchiveRestore(beforeDocument);
+      res.status(500).json({
+        status_message: rolledBack
+          ? 'Posterler geri yazılamadı; önceki veriler geri yüklendi.'
+          : 'Posterler geri yazılamadı; önceki veriler geri alınamadı.',
+        code: 'archive_restore_poster_failed',
+        rolledBack,
+        detail: redactSecrets(
+          error?.message || String(error),
+          persistentStore.getKnownSecretsForRedaction()
+        ),
+      });
+      return;
+    }
+
+    notifyLocalMutation('sqlite-archive-restore');
+    res.json({
+      ok: true,
+      rollbackId,
+      counts: archive.counts,
+      documentHash: entry.documentHash,
+      postersWritten: posters.written,
+      postersSkipped: posters.skipped,
+      // P1 ilkesi: kısmi poster geri yüklemesi "tam" gibi gizlenmez.
+      postersComplete: posters.skipped === 0,
+      dataDocument: saved.document,
+      tasteMaps: archive.tasteMaps,
+      stock: archive.stock,
+      createdAt: archive.createdAt,
+    });
+  }
+
+  /** inspect + prepare: dosyayı okur, özet döner, HİÇBİR veriyi değiştirmez. */
   app.post(
-    '/api/archive/sqlite/restore',
+    '/api/archive/sqlite/prepare',
     originGuard,
     tokenGuard,
     async (req: Request, res: Response) => {
       res.setHeader('Cache-Control', 'no-store');
-      const contentType = String(req.headers['content-type'] || '')
-        .split(';')[0]
-        .trim()
-        .toLowerCase();
-      const acceptedTypes = new Set([
-        'application/octet-stream',
-        'application/vnd.sqlite3',
-        'application/x-sqlite3',
-      ]);
-      if (!acceptedTypes.has(contentType)) {
-        res.status(415).json({
-          status_message: 'SQLite arşivi application/octet-stream olarak gönderilmeli.',
-          code: 'unsupported_media_type',
-        });
-        return;
-      }
-
-      const declaredBytes = Number(req.headers['content-length'] || 0);
-      if (Number.isFinite(declaredBytes) && declaredBytes > MAX_SQLITE_ARCHIVE_UPLOAD_BYTES) {
-        res.status(413).json({
-          status_message: `Arşiv dosyası en fazla ${formatMegabytes(MAX_SQLITE_ARCHIVE_UPLOAD_BYTES)} olabilir.`,
-          code: 'archive_too_large',
-        });
-        return;
-      }
-
       if (archiveRestoreInFlight) {
         res.status(409).json({
-          status_message: 'Başka bir arşiv geri yüklemesi sürüyor; bitmesini bekleyin.',
+          status_message: 'Başka bir arşiv işlemi sürüyor; bitmesini bekleyin.',
           code: 'archive_restore_busy',
         });
         return;
       }
 
-      const archiveDir = path.join(resolvedDataDir, 'archives');
-      const tempPath = path.join(archiveDir, `restore-${process.pid}-${Date.now()}.sqlite`);
       archiveRestoreInFlight = true;
+      let uploadedPath: string | null = null;
       try {
-        await fsPromises.mkdir(archiveDir, { recursive: true });
-        // Gövde RAM'e alınmaz; doğrudan diske akıtılır ve boyut sınırı akış sırasında uygulanır.
-        await streamRequestBodyToFile(req, tempPath, MAX_SQLITE_ARCHIVE_UPLOAD_BYTES);
-
-        const headerHandle = await fsPromises.open(tempPath, 'r');
-        const signature = Buffer.alloc(16);
-        try {
-          await headerHandle.read(signature, 0, 16, 0);
-        } finally {
-          await headerHandle.close();
-        }
-        if (signature.toString('utf8') !== 'SQLite format 3\u0000') {
-          res.status(400).json({
-            status_message: 'Gönderilen dosya geçerli bir SQLite arşivi değil.',
-            code: 'invalid_archive_file',
-          });
+        prunePreparedRestores();
+        const upload = await receiveArchiveUpload(req);
+        if (!upload.ok) {
+          if (upload.code === 'archive_too_large') {
+            respondArchiveTooLarge(req, res);
+            return;
+          }
+          res.status(upload.status).json({ status_message: upload.message, code: upload.code });
           return;
         }
+        uploadedPath = upload.filePath;
 
-        const archive = await readSqliteArchive(tempPath);
+        const archive = await readSqliteArchive(upload.filePath);
+        const restoreId = crypto.randomUUID();
+        const entry: PreparedArchiveRestore = {
+          filePath: upload.filePath,
+          createdAt: Date.now(),
+          byteLength: upload.byteLength,
+          documentHash: archiveDocumentHash(archive.dataDocument),
+          archive,
+        };
+        preparedRestores.set(restoreId, entry);
 
-        const saved = await storage.saveDataSerialized(archive.dataDocument, {
-          forceOverwrite: true,
-          confirmBulkDelete: true,
-          requirePrecondition: false,
-        });
-        if (!saved.ok) {
-          res.status(saved.status).json({ status_message: saved.message, code: saved.code });
-          return;
-        }
-
-        // DATA-02: yazılan belge gerçekten arşivdeki profilleri/kayıtları taşıyor mu?
-        const writtenProfiles = Array.isArray(saved.document?.profiles) ? saved.document.profiles : [];
-        const writtenItems = countTotalItems(saved.document);
-        if (
-          writtenProfiles.length !== archive.counts.profiles ||
-          writtenItems !== archive.counts.items
-        ) {
-          res.status(500).json({
-            status_message:
-              'Arşiv yazıldı ancak doğrulama başarısız: profil/kayıt sayıları arşivle eşleşmiyor.',
-            code: 'archive_restore_verification_failed',
-          });
-          return;
-        }
-
-        const posters = await restoreArchivePostersToCache(
-          archive.posters,
-          path.join(resolvedDataDir, 'cache', 'posters')
-        );
-
-        notifyLocalMutation('sqlite-archive-restore');
+        const current = await storage.readDataAsync();
         res.json({
           ok: true,
-          counts: archive.counts,
-          postersWritten: posters.written,
-          postersSkipped: posters.skipped,
-          dataDocument: saved.document,
-          tasteMaps: archive.tasteMaps,
-          stock: archive.stock,
-          createdAt: archive.createdAt,
+          restoreId,
+          expiresAt: new Date(entry.createdAt + PREPARED_RESTORE_TTL_MS).toISOString(),
+          inspect: describeArchive(entry),
+          current: {
+            counts: {
+              profiles: Array.isArray(current.profiles) ? current.profiles.length : 0,
+              items: countTotalItems(current),
+              revision: current.revision ?? 0,
+            },
+            documentHash: hashDocument(current),
+          },
         });
       } catch (error: any) {
         if (error?.code === 'archive_too_large') {
-          res.status(413).json({
-            status_message: `Arşiv dosyası en fazla ${formatMegabytes(MAX_SQLITE_ARCHIVE_UPLOAD_BYTES)} olabilir.`,
-            code: 'archive_too_large',
+          respondArchiveTooLarge(req, res);
+          return;
+        }
+        if (uploadedPath) {
+          await fsPromises.rm(uploadedPath, { force: true }).catch(() => {
+            // temizlik en iyi çaba
           });
+        }
+        if (error?.code === 'upload_aborted') {
+          if (!res.headersSent) {
+            res.status(400).json({
+              status_message: 'Arşiv yüklemesi yarıda kesildi.',
+              code: 'upload_aborted',
+            });
+          }
           return;
         }
         if (error instanceof SqliteUnavailableError) {
@@ -667,17 +925,161 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
           return;
         }
         res.status(500).json({
-          status_message: `SQLite arşivi geri yüklenemedi: ${redactSecrets(error?.message || String(error), persistentStore.getKnownSecretsForRedaction())}`,
-          code: 'archive_restore_failed',
+          status_message: `SQLite arşivi okunamadı: ${redactSecrets(error?.message || String(error), persistentStore.getKnownSecretsForRedaction())}`,
+          code: 'archive_inspect_failed',
         });
       } finally {
         archiveRestoreInFlight = false;
-        try {
-          await fsPromises.rm(tempPath, { force: true });
-        } catch {
-          // yoksay
+      }
+    }
+  );
+
+  app.post(
+    '/api/archive/sqlite/restore',
+    originGuard,
+    tokenGuard,
+    async (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      if (archiveRestoreInFlight) {
+        res.status(409).json({
+          status_message: 'Başka bir arşiv geri yüklemesi sürüyor; bitmesini bekleyin.',
+          code: 'archive_restore_busy',
+        });
+        return;
+      }
+
+      archiveRestoreInFlight = true;
+      let uploadedPath: string | null = null;
+      try {
+        prunePreparedRestores();
+        const restoreId =
+          req.body && typeof req.body === 'object' && typeof (req.body as any).restoreId === 'string'
+            ? String((req.body as any).restoreId)
+            : '';
+
+        let entry: PreparedArchiveRestore | undefined;
+        if (restoreId) {
+          // Onaylanmış hazırlık: dosya yeniden gönderilmez, veri yalnızca şimdi yazılır.
+          entry = preparedRestores.get(restoreId);
+          if (!entry) {
+            res.status(409).json({
+              status_message: 'Hazırlanan arşiv bulunamadı veya süresi doldu; dosyayı yeniden seçin.',
+              code: 'archive_prepare_expired',
+            });
+            return;
+          }
+          preparedRestores.delete(restoreId);
+        } else {
+          // Geriye dönük akış: doğrudan yükleme de desteklenir.
+          const upload = await receiveArchiveUpload(req);
+          if (!upload.ok) {
+            if (upload.code === 'archive_too_large') {
+              respondArchiveTooLarge(req, res);
+              return;
+            }
+            res.status(upload.status).json({ status_message: upload.message, code: upload.code });
+            return;
+          }
+          uploadedPath = upload.filePath;
+          const archive = await readSqliteArchive(upload.filePath);
+          entry = {
+            filePath: upload.filePath,
+            createdAt: Date.now(),
+            byteLength: upload.byteLength,
+            documentHash: archiveDocumentHash(archive.dataDocument),
+            archive,
+          };
+        }
+
+        await commitArchiveRestore(entry, res);
+      } catch (error: any) {
+        if (error?.code === 'archive_too_large') {
+          respondArchiveTooLarge(req, res);
+          return;
+        }
+        if (error?.code === 'upload_aborted') {
+          if (!res.headersSent) {
+            res.status(400).json({
+              status_message: 'Arşiv yüklemesi yarıda kesildi.',
+              code: 'upload_aborted',
+            });
+          }
+          return;
+        }
+        if (error instanceof SqliteUnavailableError) {
+          res.status(501).json({ status_message: error.message, code: 'sqlite_unavailable' });
+          return;
+        }
+        if (error instanceof SqliteArchiveValidationError) {
+          res.status(400).json({ status_message: error.message, code: 'invalid_archive_file' });
+          return;
+        }
+        if (!res.headersSent) {
+          res.status(500).json({
+            status_message: `SQLite arşivi geri yüklenemedi: ${redactSecrets(error?.message || String(error), persistentStore.getKnownSecretsForRedaction())}`,
+            code: 'archive_restore_failed',
+          });
+        }
+      } finally {
+        archiveRestoreInFlight = false;
+        if (uploadedPath) {
+          // Hazırlanan dosya TTL/silme ile yönetilir; doğrudan yükleme burada silinir.
+          try {
+            const stillPrepared = [...preparedRestores.values()].some((item) => item.filePath === uploadedPath);
+            if (!stillPrepared) await fsPromises.rm(uploadedPath, { force: true });
+          } catch {
+            // yoksay
+          }
         }
       }
+    }
+  );
+
+  /** P0-01: İstemci yan verileri yazamazsa sunucu belgesini geri alır. */
+  app.post(
+    '/api/archive/sqlite/rollback',
+    originGuard,
+    tokenGuard,
+    async (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const rollbackId =
+        req.body && typeof req.body === 'object' && typeof (req.body as any).rollbackId === 'string'
+          ? String((req.body as any).rollbackId)
+          : '';
+      if (!rollbackId) {
+        res.status(400).json({
+          status_message: 'Geri alma kimliği gerekli.',
+          code: 'invalid_rollback_request',
+        });
+        return;
+      }
+      prunePreparedRestores();
+      const snapshot = rollbackSnapshots.get(rollbackId);
+      if (!snapshot) {
+        res.status(409).json({
+          status_message: 'Geri alma kaydı bulunamadı veya süresi doldu.',
+          code: 'rollback_unavailable',
+        });
+        return;
+      }
+      rollbackSnapshots.delete(rollbackId);
+      const restored = await rollbackArchiveRestore(snapshot.document);
+      if (!restored) {
+        res.status(500).json({
+          status_message: 'Önceki veriler geri yüklenemedi.',
+          code: 'rollback_failed',
+        });
+        return;
+      }
+      notifyLocalMutation('sqlite-archive-rollback');
+      res.json({
+        ok: true,
+        dataDocument: snapshot.document,
+        counts: {
+          profiles: snapshot.document.profiles?.length ?? 0,
+          items: countTotalItems(snapshot.document),
+        },
+      });
     }
   );
 

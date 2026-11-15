@@ -1,3 +1,47 @@
+## [Unreleased — 2026-11-15 ikinci tur]
+
+### P0 — Yayın öncesi güvenilirlik
+- **P0-01:** SQLite geri yükleme artık `prepare → commit → rollback` akışıyla çalışıyor.
+  `prepare` dosyayı okur, profil/kayıt/stok/poster sayılarını ve kanonik içerik özetini
+  (sha256) döner, hiçbir veriyi değiştirmez; hazırlık 10 dakika ve tek kullanımlıktır.
+  `commit` yalnızca sayılar **ve** içerik özeti eşleşirse başarı döner, aksi hâlde
+  sunucudaki önceki belge otomatik geri yüklenir. İstemci yan verileri (stok, zevk
+  haritası) yazamazsa `rollback` uç noktası sunucuyu da eski hâline döndürür. Poster
+  `written/skipped` sayıları ayrı raporlanır; `PRAGMA quick_check` ile bütünlük doğrulanır.
+- **P0-02:** `taste-api` ve `stock-import-export` ortak `apiFetch`'e taşındı; stok
+  aktarımı artık sunucu hatasını yutmuyor, `serverSynced` alanıyla raporluyor.
+  `core/actor-recommendations` içindeki doğrudan `fetch` de ortak istemciye geçti.
+  Yeni mimari testi, `src/` içinde `/api` adresine giden doğrudan `fetch` kullanımını yakalar.
+- **P0-03:** Kalıcılık doğrulaması olmayan eski senkron `enqueueOfflineSyncSnapshot`
+  kaldırıldı; tüm çağrılar (testler dahil) dayanıklı sürümü kullanıyor. Kuyruk yazma ve
+  silme işlemleri tek bir serializer'da sıralanıyor. `fake-indexeddb` ile IDB başarı,
+  kota hatası, iki depolamanın da başarısız olması, yeniden yükleme ve enqueue/clear
+  yarışı test ediliyor.
+- **P0-04:** Gövde akışı `aborted`, `close` ve `error` olaylarını birlikte yönetiyor;
+  yarıda kesilen yükleme promise'i asılı bırakmıyor, geçici dosya siliniyor ve restore
+  kilidi `finally` ile serbest kalıyor. Boyut aşımında yanıt 413 olarak gönderildikten
+  sonra soket kapatılıyor (erken `destroy` yok). Eski `restore-*`/`prepare-*` dosyaları
+  için başlangıç temizliği eklendi.
+- **P0-05:** Güvenlik işi artık **bloklayıcı**: `npm audit --omit=dev --audit-level=high`.
+  Orta/düşük bulgular ayrı, bloklamayan `audit-report` işinde raporlanıyor; kabul edilen
+  istisnalar `docs/SECURITY-AUDIT.md` içinde kök neden ve hedef çözümle kayıtlı. GitHub
+  Actions adımları Node 20 uyarısını kapatacak şekilde v5'e yükseltildi.
+- **P0-06:** CI'a üretim smoke testi geri geldi: build → `npm prune --omit=dev` →
+  `NODE_ENV=production npm start`, health/`tmdb-status`/SPA deep link/SQLite yeteneği
+  kontrolü ve SIGTERM ile temiz kapanış doğrulaması.
+
+### P1 — Güvenlik ve UX sertleştirmesi
+- **P1-02:** Görsel proxy'si upstream yanıtı artık akış sırasında 8 MB ile sınırlıyor
+  (`Content-Length` varsa okumadan reddediyor), MIME allowlist uyguluyor, aynı URL için
+  uçuştaki isteği paylaşıyor ve eşzamanlı indirmeleri 8 ile sınırlıyor.
+- **P1-03:** `AuthTokenModal` ortak `useDialogAccessibility` kancasını kullanıyor: odak
+  tuzağı, Escape, kapanışta odak geri yükleme. Anahtar kaydedilmeden önce doğrulanıyor;
+  reddedilirse alan yanında `role="alert"` hatası gösteriliyor (anahtar loglanmıyor).
+- **P1-04:** `ProfileBackupTab` dosya seçiminde artık veri değiştirmiyor: arşiv ön izleme
+  modalı profil/kayıt/stok/zevk haritası/poster sayılarını, arşiv tarihini, şema sürümünü,
+  mevcut veriyle farkı ve içerik özetini gösteriyor; geri yükleme yalnızca açık onaydan
+  sonra başlıyor.
+
 ## [Unreleased]
 
 ### Güvenlik ve veri bütünlüğü

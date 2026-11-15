@@ -11,6 +11,7 @@ import type {
   TasteMetadataInput,
 } from "../core/taste/types.ts";
 import type { MetricExplanation } from "../core/taste/profile-explainer.ts";
+import { ApiError, apiFetch, readApiErrorMessage } from "./api-client.ts";
 
 const BASE = "/api/taste";
 const TASTE_CHANNEL_NAME = "cinetrack-taste-profile-sync";
@@ -140,17 +141,16 @@ export function extractTasteMetadataFromItem(
   };
 }
 
-/** Ortak fetch yardımcısı */
-async function apiFetch<T>(
-  url: string,
-  options?: RequestInit
-): Promise<T> {
-  const res = await fetch(url, options);
+/**
+ * P0-02: Tüm istekler ortak `apiFetch` üzerinden gider; böylece LAN modunda
+ * `X-CineTrack-Token` başlığı eklenir ve 401/503'te token istemi açılır.
+ * Durum kodu ve sunucu hata kodu `ApiError` ile korunur.
+ */
+async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await apiFetch(url, options);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `HTTP ${res.status}: ${url}`
-    );
+    const { message, code } = await readApiErrorMessage(res, `HTTP ${res.status}: ${url}`);
+    throw new ApiError(message, res.status, code);
   }
   return res.json() as Promise<T>;
 }
@@ -186,12 +186,12 @@ export interface TasteOverviewClientResponse {
 
 /** Taste profilini sunucudan çek */
 export async function fetchTasteProfile(): Promise<TasteProfile> {
-  return apiFetch<TasteProfile>(`${BASE}/profile`);
+  return requestJson<TasteProfile>(`${BASE}/profile`);
 }
 
 /** Kimliğim genel bakış, Film vs Dizi karşılaştırması ve aylık evrim verilerini çek */
 export async function fetchTasteOverview(): Promise<TasteOverviewClientResponse> {
-  return apiFetch<TasteOverviewClientResponse>(`${BASE}/overview`);
+  return requestJson<TasteOverviewClientResponse>(`${BASE}/overview`);
 }
 
 // === Metrik Detayı ===
@@ -205,7 +205,7 @@ export interface MetricDetailResponse {
 export async function fetchMetricDetail(
   metricId: string
 ): Promise<MetricDetailResponse> {
-  return apiFetch<MetricDetailResponse>(`${BASE}/metric/${encodeURIComponent(metricId)}`);
+  return requestJson<MetricDetailResponse>(`${BASE}/metric/${encodeURIComponent(metricId)}`);
 }
 
 // === Kanıt ===
@@ -222,7 +222,7 @@ export interface EvidenceResponse {
 export async function fetchEvidence(
   metricId: string
 ): Promise<EvidenceResponse> {
-  return apiFetch<EvidenceResponse>(
+  return requestJson<EvidenceResponse>(
     `${BASE}/evidence/${encodeURIComponent(metricId)}`
   );
 }
@@ -231,7 +231,7 @@ export async function fetchEvidence(
 
 /** Taste manifest'ini çek */
 export async function fetchTasteManifest(): Promise<TasteManifest> {
-  return apiFetch<TasteManifest>(`${BASE}/manifest`);
+  return requestJson<TasteManifest>(`${BASE}/manifest`);
 }
 
 // === Manuel Kontrol (TP-028) ===
@@ -251,7 +251,7 @@ export interface OverrideResponse {
 export async function postManualOverride(
   req: OverrideRequest
 ): Promise<OverrideResponse> {
-  const res = await apiFetch<OverrideResponse>(`${BASE}/override`, {
+  const res = await requestJson<OverrideResponse>(`${BASE}/override`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -264,7 +264,7 @@ export async function postManualOverride(
 export async function deleteManualOverride(
   metricId: string
 ): Promise<OverrideResponse> {
-  const res = await apiFetch<OverrideResponse>(
+  const res = await requestJson<OverrideResponse>(
     `${BASE}/override/${encodeURIComponent(metricId)}`,
     { method: "DELETE" }
   );
@@ -285,7 +285,7 @@ export async function postFeatureObjection(
   contentId: string,
   metricId: string
 ): Promise<FeatureObjectionResponse> {
-  const res = await apiFetch<FeatureObjectionResponse>(`${BASE}/objection`, {
+  const res = await requestJson<FeatureObjectionResponse>(`${BASE}/objection`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contentId, metricId }),
@@ -311,7 +311,7 @@ export async function postTasteEvent(
   metadata?: TasteMetadataInput
 ): Promise<PostEventResponse> {
   const payload = metadata ? { event, metadata } : event;
-  const res = await apiFetch<PostEventResponse>(`${BASE}/event`, {
+  const res = await requestJson<PostEventResponse>(`${BASE}/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -328,7 +328,7 @@ export async function triggerTasteRebuild(): Promise<{
   success: boolean;
   generationId: string;
 }> {
-  const res = await apiFetch<{ success: boolean; generationId: string }>(
+  const res = await requestJson<{ success: boolean; generationId: string }>(
     `${BASE}/rebuild`,
     { method: "POST" }
   );

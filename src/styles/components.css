@@ -1906,3 +1906,70 @@
   gap: 8px;
   margin-top: 4px;
 }
+
+/* P1-04: SQLite arşivi ön izleme/onay modalı */
+.archive-preview-card {
+  max-width: 640px;
+  width: min(92vw, 640px);
+  text-align: left;
+}
+
+.archive-preview-lead {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.archive-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 16px;
+  margin: 0 0 12px;
+}
+
+.archive-preview-grid div {
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.archive-preview-grid dt {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+
+.archive-preview-grid dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.archive-preview-delta {
+  font-weight: 400;
+  opacity: 0.75;
+  font-size: 0.8rem;
+}
+
+.archive-preview-profiles {
+  margin: 0 0 12px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.archive-preview-profiles ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.archive-preview-warning {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  border-left: 3px solid var(--warning, #d9a441);
+  padding-left: 10px;
+  margin: 0 0 14px;
+}
+
+.auth-token-error {
+  color: var(--danger, #e05a5a);
+  font-size: 0.85rem;
+  margin: 6px 0 0;
+}

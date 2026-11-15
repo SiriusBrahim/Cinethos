@@ -1,4 +1,5 @@
 import { makeMediaKey, parseMediaKey } from './keys.ts';
+import { apiFetch } from '../services/api-client.ts';
 import { findSaved } from './saved-index.ts';
 import { bayesianRating, clamp01 } from './rating-math.ts';
 import { matchesSelectedGenre } from './genre-matching.ts';
@@ -219,7 +220,8 @@ export async function fetchActorCreditsBatch(
             // Önce Türkçe ardından İngilizce yedek (Language fallback)
             let data: any = null;
             const fetcher = fetchTmdbFn || (async (p: string, params?: Record<string, string>) => {
-              const res = await fetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
+              // P0-02: doğrudan fetch yerine ortak istemci (LAN tokenı + hata sınıfı).
+              const res = await apiFetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
               return res.json();
             });
 

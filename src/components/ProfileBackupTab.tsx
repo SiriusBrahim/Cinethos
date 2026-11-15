@@ -247,10 +247,13 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
     event.target.value = '';
     if (!file || !onRestoreSqliteArchive) return;
     setSqliteBusy('restore');
-    setSqliteStatus('SQLite arşivi doğrulanıyor ve tüm veriler geri yükleniyor…');
+    setSqliteStatus('SQLite arşivi okunuyor; içerik özeti hazırlanıyor…');
     try {
+      // P1-04: bu adım yalnızca ön izleme üretir; onay penceresi App tarafında açılır.
       await onRestoreSqliteArchive(file);
-      setSqliteStatus('SQLite arşivi geri yüklendi: profiller, stok ve görseller hazır.');
+      setSqliteStatus(
+        'Arşiv incelendi. Onay penceresinde içeriği kontrol edip geri yüklemeyi başlatın.'
+      );
     } catch (error: any) {
       setSqliteStatus(error?.message || 'SQLite arşivi geri yüklenemedi.');
     } finally {

@@ -10,7 +10,7 @@ import { createTokenAuthMiddleware } from '../src/server/security.ts';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
 import { createCineTrackApp } from '../src/server/app.ts';
 import {
-  enqueueOfflineSyncSnapshot,
+  enqueueOfflineSyncSnapshotDurable,
   loadOfflineSyncSnapshotAsync,
   clearOfflineSyncSnapshot,
   flushOfflineQueuePersistence,
@@ -284,7 +284,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
       ],
     };
 
-    const enq = enqueueOfflineSyncSnapshot(sampleDoc, 3);
+    const enq = await enqueueOfflineSyncSnapshotDurable(sampleDoc, 3);
     assert.equal(enq.persisted, true);
     await flushOfflineQueuePersistence();
     assert.equal(fakeLs.getItem('cinetrack_offline_sync_queue_v1'), null);

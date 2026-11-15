@@ -494,6 +494,21 @@ export async function readSqliteArchive(filePath: string): Promise<SqliteArchive
   const db = new sqlite.DatabaseSync(filePath);
 
   try {
+    // P0-01: Yarıda kesilmiş/eski bir kopya sessizce geri yüklenmesin.
+    let integrityOk = true;
+    try {
+      const integrityRows = db.prepare('PRAGMA quick_check').all() as Array<Record<string, unknown>>;
+      integrityOk = integrityRows.every((row) => {
+        const value = row ? Object.values(row)[0] : undefined;
+        return String(value ?? '').toLowerCase() === 'ok';
+      });
+    } catch {
+      integrityOk = false;
+    }
+    if (!integrityOk) {
+      throw new SqliteArchiveValidationError('SQLite arşivi bütünlük kontrolünden geçemedi (bozuk dosya).');
+    }
+
     const metaRows = db.prepare('SELECT key, value FROM archive_meta').all();
     const meta = new Map<string, string>();
     for (const row of metaRows) {

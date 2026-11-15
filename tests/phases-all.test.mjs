@@ -63,7 +63,7 @@ import { validateTmdbResponseShape } from '../src/services/api.ts';
 import { formatMatchBadge } from '../src/i18n/index.ts';
 import {
   clearOfflineSyncSnapshot,
-  enqueueOfflineSyncSnapshot,
+  enqueueOfflineSyncSnapshotDurable,
   hasPendingOfflineSync,
   loadOfflineSyncSnapshot,
 } from '../src/services/offline-queue.ts';
@@ -686,7 +686,7 @@ test('Faz 6: atmosphere ve contrast ilişki türleri deterministik kanıt üreti
 // ============================================================================
 // FAZ 7, FAZ 9 & FAZ 10: UX Formatı, Offline Kuyruk, Değerlendirme, CSV, ICS, DNA
 // ============================================================================
-test('Faz 7 & 9: Uyum: X/100 rozeti ve çevrimdışı senkronizasyon kuyruğu doğru çalışır', () => {
+test('Faz 7 & 9: Uyum: X/100 rozeti ve çevrimdışı senkronizasyon kuyruğu doğru çalışır', async () => {
   assert.equal(formatMatchBadge(87.4), 'Uyum: 87/100');
   assert.equal(formatMatchBadge(120), 'Uyum: 100/100');
   assert.equal(formatMatchBadge(0), 'Uyum: 1/100');
@@ -701,12 +701,12 @@ test('Faz 7 & 9: Uyum: X/100 rozeti ve çevrimdışı senkronizasyon kuyruğu do
       activeProfileId: 'profile-1',
       profiles: [makeSampleProfile('profile-1', [])],
     };
-    enqueueOfflineSyncSnapshot(sampleDoc, 4);
+    await enqueueOfflineSyncSnapshotDurable(sampleDoc, 4);
     assert.equal(hasPendingOfflineSync(), true);
     const loaded = loadOfflineSyncSnapshot();
     assert.equal(loaded.baseRevision, 4);
     assert.equal(loaded.payload.activeProfileId, 'profile-1');
-    clearOfflineSyncSnapshot();
+    await clearOfflineSyncSnapshot();
     assert.equal(hasPendingOfflineSync(), false);
   } finally {
     globalThis.localStorage = prevStorage;
