@@ -189,6 +189,11 @@ export function isAiStudioContainerEnv(
   return Boolean(
     env.APP_URL ||
       env.SHARED_APP_URL ||
+      env.K_SERVICE ||
+      env.K_REVISION ||
+      env.K_CONFIGURATION ||
+      env.CLOUD_RUN_JOB ||
+      env.GOOGLE_CLOUD_PROJECT ||
       (env === process.env && existsSync('/.aistudio'))
   );
 }

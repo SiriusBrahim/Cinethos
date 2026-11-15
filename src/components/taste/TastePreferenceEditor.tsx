@@ -136,7 +136,7 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
 
   return (
     <div
-      className="bg-cinema-surface/70 border border-cinema-border rounded-2xl p-5"
+      className="bg-cinema-surface border border-cinema-border rounded-xl p-5"
       role="group"
       aria-label="Manuel Profil Kontrolü"
     >
@@ -164,10 +164,10 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
           type="button"
           disabled={saving}
           onClick={() => handleModeSelect("auto")}
-          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-all disabled:opacity-50 ${
+          className={`flex flex-col items-center justify-center p-3 rounded-lg border text-xs font-medium transition-all disabled:opacity-50 ${
             mode === "auto"
-              ? "bg-white/10 border-white/30 text-cinema-textPrimary"
-              : "bg-cinema-bg/60 border-white/5 text-cinema-textMuted hover:border-white/15 hover:text-cinema-textPrimary"
+              ? "bg-cinema-elevated border-cinema-borderStrong text-cinema-textPrimary font-semibold"
+              : "bg-cinema-elevated/60 border-cinema-borderSubtle text-cinema-textMuted hover:border-cinema-borderStrong hover:text-cinema-textPrimary"
           }`}
         >
           <RotateCcw className="w-4 h-4 mb-1.5" />
@@ -178,10 +178,10 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
           type="button"
           disabled={saving}
           onClick={() => handleModeSelect("boost")}
-          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-all disabled:opacity-50 ${
+          className={`flex flex-col items-center justify-center p-3 rounded-lg border text-xs font-medium transition-colors disabled:opacity-50 ${
             mode === "boost"
-              ? "bg-cinema-goldDim border-cinema-gold/60 text-cinema-gold shadow-glowGold"
-              : "bg-cinema-bg/60 border-white/5 text-cinema-textMuted hover:border-white/15 hover:text-cinema-textPrimary"
+              ? "bg-cinema-goldDim border-cinema-gold text-cinema-gold font-semibold"
+              : "bg-cinema-elevated/60 border-cinema-borderSubtle text-cinema-textMuted hover:border-cinema-borderStrong hover:text-cinema-textPrimary"
           }`}
         >
           <ThumbsUp className="w-4 h-4 mb-1.5" />
@@ -192,10 +192,10 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
           type="button"
           disabled={saving}
           onClick={() => handleModeSelect("suppress")}
-          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-all disabled:opacity-50 ${
+          className={`flex flex-col items-center justify-center p-3 rounded-lg border text-xs font-medium transition-colors disabled:opacity-50 ${
             mode === "suppress"
-              ? "bg-cinema-cyanDim border-cinema-cyan/50 text-cinema-cyan shadow-glowCyan"
-              : "bg-cinema-bg/60 border-white/5 text-cinema-textMuted hover:border-white/15 hover:text-cinema-textPrimary"
+              ? "bg-cinema-cyanDim border-cinema-cyan text-cinema-cyan font-semibold"
+              : "bg-cinema-elevated/60 border-cinema-borderSubtle text-cinema-textMuted hover:border-cinema-borderStrong hover:text-cinema-textPrimary"
           }`}
         >
           <ThumbsDown className="w-4 h-4 mb-1.5" />
@@ -206,10 +206,10 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
           type="button"
           disabled={saving}
           onClick={() => handleModeSelect("exclude")}
-          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-all disabled:opacity-50 ${
+          className={`flex flex-col items-center justify-center p-3 rounded-lg border text-xs font-medium transition-all disabled:opacity-50 ${
             mode === "exclude"
-              ? "bg-cinema-danger/15 border-cinema-danger/60 text-cinema-danger"
-              : "bg-cinema-bg/60 border-white/5 text-cinema-textMuted hover:border-white/15 hover:text-cinema-textPrimary"
+              ? "bg-rose-50 border-cinema-danger text-cinema-danger font-semibold"
+              : "bg-cinema-elevated/60 border-cinema-borderSubtle text-cinema-textMuted hover:border-cinema-borderStrong hover:text-cinema-textPrimary"
           }`}
         >
           <Ban className="w-4 h-4 mb-1.5" />
@@ -218,7 +218,7 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
       </div>
 
       {showFineSlider && (
-        <div className="mt-4 pt-4 border-t border-white/10">
+        <div className="mt-4 pt-4 border-t border-cinema-borderSubtle">
           <div className="flex items-center justify-between text-xs mb-2">
             <label htmlFor={`fine-override-${metricId}`} className="text-cinema-textMuted">
               Sabit Eğilim Değeri (-100 … +100)
@@ -255,7 +255,7 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
       )}
 
       {mode !== "auto" && (
-        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between gap-2 text-xs">
+        <div className="mt-3 pt-3 border-t border-cinema-borderSubtle flex items-center justify-between gap-2 text-xs">
           <span className="text-cinema-textMuted">
             Manuel ayar aktif ({mode === "boost" ? "Güçlendirildi" : mode === "suppress" ? "Azaltıldı" : mode === "exclude" ? "Hariç Tutuldu" : `Sabit: ${fineValue}`})
           </span>

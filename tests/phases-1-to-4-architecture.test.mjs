@@ -202,6 +202,10 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
   const remoteUnprotectedCfg = resolveConfig({ env: { CINETRACK_HOST: '0.0.0.0' } });
   assert.equal(remoteUnprotectedCfg.isRemoteHostWithoutToken, true);
 
+  // Cloud Run container environment (K_SERVICE) binds listenHost to 0.0.0.0 for TCP health probes
+  const cloudRunCfg = resolveConfig({ env: { K_SERVICE: 'ais-pre-123', PORT: '3000' } });
+  assert.equal(cloudRunCfg.listenHost, '0.0.0.0');
+
   const remoteNoTokenGuard = createTokenAuthMiddleware({ authToken: '', bindHost: '0.0.0.0' });
   let statusSent = 200;
   let bodySent = null;

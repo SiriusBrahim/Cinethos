@@ -43,7 +43,7 @@ const DOCK_ITEMS: readonly DockItemConfig[] = [
     shortcut: '2',
     Icon: Bookmark,
     activeTextClass: 'text-cinema-textPrimary',
-    activeBgClass: 'bg-white/10 border-white/25',
+    activeBgClass: 'bg-cinema-elevated border-cinema-borderStrong',
     activeDotClass: 'bg-cinema-textPrimary',
   },
   {
@@ -78,7 +78,7 @@ export const FloatingGlassDock: React.FC<FloatingGlassDockProps> = ({
       {/* Masaüstü — Sol Yüzen Cam Dock (Floating Glass Dock) */}
       <aside
         aria-label="Ana gezinme rıhtımı"
-        className="hidden lg:flex fixed left-3 top-24 z-40 flex-col justify-between w-[76px] min-h-[380px] rounded-2xl bg-cinema-surface/75 backdrop-blur-xl border border-white/10 p-2 shadow-2xl"
+        className="hidden lg:flex fixed left-3 top-24 z-40 flex-col justify-between w-[76px] min-h-[380px] rounded-2xl bg-cinema-surface/95 backdrop-blur-xl border border-cinema-borderSubtle p-2 shadow-lg"
       >
         <div className="flex flex-col gap-2" role="navigation" aria-label="Ana dallar">
           {DOCK_ITEMS.map((item) => {
@@ -94,13 +94,13 @@ export const FloatingGlassDock: React.FC<FloatingGlassDockProps> = ({
                 className={`relative flex flex-col items-center justify-center gap-1 py-2.5 px-1.5 rounded-xl border transition-all min-h-[56px] ${
                   isActive
                     ? `${item.activeBgClass} ${item.activeTextClass}`
-                    : 'border-transparent text-cinema-textMuted hover:text-cinema-textPrimary hover:bg-white/5'
+                    : 'border-transparent text-cinema-textMuted hover:text-cinema-textPrimary hover:bg-cinema-elevated'
                 }`}
               >
                 <div className="relative">
                   <Icon className="w-5 h-5" aria-hidden={true} />
                   {item.id === 'list' && myListCount > 0 && (
-                    <span className="absolute -top-1.5 -right-3 px-1 min-w-[18px] h-4 rounded-full bg-white/15 border border-white/20 text-[10px] font-mono tabular-nums text-cinema-textPrimary flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-3 px-1 min-w-[18px] h-4 rounded-full bg-cinema-elevated border border-cinema-borderStrong text-[10px] font-mono tabular-nums text-cinema-textPrimary flex items-center justify-center">
                       {myListCount > 99 ? '99+' : myListCount}
                     </span>
                   )}
@@ -119,7 +119,7 @@ export const FloatingGlassDock: React.FC<FloatingGlassDockProps> = ({
           })}
         </div>
 
-        <div className="pt-2 mt-2 border-t border-white/10">
+        <div className="pt-2 mt-2 border-t border-cinema-borderSubtle">
           <button
             type="button"
             onClick={onOpenSettings}
@@ -127,8 +127,8 @@ export const FloatingGlassDock: React.FC<FloatingGlassDockProps> = ({
             title="Ayarlar ve Profil Yönetimi (Kısayol: 5)"
             className={`w-full flex flex-col items-center justify-center gap-1 py-2.5 px-1.5 rounded-xl border transition-all min-h-[54px] ${
               isSettingsOpen
-                ? 'bg-white/10 border-white/25 text-cinema-textPrimary'
-                : 'border-transparent text-cinema-textMuted hover:text-cinema-textPrimary hover:bg-white/5'
+                ? 'bg-cinema-elevated border-cinema-borderStrong text-cinema-textPrimary'
+                : 'border-transparent text-cinema-textMuted hover:text-cinema-textPrimary hover:bg-cinema-elevated'
             }`}
           >
             <Settings className="w-5 h-5" aria-hidden="true" />
@@ -141,7 +141,7 @@ export const FloatingGlassDock: React.FC<FloatingGlassDockProps> = ({
 
       {/* Mobil — 56px Yapışkan Alt Sekme Çubuğu (5 Ana Dal) */}
       <nav
-        className="mobile-tab-bar lg:hidden fixed bottom-0 inset-x-0 z-40 h-14 bg-cinema-surface/90 backdrop-blur-xl border-t border-white/10 grid grid-cols-5 items-center px-1"
+        className="mobile-tab-bar lg:hidden fixed bottom-0 inset-x-0 z-40 h-14 bg-cinema-surface/95 backdrop-blur-xl border-t border-cinema-borderSubtle grid grid-cols-5 items-center px-1"
         aria-label="Mobil Gezinme"
       >
         {DOCK_ITEMS.map((item) => {

@@ -43,20 +43,19 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-    padding: 11px 13px;
+    padding: 12px 14px;
     border-radius: var(--radius-md);
     background-color: var(--bg-surface);
-    backdrop-filter: blur(12px);
     border: 1px solid var(--border-subtle);
     color: var(--text-1);
     text-align: left;
-    transition: border-color var(--dur-med) var(--ease), transform var(--dur-med) var(--ease), box-shadow var(--dur-med) var(--ease);
+    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   }
 
   .season-calendar-card:hover {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--gold-border);
+    background-color: var(--bg-elevated);
     transform: translateY(-2px);
-    box-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.6), 0 0 14px rgba(99, 184, 171, 0.12);
   }
 
   .season-calendar-date {
@@ -356,7 +355,7 @@
   .excel-backup-error {
     margin-top: 8px;
     font-size: 12px;
-    color: #e0645e;
+    color: var(--danger);
   }
 
   /* --- v6 Set I & Set J Styles (IMP-09..IMP-16) --- */
@@ -366,11 +365,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 10px;
-    padding: 7px 12px;
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
+    margin-bottom: 12px;
+    padding: 2px 0 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: transparent;
     font-size: 12px;
     color: var(--text-2);
   }
@@ -383,15 +381,15 @@
   .stats-backup-counter {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--text-2);
+    color: var(--text-3);
   }
 
   .taste-dna-summary-card {
-    margin-top: 12px;
-    padding: 14px 18px;
+    margin-top: 14px;
+    padding: 18px 20px;
     border-radius: var(--radius-lg);
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--accent-border);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
   }
 
   .taste-dna-summary-head {
@@ -400,7 +398,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 10px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 12px;
   }
 
   .taste-dna-summary-title-group {
@@ -410,10 +410,11 @@
   }
 
   .taste-dna-summary-title {
-    font-size: 13.5px;
+    font-family: var(--font-display);
+    font-size: 15px;
     font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.01em;
+    color: var(--gold);
+    letter-spacing: -0.01em;
   }
 
   .taste-dna-summary-profile {
@@ -430,26 +431,41 @@
   .taste-dna-traits-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 8px;
-    margin-bottom: 10px;
+    gap: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-elevated);
+    overflow: hidden;
+    margin-bottom: 12px;
   }
 
   .taste-dna-trait-item {
-    padding: 8px 11px;
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    padding: 10px 14px;
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  @media (min-width: 768px) {
+    .taste-dna-trait-item {
+      border-bottom: 0;
+    }
+    .taste-dna-trait-item:last-child {
+      border-right: 0;
+    }
   }
 
   .taste-dna-trait-label {
-    font-size: 11px;
-    color: var(--text-2);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-3);
   }
 
   .taste-dna-trait-value {
-    margin-top: 2px;
-    font-size: 13px;
-    font-weight: 600;
+    margin-top: 3px;
+    font-size: 13.5px;
+    font-weight: 650;
     color: var(--text-1);
   }
 
@@ -470,19 +486,20 @@
 
   .taste-dna-genres-caption {
     font-weight: 600;
-    color: var(--text-2);
+    color: var(--text-3);
   }
 
   .taste-dna-genres-values {
     color: var(--text-1);
   }
 
-  /* IMP-09: Wrapped Card */
+  /* IMP-09: Wrapped Summary Card (Editorial Monograph) */
+  .wrapped-summary-card,
   .wrapped-card {
     margin-top: 14px;
-    padding: 18px 20px;
+    padding: 20px 22px;
     border-radius: var(--radius-lg);
-    background-color: var(--bg-elevated);
+    background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
   }
 
@@ -492,24 +509,30 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .wrapped-card-eyebrow {
     display: block;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 10.5px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--accent);
+    letter-spacing: 0.1em;
+    color: var(--gold);
   }
 
   .wrapped-card-title {
-    margin: 2px 0 0;
-    font-size: 18px;
+    margin: 4px 0 0;
+    font-family: var(--font-display);
+    font-size: 20px;
     font-weight: 700;
+    letter-spacing: -0.015em;
     color: var(--text-1);
   }
 
+  .wrapped-card-subtitle,
   .wrapped-card-headline {
     margin: 4px 0 0;
     font-size: 12.5px;
@@ -526,86 +549,121 @@
   .wrapped-year-switcher {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     padding: 2px;
     border-radius: var(--radius-sm);
-    background-color: var(--bg-surface);
+    background-color: var(--bg-app);
     border: 1px solid var(--border-subtle);
   }
 
   .wrapped-year-btn {
-    padding: 4px 9px;
+    padding: 4px 10px;
     border-radius: var(--radius-xs);
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--text-2);
     background: transparent;
     border: none;
     cursor: pointer;
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+
+  .wrapped-year-btn:hover {
+    color: var(--text-1);
   }
 
   .wrapped-year-btn.is-active {
-    background-color: var(--accent);
-    color: #fff;
+    background-color: var(--gold);
+    color: var(--text-on-accent);
   }
 
   .wrapped-card-body {
     margin-top: 16px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
   }
 
+  .wrapped-kpi-strip,
   .wrapped-metrics-strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-elevated);
+    overflow: hidden;
   }
 
+  .wrapped-kpi-item,
   .wrapped-metric-item {
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    padding: 12px 15px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
+  @media (min-width: 640px) {
+    .wrapped-kpi-item,
+    .wrapped-metric-item {
+      border-bottom: 0;
+    }
+    .wrapped-kpi-item:last-child,
+    .wrapped-metric-item:last-child {
+      border-right: 0;
+    }
+  }
+
+  .wrapped-kpi-label,
   .wrapped-metric-label {
-    font-size: 11px;
-    color: var(--text-2);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-3);
   }
 
+  .wrapped-kpi-val,
   .wrapped-metric-value {
     font-size: 16px;
     font-weight: 700;
     color: var(--text-1);
   }
 
+  .wrapped-kpi-meta,
   .wrapped-metric-sub {
     font-size: 11px;
     color: var(--text-2);
   }
 
+  .wrapped-triad-grid,
   .wrapped-pillars-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
+    gap: 18px;
+    padding: 14px 0;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
+  .wrapped-triad-col,
   .wrapped-pillar {
-    padding: 12px 14px;
-    border-radius: var(--radius-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    padding: 0;
+    min-width: 0;
   }
 
+  .wrapped-section-label,
   .wrapped-pillar-title {
-    margin: 0 0 8px;
-    font-size: 12.5px;
+    display: block;
+    margin: 0 0 10px;
+    font-size: 11px;
     font-weight: 700;
-    color: var(--text-1);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gold);
   }
 
   .wrapped-ranked-list {
@@ -614,12 +672,12 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
   }
 
   .wrapped-ranked-row {
     display: grid;
-    grid-template-columns: 22px 1fr auto;
+    grid-template-columns: 20px 1fr auto;
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
@@ -628,14 +686,16 @@
   .wrapped-rank-num {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--accent);
+    color: var(--gold);
   }
 
   .wrapped-rank-name {
     color: var(--text-1);
     font-weight: 500;
+    min-width: 0;
   }
 
+  .wrapped-rank-stat,
   .wrapped-rank-count {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -645,16 +705,31 @@
   .wrapped-empty-note {
     margin: 0;
     font-size: 12px;
-    color: var(--text-2);
+    color: var(--text-3);
   }
 
+  .wrapped-bottom-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  @media (max-width: 768px) {
+    .wrapped-bottom-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .wrapped-months-box,
   .wrapped-months-section {
-    padding: 12px 14px;
+    padding: 14px 16px;
     border-radius: var(--radius-md);
-    background-color: var(--bg-surface);
+    background-color: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
   }
 
+  .wrapped-months-header,
   .wrapped-months-head {
     display: flex;
     flex-wrap: wrap;
@@ -664,9 +739,15 @@
     margin-bottom: 10px;
   }
 
+  .wrapped-months-header .wrapped-section-label {
+    margin-bottom: 0;
+  }
+
+  .wrapped-months-caption,
   .wrapped-peak-month {
-    font-size: 11.5px;
-    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-3);
   }
 
   .wrapped-months-bars {
@@ -682,76 +763,104 @@
     gap: 4px;
   }
 
+  .wrapped-month-svg {
+    width: 14px;
+    height: 40px;
+    display: block;
+  }
+
+  .wrapped-month-track {
+    fill: var(--bg-surface);
+  }
+
+  .wrapped-month-fill {
+    fill: var(--border-subtle);
+  }
+
+  .wrapped-month-fill.is-non-zero {
+    fill: var(--gold);
+  }
+
   .wrapped-month-count {
     font-family: var(--font-mono);
     font-size: 10.5px;
     color: var(--text-2);
   }
 
-  .wrapped-month-progress {
-    width: 100%;
-    height: 6px;
-    accent-color: var(--accent);
-  }
-
   .wrapped-month-label {
-    font-size: 10.5px;
-    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-3);
   }
 
+  .wrapped-favorite-box {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wrapped-favorite-card,
   .wrapped-loved-banner {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 14px;
+    gap: 12px;
+    width: 100%;
+    flex: 1;
     padding: 12px 14px;
     border-radius: var(--radius-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--accent-border);
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--gold-border);
+    color: var(--text-1);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
   }
 
-  .wrapped-loved-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
+  .wrapped-favorite-card:hover {
+    border-color: var(--gold);
+    background-color: var(--bg-panel);
   }
 
+  .wrapped-favorite-poster,
   .wrapped-loved-poster {
     width: 44px;
     height: 66px;
     object-fit: cover;
     border-radius: var(--radius-xs);
+    background-color: var(--bg-surface);
     flex-shrink: 0;
   }
 
-  .wrapped-loved-eyebrow {
-    display: block;
-    font-size: 11px;
-    color: var(--accent);
-    font-weight: 600;
+  .wrapped-favorite-poster--fallback {
+    display: grid;
+    place-items: center;
+    color: var(--text-3);
+    border: 1px solid var(--border-subtle);
   }
 
-  .wrapped-loved-title-btn {
-    padding: 0;
-    margin: 2px 0;
-    background: none;
-    border: none;
+  .wrapped-favorite-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .wrapped-favorite-title {
+    font-family: var(--font-display);
     font-size: 14.5px;
     font-weight: 700;
     color: var(--text-1);
-    cursor: pointer;
-    text-align: left;
   }
 
-  .wrapped-loved-title-btn:hover {
-    color: var(--accent);
-  }
-
-  .wrapped-loved-reason {
-    margin: 0;
-    font-size: 12px;
+  .wrapped-favorite-meta {
+    font-size: 11.5px;
     color: var(--text-2);
+  }
+
+  .wrapped-favorite-match {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--gold);
   }
 
   /* IMP-13: Stock Health Panel */
@@ -1065,11 +1174,11 @@
   }
 
   .profile-data-mode-indicator.is-demo {
-    color: #e2c68f;
+    color: var(--warning);
   }
 
   .profile-data-mode-indicator.is-live {
-    color: #6fbf8a;
+    color: var(--success);
   }
 
   .profile-save-prefs-btn {
@@ -1114,7 +1223,7 @@
     padding: 18px 20px;
     border-radius: var(--radius-lg);
     background-color: var(--bg-surface);
-    border: 1px solid rgba(248, 113, 113, 0.35);
+    border: 1px solid var(--danger-border);
   }
 
   .error-diagnostic-header {
@@ -1134,11 +1243,11 @@
     width: 100%;
     padding: 10px 12px;
     border-radius: var(--radius-md);
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
+    background-color: var(--danger-soft);
+    border: 1px solid var(--danger-border);
     font-family: var(--font-mono);
     font-size: 12px;
-    color: #e0645e;
+    color: var(--danger);
     word-break: break-word;
   }
 
@@ -1158,7 +1267,7 @@
     margin-top: 8px;
     padding: 10px;
     border-radius: var(--radius-sm);
-    background-color: rgba(9, 13, 22, 0.75);
+    background-color: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
     font-family: var(--font-mono);
     font-size: 11px;
@@ -1170,7 +1279,7 @@
 
   .error-diagnostic-notice {
     font-size: 12px;
-    color: #e2c68f;
+    color: var(--warning);
   }
 
   .error-diagnostic-actions {
@@ -1191,7 +1300,7 @@
     margin-top: 6px;
     font-family: var(--font-mono);
     font-size: 11.5px;
-    color: #e0645e;
+    color: var(--danger);
   }
 
   .cache-reset-note {

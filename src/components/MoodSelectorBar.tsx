@@ -14,7 +14,7 @@ export const MoodSelectorBar: React.FC<MoodSelectorBarProps> = ({
   return (
     <section
       aria-label="Ruh Hali Seçici"
-      className="mb-5 rounded-2xl bg-cinema-surface/60 backdrop-blur-md border border-white/10 px-4 py-3.5"
+      className="mb-5 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle px-4 py-3.5 shadow-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-2 text-xs text-cinema-textMuted">
@@ -52,8 +52,8 @@ export const MoodSelectorBar: React.FC<MoodSelectorBarProps> = ({
               onClick={() => onSelectMood(isSelected ? '' : pill.id)}
               className={`px-3.5 py-2 rounded-full text-xs font-medium border transition-all whitespace-nowrap shrink-0 min-h-[38px] ${
                 isSelected
-                  ? 'bg-cinema-cyanDim border-cinema-cyan/50 text-cinema-cyan shadow-glowCyan'
-                  : 'bg-white/5 border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary hover:border-white/20'
+                  ? 'bg-cinema-cyanDim border-cinema-cyan/45 text-cinema-cyan font-semibold'
+                  : 'bg-cinema-elevated border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
               }`}
             >
               {pill.label}

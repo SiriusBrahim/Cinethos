@@ -451,9 +451,6 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Content-Security-Policy', contentSecurityPolicy);
-    if (!process.env.APP_URL) {
-      res.setHeader('X-Frame-Options', 'DENY');
-    }
     next();
   });
 
@@ -1697,6 +1694,17 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         error: redactSecrets(e?.message || 'Bağlantı testi başarısız oldu.', [options.githubToken]),
       });
     }
+  });
+
+  app.post('/api/sync/token', originGuard, tokenGuard, (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const rawToken = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    if (!rawToken) {
+      res.status(400).json({ ok: false, error: 'Token boş olamaz.' });
+      return;
+    }
+    persistentStore.updateGitHubToken(rawToken, 'env:CINETRACK_GITHUB_PAT');
+    res.json({ ok: true, status: persistentStore.getSyncStatus() });
   });
 
   app.post('/api/sync/public-consent', originGuard, tokenGuard, (req: Request, res: Response) => {

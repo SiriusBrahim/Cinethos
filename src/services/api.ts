@@ -837,6 +837,22 @@ export async function testGitHubConnection(forceWriteProbe = true): Promise<any>
   }
 }
 
+export async function updateGitHubSyncToken(token: string): Promise<any> {
+  try {
+    const res = await apiFetch('/api/sync/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return await res.json();
+  } catch (e: any) {
+    return {
+      ok: false,
+      error: e?.message || 'GitHub token güncelleme isteği başarısız oldu.',
+    };
+  }
+}
+
 export async function setPublicRepoPersonalSyncConsent(
   allowPersonalDataInPublicRepo: boolean
 ): Promise<any> {

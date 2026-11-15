@@ -51,7 +51,7 @@ const EvidenceThumbnail: React.FC<{ posterPath?: string | null; title: string }>
 
   if (!src) {
     return (
-      <div className="w-10 h-14 bg-cinema-surfaceHover border border-white/10 rounded-lg flex items-center justify-center shrink-0">
+      <div className="w-10 h-14 bg-cinema-elevated border border-cinema-borderSubtle rounded-lg flex items-center justify-center shrink-0">
         <Film className="w-4 h-4 text-cinema-textMuted" aria-hidden="true" />
       </div>
     );
@@ -64,7 +64,7 @@ const EvidenceThumbnail: React.FC<{ posterPath?: string | null; title: string }>
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
-      className="w-10 h-14 object-cover rounded-lg border border-white/10 shrink-0"
+      className="w-10 h-14 object-cover rounded-lg border border-cinema-borderSubtle shrink-0"
     />
   );
 };
@@ -104,10 +104,10 @@ const EvidenceRow: React.FC<EvidenceRowProps> = ({
 
   const rowClasses =
     tone === "positive"
-      ? "bg-cinema-bg/70 border-white/5 hover:border-cinema-gold/30"
+      ? "bg-cinema-elevated border-cinema-borderSubtle hover:border-cinema-gold/50"
       : tone === "negative"
-        ? "bg-cinema-bg/70 border-white/5 hover:border-cinema-danger/30 opacity-90"
-        : "bg-cinema-bg/60 border-white/5";
+        ? "bg-cinema-elevated border-cinema-borderSubtle hover:border-cinema-danger/50 opacity-95"
+        : "bg-cinema-elevated border-cinema-borderSubtle";
 
   const scoreColor =
     tone === "positive"
@@ -147,7 +147,7 @@ const EvidenceRow: React.FC<EvidenceRowProps> = ({
           onClick={() => onObjectFeature(item.contentId)}
           title="Bu yapımda bu özellik/etiket bulunmuyorsa kanıtlardan çıkar"
           aria-label={`${resolvedTitle} için bu özellik etiketine itiraz et`}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-cinema-danger/15 hover:border-cinema-danger/40 hover:text-cinema-danger text-[11px] font-medium text-cinema-textMuted transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-cinema-borderSubtle bg-cinema-surface hover:bg-rose-50 hover:border-cinema-danger/50 hover:text-cinema-danger text-[11px] font-medium text-cinema-textMuted transition-colors disabled:opacity-50"
         >
           <FlagOff className="w-3.5 h-3.5" aria-hidden="true" />
           <span className="hidden sm:inline">
@@ -262,7 +262,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
     return (
       <>
         {/* Üst Başlık */}
-        <div className="p-6 border-b border-white/10 flex items-start justify-between gap-4 bg-cinema-surface">
+        <div className="p-6 border-b border-cinema-borderSubtle flex items-start justify-between gap-4 bg-cinema-surface">
           <div>
             <span className="text-xs font-semibold uppercase tracking-widest text-cinema-gold">
               {categoryLabel} · {getStatusLabelTr(view.effectiveStatus)}
@@ -282,7 +282,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Kapat"
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cinema-textMuted hover:text-cinema-textPrimary transition-colors shrink-0"
+              className="p-2 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-borderStrong text-cinema-textMuted hover:text-cinema-textPrimary transition-colors shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
@@ -292,7 +292,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
         {/* Kaydırılabilir Gövde */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {/* Afinite Özeti */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-cinema-elevated border border-cinema-borderSubtle">
             <div>
               <div className="text-xs text-cinema-textMuted">
                 {view.hasOverride ? "Aktif Eğilim Skoru (Manuel Ayarlı)" : "Otomatik Hesaplanan Afinite"}
@@ -370,7 +370,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
             </div>
 
             {!hasAnyEvidence && (
-              <div className="p-5 rounded-xl bg-cinema-bg/60 border border-white/5 text-xs text-cinema-textMuted leading-relaxed">
+              <div className="p-5 rounded-xl bg-cinema-elevated border border-cinema-borderSubtle text-xs text-cinema-textMuted leading-relaxed">
                 Bu metrik için henüz yeterli izleme veya puanlama kanıtı birikmedi. Kütüphanendeki yapımları puanladıkça kanıtlar burada otomatik listelenir; dilersen yukarıdan manuel tercih belirleyebilirsin.
               </div>
             )}
@@ -439,7 +439,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
 
           {/* İlgili Metrikler */}
           {explanation.relatedMetrics.length > 0 && (
-            <div className="pt-4 border-t border-white/10">
+            <div className="pt-4 border-t border-cinema-borderSubtle">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-cinema-textMuted flex items-center gap-1.5 mb-3">
                 <GitBranch className="w-3.5 h-3.5 text-cinema-cyan" />
                 <span>İlişkili Metrikler</span>
@@ -448,7 +448,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
                 {explanation.relatedMetrics.map((rm) => (
                   <div
                     key={rm.metricId}
-                    className="px-3 py-1.5 rounded-lg bg-cinema-bg/70 border border-white/10 text-xs text-cinema-textPrimary flex items-center gap-2"
+                    className="px-3 py-1.5 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle text-xs text-cinema-textPrimary flex items-center gap-2"
                   >
                     <span>{getMetricDisplayTitle(rm.metricId)}</span>
                     <span className="metric-value text-cinema-gold font-semibold">
@@ -468,7 +468,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
     return (
       <article
         aria-labelledby="taste-metric-modal-title"
-        className="glass-panel rounded-2xl overflow-hidden flex flex-col border border-white/10"
+        className="glass-panel rounded-xl overflow-hidden flex flex-col border border-cinema-borderSubtle"
       >
         {renderBody()}
       </article>
@@ -486,7 +486,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
           onClose();
         }
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/55 backdrop-blur-md"
     >
       <motion.div
         role="dialog"
@@ -496,7 +496,7 @@ export const TasteMetricDetail: React.FC<TasteMetricDetailProps> = ({
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.96, y: 16, opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="glass-panel w-full max-w-2xl rounded-2xl overflow-hidden flex flex-col max-h-[88vh] border border-white/15"
+        className="glass-panel w-full max-w-2xl rounded-xl overflow-hidden flex flex-col max-h-[88vh] border border-cinema-borderStrong"
       >
         {renderBody()}
       </motion.div>

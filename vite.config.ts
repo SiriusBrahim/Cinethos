@@ -26,8 +26,8 @@ export default defineConfig({
         name: BRAND_APP_TITLE,
         short_name: BRAND_NAME,
         description: `${BRAND_TAGLINE}, deterministik zevk haritası ve ilişki keşif motoru.`,
-        theme_color: '#0a0b0e',
-        background_color: '#0a0b0e',
+        theme_color: '#F3F4F6',
+        background_color: '#F3F4F6',
         display: 'standalone',
         start_url: '/',
         scope: '/',
@@ -139,8 +139,15 @@ export default defineConfig({
     },
   },
   server: {
-    host: process.env.APP_URL ? '0.0.0.0' : '127.0.0.1',
+    host: process.env.APP_URL || process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1',
     port: 3000,
-    hmr: process.env.DISABLE_HMR === 'true' || Boolean(process.env.APP_URL) ? false : true,
+    allowedHosts:
+      process.env.APP_URL || process.env.SHARED_APP_URL || process.env.K_SERVICE || process.env.K_REVISION
+        ? true
+        : ['localhost', '127.0.0.1', '.run.app'],
+    ...(process.env.DISABLE_HMR === 'true' ||
+    Boolean(process.env.APP_URL || process.env.SHARED_APP_URL || process.env.K_SERVICE || process.env.K_REVISION)
+      ? { hmr: false, ws: false }
+      : { hmr: true }),
   },
 });

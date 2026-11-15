@@ -1,74 +1,78 @@
 @layer tokens {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
 
-    /* Fonts — Derin Sinema (Playfair Display + Plus Jakarta Sans + JetBrains Mono) */
-    --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
-    --font-sans: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Typography — Archival Editorial Grotesque + Sans + Tabular Mono */
+    --font-display: 'Bricolage Grotesque', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 
-    /* Zeminler — Derin Sinema antrasit hiyerarşisi (#0a0b0e -> panel -> katı panel #13151a) */
-    --bg-app: #0a0b0e; /* Antrasit zemin */
-    --bg-canvas: #0d0e12; /* Grafik tuvali zemini */
-    --bg-surface: rgba(22, 24, 29, 0.62); /* Cam efektli yarı saydam füme panel */
-    --bg-elevated: rgba(22, 24, 29, 0.85); /* Yüzen katman: dropdown, modal gövdesi */
-    --bg-header: rgba(10, 11, 14, 0.82);
-    --bg-scrim: rgba(10, 11, 14, 0.78);
-    --bg-overlay: rgba(10, 11, 14, 0.82);
-    --bg-hover: rgba(255, 255, 255, 0.05);
+    /* 60% Cool Archival Stone Canvas & 30% Crisp Paper Surfaces */
+    --bg-app: #f3f4f6;
+    --bg-canvas: #eaecef;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f8fafc;
+    --bg-panel: #f1f5f9;
+    --bg-header: rgba(255, 255, 255, 0.94);
+    --bg-scrim: rgba(15, 23, 42, 0.54);
+    --bg-overlay: rgba(15, 23, 42, 0.74);
+    --bg-hover: rgba(15, 23, 42, 0.045);
 
-    /* Kenar & metin — Çok ince beyaz çizgiler (rgba(255,255,255,0.07)) */
-    --border-subtle: rgba(255, 255, 255, 0.07);
-    --border-strong: rgba(255, 255, 255, 0.14);
-    --text-1: #eef0f2; /* başlıklar, sayılar */
-    --text-2: #8b9099; /* gövde, meta */
-    --text-3: #848994; /* pasif, ipucu — AA kontrast (5.06:1 cam panel, 5.61:1 zemin) */
-    --text-on-accent: #10131a; /* altın yüzey üzerinde koyu mürekkep */
+    /* Crisp 1px Architectural Hairlines & Deep Carbon Ink */
+    --border-subtle: #e2e6ed;
+    --border-strong: #c7d0dd;
+    --text-1: #0f172a;
+    --text-2: #475569;
+    --text-3: #64748b;
+    --text-on-accent: #ffffff;
 
-    /* Vurgu & anlam — Deniz camı turkuaz (accent) + eski kamera altını; doygun neon yok */
-    --accent: #63b8ab;
-    --accent-hover: #7fcbc0;
-    --accent-strong: #4f9a8e;
-    --accent-deep: #4f9a8e;
-    --accent-soft: rgba(99, 184, 171, 0.12);
-    --accent-border: rgba(99, 184, 171, 0.32);
-    --turquoise: #63b8ab; /* deniz camı: veri görselleştirme, ikincil vurgu */
-    --turquoise-soft: rgba(99, 184, 171, 0.12);
-    --turquoise-border: rgba(99, 184, 171, 0.32);
-    --gold: #d3b579; /* yüksek puan, başarı, birincil CTA */
-    --gold-hover: #e2c68f;
-    --gold-deep: #b58c4f;
-    --gold-soft: rgba(211, 181, 121, 0.12);
-    --gold-border: rgba(211, 181, 121, 0.32);
-    --gold-glow: rgba(211, 181, 121, 0.28);
-    --cyan-glow: rgba(99, 184, 171, 0.28);
-    --purple-ambient: rgba(165, 143, 208, 0.035);
-    --success: #6fbf8a;
-    --success-soft: rgba(111, 191, 138, 0.12);
-    --success-border: rgba(111, 191, 138, 0.32);
-    --warning: #d3b579;
-    --warning-soft: rgba(211, 181, 121, 0.12);
-    --warning-border: rgba(211, 181, 121, 0.32);
-    --danger: #e0645e;
-    --danger-soft: rgba(224, 100, 94, 0.12);
-    --danger-border: rgba(224, 100, 94, 0.32);
-    --violet: #a58fd0; /* ek kategori */
-    --violet-soft: rgba(165, 143, 208, 0.12);
-    --violet-border: rgba(165, 143, 208, 0.32);
+    /* 10% Focal Accent — International Cinema Vermilion + Deep Archival Teal */
+    --gold: #c83724;
+    --gold-hover: #a82919;
+    --gold-deep: #922214;
+    --gold-soft: rgba(200, 55, 36, 0.09);
+    --gold-border: rgba(200, 55, 36, 0.30);
+    --gold-glow: rgba(200, 55, 36, 0.14);
 
-    /* İlişki grafiği ek anlam renkleri */
-    --link-person: #a58fd0;
-    --link-atmosphere: #63b8ab;
-    --link-contrast: #e0a064;
-    --link-universe: #6fbf8a;
-    --node-profile: #63b8ab;
+    --accent: #c83724;
+    --accent-hover: #a82919;
+    --accent-strong: #b52e1c;
+    --accent-deep: #922214;
+    --accent-soft: rgba(200, 55, 36, 0.09);
+    --accent-border: rgba(200, 55, 36, 0.30);
 
-    /* Zevk halkaları (sabit anlam renkleri) */
-    --ring-0: #6fbf8a; /* Yeni Eşleşme */
-    --ring-1: #94a3b8; /* Son Öneri */
-    --ring-2: #d3b579; /* Yedek Halka */
+    --turquoise: #0f766e;
+    --turquoise-soft: rgba(15, 118, 110, 0.09);
+    --turquoise-border: rgba(15, 118, 110, 0.28);
+    --cyan-glow: rgba(15, 118, 110, 0.14);
+    --purple-ambient: rgba(29, 78, 216, 0.03);
 
-    /* Yerleşim tokenları */
+    --success: #15803d;
+    --success-soft: rgba(21, 128, 61, 0.09);
+    --success-border: rgba(21, 128, 61, 0.28);
+    --warning: #b45309;
+    --warning-soft: rgba(180, 83, 9, 0.09);
+    --warning-border: rgba(180, 83, 9, 0.28);
+    --danger: #b91c1c;
+    --danger-soft: rgba(185, 28, 28, 0.08);
+    --danger-border: rgba(185, 28, 28, 0.28);
+    --violet: #4338ca;
+    --violet-soft: rgba(67, 56, 202, 0.09);
+    --violet-border: rgba(67, 56, 202, 0.28);
+
+    /* Relationship Graph Semantics — Crisp Contrast on Light Archival Canvas */
+    --link-person: #4338ca;
+    --link-atmosphere: #0f766e;
+    --link-contrast: #c2410c;
+    --link-universe: #15803d;
+    --node-profile: #1d4ed8;
+
+    /* Taste Lifecycle Rings */
+    --ring-0: #15803d;
+    --ring-1: #64748b;
+    --ring-2: #c83724;
+
+    /* Spacing & Architectural Radii */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -79,21 +83,19 @@
     --radius-xs: 4px;
     --radius-sm: 6px;
     --radius-md: 10px;
-    --radius-lg: 14px;
+    --radius-lg: 12px;
 
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.04);
+    --shadow-float: 0 16px 40px -8px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.06);
 
-    --dur-fast: 120ms;
-    --dur-med: 220ms;
+    --dur-fast: 140ms;
+    --dur-med: 180ms;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
-    --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--gold);
+    --focus-ring: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--accent);
 
-    /* Film greni dokusu — tek kaynak (feTurbulence SVG veri-URI'si) */
     --film-grain-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
 
-    /* Katman tokenları (v5) */
     --z-header: 100;
     --z-dropdown: 110;
     --z-drawer: 200;
@@ -101,16 +103,15 @@
     --z-toast: 400;
     --z-tooltip: 500;
 
-    --content-width: 1440px;
+    --content-width: 1320px;
 
-    /* Poster kart genişlikleri */
     --poster-xl: 260px;
-    --poster-lg: 178px;
-    --poster-md: 148px;
+    --poster-lg: 184px;
+    --poster-md: 152px;
     --poster-sm: 116px;
     --poster-xs: 84px;
 
-    /* Geriye dönük uyumluluk takma adları */
+    /* Semantic Token Aliases */
     --bg: var(--bg-app);
     --panel: var(--bg-surface);
     --panel-2: var(--bg-elevated);
@@ -120,12 +121,12 @@
     --text: var(--text-1);
     --brand: var(--accent);
     --brand-hover: var(--accent-hover);
-    --amber: var(--gold);
+    --amber: var(--accent);
     --green: var(--success);
     --red: var(--danger);
     --surface-elevated: var(--bg-elevated);
     --surface-subtle: var(--bg-surface);
-    --panel-solid: #13151a; /* katı panel tonu */
+    --panel-solid: #ffffff;
     --accent-sky: var(--turquoise);
     --accent-teal: var(--turquoise);
     --accent-primary: var(--accent);
@@ -137,18 +138,14 @@
     margin: 0;
     font-family: var(--font-sans);
     background-color: var(--bg-app);
-    background-image:
-      radial-gradient(circle at 0% 50%, rgba(99, 184, 171, 0.05) 0%, transparent 45%),
-      radial-gradient(circle at 100% 0%, rgba(211, 181, 121, 0.05) 0%, transparent 45%),
-      radial-gradient(circle at 50% 100%, rgba(165, 143, 208, 0.035) 0%, transparent 45%);
-    background-attachment: fixed;
+    background-image: radial-gradient(ellipse 90% 45% at 60% -10%, rgba(200, 55, 36, 0.035) 0%, transparent 70%);
     color: var(--text-1);
     min-height: 100vh;
     position: relative;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Derin Sinema film greni — tek tanım */
   body::after {
     content: '';
     position: fixed;
@@ -157,7 +154,7 @@
     height: 100vh;
     pointer-events: none;
     z-index: 1;
-    opacity: 0.035;
+    opacity: 0.012;
     background-image: var(--film-grain-image);
     background-repeat: repeat;
   }
@@ -171,14 +168,13 @@
   .modal-title,
   .wrapped-card-title {
     font-family: var(--font-display);
-    letter-spacing: -0.015em;
+    letter-spacing: -0.02em;
   }
 
   .poster {
     aspect-ratio: 2 / 3;
   }
 
-  /* Yüksek kontrast ve saydamlık azaltma tercihlerinde gren katmanını kapat. */
   @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
     body::after {
       display: none;

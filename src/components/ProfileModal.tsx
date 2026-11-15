@@ -349,7 +349,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </label>
 
                 {/* Veri Kaynağı Göstergesi & Geçiş */}
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-cinema-solid/80 px-3.5 py-2.5 mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cinema-borderSubtle bg-cinema-elevated px-3.5 py-2.5 mb-2">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-cinema-textMuted">Veri Kaynağı:</span>
                     <strong className={isDemo ? 'text-cinema-gold' : 'text-cinema-success'}>
