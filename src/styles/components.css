@@ -296,31 +296,30 @@
     transform: scaleX(1);
   }
 
+  .nav-tab-count,
   .nav-tab-badge {
     font-family: var(--font-mono);
     font-size: 11px;
-    padding: 1px 6px;
-    border-radius: var(--radius-xs);
-    background-color: var(--accent-soft);
-    color: var(--accent);
+    font-weight: 600;
+    color: var(--gold);
     font-variant-numeric: tabular-nums;
   }
 
-  /* Seri çipi — mono, altın */
+  /* Seri göstergesi — kapsülsüz, ince mono tipografi */
   .streak-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: 999px;
-    background-color: var(--gold-soft);
-    border: 1px solid var(--gold-border);
+    gap: 5px;
+    padding: 4px 2px;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
     color: var(--gold);
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     white-space: nowrap;
   }
 
@@ -333,15 +332,18 @@
     color: var(--text-1);
   }
 
+  .streak-chip-label {
+    color: var(--text-3);
+  }
+
   .profile-avatar-circle {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background-image: linear-gradient(135deg, var(--gold), var(--gold-deep));
-    border: none;
-    box-shadow: 0 0 14px rgba(211, 181, 121, 0.22);
+    border: 1px solid var(--gold-border);
     color: var(--text-on-accent);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     display: inline-grid;
     place-items: center;
@@ -418,23 +420,33 @@
   }
 
   .hero-meta .state {
-    padding: 2px 8px;
-    border-radius: var(--radius-xs);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-strong);
-    color: var(--accent);
+    padding: 0;
+    border-radius: 0;
+    background-color: transparent;
+    border: 0;
+    color: var(--gold);
     font-weight: 700;
   }
 
-  /* --- 3. Responsive Stats 2x2 Dashboard Grid (Stats.tsx) --- */
+  /* --- 3. Responsive Stats KPI Dashboard Strip (Stats.tsx) --- */
   .stats-dashboard {
     margin: var(--space-4) 0 var(--space-5);
   }
 
   .stats-2x2-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-4);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  @media (max-width: 1024px) {
+    .stats-2x2-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   @media (max-width: 640px) {
@@ -449,18 +461,24 @@
     flex-direction: column;
     justify-content: space-between;
     gap: 6px;
-    padding: var(--space-4);
-    background-color: var(--bg-surface);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 16px 18px;
+    background-color: transparent;
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+
+  @media (min-width: 1025px) {
+    .stat-card {
+      border-bottom: 0;
+    }
+    .stat-card:last-child {
+      border-right: 0;
+    }
   }
 
   .stat-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.18);
-    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.6), 0 0 14px rgba(99, 184, 171, 0.1);
+    background-color: var(--bg-elevated);
   }
 
   .stat-card-header {
@@ -560,18 +578,15 @@
   }
 
   .list-status-chip.is-active {
-    background-color: var(--bg-surface);
-    color: var(--accent);
-    border-color: var(--accent);
+    background-color: var(--gold-soft);
+    color: var(--gold);
+    border-color: var(--gold-border);
   }
 
   .list-status-chip .chip-count {
     font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 700;
-    padding: 1px 6px;
-    border-radius: var(--radius-xs);
-    background-color: var(--bg-elevated);
     color: var(--text-1);
   }
 
@@ -588,7 +603,7 @@
   }
 
   .dot-watching {
-    background-color: var(--accent);
+    background-color: var(--gold);
   }
 
   .dot-watchlist {
@@ -633,27 +648,27 @@
   }
 
   .category-pill.active {
-    background-color: var(--bg-surface);
-    color: var(--accent);
-    border-color: var(--accent);
+    background-color: var(--gold-soft);
+    color: var(--gold);
+    border-color: var(--gold-border);
   }
 
   .segmented-control {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--space-1);
+    gap: 2px;
     padding: 3px;
-    background-color: var(--bg-app);
+    background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
   }
 
   .segmented-btn {
-    padding: 5px 11px;
+    padding: 5px 12px;
     border: 1px solid transparent;
     border-radius: var(--radius-xs);
-    background-color: var(--bg-surface);
+    background-color: transparent;
     color: var(--text-2);
     font-size: 12px;
     font-weight: 600;
@@ -668,9 +683,9 @@
   }
 
   .segmented-btn.active {
-    background-color: var(--bg-surface);
-    border-color: var(--accent);
-    color: var(--accent);
+    background-color: var(--gold);
+    border-color: var(--gold);
+    color: var(--text-on-accent);
   }
 
   .filter-select-wrap {
@@ -837,36 +852,42 @@
     position: relative;
     z-index: 1;
     display: flex;
-    gap: var(--space-2);
+    gap: var(--space-3);
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
   }
 
   .taste-summary-counts {
     display: flex;
-    gap: var(--space-2);
+    gap: 10px;
     flex-wrap: wrap;
     align-items: center;
   }
 
+  .taste-summary-item,
   .taste-summary-pill {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 11px;
-    border-radius: var(--radius-sm);
     font-size: 12px;
     font-weight: 500;
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
     color: var(--text-2);
     white-space: nowrap;
   }
 
+  .taste-summary-item strong,
   .taste-summary-pill strong {
     color: var(--text-1);
     font-weight: 700;
+  }
+
+  .taste-summary-sep {
+    color: var(--text-3);
   }
 
   .taste-strip-actions {
@@ -970,8 +991,7 @@
   }
 
   .dot-sync {
-    background-color: var(--accent);
-    box-shadow: 0 0 6px var(--accent);
+    background-color: var(--turquoise);
   }
 
   .taste-poster-wall {
@@ -1473,20 +1493,18 @@
     padding: 14px 10px;
     border-radius: var(--radius-md);
     background-color: var(--bg-surface);
-    backdrop-filter: blur(12px);
-    border: 1.5px solid var(--border-subtle);
+    border: 1px solid var(--border-subtle);
     cursor: pointer;
-    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
     color: var(--text-1);
     text-align: center;
     min-width: 0;
   }
 
   .profile-picker-card:hover {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--gold-border);
     background-color: var(--bg-elevated);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.6), 0 0 14px rgba(99, 184, 171, 0.1);
   }
 
   .profile-picker-card.is-active,
@@ -1604,7 +1622,7 @@
       align-items: center;
       justify-content: center;
       gap: 3px;
-      background-color: var(--bg-surface);
+      background-color: transparent;
       border: none;
       color: var(--text-3);
       font-size: 10.5px;
@@ -1620,7 +1638,7 @@
     }
 
     .mobile-tab-btn.active {
-      color: var(--accent);
+      color: var(--gold);
     }
 
     .mobile-tab-icon-wrap {
@@ -1634,12 +1652,13 @@
       position: absolute;
       top: -5px;
       right: -12px;
-      background-color: var(--accent);
-      color: var(--bg-app);
+      background-color: var(--gold);
+      color: var(--text-on-accent);
+      font-family: var(--font-mono);
       font-size: 9.5px;
       font-weight: 700;
       padding: 1px 4px;
-      border-radius: 6px;
+      border-radius: var(--radius-xs);
       line-height: 1.1;
     }
   }

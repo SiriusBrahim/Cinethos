@@ -4,19 +4,13 @@ import { Hero } from './components/Hero.tsx';
 import { Stats } from './components/Stats.tsx';
 import { Controls } from './components/Controls.tsx';
 import { MediaGrid } from './components/MediaGrid.tsx';
-import { DetailModal } from './components/DetailModal.tsx';
-import { QuickSaveModal } from './components/QuickSaveModal.tsx';
-import { PersonDrawer } from './components/PersonDrawer.tsx';
-import { AddCustomModal } from './components/AddCustomModal.tsx';
-import { CommandPalette } from './components/CommandPalette.tsx';
-import { ProfileModal } from './components/ProfileModal.tsx';
-import { ImportChoiceModal } from './components/ImportChoiceModal.tsx';
-import { Toast, type ToastEntry, type ToastKind } from './components/Toast.tsx';
+import { type ToastEntry, type ToastKind } from './components/Toast.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
-import { AuthTokenModal } from './components/AuthTokenModal.tsx';
-import { ArchiveRestorePreviewModal } from './components/ArchiveRestorePreviewModal.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
+import { AppFooter } from './app/AppFooter.tsx';
+import { MobileTabBar } from './app/MobileTabBar.tsx';
+import { AppModals } from './app/AppModals.tsx';
 import { BRAND_NAME } from './shared/brand.ts';
 import { useAppModals } from './hooks/useAppModals.ts';
 
@@ -4230,9 +4224,9 @@ export function App() {
           </ErrorBoundary>
         ) : tab === 'taste-map' ? (
           <div className="taste-map-page">
-            <div className="taste-map-view-toggle" role="group" aria-label="Zevkim görünüm modu">
+            <div className="taste-map-view-toggle segmented-control" role="group" aria-label="Zevkim görünüm modu">
               <button
-                className={`btn ${tasteMapDisplayMode === 'identity' ? 'btn-primary' : ''}`}
+                className={`segmented-btn ${tasteMapDisplayMode === 'identity' ? 'active' : ''}`}
                 type="button"
                 onClick={() => setTasteMapDisplayMode('identity')}
                 aria-pressed={tasteMapDisplayMode === 'identity'}
@@ -4240,7 +4234,7 @@ export function App() {
                 Zevkim
               </button>
               <button
-                className={`btn ${tasteMapDisplayMode === 'poster' ? 'btn-primary' : ''}`}
+                className={`segmented-btn ${tasteMapDisplayMode === 'poster' ? 'active' : ''}`}
                 type="button"
                 onClick={() => setTasteMapDisplayMode('poster')}
                 aria-pressed={tasteMapDisplayMode === 'poster'}
@@ -4347,185 +4341,64 @@ export function App() {
         )}
       </main>
 
-      <footer>
-        <div className="shell footer-shell">
-          <div>
-            {BRAND_NAME} | Kişisel listen bu tarayıcıda saklanır. Katalog kaynağı:{' '}
-            <a
-              href="https://www.themoviedb.org/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="footer-link"
-            >
-              The Movie Database (TMDB)
-            </a>
-            .
-          </div>
-          <div className="footer-source-status">
-            <span>Veri Durumu:</span>{' '}
-            <strong>
-              {tmdbSourceMeta.source === 'live'
-                ? 'Canlı TMDB API'
-                : tmdbSourceMeta.source === 'stale-cache'
-                ? 'Eski Önbellek (Offline)'
-                : tmdbSourceMeta.source === 'demo'
-                ? 'Örnek Katalog'
-                : 'Bağlantı Bekleniyor'}
-            </strong>
-          </div>
-          <div className="footer-shortcuts-hint">
-            <span>Kısayollar: </span>
-            <kbd className="footer-kbd">1-4</kbd> Sekmeler ·{' '}
-            <kbd className="footer-kbd">/</kbd> Ara ·{' '}
-            <kbd className="footer-kbd">S</kbd> Eşitle ·{' '}
-            <kbd className="footer-kbd">N</kbd> Ekle ·{' '}
-            <kbd className="footer-kbd">Esc</kbd> Kapat
-          </div>
-        </div>
-      </footer>
+      <AppFooter tmdbSource={tmdbSourceMeta.source} />
 
-      {/* Mobil 56px sticky alt tab bar (v6 spec Section 2.2 / 5) */}
-      <nav className="mobile-tab-bar" aria-label="Mobil Gezinme">
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'discover' ? 'active' : ''}`}
-          onClick={() => setTab('discover')}
-          aria-label="Keşfet"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-film" /></svg>
-          <span className="mobile-tab-label">Keşfet</span>
-        </button>
+      <MobileTabBar tab={tab} allListCount={allListCount} onSelectTab={setTab} />
 
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'list' ? 'active' : ''}`}
-          onClick={() => setTab('list')}
-          aria-label="Listem"
-        >
-          <span className="mobile-tab-icon-wrap">
-            <svg className="icon" aria-hidden="true"><use href="#icon-bookmark" /></svg>
-            {allListCount > 0 && (
-              <span className="mobile-tab-badge">{allListCount > 99 ? '99+' : allListCount}</span>
-            )}
-          </span>
-          <span className="mobile-tab-label">Listem</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'taste-map' ? 'active' : ''}`}
-          onClick={() => setTab('taste-map')}
-          aria-label="Zevkim"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-dna" /></svg>
-          <span className="mobile-tab-label">Zevkim</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'relationships' ? 'active' : ''}`}
-          onClick={() => setTab('relationships')}
-          aria-label="Evrenler"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-network" /></svg>
-          <span className="mobile-tab-label">Evrenler</span>
-        </button>
-
-      </nav>
-
-      {/* Modals & Drawers */}
-      <DetailModal
-        item={detailItem}
-        savedItem={detailItem ? findSavedItem(savedItems, detailItem) : undefined}
+      <AppModals
+        detailItem={detailItem}
+        quickSaveItem={quickSaveItem}
+        personId={personId}
+        personName={personName}
+        addCustomOpen={addCustomOpen}
+        commandPaletteOpen={commandPaletteOpen}
+        profileOpen={profileOpen}
+        pendingBackup={pendingBackup}
+        archivePreview={archivePreview}
+        archiveRestoreBusy={archiveRestoreBusy}
+        authPrompt={authPrompt}
+        toasts={toasts}
+        isMobileViewport={isMobileViewport}
+        profiles={profiles}
+        activeProfile={activeProfile}
+        activeProfileId={activeProfileId}
+        profileName={profileName}
+        preferences={preferences}
         savedItems={savedItems}
-        isOpen={Boolean(detailItem)}
-        genresMap={genresMap}
-        isDisliked={
-          detailItem
-            ? preferences.disliked.includes(
-                `${detailItem.media_type || (detailItem.title ? 'movie' : 'tv')}:${detailItem.id}`
-              )
-            : false
-        }
-        isHidden={
-          detailItem
-            ? Boolean(
-                preferences.hidden?.includes(
-                  `${detailItem.media_type || (detailItem.title ? 'movie' : 'tv')}:${detailItem.id}`
-                )
-              )
-            : false
-        }
         favoriteActors={favoriteActors}
-        onClose={() => setDetailItem(null)}
-        onSave={handleSaveItem}
-        onRemove={handleRemoveItem}
-        onToggleDislike={handleToggleDislike}
-        onToggleHide={handleToggleHide}
-        onToggleFavoriteActor={handleToggleFavoriteActor}
-        onSelectMedia={(next) => setDetailItem(next)}
+        dislikedItems={dislikedItems}
+        genresMap={genresMap}
+        cinemaKunye={cinemaKunye}
+        tasteMap={tasteMap}
+        syncStatus={syncStatus}
+        onCloseDetail={() => setDetailItem(null)}
+        onSelectDetail={(next) => setDetailItem(next)}
+        onCloseQuickSave={() => setQuickSaveItem(null)}
+        onOpenQuickSave={(item) => setQuickSaveItem(item)}
+        onClosePerson={() => setPersonId(null)}
         onOpenPerson={(id, name) => {
           setPersonId(id);
           setPersonName(name);
         }}
-      />
-
-      <QuickSaveModal
-        item={quickSaveItem}
-        savedItem={quickSaveItem ? findSavedItem(savedItems, quickSaveItem) : undefined}
-        isOpen={Boolean(quickSaveItem)}
-        onClose={() => setQuickSaveItem(null)}
-        onSave={(item, status, rating) => {
-          handleSaveItem(item, status, rating);
-          showToast(`✓ "${displayTitle(item)}" listenize kaydedildi!`);
-        }}
-        onRemove={handleRemoveItem}
-      />
-
-      <PersonDrawer
-        personId={personId}
-        personName={personName}
-        profileId={activeProfileId}
-        isOpen={Boolean(personId)}
-        savedItems={savedItems}
-        isFavoriteActor={favoriteActors.some((a) => a.id === personId)}
-        onClose={() => setPersonId(null)}
-        onOpenDetails={(item) => setDetailItem(item)}
+        onCloseAddCustom={() => setAddCustomOpen(false)}
+        onCloseCommandPalette={() => setCommandPaletteOpen(false)}
+        onCloseProfile={() => setProfileOpen(false)}
+        onClosePendingBackup={() => setPendingBackup(null)}
+        onDismissArchivePreview={() => setArchivePreview(null)}
+        onConfirmArchiveRestore={confirmRestoreSqliteArchive}
+        onCloseAuthPrompt={() => setAuthPrompt(null)}
+        onDismissToast={dismissToast}
+        showToast={showToast}
+        onSaveItem={handleSaveItem}
+        onRemoveItem={handleRemoveItem}
         onQuickAdd={handleQuickAdd}
         onMarkCompleted={handleMarkCompleted}
-        onQuickSave={(item) => setQuickSaveItem(item)}
+        onToggleDislike={handleToggleDislike}
+        onToggleHide={handleToggleHide}
         onToggleFavoriteActor={handleToggleFavoriteActor}
-        onOpenInRelationships={
-          isMobileViewport
-            ? undefined
-            : (mediaKey) => {
-                setPersonId(null);
-                setRelationshipInitialSourceKey(mediaKey);
-                setTab('relationships');
-              }
-        }
-      />
-
-      <AddCustomModal
-        isOpen={addCustomOpen}
-        onClose={() => setAddCustomOpen(false)}
-        onAdd={(item, status) => {
-          handleSaveItem(item, status, '');
-          showToast(`✓ "${item.title}" listenize eklendi!`);
-        }}
-      />
-
-      <CommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        savedItems={savedItems}
         onSelectTab={(targetTab) => setTab(targetTab)}
         onOpenProfile={() => setProfileOpen(true)}
         onOpenAddCustom={() => setAddCustomOpen(true)}
-        onQuickSave={() => {
-          void pushToServer();
-          showToast('Değişiklikler kaydedildi ve yerel sunucuyla eşitlendi.');
-        }}
         onFocusSearch={() => {
           const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
           if (searchInput) {
@@ -4533,24 +4406,12 @@ export function App() {
             searchInput.select();
           }
         }}
-        onOpenItem={(item) => setDetailItem(item)}
-      />
-
-      <ProfileModal
-        isOpen={profileOpen}
-        profiles={profiles}
-        activeProfile={activeProfile}
-        activeProfileId={activeProfileId}
-        activeProfileName={profileName}
-        preferences={preferences}
-        savedItems={savedItems}
-        favoriteActors={favoriteActors}
-        dislikedItems={dislikedItems}
-        genresMap={genresMap}
-        cinemaKunye={cinemaKunye}
-        tasteEntries={tasteMap.entries}
-        syncStatus={syncStatus}
-        onClose={() => setProfileOpen(false)}
+        onOpenRelationshipForKey={(mediaKey) => {
+          setPersonId(null);
+          setRelationshipInitialSourceKey(mediaKey);
+          setTab('relationships');
+        }}
+        onPushToServer={pushToServer}
         onSaveProfileName={handleSaveProfileName}
         onSwitchProfile={handleSwitchProfile}
         onCreateProfile={handleCreateProfile}
@@ -4558,6 +4419,7 @@ export function App() {
         onToggleReminders={handleToggleReminders}
         onExportBackup={handleExportBackup}
         onImportBackupFile={handleImportBackupFile}
+        onConfirmImport={handleConfirmImport}
         onImportCsvItems={(items, importedKunye, profileBlock) => {
           const effectiveKunye = importedKunye
             ? mergeIncomingCinemaKunye(importedKunye)
@@ -4590,44 +4452,8 @@ export function App() {
           void refreshCinemaKunyeFromServer(syncMode);
         }}
         onMergeDuplicates={handleMergeDuplicates}
-        isDemo={Boolean(activeProfile?.isDemo)}
         onToggleDemoMode={handleToggleDemoMode}
       />
-
-      <ImportChoiceModal
-        isOpen={Boolean(pendingBackup)}
-        onClose={() => setPendingBackup(null)}
-        onConfirm={handleConfirmImport}
-      />
-
-      <ArchiveRestorePreviewModal
-        open={Boolean(archivePreview)}
-        fileName={archivePreview?.fileName || ''}
-        inspect={archivePreview?.inspect || null}
-        current={archivePreview?.current}
-        busy={archiveRestoreBusy}
-        onConfirm={() => {
-          void confirmRestoreSqliteArchive().catch(() => {
-            /* hata toast ile bildirildi */
-          });
-        }}
-        onCancel={() => {
-          if (!archiveRestoreBusy) setArchivePreview(null);
-        }}
-      />
-
-      <AuthTokenModal
-        open={Boolean(authPrompt)}
-        status={authPrompt?.status ?? 401}
-        onClose={() => setAuthPrompt(null)}
-        onSubmit={() => {
-          setAuthPrompt(null);
-          showToast('Erişim anahtarı bu oturum için kaydedildi; veriler yeniden yükleniyor…', 'info');
-          window.setTimeout(() => window.location.reload(), 600);
-        }}
-      />
-
-      <Toast toasts={toasts} onDismiss={dismissToast} />
     </>
   );
 }

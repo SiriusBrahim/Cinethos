@@ -159,7 +159,7 @@ export const TasteProfileMinimal: React.FC = () => {
 
   return (
     <section aria-label="Zevkim özeti" className="w-full text-cinema-textPrimary py-2 space-y-4">
-      <header className="rounded-2xl border border-white/10 bg-cinema-surface/80 p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4">
+      <header className="glass-panel rounded-xl p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 text-cinema-gold text-[11px] font-semibold uppercase tracking-widest">
             <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
@@ -173,17 +173,19 @@ export const TasteProfileMinimal: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="px-3.5 py-2 rounded-xl bg-cinema-bg/70 border border-white/10 text-right">
-            <div className="text-[11px] text-cinema-textMuted">Aktif Metrik</div>
-            <div className="metric-value text-base font-bold text-cinema-gold tabular-nums">
-              {summary.knownCount}/{summary.totalCount}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center divide-x divide-white/10 border border-white/10 rounded-lg bg-cinema-elevated/60">
+            <div className="px-4 py-2 text-right">
+              <div className="text-[11px] text-cinema-textMuted">Aktif Metrik</div>
+              <div className="metric-value text-base font-bold text-cinema-gold tabular-nums">
+                {summary.knownCount}/{summary.totalCount}
+              </div>
             </div>
-          </div>
-          <div className="px-3.5 py-2 rounded-xl bg-cinema-bg/70 border border-white/10 text-right">
-            <div className="text-[11px] text-cinema-textMuted">Kanıt</div>
-            <div className="metric-value text-base font-bold text-cinema-textPrimary tabular-nums">
-              {summary.evidenceTotal}
+            <div className="px-4 py-2 text-right">
+              <div className="text-[11px] text-cinema-textMuted">Kanıt</div>
+              <div className="metric-value text-base font-bold text-cinema-textPrimary tabular-nums">
+                {summary.evidenceTotal}
+              </div>
             </div>
           </div>
           <button

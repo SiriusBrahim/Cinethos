@@ -198,14 +198,22 @@ export const Hero: React.FC<HeroProps> = ({
             {activeItem.media_type === 'tv' ? 'Dizi' : 'Film'} · {formatMediaDates(activeItem)}
           </span>
           {score > 0 && (
-            <span className="hero-score tabular-nums">
-              <svg className="icon" aria-hidden="true">
-                <use href="#icon-star"></use>
-              </svg>{' '}
-              {score.toFixed(1)} TMDB
-            </span>
+            <>
+              <span className="hero-meta-sep" aria-hidden="true">·</span>
+              <span className="hero-score tabular-nums">
+                <svg className="icon" aria-hidden="true">
+                  <use href="#icon-star"></use>
+                </svg>{' '}
+                {score.toFixed(1)} TMDB
+              </span>
+            </>
           )}
-          {isWatching && currentIndex === 0 && <span className="state">İzliyorum</span>}
+          {isWatching && currentIndex === 0 && (
+            <>
+              <span className="hero-meta-sep" aria-hidden="true">·</span>
+              <span className="state">İzliyorum</span>
+            </>
+          )}
         </div>
 
         <div className="hero-actions">

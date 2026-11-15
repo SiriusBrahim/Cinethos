@@ -178,9 +178,9 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
           type="button"
           disabled={saving}
           onClick={() => handleModeSelect("boost")}
-          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-all disabled:opacity-50 ${
+          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 ${
             mode === "boost"
-              ? "bg-cinema-goldDim border-cinema-gold/60 text-cinema-gold shadow-glowGold"
+              ? "bg-cinema-goldDim border-cinema-gold/60 text-cinema-gold"
               : "bg-cinema-bg/60 border-white/5 text-cinema-textMuted hover:border-white/15 hover:text-cinema-textPrimary"
           }`}
         >
@@ -192,9 +192,9 @@ export const TastePreferenceEditor: React.FC<TastePreferenceEditorProps> = ({
           type="button"
           disabled={saving}
           onClick={() => handleModeSelect("suppress")}
-          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-all disabled:opacity-50 ${
+          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 ${
             mode === "suppress"
-              ? "bg-cinema-cyanDim border-cinema-cyan/50 text-cinema-cyan shadow-glowCyan"
+              ? "bg-cinema-cyanDim border-cinema-cyan/50 text-cinema-cyan"
               : "bg-cinema-bg/60 border-white/5 text-cinema-textMuted hover:border-white/15 hover:text-cinema-textPrimary"
           }`}
         >

@@ -220,7 +220,18 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="app-header">
       <div className="shell topbar">
         {/* Brand Zone */}
-        <div className="brand" onClick={() => onTabChange('discover')} role="button" tabIndex={0}>
+        <div
+          className="brand"
+          onClick={() => onTabChange('discover')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onTabChange('discover');
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <span className="brand-icon" aria-hidden="true">
             <svg className="icon">
               <use href="#icon-film"></use>
@@ -232,7 +243,7 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
 
-        {/* Primary Desktop Nav Tabs (Section 4) */}
+        {/* Primary Desktop Nav Tabs */}
         <nav
           className="header-nav-tabs"
           role="tablist"
@@ -257,10 +268,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span>Listem</span>
             {myListCount > 0 && (
-              <>
-                {' '}
-                <span className="nav-tab-badge tabular-nums">{myListCount}</span>
-              </>
+              <span className="nav-tab-count tabular-nums">{myListCount}</span>
             )}
           </button>
           <button
@@ -283,7 +291,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* Expandable Search Area (k / /) */}
+        {/* Architectural Search Area (k / /) */}
         <div className={`search ${isSearchFocused ? 'is-focused' : ''}`} ref={searchRef}>
           <svg className="icon search-icon" aria-hidden="true">
             <use href="#icon-search"></use>
@@ -302,7 +310,7 @@ export const Header: React.FC<HeaderProps> = ({
             onKeyDown={handleKeyDown}
             onFocus={() => setIsSearchFocused(true)}
             onBlur={() => !dropdownOpen && setIsSearchFocused(false)}
-            placeholder="Film veya dizi ara… (Kısayol: k veya /)"
+            placeholder="Film veya dizi ara… (k veya /)"
             autoComplete="off"
             aria-label="Film veya dizi ara"
           />
@@ -399,13 +407,26 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="search-dropdown-info">
                           <span className="search-dropdown-title">{title}</span>
                           <div className="search-dropdown-meta">
-                            <span className="search-dropdown-badge">{kind}</span>
-                            <span className="tabular-nums">{year || ''}</span>
-                            {rating > 0 && <span className="tabular-nums">★ {rating.toFixed(1)}</span>}
+                            <span className="search-dropdown-kind">{kind}</span>
+                            {year ? (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums">{year}</span>
+                              </>
+                            ) : null}
+                            {rating > 0 && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums">★ {rating.toFixed(1)}</span>
+                              </>
+                            )}
                             {saved && (
-                              <span className={`search-dropdown-badge search-dropdown-badge-saved status-${saved.status}`}>
-                                {statusLabel}
-                              </span>
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className={`search-dropdown-status status-${saved.status}`}>
+                                  {statusLabel}
+                                </span>
+                              </>
                             )}
                           </div>
                         </div>
@@ -429,19 +450,19 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Actions Zone: Source tag, PWA, Profile, Add */}
+        {/* Right Actions Zone */}
         <div className="topbar-actions">
           {streakDays >= 2 && (
             <span
               className="streak-chip"
-              title={`${streakDays} gündir üst üste izleme etkinliği var`}
+              title={`${streakDays} gündür üst üste izleme etkinliği var`}
               aria-label={`${streakDays} günlük izleme serisi`}
             >
               <svg className="icon" aria-hidden="true">
                 <use href="#icon-fire"></use>
               </svg>
-              <span className="streak-chip-value">{streakDays}</span>
-              <span className="streak-chip-label">GÜN SERİ</span>
+              <span className="streak-chip-value tabular-nums">{streakDays}</span>
+              <span className="streak-chip-label">GÜN</span>
             </span>
           )}
 
@@ -456,13 +477,12 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'Örnek katalog aktif'
               }
             >
-              <span>{tmdbSource === 'stale-cache' ? 'Önbellek' : 'Demo'}</span>
+              {tmdbSource === 'stale-cache' ? 'Önbellek' : 'Demo'}
             </span>
           )}
 
           <PWAInstallButton />
 
-          {/* Profile Switcher Button with Avatar Initial */}
           <button
             id="profileButton"
             className="btn profile-btn"
