@@ -65,6 +65,7 @@ export const QuickSaveModal: React.FC<QuickSaveModalProps> = ({
     <div
       id="quickSaveModal"
       className="modal-wrap open"
+      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

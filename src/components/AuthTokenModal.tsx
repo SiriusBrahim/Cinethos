@@ -75,6 +75,7 @@ export const AuthTokenModal: React.FC<AuthTokenModalProps> = ({ open, status, on
         <input
           id="authTokenInput"
           ref={inputRef}
+          aria-label="Erişim anahtarı"
           type="password"
           autoComplete="off"
           spellCheck={false}

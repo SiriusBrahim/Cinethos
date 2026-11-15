@@ -4,7 +4,7 @@ import {
   type CinemaKunyeDocument,
 } from '../core/cinema-kunye.ts';
 import type { BidirectionalSyncReport, SyncOperationKind } from '../core/sync-display.ts';
-import { apiFetch } from './api-client.ts';
+import { ApiError, apiFetch, readApiErrorMessage } from './api-client.ts';
 
 export type TmdbDataSource = 'live' | 'demo' | 'stale-cache' | 'error' | 'unknown';
 
@@ -1308,40 +1308,102 @@ export async function downloadVerifiedBackupBinary(params: {
   };
 }
 
-export async function fetchServerCinemaKunye(): Promise<CinemaKunyeDocument | null> {
+export type CinemaKunyeServerSyncStatus =
+  | 'ok'
+  | 'offline'
+  | 'auth'
+  | 'conflict'
+  | 'validation'
+  | 'server'
+  | 'unexpected';
+
+/**
+ * P1-01: Sinema KünYESİ senkronunun sonucu. `null` yerine ayrıştırılmış durum
+ * döner; böylece beklenen çevrimdışı durumu gerçek sunucu arızasından ayrılır.
+ */
+export interface CinemaKunyeServerSyncResult {
+  status: CinemaKunyeServerSyncStatus;
+  document?: CinemaKunyeDocument;
+  message?: string;
+  code?: string;
+}
+
+function classifyCinemaKunyeFailure(status: number): CinemaKunyeServerSyncStatus {
+  if (status === 0) return 'offline';
+  if (status === 401 || status === 403 || status === 503) return 'auth';
+  if (status === 409) return 'conflict';
+  if (status === 400 || status === 413 || status === 415 || status === 422) return 'validation';
+  if (status >= 500) return 'server';
+  return 'unexpected';
+}
+
+export async function fetchServerCinemaKunye(): Promise<CinemaKunyeServerSyncResult> {
   try {
     const res = await apiFetch('/api/cinema-kunye', { cache: 'no-store' });
-    if (!res.ok) return null;
-    const json = await res.json();
+    if (!res.ok) {
+      const { message, code } = await readApiErrorMessage(
+        res,
+        'Sinema künYESİ sunucudan okunamadı.'
+      );
+      return { status: classifyCinemaKunyeFailure(res.status), message, code };
+    }
+    const json = await res.json().catch(() => null);
     const rawDoc = json?.cinemaKunye ?? json;
-    if (!rawDoc || typeof rawDoc !== 'object') return null;
-    return normalizeCinemaKunyeDocument(rawDoc);
-  } catch {
-    return null;
+    if (!rawDoc || typeof rawDoc !== 'object') {
+      return {
+        status: 'validation',
+        message: 'Sunucu sinema künYESİ belgesini geçersiz biçimde döndü.',
+      };
+    }
+    return { status: 'ok', document: normalizeCinemaKunyeDocument(rawDoc) };
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return {
+        status: classifyCinemaKunyeFailure(error.status),
+        message: error.message,
+        code: error.code,
+      };
+    }
+    return { status: 'unexpected', message: error?.message || 'Beklenmeyen istemci hatası.' };
   }
 }
 
 export async function saveServerCinemaKunye(
   doc: CinemaKunyeDocument,
   mode: 'merge' | 'overwrite' = 'merge'
-): Promise<CinemaKunyeDocument | null> {
+): Promise<CinemaKunyeServerSyncResult> {
   try {
     const res = await apiFetch('/api/cinema-kunye', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cinemaKunye: doc, mode }),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json?.cinemaKunye || typeof json.cinemaKunye !== 'object') return null;
-    return normalizeCinemaKunyeDocument(json.cinemaKunye);
-  } catch {
-    return null;
+    if (!res.ok) {
+      const { message, code } = await readApiErrorMessage(
+        res,
+        'Sinema künYESİ sunucuya kaydedilemedi.'
+      );
+      return { status: classifyCinemaKunyeFailure(res.status), message, code };
+    }
+    const json = await res.json().catch(() => null);
+    if (!json?.cinemaKunye || typeof json.cinemaKunye !== 'object') {
+      return {
+        status: 'validation',
+        message: 'Sunucu kaydettiği sinema künYESİ belgesini geçersiz biçimde döndü.',
+      };
+    }
+    return { status: 'ok', document: normalizeCinemaKunyeDocument(json.cinemaKunye) };
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return {
+        status: classifyCinemaKunyeFailure(error.status),
+        message: error.message,
+        code: error.code,
+      };
+    }
+    return { status: 'unexpected', message: error?.message || 'Beklenmeyen istemci hatası.' };
   }
 }
-
-
-
 
 // ---------------------------------------------------------
 // SQLite arşivi — profil + stok + stok görsellerinin tam yedeği
@@ -1427,7 +1489,8 @@ export interface SqliteArchiveRestoreResult {
   ok: boolean;
   message?: string;
   code?: string;
-  /** Sunucudaki önceki belgeye dönüş için kullanılır (P0-01). */
+  /** Sunucudaki önceki belgeye dönüş ve finalize için kullanılır (P0-01). */
+  restoreId?: string;
   rollbackId?: string;
   documentHash?: string;
   postersComplete?: boolean;
@@ -1533,7 +1596,7 @@ export async function restorePreparedSqliteArchive(
       postersSkipped: Number(data?.postersSkipped) || 0,
       postersComplete: data?.postersComplete !== false,
       documentHash: typeof data?.documentHash === 'string' ? data.documentHash : undefined,
-      rollbackId: typeof data?.rollbackId === 'string' ? data.rollbackId : undefined,
+      restoreId: typeof data?.restoreId === 'string' ? data.restoreId : undefined,
       createdAt: data?.createdAt,
     };
   } catch (error: any) {
@@ -1565,6 +1628,31 @@ export async function rollbackSqliteArchiveRestore(
     return { ok: true };
   } catch (error: any) {
     return { ok: false, message: error?.message || 'Geri alma isteği gönderilemedi.' };
+  }
+}
+
+/**
+ * P0-01-D: İstemci stok ve zevk haritalarını doğruladıktan sonra journal kaydını
+ * kapatır. Başarısız olursa sunucu bir sonraki açılışta restore'u geri alabilir;
+ * bu yüzden çağıran bunu kullanıcıya bildirmelidir.
+ */
+export async function finalizeSqliteArchiveRestore(
+  restoreId: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/finalize', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId }),
+    });
+    if (!res.ok) {
+      const detail = await readApiErrorMessage(res, `Finalize başarısız (HTTP ${res.status})`);
+      return { ok: false, message: detail.message };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'Finalize isteği gönderilemedi.' };
   }
 }
 

@@ -50,9 +50,3 @@ export function resolvePoster(item?: PosterInput | null): PosterResolution {
 export function hasPoster(item?: PosterInput | null): boolean {
   return resolvePoster(item).kind !== 'none';
 }
-
-/** Mutlak TMDB adresini mutlak URL'e çevirir (proxy tercihi çağıranın işi). */
-export function posterUrlForAbsolute(value: string, size = 'w500'): string {
-  if (!/^https?:\/\//i.test(value)) return '';
-  return value;
-}

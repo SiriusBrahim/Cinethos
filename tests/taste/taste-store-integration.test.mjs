@@ -20,7 +20,6 @@ import {
 } from "../../src/server/taste-store.ts";
 import { aggregateProfiles } from "../../src/core/taste/profile-aggregator.ts";
 import { tasteCoverage, tasteUnknownRate } from "../../src/core/evaluation.ts";
-import { TAXONOMY_V01 } from "../../src/core/taste/taxonomy.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..", "..");
@@ -164,9 +163,7 @@ describe("Taste Store Integration — Evaluation Metrikleri", () => {
 describe("Taste Store Integration — GitHub Senkron Kapsamı", () => {
   it("TASTE_PATHS.manifest ve TASTE_PATHS.profile senkron kapsamında tanımlı", async () => {
     // sync-display.ts'deki SyncFileCategory'ye taste_manifest + taste_profile eklendi
-    const { default: syncDisplaySrc } = await import("../../src/core/sync-display.ts").catch(
-      () => ({ default: null })
-    );
+    await import("../../src/core/sync-display.ts").catch(() => null);
     // Doğrudan dosya içeriğini kontrol et
     const syncPath = join(ROOT, "src", "core", "sync-display.ts");
     if (existsSync(syncPath)) {

@@ -88,12 +88,16 @@ import {
   normalizeDeletedKeys,
 } from './core/cinetrack-core.ts';
 import {
+  deletePersistentTasteMap,
+  flushCoreIdbWrites,
   hydrateCandidatePoolsIdb,
   hydrateDiscoveryHistoryIdb,
+  listPersistentTasteMapProfileIdsAsync,
   loadPersistentPoolData,
   loadPersistentTasteMap,
   savePersistentPoolData,
   savePersistentTasteMap,
+  verifyPersistentTasteMap,
 } from './services/discovery-storage.ts';
 import {
   fetchTmdb,
@@ -107,6 +111,7 @@ import {
   pushCatalogItems,
   pushDerivedProfileData,
   downloadSqliteArchive,
+  finalizeSqliteArchiveRestore,
   prepareSqliteArchiveRestore,
   restorePreparedSqliteArchive,
   rollbackSqliteArchiveRestore,
@@ -1033,12 +1038,31 @@ export function App() {
     replaceCinemaKunye,
     flushCinemaKunyeToServer,
     refreshCinemaKunyeFromServer,
+    serverSyncIssue: cinemaKunyeServerSyncIssue,
   } = useCinemaKunye({
     savedItems,
     genresMap,
     isDemo: Boolean(activeProfile?.isDemo),
     tmdbSource: tmdbSourceMeta.source,
   });
+
+  // P1-01: Sinema künYESİ sunucu senkronu başarısızsa sessizce yutma; aynı sorunu bir kez bildir.
+  const cinemaKunyeSyncIssueRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!cinemaKunyeServerSyncIssue) {
+      cinemaKunyeSyncIssueRef.current = null;
+      return;
+    }
+    const key = `${cinemaKunyeServerSyncIssue.status}:${cinemaKunyeServerSyncIssue.code || ''}:${
+      cinemaKunyeServerSyncIssue.message
+    }`;
+    if (cinemaKunyeSyncIssueRef.current === key) return;
+    cinemaKunyeSyncIssueRef.current = key;
+    showToast(
+      `Sinema künYESİ sunucuyla eşitlenemedi (${cinemaKunyeServerSyncIssue.status}): ${cinemaKunyeServerSyncIssue.message}`,
+      'error'
+    );
+  }, [cinemaKunyeServerSyncIssue, showToast]);
 
   // Hydrate discovery-history & candidate-pool from IndexedDB on startup/profile switch (BUG-02)
   useEffect(() => {
@@ -1418,7 +1442,7 @@ export function App() {
         notified: [...prev.notified, ...newlyNotified].slice(-200),
       }));
     }
-  }, []);
+  }, [setDetailItem]);
 
   useEffect(() => {
     checkReleaseReminders();
@@ -2796,7 +2820,18 @@ export function App() {
       }
       loadCategoryResults(category, 1, false, query, selectedProvider, false, selectedType, selectedGenre);
     }
-  }, [tab, category, forYouSubTab, query, selectedProvider, selectedType, selectedGenre, hideListedItems, loadCategoryResults]);
+  }, [
+    tab,
+    category,
+    forYouSubTab,
+    query,
+    selectedProvider,
+    selectedType,
+    selectedGenre,
+    hideListedItems,
+    activeProfileId,
+    loadCategoryResults,
+  ]);
 
   useEffect(() => {
     if (tab === 'discover' && category === 'stock' && !query.trim()) {
@@ -3216,7 +3251,7 @@ export function App() {
 
     if (!result.ok || !result.blob) {
       const message = result.message || 'SQLite arşivi oluşturulamadı.';
-      showToast(message);
+      showToast(message, 'error');
       throw new Error(message);
     }
 
@@ -3271,58 +3306,101 @@ export function App() {
   const confirmRestoreSqliteArchive = useCallback(async () => {
     if (!archivePreview || archiveRestoreBusy) return;
     setArchiveRestoreBusy(true);
+    const restoreId = archivePreview.restoreId;
     try {
-      const result = await restorePreparedSqliteArchive(archivePreview.restoreId);
-      if (!result.ok || !result.dataDocument) {
-        const message = result.message || 'SQLite arşivi geri yüklenemedi.';
-        showToast(message, 'error');
-        throw new Error(message);
-      }
-
-      // DATA-02 / P0-01: yan veriler yazılmadan önce mevcut durumun kopyası alınır.
-      const failedSections: string[] = [];
-      const tasteProfileIds = Object.keys(result.tasteMaps || {});
-      const previousTasteMaps = new Map<string, PersistentTasteMapData>();
-      for (const profileId of tasteProfileIds) {
-        previousTasteMaps.set(profileId, loadPersistentTasteMap(profileId));
-      }
-      let previousStock: Awaited<ReturnType<typeof loadStockIdb>> | null = null;
+      // P0-01-B: Yerel depolar okunamıyorsa sunucu commit'i hiç başlamaz.
+      let previousStock: Awaited<ReturnType<typeof loadStockIdb>>;
       try {
         previousStock = await loadStockIdb();
       } catch (error) {
-        console.warn('[SQLiteRestore] Önceki stok okunamadı:', error);
+        console.warn('[SQLiteRestore] Mevcut stok okunamadı:', error);
+        showToast(
+          'Mevcut stok deposu okunamadı; veri kaybını önlemek için geri yükleme başlatılmadı.',
+          'error'
+        );
+        throw Object.assign(new Error('stok deposu okunamadı'), { __reported: true });
       }
 
+      // Yetim (arşiv dışı) zevk haritalarını sonradan temizleyebilmek için tam envanter.
+      const previousTasteProfileIds = await listPersistentTasteMapProfileIdsAsync();
+      const previousTasteMaps = new Map<string, PersistentTasteMapData>();
+      for (const profileId of previousTasteProfileIds) {
+        previousTasteMaps.set(profileId, loadPersistentTasteMap(profileId));
+      }
+
+      const result = await restorePreparedSqliteArchive(restoreId);
+      if (!result.ok || !result.dataDocument) {
+        const isConflict = result.code === 'archive_source_changed';
+        const message = isConflict
+          ? 'Önizlemeden sonra sunucu verisi değişti. Arşivi yeniden seçip onaylayın.'
+          : result.message || 'SQLite arşivi geri yüklenemedi.';
+        showToast(message, 'error');
+        setArchivePreview(null);
+        throw Object.assign(new Error(message), { __reported: true });
+      }
+
+      const failures: string[] = [];
+
+      // 1) Zevk haritaları: yaz → kalıcı yazmaları bekle → geri okuyarak doğrula.
       for (const [profileId, payload] of Object.entries(result.tasteMaps || {})) {
         try {
           savePersistentTasteMap(profileId, payload as PersistentTasteMapData);
         } catch (error) {
           console.warn('[SQLiteRestore] Zevk haritası yazılamadı:', profileId, error);
-          failedSections.push(`zevk haritası (${profileId})`);
+        }
+      }
+      await flushCoreIdbWrites();
+      for (const [profileId, payload] of Object.entries(result.tasteMaps || {})) {
+        const expected = payload as PersistentTasteMapData;
+        if (!(await verifyPersistentTasteMap(profileId, expected))) {
+          failures.push(`zevk haritası (${profileId})`);
         }
       }
 
+      // 2) Orphan politikası: arşivde olmayan profillerin eski haritaları silinir.
+      const archiveProfileIds = new Set(
+        result.dataDocument.profiles.map((profile) => profile.id)
+      );
+      for (const profileId of previousTasteProfileIds) {
+        if (archiveProfileIds.has(profileId)) continue;
+        if (!(await deletePersistentTasteMap(profileId))) {
+          failures.push(`eski zevk haritası temizliği (${profileId})`);
+        }
+      }
+
+      // 3) Stok: yaz → geri oku → sayı doğrula.
       if (result.stock) {
+        const expectedMovies = Array.isArray(result.stock.movies) ? result.stock.movies.length : 0;
+        const expectedTv = Array.isArray(result.stock.tv) ? result.stock.tv.length : 0;
         const stockWrite = await saveStockIdb({
           movies: (result.stock.movies || []) as any[],
           tv: (result.stock.tv || []) as any[],
           updatedAt: result.stock.updatedAt || new Date().toISOString(),
           cursors: (result.stock.cursors as Record<string, number>) || {},
         });
-        if (!stockWrite.persisted) {
-          console.warn('[SQLiteRestore] Stok deposu kalıcı yazılamadı:', stockWrite.error);
-          failedSections.push('stok deposu (IndexedDB kotası)');
+        let stockVerified = false;
+        if (stockWrite.persisted) {
+          try {
+            const readBack = await loadStockIdb();
+            stockVerified =
+              (readBack.movies?.length ?? 0) === expectedMovies &&
+              (readBack.tv?.length ?? 0) === expectedTv;
+          } catch (error) {
+            console.warn('[SQLiteRestore] Stok geri okunamadı:', error);
+          }
         }
+        if (!stockVerified) failures.push('stok deposu (IndexedDB)');
       }
 
-      if (failedSections.length > 0) {
-        // Telafi: istemci yan verilerini ve sunucu belgesini eski hâline döndür.
-        if (previousStock) {
-          try {
-            await saveStockIdb(previousStock);
-          } catch (error) {
-            console.warn('[SQLiteRestore] Stok geri alınamadı:', error);
-          }
+      if (failures.length > 0) {
+        // Telafi: her depo için sonucu ayrı topla; başarısız olanı gizleme.
+        const compensationFailures: string[] = [];
+        try {
+          const stockRestore = await saveStockIdb(previousStock);
+          if (!stockRestore.persisted) compensationFailures.push('stok deposu');
+        } catch (error) {
+          console.warn('[SQLiteRestore] Stok geri alınamadı:', error);
+          compensationFailures.push('stok deposu');
         }
         for (const [profileId, previous] of previousTasteMaps) {
           try {
@@ -3331,19 +3409,28 @@ export function App() {
             console.warn('[SQLiteRestore] Zevk haritası geri alınamadı:', profileId, error);
           }
         }
-        const rollback = result.rollbackId
-          ? await rollbackSqliteArchiveRestore(result.rollbackId)
-          : { ok: false, message: 'Geri alma kimliği yok.' };
-        const detail = failedSections.join(', ');
+        await flushCoreIdbWrites();
+        for (const [profileId, previous] of previousTasteMaps) {
+          if (!(await verifyPersistentTasteMap(profileId, previous))) {
+            compensationFailures.push(`zevk haritası (${profileId})`);
+          }
+        }
+
+        const rollback = await rollbackSqliteArchiveRestore(restoreId);
+        const detail = failures.join(', ');
         showToast(
-          rollback.ok
-            ? `SQLite arşivi geri yüklenemedi (${detail}); tüm veriler önceki hâline döndürüldü.`
-            : `SQLite arşivi kısmen uygulandı (${detail}); sunucu geri alınamadı: ${rollback.message || 'bilinmeyen hata'}. Arşivi yeniden yükleyin.`,
+          rollback.ok && compensationFailures.length === 0
+            ? `Geri yükleme tamamlanamadı (${detail}); tüm veriler önceki hâline döndürüldü.`
+            : `Geri yükleme kısmen uygulandı. Başarısız: ${detail}. Kurtarılamayan depolar: ${
+                compensationFailures.join(', ') || 'yok'
+              }. Sunucu geri alma: ${rollback.ok ? 'başarılı' : rollback.message || 'başarısız'}. Arşivi yeniden yüklemeyi deneyin.`,
           'error'
         );
         throw new Error(`Kısmi geri yükleme: ${detail}`);
       }
 
+      // 4) Tüm depolar doğrulandı → journal kaydını kapat.
+      const finalized = await finalizeSqliteArchiveRestore(restoreId);
       applyDataDocumentToState(result.dataDocument);
       setTasteMap(loadPersistentTasteMap(result.dataDocument.activeProfileId));
 
@@ -3352,16 +3439,22 @@ export function App() {
         result.postersSkipped && result.postersSkipped > 0
           ? ` ${result.postersWritten ?? 0} poster yazıldı, ${result.postersSkipped} poster atlandı.`
           : '';
-      showToast(
-        counts
-          ? `SQLite arşivi geri yüklendi ve doğrulandı: ${counts.profiles} profil, ${counts.items} kayıt, ${counts.stockMovies}+${counts.stockTv} stok.${posterNote}`
-          : `SQLite arşivi geri yüklendi ve doğrulandı.${posterNote}`,
-        posterNote ? 'info' : 'success'
-      );
+      if (!finalized.ok) {
+        showToast(
+          `Arşiv geri yüklendi ancak sunucu journal kaydı kapatılamadı (${finalized.message || 'bilinmeyen hata'}). Sunucu yeniden başlarsa önceki veriye dönebilir.`,
+          'error'
+        );
+      } else {
+        showToast(
+          counts
+            ? `SQLite arşivi geri yüklendi ve doğrulandı: ${counts.profiles} profil, ${counts.items} kayıt, ${counts.stockMovies}+${counts.stockTv} stok.${posterNote}`
+            : `SQLite arşivi geri yüklendi ve doğrulandı.${posterNote}`,
+          posterNote ? 'info' : 'success'
+        );
+      }
       setArchivePreview(null);
     } catch (error: any) {
       if (!error?.__reported) {
-        // Yukarıda toast gösterildi; burada yalnızca istemi kapat.
         setArchivePreview(null);
       }
       throw error;

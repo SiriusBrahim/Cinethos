@@ -242,6 +242,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     <div
       id="profileModal"
       className="modal-wrap open"
+      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -336,6 +337,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   Profil adı
                   <input
                     id="profileName"
+                    aria-label="Profil adı"
                     className="field"
                     type="text"
                     maxLength={40}
@@ -412,6 +414,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       <div className="profile-card-new-form">
                         <input
                           id="newProfileName"
+                          aria-label="Yeni profil adı"
                           className="field new-profile-input"
                           type="text"
                           maxLength={40}

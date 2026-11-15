@@ -380,7 +380,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
     if (!currentIds.has(selectedNode.id)) {
       setSelectedNode(null);
     }
-  }, [graphData, selectedNode?.id]);
+  }, [graphData, selectedNode]);
 
   const createGraph = (
     candidateSnapshot: PoolCandidateItem[],

@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildRelationshipGraph,
   precomputeRelationshipContent,
   strongestRelationship,
-  relationshipNodeKey,
 } from '../src/core/relationship-explorer.ts';
 import {
   encodeItemContent,
   computeItemContentSignature,
   cosineSimilarity,
   computeProfileCentroid,
-  tokenizeText,
 } from '../src/core/encoding.ts';
 import {
   getItemEncoding,
@@ -19,7 +16,6 @@ import {
   batchGetEncodings,
   maintainEncodingsDepot,
   enrichItemMetadataLazy,
-  getEncodingServiceMetricsForTests,
   resetEncodingServiceForTests,
   makeEncodingStorageKey,
 } from '../src/services/encoding-service.ts';

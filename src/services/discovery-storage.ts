@@ -1,4 +1,11 @@
-import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
+import {
+  get as idbGet,
+  set as idbSet,
+  del as idbDel,
+  keys as idbKeys,
+  createStore as createIdbStore,
+  type UseStore,
+} from 'idb-keyval';
 import type {
   PersistentTasteMapData,
   TasteMapEntry,
@@ -43,6 +50,113 @@ export function getCandidatePoolIdbStore(): UseStore | undefined {
     candidatePoolIdbStore = createIdbStore('cinetrack-candidate-pool-db', 'ct_candidate_pool');
   }
   return candidatePoolIdbStore;
+}
+
+
+const TASTE_MAP_KEY_PREFIX = 'cinetrack_taste_map_';
+
+/**
+ * P0-01-B: Yerel depoda bulunan TÜM zevk haritası profil kimlikleri.
+ * Restore sırasında yetim (arşiv dışı) kayıtları fark edebilmek için gerekir.
+ */
+export async function listPersistentTasteMapProfileIdsAsync(): Promise<string[]> {
+  const ids = new Set<string>();
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key && key.startsWith(TASTE_MAP_KEY_PREFIX)) {
+          ids.add(key.slice(TASTE_MAP_KEY_PREFIX.length));
+        }
+      }
+    }
+  } catch {
+    // localStorage kapalıysa IDB taraması yeterli
+  }
+
+  const store = getDiscoveryHistoryIdbStore();
+  if (store) {
+    try {
+      const allKeys = await idbKeys(store);
+      for (const key of allKeys) {
+        if (typeof key === 'string' && key.startsWith(TASTE_MAP_KEY_PREFIX)) {
+          ids.add(key.slice(TASTE_MAP_KEY_PREFIX.length));
+        }
+      }
+    } catch {
+      // IDB taranamıyorsa bellekteki kopyalar kullanılır
+    }
+  }
+
+  for (const key of idbHydratedTasteMaps.keys()) {
+    if (key.startsWith(TASTE_MAP_KEY_PREFIX)) ids.add(key.slice(TASTE_MAP_KEY_PREFIX.length));
+  }
+
+  return [...ids];
+}
+
+/** Zevk haritasını her iki depodan siler ve silindiğini geri okuyarak doğrular. */
+export async function deletePersistentTasteMap(profileId: string): Promise<boolean> {
+  const key = getTasteMapStorageKey(profileId);
+  idbHydratedTasteMaps.delete(key);
+  inMemoryTasteMapFallback.delete(key);
+
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+  } catch {
+    // localStorage kapalıysa IDB kontrolü yeterli
+  }
+
+  const store = getDiscoveryHistoryIdbStore();
+  if (store) {
+    try {
+      await idbDel(key, store);
+    } catch {
+      return false;
+    }
+  }
+
+  // Geri okuma: kayıt gerçekten gitmiş mi?
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(key)) return false;
+  } catch {
+    // okunamıyorsa IDB kontrolüne devam
+  }
+  if (store) {
+    try {
+      const remaining = await idbGet(key, store);
+      if (remaining !== undefined && remaining !== null) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Yazılan zevk haritasının gerçekten kalıcı olduğunu geri okuyarak doğrular. */
+export async function verifyPersistentTasteMap(
+  profileId: string,
+  expected: PersistentTasteMapData
+): Promise<boolean> {
+  const key = getTasteMapStorageKey(profileId);
+  const expectedJson = JSON.stringify(expected);
+  const store = getDiscoveryHistoryIdbStore();
+  if (store) {
+    try {
+      const stored = await idbGet<PersistentTasteMapData>(key, store);
+      if (!stored) return false;
+      return JSON.stringify(stored) === expectedJson;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(key) === expectedJson;
+  } catch {
+    return false;
+  }
 }
 
 export function trackCoreIdbWrite(promise: Promise<void>): void {

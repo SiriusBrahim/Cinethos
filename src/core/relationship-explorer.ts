@@ -10,11 +10,7 @@ import {
   type SavedItem,
 } from './cinetrack-core.ts';
 import { BRAND_NAME } from '../shared/brand.ts';
-import {
-  cosineSimilarity,
-  ENCODING_LAYOUT_VERSION,
-  type ItemFeatureEncoding,
-} from './encoding.ts';
+import { cosineSimilarity, type ItemFeatureEncoding } from './encoding.ts';
 import { buildProfileCentroid, profileSimilarityScore } from './scoring.ts';
 import { getItemEncodingSync } from '../services/encoding-service.ts';
 import {
@@ -26,11 +22,7 @@ import {
   buildKnownTvFranchiseCollection,
 } from '../services/series-tv-seeds.ts';
 import {
-  STOP_WORDS,
-  GENERIC_PLOT_WORDS,
-  ATMOSPHERIC_TONE_WORDS,
   DARK_ATMOSPHERE_GENRES,
-  IMAGINATIVE_ATMOSPHERE_GENRES,
   LIGHT_TONE_GENRES,
   getRelationshipTypeLabel,
   getRelationshipNodeColor,
@@ -56,7 +48,6 @@ import {
   type RelationshipMetadataCoverage,
   type RelationshipContent,
   type ClassifiedCrewCast,
-  type KeywordData,
   type RelationshipMode,
   type RelationshipType,
   type RelationshipGraphNode,

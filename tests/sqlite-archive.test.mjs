@@ -300,10 +300,27 @@ test('HTTP rotaları: SQLite arşivi indir → geri yükle uçtan uca', async (t
     const archiveBytes = Buffer.from(await exportRes.arrayBuffer());
     assert.equal(archiveBytes.subarray(0, 15).toString('utf8'), 'SQLite format 3');
 
-    const restoreRes = await fetch(`${baseUrl}/api/archive/sqlite/restore`, {
+    // P0-01-D: doğrudan yükleme kapalı; önce inspect/prepare zorunlu.
+    const directRes = await fetch(`${baseUrl}/api/archive/sqlite/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: archiveBytes,
+    });
+    assert.equal(directRes.status, 428);
+    assert.equal((await directRes.json()).code, 'archive_prepare_required');
+
+    const prepareRes = await fetch(`${baseUrl}/api/archive/sqlite/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: archiveBytes,
+    });
+    assert.equal(prepareRes.status, 200);
+    const prepared = await prepareRes.json();
+
+    const restoreRes = await fetch(`${baseUrl}/api/archive/sqlite/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId: prepared.restoreId }),
     });
     assert.equal(restoreRes.status, 200);
     const restored = await restoreRes.json();
@@ -327,7 +344,7 @@ test('HTTP rotaları: SQLite arşivi indir → geri yükle uçtan uca', async (t
     );
 
     // Bozuk dosya reddedilir.
-    const badRes = await fetch(`${baseUrl}/api/archive/sqlite/restore`, {
+    const badRes = await fetch(`${baseUrl}/api/archive/sqlite/prepare`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: Buffer.from('bu bir sqlite dosyasi degil'),

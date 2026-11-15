@@ -1,7 +1,6 @@
 import { fetchTmdbCached } from './api.ts';
 import { updateStockItemsMetadata } from './stock-engine.ts';
 import type { StockDepot } from './storage-idb.ts';
-import type { TmdbItem } from '../types/tmdb.ts';
 import {
   buildStockPosterCandidates,
   pickStockSearchMatch,

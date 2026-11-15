@@ -280,7 +280,11 @@ const MediaCardView: React.FC<MediaCardProps> = ({
 
         {/* Quick action buttons stack (top-right) */}
         {(onSetStatus || onToggleDislike || onQuickSave) && size !== 'xs' && (
-          <div className="poster-actions-stack" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="poster-actions-stack"
+            role="presentation"
+            onClick={(e) => e.stopPropagation()}
+          >
             {onSetStatus && (
               <button
                 type="button"

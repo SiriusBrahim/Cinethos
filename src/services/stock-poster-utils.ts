@@ -23,15 +23,6 @@ export interface StockPosterCandidate {
   year: string;
 }
 
-function parseUrl(value: unknown): URL | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
-  try {
-    return new URL(value);
-  } catch {
-    return null;
-  }
-}
-
 /** Kartın poster basabileceği bir yol var mı? `getPoster` ile aynı öncelik. */
 export function hasUsableStockPoster(item: TmdbItem | null | undefined): boolean {
   // ARCH-03: kural tek yerde (core/media/poster.ts); burada yalnızca sarmalayıcı var.

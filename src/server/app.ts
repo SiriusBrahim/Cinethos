@@ -33,6 +33,7 @@ import {
 } from './persistent-store.ts';
 import { CorruptJsonFileError } from './atomic-json.ts';
 import { hashDocument } from './archive-integrity.ts';
+import { RestoreJournal } from './restore-journal.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';
 
 /** SQLite arşivi yüklemesi: gövde diske akıtılır, bellekte tamponlanmaz (SEC-01). */
@@ -562,25 +563,108 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
-  // === P0-01 / P0-04: inspect → prepare → commit (rollback'li) ===
+  // === P0-01: kalıcı journal + optimistic concurrency + tek güvenli akış ===
   interface PreparedArchiveRestore {
+    restoreId: string;
     filePath: string;
     createdAt: number;
     byteLength: number;
     documentHash: string;
+    beforeDocumentHash: string;
+    beforeRevision: number;
     archive: Awaited<ReturnType<typeof readSqliteArchive>>;
   }
 
   const preparedRestores = new Map<string, PreparedArchiveRestore>();
-  /**
-   * P0-01: commit sonrası istemci yan verileri (stok/zevk haritası) yazamazsa
-   * sunucudaki önceki belgeye dönebilmek için kısa ömürlü snapshot.
-   */
-  const rollbackSnapshots = new Map<string, { document: DataDocument; createdAt: number }>();
   const PREPARED_RESTORE_TTL_MS = 10 * 60_000;
+  const RESTORE_JOURNAL_TTL_MS = 30 * 60_000;
+  const restoreJournal = new RestoreJournal(path.join(resolvedDataDir, 'restore-journal'));
+  let journalReady: Promise<void> | null = null;
   let archiveRestoreInFlight = false;
 
   const archiveUploadDir = path.join(resolvedDataDir, 'archives');
+
+  function ensureRestoreJournal(): Promise<void> {
+    if (!journalReady) journalReady = restoreJournal.init();
+    return journalReady;
+  }
+
+  async function markJournalRolledBack(restoreId: string, error?: string): Promise<void> {
+    try {
+      await restoreJournal.update(restoreId, {
+        state: 'rolled_back',
+        ...(error ? { lastError: error } : {}),
+      });
+      await restoreJournal.remove(restoreId);
+    } catch {
+      // journal yazılamazsa veri yolu zaten geri alınmış olabilir
+    }
+  }
+
+  /**
+   * Açılışta yarım kalan restore'ları çöz: commit edilmiş ama istemci tarafından
+   * onaylanmamış işlem geri alınır, istemci tamamlamışsa finalized sayılır.
+   */
+  async function recoverInterruptedRestores(): Promise<void> {
+    await ensureRestoreJournal();
+    let records: Awaited<ReturnType<RestoreJournal['list']>> = [];
+    try {
+      records = await restoreJournal.list();
+    } catch (error: any) {
+      console.warn('[RestoreJournal] Kayıtlar okunamadı:', error?.message || error);
+      return;
+    }
+
+    for (const record of records) {
+      try {
+        if (record.state === 'server_committed' || record.state === 'rollback_required') {
+          const snapshot = await restoreJournal.readSnapshot(record.restoreId);
+          const snapshotDocument = snapshot?.document as DataDocument | undefined;
+          const validSnapshot =
+            snapshotDocument &&
+            Array.isArray(snapshotDocument.profiles) &&
+            hashDocument(snapshotDocument) === record.beforeDocumentHash;
+
+          if (!validSnapshot) {
+            await restoreJournal.update(record.restoreId, {
+              state: 'rollback_required',
+              lastError: 'before_snapshot_missing_or_corrupt',
+            });
+            console.warn(
+              '[RestoreJournal] Geri alma snapshot doğrulanamadı; kayıt rollback_required olarak bırakıldı:',
+              record.restoreId
+            );
+            continue;
+          }
+
+          const restored = await rollbackArchiveRestore(snapshotDocument);
+          if (restored) {
+            console.warn('[RestoreJournal] Yarıda kalan restore geri alındı:', record.restoreId);
+            await markJournalRolledBack(record.restoreId);
+          } else {
+            await restoreJournal.update(record.restoreId, {
+              state: 'rollback_required',
+              lastError: 'startup_rollback_failed',
+            });
+          }
+          continue;
+        }
+
+        if (record.state === 'client_committed') {
+          await restoreJournal.update(record.restoreId, { state: 'finalized' });
+        }
+        await restoreJournal.remove(record.restoreId);
+      } catch (error: any) {
+        console.warn('[RestoreJournal] Kurtarma hatası:', record.restoreId, error?.message || error);
+      }
+    }
+  }
+
+  void ensureRestoreJournal()
+    .then(recoverInterruptedRestores)
+    .catch((error: any) => {
+      console.warn('[RestoreJournal] Başlatma hatası:', error?.message || error);
+    });
 
   /** Yarıda kalmış eski yüklemeleri temizle: disk şişmesin, eski dosya geri yüklenmesin. */
   async function cleanupStaleArchiveUploads(): Promise<void> {
@@ -613,9 +697,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       void fsPromises.rm(entry.filePath, { force: true }).catch(() => {
         // geçici dosya zaten silinmiş olabilir
       });
-    }
-    for (const [id, entry] of rollbackSnapshots) {
-      if (entry.createdAt < cutoff) rollbackSnapshots.delete(id);
+      void restoreJournal
+        .update(id, { state: 'rolled_back', lastError: 'prepare_expired' })
+        .then(() => restoreJournal.remove(id))
+        .catch(() => {
+          // journal yazılamazsa TTL temizliği zaten dosyayı siliyor
+        });
     }
   }
 
@@ -741,9 +828,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     };
   }
 
-  async function rollbackArchiveRestore(
-    beforeDocument: DataDocument
-  ): Promise<boolean> {
+  async function rollbackArchiveRestore(beforeDocument: DataDocument): Promise<boolean> {
     try {
       const restored = await storage.saveDataSerialized(beforeDocument, {
         forceOverwrite: true,
@@ -761,9 +846,30 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     res: Response
   ): Promise<void> {
     const { archive } = entry;
-    const beforeDocument = await storage.readDataAsync();
-    const rollbackId = crypto.randomUUID();
-    rollbackSnapshots.set(rollbackId, { document: beforeDocument, createdAt: Date.now() });
+    const current = await storage.readDataAsync();
+
+    // P0-01-C: önizleme ile onay arasında veri değiştiyse eski arşiv sessizce yazılmaz.
+    const currentHash = hashDocument(current);
+    const currentRevision = current.revision ?? 0;
+    if (currentHash !== entry.beforeDocumentHash || currentRevision !== entry.beforeRevision) {
+      await restoreJournal.update(entry.restoreId, {
+        state: 'rolled_back',
+        lastError: 'archive_source_changed',
+      });
+      await restoreJournal.remove(entry.restoreId);
+      preparedRestores.delete(entry.restoreId);
+      res.status(409).json({
+        status_message:
+          'Önizlemeden sonra sunucu verisi değişti. Arşivi yeniden seçip onaylayın.',
+        code: 'archive_source_changed',
+        currentRevision,
+        expectedRevision: entry.beforeRevision,
+      });
+      return;
+    }
+
+    // Commit niyeti önce diske yazılır: süreç burada çökerse açılışta geri alınır.
+    await restoreJournal.update(entry.restoreId, { state: 'server_committed' });
 
     const saved = await storage.saveDataSerialized(archive.dataDocument, {
       forceOverwrite: true,
@@ -771,6 +877,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       requirePrecondition: false,
     });
     if (!saved.ok) {
+      await markJournalRolledBack(entry.restoreId, saved.code);
       res.status(saved.status).json({ status_message: saved.message, code: saved.code });
       return;
     }
@@ -784,7 +891,15 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       writtenItems !== archive.counts.items ||
       writtenHash !== entry.documentHash
     ) {
-      const rolledBack = await rollbackArchiveRestore(beforeDocument);
+      const rolledBack = await rollbackArchiveRestore(current);
+      if (rolledBack) {
+        await markJournalRolledBack(entry.restoreId, 'verification_failed');
+      } else {
+        await restoreJournal.update(entry.restoreId, {
+          state: 'rollback_required',
+          lastError: 'verification_failed_rollback_failed',
+        });
+      }
       res.status(500).json({
         status_message: rolledBack
           ? 'Arşiv doğrulanamadı (profil/kayıt veya içerik özeti uyuşmuyor); önceki veriler geri yüklendi.'
@@ -809,7 +924,15 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         path.join(resolvedDataDir, 'cache', 'posters')
       );
     } catch (error: any) {
-      const rolledBack = await rollbackArchiveRestore(beforeDocument);
+      const rolledBack = await rollbackArchiveRestore(current);
+      if (rolledBack) {
+        await markJournalRolledBack(entry.restoreId, 'poster_restore_failed');
+      } else {
+        await restoreJournal.update(entry.restoreId, {
+          state: 'rollback_required',
+          lastError: 'poster_restore_failed_rollback_failed',
+        });
+      }
       res.status(500).json({
         status_message: rolledBack
           ? 'Posterler geri yazılamadı; önceki veriler geri yüklendi.'
@@ -824,10 +947,17 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       return;
     }
 
+    await restoreJournal.update(entry.restoreId, {
+      state: 'server_committed',
+      committedRevision: saved.document.revision ?? currentRevision + 1,
+    });
+    // Aynı restoreId ile ikinci commit yapılamaz; finalize/rollback journal üzerinden yürür.
+    preparedRestores.delete(entry.restoreId);
+
     notifyLocalMutation('sqlite-archive-restore');
     res.json({
       ok: true,
-      rollbackId,
+      restoreId: entry.restoreId,
       counts: archive.counts,
       documentHash: entry.documentHash,
       postersWritten: posters.written,
@@ -859,6 +989,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       archiveRestoreInFlight = true;
       let uploadedPath: string | null = null;
       try {
+        await ensureRestoreJournal();
         prunePreparedRestores();
         const upload = await receiveArchiveUpload(req);
         if (!upload.ok) {
@@ -872,127 +1003,58 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         uploadedPath = upload.filePath;
 
         const archive = await readSqliteArchive(upload.filePath);
+        const current = await storage.readDataAsync();
         const restoreId = crypto.randomUUID();
+        const createdAt = Date.now();
+        const beforeDocumentHash = hashDocument(current);
+        const beforeRevision = current.revision ?? 0;
+        const documentHash = archiveDocumentHash(archive.dataDocument);
+
         const entry: PreparedArchiveRestore = {
+          restoreId,
           filePath: upload.filePath,
-          createdAt: Date.now(),
+          createdAt,
           byteLength: upload.byteLength,
-          documentHash: archiveDocumentHash(archive.dataDocument),
+          documentHash,
+          beforeDocumentHash,
+          beforeRevision,
           archive,
         };
         preparedRestores.set(restoreId, entry);
 
-        const current = await storage.readDataAsync();
+        const { snapshotSha256 } = await restoreJournal.saveSnapshot(restoreId, current);
+        await restoreJournal.write({
+          restoreId,
+          state: 'prepared',
+          createdAt: new Date(createdAt).toISOString(),
+          expiresAt: new Date(createdAt + RESTORE_JOURNAL_TTL_MS).toISOString(),
+          archiveHash: documentHash,
+          beforeDocumentHash,
+          beforeRevision,
+          beforeSnapshotSha256: snapshotSha256,
+          archivePath: upload.filePath,
+        });
+
         res.json({
           ok: true,
           restoreId,
-          expiresAt: new Date(entry.createdAt + PREPARED_RESTORE_TTL_MS).toISOString(),
+          expiresAt: new Date(createdAt + PREPARED_RESTORE_TTL_MS).toISOString(),
           inspect: describeArchive(entry),
           current: {
             counts: {
               profiles: Array.isArray(current.profiles) ? current.profiles.length : 0,
               items: countTotalItems(current),
-              revision: current.revision ?? 0,
+              revision: beforeRevision,
             },
-            documentHash: hashDocument(current),
+            documentHash: beforeDocumentHash,
           },
         });
       } catch (error: any) {
-        if (error?.code === 'archive_too_large') {
-          respondArchiveTooLarge(req, res);
-          return;
-        }
         if (uploadedPath) {
           await fsPromises.rm(uploadedPath, { force: true }).catch(() => {
             // temizlik en iyi çaba
           });
         }
-        if (error?.code === 'upload_aborted') {
-          if (!res.headersSent) {
-            res.status(400).json({
-              status_message: 'Arşiv yüklemesi yarıda kesildi.',
-              code: 'upload_aborted',
-            });
-          }
-          return;
-        }
-        if (error instanceof SqliteUnavailableError) {
-          res.status(501).json({ status_message: error.message, code: 'sqlite_unavailable' });
-          return;
-        }
-        if (error instanceof SqliteArchiveValidationError) {
-          res.status(400).json({ status_message: error.message, code: 'invalid_archive_file' });
-          return;
-        }
-        res.status(500).json({
-          status_message: `SQLite arşivi okunamadı: ${redactSecrets(error?.message || String(error), persistentStore.getKnownSecretsForRedaction())}`,
-          code: 'archive_inspect_failed',
-        });
-      } finally {
-        archiveRestoreInFlight = false;
-      }
-    }
-  );
-
-  app.post(
-    '/api/archive/sqlite/restore',
-    originGuard,
-    tokenGuard,
-    async (req: Request, res: Response) => {
-      res.setHeader('Cache-Control', 'no-store');
-      if (archiveRestoreInFlight) {
-        res.status(409).json({
-          status_message: 'Başka bir arşiv geri yüklemesi sürüyor; bitmesini bekleyin.',
-          code: 'archive_restore_busy',
-        });
-        return;
-      }
-
-      archiveRestoreInFlight = true;
-      let uploadedPath: string | null = null;
-      try {
-        prunePreparedRestores();
-        const restoreId =
-          req.body && typeof req.body === 'object' && typeof (req.body as any).restoreId === 'string'
-            ? String((req.body as any).restoreId)
-            : '';
-
-        let entry: PreparedArchiveRestore | undefined;
-        if (restoreId) {
-          // Onaylanmış hazırlık: dosya yeniden gönderilmez, veri yalnızca şimdi yazılır.
-          entry = preparedRestores.get(restoreId);
-          if (!entry) {
-            res.status(409).json({
-              status_message: 'Hazırlanan arşiv bulunamadı veya süresi doldu; dosyayı yeniden seçin.',
-              code: 'archive_prepare_expired',
-            });
-            return;
-          }
-          preparedRestores.delete(restoreId);
-        } else {
-          // Geriye dönük akış: doğrudan yükleme de desteklenir.
-          const upload = await receiveArchiveUpload(req);
-          if (!upload.ok) {
-            if (upload.code === 'archive_too_large') {
-              respondArchiveTooLarge(req, res);
-              return;
-            }
-            res.status(upload.status).json({ status_message: upload.message, code: upload.code });
-            return;
-          }
-          uploadedPath = upload.filePath;
-          const archive = await readSqliteArchive(upload.filePath);
-          entry = {
-            filePath: upload.filePath,
-            createdAt: Date.now(),
-            byteLength: upload.byteLength,
-            documentHash: archiveDocumentHash(archive.dataDocument),
-            archive,
-          };
-        }
-
-        await commitArchiveRestore(entry, res);
-      } catch (error: any) {
         if (error?.code === 'archive_too_large') {
           respondArchiveTooLarge(req, res);
           return;
@@ -1016,68 +1078,187 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         }
         if (!res.headersSent) {
           res.status(500).json({
+            status_message: `SQLite arşivi okunamadı: ${redactSecrets(error?.message || String(error), persistentStore.getKnownSecretsForRedaction())}`,
+            code: 'archive_inspect_failed',
+          });
+        }
+      } finally {
+        archiveRestoreInFlight = false;
+      }
+    }
+  );
+
+  /**
+   * P0-01-D: commit yalnızca geçerli `restoreId` ile yapılır. Doğrudan dosya
+   * yükleme yolu kapatıldı; arşiv önce prepare ile incelenmek zorunda.
+   */
+  app.post(
+    '/api/archive/sqlite/restore',
+    originGuard,
+    tokenGuard,
+    async (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      if (archiveRestoreInFlight) {
+        res.status(409).json({
+          status_message: 'Başka bir arşiv geri yüklemesi sürüyor; bitmesini bekleyin.',
+          code: 'archive_restore_busy',
+        });
+        return;
+      }
+
+      const restoreId =
+        req.body && typeof req.body === 'object' && typeof (req.body as any).restoreId === 'string'
+          ? String((req.body as any).restoreId)
+          : '';
+
+      if (!restoreId) {
+        res.status(428).json({
+          status_message:
+            'Arşiv önce /api/archive/sqlite/prepare ile incelenmeli ve onaylanmalı.',
+          code: 'archive_prepare_required',
+        });
+        return;
+      }
+
+      archiveRestoreInFlight = true;
+      try {
+        await ensureRestoreJournal();
+        prunePreparedRestores();
+        const entry = preparedRestores.get(restoreId);
+        if (!entry) {
+          res.status(409).json({
+            status_message:
+              'Hazırlanan arşiv bulunamadı veya süresi doldu; dosyayı yeniden seçin.',
+            code: 'archive_prepare_expired',
+          });
+          return;
+        }
+        await commitArchiveRestore(entry, res);
+      } catch (error: any) {
+        if (!res.headersSent) {
+          res.status(500).json({
             status_message: `SQLite arşivi geri yüklenemedi: ${redactSecrets(error?.message || String(error), persistentStore.getKnownSecretsForRedaction())}`,
             code: 'archive_restore_failed',
           });
         }
       } finally {
         archiveRestoreInFlight = false;
-        if (uploadedPath) {
-          // Hazırlanan dosya TTL/silme ile yönetilir; doğrudan yükleme burada silinir.
-          try {
-            const stillPrepared = [...preparedRestores.values()].some((item) => item.filePath === uploadedPath);
-            if (!stillPrepared) await fsPromises.rm(uploadedPath, { force: true });
-          } catch {
-            // yoksay
-          }
-        }
       }
     }
   );
 
-  /** P0-01: İstemci yan verileri yazamazsa sunucu belgesini geri alır. */
+  /** P0-01-D: İstemci yan verileri doğruladıktan sonra journal kaydını kapatır. */
+  app.post(
+    '/api/archive/sqlite/finalize',
+    originGuard,
+    tokenGuard,
+    async (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const restoreId =
+        req.body && typeof req.body === 'object' && typeof (req.body as any).restoreId === 'string'
+          ? String((req.body as any).restoreId)
+          : '';
+      if (!restoreId) {
+        res.status(400).json({
+          status_message: 'Finalize için restoreId gerekli.',
+          code: 'invalid_finalize_request',
+        });
+        return;
+      }
+      await ensureRestoreJournal();
+      const record = await restoreJournal.get(restoreId);
+      if (!record) {
+        res.status(409).json({
+          status_message: 'Restore kaydı bulunamadı veya süresi doldu.',
+          code: 'restore_not_found',
+        });
+        return;
+      }
+      if (record.state !== 'server_committed' && record.state !== 'client_committed') {
+        res.status(409).json({
+          status_message: `Restore bu aşamada finalize edilemez: ${record.state}`,
+          code: 'restore_finalize_invalid_state',
+          state: record.state,
+        });
+        return;
+      }
+      await restoreJournal.update(restoreId, { state: 'finalized' });
+      await restoreJournal.remove(restoreId);
+      preparedRestores.delete(restoreId);
+      const archivePath = record.archivePath;
+      if (archivePath && path.resolve(archivePath).startsWith(path.resolve(archiveUploadDir))) {
+        await fsPromises.rm(archivePath, { force: true }).catch(() => {
+          // geçici arşiv zaten silinmiş olabilir
+        });
+      }
+      res.json({ ok: true, restoreId, state: 'finalized' });
+    }
+  );
+
+  /** P0-01-B: İstemci yan verileri yazamazsa sunucu belgesini kalıcı snapshot'tan geri alır. */
   app.post(
     '/api/archive/sqlite/rollback',
     originGuard,
     tokenGuard,
     async (req: Request, res: Response) => {
       res.setHeader('Cache-Control', 'no-store');
-      const rollbackId =
-        req.body && typeof req.body === 'object' && typeof (req.body as any).rollbackId === 'string'
-          ? String((req.body as any).rollbackId)
+      const rawId =
+        req.body && typeof req.body === 'object'
+          ? String((req.body as any).restoreId || (req.body as any).rollbackId || '')
           : '';
-      if (!rollbackId) {
+      if (!rawId) {
         res.status(400).json({
           status_message: 'Geri alma kimliği gerekli.',
           code: 'invalid_rollback_request',
         });
         return;
       }
-      prunePreparedRestores();
-      const snapshot = rollbackSnapshots.get(rollbackId);
-      if (!snapshot) {
+      await ensureRestoreJournal();
+      const record = await restoreJournal.get(rawId);
+      if (!record) {
         res.status(409).json({
           status_message: 'Geri alma kaydı bulunamadı veya süresi doldu.',
           code: 'rollback_unavailable',
         });
         return;
       }
-      rollbackSnapshots.delete(rollbackId);
-      const restored = await rollbackArchiveRestore(snapshot.document);
+      const snapshot = await restoreJournal.readSnapshot(record.restoreId);
+      const snapshotDocument = snapshot?.document as DataDocument | undefined;
+      if (!snapshotDocument || hashDocument(snapshotDocument) !== record.beforeDocumentHash) {
+        await restoreJournal.update(record.restoreId, {
+          state: 'rollback_required',
+          lastError: 'snapshot_missing_or_corrupt',
+        });
+        res.status(500).json({
+          status_message: "Önceki veri snapshot'ı doğrulanamadı; otomatik geri alma yapılamadı.",
+          code: 'rollback_snapshot_invalid',
+        });
+        return;
+      }
+
+      const restored = await rollbackArchiveRestore(snapshotDocument);
       if (!restored) {
+        await restoreJournal.update(record.restoreId, {
+          state: 'rollback_required',
+          lastError: 'rollback_failed',
+        });
         res.status(500).json({
           status_message: 'Önceki veriler geri yüklenemedi.',
           code: 'rollback_failed',
         });
         return;
       }
+
+      await restoreJournal.update(record.restoreId, { state: 'rolled_back' });
+      await restoreJournal.remove(record.restoreId);
+      preparedRestores.delete(record.restoreId);
       notifyLocalMutation('sqlite-archive-rollback');
       res.json({
         ok: true,
-        dataDocument: snapshot.document,
+        dataDocument: snapshotDocument,
         counts: {
-          profiles: snapshot.document.profiles?.length ?? 0,
-          items: countTotalItems(snapshot.document),
+          profiles: snapshotDocument.profiles?.length ?? 0,
+          items: countTotalItems(snapshotDocument),
         },
       });
     }

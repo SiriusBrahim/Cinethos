@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { activateOnKeyDown } from '../utils/a11y.ts';
 import {
   SavedItem,
   Preferences,
@@ -372,6 +373,9 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                       <div
                         key={pIdx}
                         onClick={() => onOpenDetails(p)}
+                        onKeyDown={activateOnKeyDown(() => onOpenDetails(p))}
+                        role="button"
+                        tabIndex={0}
                         className="p-2.5 rounded-xl bg-[#0a0b0e]/40 border border-cinema-gold/35 hover:border-cinema-gold text-xs cursor-pointer transition-colors"
                       >
                         <div className="text-[10px] text-cinema-gold font-semibold mb-1">⏳ Eksik Halka (İncele)</div>

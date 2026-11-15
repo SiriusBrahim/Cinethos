@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { activateOnKeyDown } from '../utils/a11y.ts';
 
 export interface EvidenceDetailData {
   title: string;
@@ -76,15 +77,17 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0a0b0e]/85 backdrop-blur-xl animate-fade-in"
-      onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-labelledby="evidenceModalTitle"
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-[#13151a]/95 border border-white/7 shadow-[0_25px_60px_rgba(0,0,0,0.85)] p-6 md:p-8 text-[#eef0f2]"
-        onClick={(e) => e.stopPropagation()}
-      >
+        className="absolute inset-0"
+        role="presentation"
+        aria-hidden="true"
+        onClick={onClose}
+      />
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-[#13151a]/95 border border-white/7 shadow-[0_25px_60px_rgba(0,0,0,0.85)] p-6 md:p-8 text-[#eef0f2]">
         {/* Close Button */}
         <button
           type="button"
@@ -182,6 +185,9 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                 <div
                   key={`${item.media_type}:${item.id}`}
                   onClick={() => onSelectMedia?.(item)}
+                  onKeyDown={activateOnKeyDown(() => onSelectMedia?.(item))}
+                  role="button"
+                  tabIndex={0}
                   className="flex items-center justify-between p-2.5 rounded-xl bg-[#0a0b0e]/50 border border-white/5 hover:border-[#6fbf8a]/35 hover:bg-white/5 transition-colors cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -223,6 +229,9 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                 <div
                   key={`${item.media_type}:${item.id}`}
                   onClick={() => onSelectMedia?.(item)}
+                  onKeyDown={activateOnKeyDown(() => onSelectMedia?.(item))}
+                  role="button"
+                  tabIndex={0}
                   className="flex items-center justify-between p-2.5 rounded-xl bg-[#0a0b0e]/50 border border-white/5 hover:border-[#e0645e]/35 hover:bg-white/5 transition-colors cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 min-w-0">

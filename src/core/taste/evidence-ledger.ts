@@ -119,7 +119,6 @@ export class EvidenceLedger {
     const negativeContributions: Array<{ contentId: string; contribution: number }> = [];
 
     for (const e of evidences) {
-      const weight = Math.abs(e.contribution);
       evidenceMass += e.baseWeight; // D_m = Σ baseWeight (nötr dahil — KRİTİK KURAL)
 
       if (e.contribution > 0) {

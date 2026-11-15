@@ -4,12 +4,12 @@ import {
   getPoster,
   releaseYear,
   handleImageError,
-  computeActivityStreak,
 } from '../utils/helpers.ts';import { SavedItem, makeMediaKey } from '../core/cinetrack-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 import { BRAND_NAME } from '../shared/brand.ts';
+import { activateOnKeyDown } from '../utils/a11y.ts';
 import { handleTabListKeyDown } from '../utils/tabListKeyboard.ts';
 
 interface HeaderProps {
@@ -220,7 +220,14 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="app-header">
       <div className="shell topbar">
         {/* Brand Zone */}
-        <div className="brand" onClick={() => onTabChange('discover')} role="button" tabIndex={0}>
+        <div
+          className="brand"
+          onClick={() => onTabChange('discover')}
+          onKeyDown={activateOnKeyDown(() => onTabChange('discover'))}
+          role="button"
+          tabIndex={0}
+          aria-label="Ana sayfa"
+        >
           <span className="brand-icon" aria-hidden="true">
             <svg className="icon">
               <use href="#icon-film"></use>

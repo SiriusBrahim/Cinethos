@@ -9,7 +9,6 @@ import {
   redactSecrets,
 } from '../src/server/persistent-store.ts';
 import {
-  cleanupStaleTempFiles,
   CorruptJsonFileError,
   writeJsonFileAtomic,
 } from '../src/server/atomic-json.ts';

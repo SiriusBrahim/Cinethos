@@ -385,6 +385,7 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
             <input
               type="checkbox"
               className="mt-0.5"
+              aria-label="Herkese açık repoya kişisel veri eşitlemesine izin ver"
               checked={Boolean(remoteSyncInfo?.allowPublicPersonalSync)}
               disabled={updatingPublicConsent || activeSyncOp !== null}
               onChange={(e) => void handleTogglePublicConsent(e.target.checked)}
@@ -518,12 +519,14 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
               type="file"
               accept=".csv,text/csv"
               className="hidden"
+              aria-label="CSV dosyası seç"
               onChange={handleCsvFilePicked}
             />
           </label>
           <label className="flex cursor-pointer items-center gap-1.5 text-xs">
             <input
               type="checkbox"
+              aria-label="Önce önizle (kaydetme)"
               checked={csvMergeDryRun}
               onChange={(e) => setCsvMergeDryRun(e.target.checked)}
             />

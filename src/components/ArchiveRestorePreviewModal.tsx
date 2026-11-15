@@ -41,12 +41,13 @@ export const ArchiveRestorePreviewModal: React.FC<ArchiveRestorePreviewModalProp
   onCancel,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
+  // Yıkıcı eylem ilk odak OLMAMALI: varsayılan odak "Vazgeç".
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useDialogAccessibility({
     open,
     containerRef: dialogRef,
-    initialFocusRef: confirmRef,
+    initialFocusRef: cancelRef,
     onClose: busy ? undefined : onCancel,
     closeOnEscape: !busy,
   });
@@ -142,12 +143,17 @@ export const ArchiveRestorePreviewModal: React.FC<ArchiveRestorePreviewModalProp
         </p>
 
         <div className="auth-token-actions">
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+          <button
+            type="button"
+            ref={cancelRef}
+            className="btn"
+            onClick={onCancel}
+            disabled={busy}
+          >
             Vazgeç
           </button>
           <button
             type="button"
-            ref={confirmRef}
             className="btn btn-primary"
             onClick={onConfirm}
             disabled={busy}

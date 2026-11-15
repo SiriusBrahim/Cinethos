@@ -1,3 +1,76 @@
+## [Unreleased — 2026-11-15 üçüncü tur]
+
+### P0 — Geri yükleme güvenliği (P0-01 tamamlandı)
+- **P0-01-A:** Geri alma anlık görüntüsü artık RAM'de değil, `data/restore-journal/`
+  altında atomik yazılan ve sha256 ile doğrulanan kayıtlarda tutuluyor. Sunucu yarıda
+  kalırsa açılışta `recoverInterruptedRestores()` çalışır: `server_committed` kaydı
+  önceki belgeye geri döner, `rollback_required` snapshot'tan geri alınır,
+  `client_committed` yalnızca kapatılır. Yarım kalan restore bir sonraki açılışta
+  sessizce "başarılı" sayılmaz.
+- **P0-01-B:** İstemci commit'ten önce stok deposunu okuyamıyorsa sunucu hiç commit
+  etmez. Commit sonrası zevk haritaları `flushCoreIdbWrites()` ile diske indirilir ve
+  `verifyPersistentTasteMap` ile geri okunarak doğrulanır; stok yazımı da sayılarak
+  geri okunur. Arşivde bulunmayan profillerin yerel zevk haritaları silinir ve silme
+  doğrulanır.
+- **P0-01-C:** `prepare` sırasında alınan `beforeDocumentHash`/`beforeRevision`
+  commit'te karşılaştırılır; araya giren başka bir yazma varsa `409
+  archive_source_changed` döner ve veri ezilmez.
+- **P0-01-D:** `POST /api/archive/sqlite/restore` artık dosya kabul etmiyor; yalnızca
+  `restoreId` ile çalışır, kimliksiz istek `428 archive_prepare_required` alır.
+  `restoreId` tek kullanımlıktır; başarılı commit'ten sonra aynı kimlikle ikinci commit
+  reddedilir.
+- **P0-01-E:** Yeni `POST /api/archive/sqlite/finalize` ucu, istemci tüm depoları
+  doğruladıktan sonra journal kaydını `finalized` yapar. Finalize başarısız olursa
+  kullanıcıya "sunucu yeniden başlarsa önceki veriye dönebilir" uyarısı gösterilir.
+  Kısmi başarısızlıkta hangi depoların kurtarılamadığı ayrı ayrı raporlanır.
+
+### P1 — Sertleştirme ve kalite
+- **P1-02:** Görsel proxy için regresyon testleri eklendi: 8 MB üstü `Content-Length`
+  gövde okunmadan reddediliyor, `Content-Length` yoksa akış sırasında sınır uygulanıp
+  upstream iptal ediliyor, allowlist dışı MIME reddediliyor, aynı URL için eşzamanlı
+  istekler tek upstream çağrısına iniyor, 9. eşzamanlı indirme `429` alıyor ve cache
+  byte muhasebesi bozulmuyor.
+- **P1-01:** Sinema KünYESİ API çağrıları artık `null` yerine ayrıştırılmış sonuç
+  (`ok | offline | auth | conflict | validation | server | unexpected`) döner ve sunucu
+  `code`'unu korur. Beklenen çevrimdışı durumu gerçek sunucu arızasından ayrılır; arıza
+  sessizce yutulmaz, `useCinemaKunye` bunu `serverSyncIssue` olarak yayınlar ve App aynı
+  sorunu bir kez toast ile gösterir. Log satırı yalnızca durum/kod içerir (içerik/anahtar yok).
+- **P1-03:** Arşiv geri yükleme ön izleme modalında ilk odak artık yıkıcı "Üzerine yaz"
+  değil "Vazgeç".
+- **P1-08:** Lint uyarıları **91 → 0** (`--max-warnings 0`, CI'daki `npm run lint` bu kapıyı
+  uygular). 61 kullanılmayan import/değişken/parametre temizlendi; testlerdeki kullanılmayan
+  argümanlar `_` önekiyle işaretlendi. 37 jsx-a11y uyarısı yalnızca `eslint-disable` ile
+  değil gerçek semantikle çözüldü: dekoratif tıklama kapsayıcıları `role="presentation"`,
+  tıklanabilir kartlar `role="button"` + `onKeyDown` (yeni `src/utils/a11y.ts`
+  `activateOnKeyDown`, Enter/Space) + `tabIndex`, etiketsiz kontrollere `aria-label`,
+  EvidenceModal arka planı ayrı dekoratif katmana taşındı. 4 `exhaustive-deps` uyarısı
+  stale closure riskiyle incelendi; `DetailModal` alan bazlı bağımlılığa çevrildi,
+  `useCinemaKunye`'de raporlama callback'i bağımlılıklara eklendi, App'te profil kimliği
+  öneri anahtarına dahil edildi. Extra: `framer-motion`, `lucide-react`/`cmdk` ve `exceljs`
+  ayrı vendor chunk'larına alındı: ana chunk 509,27 kB → **461,84 kB**
+  (gzip 150,94 → 134,49 kB) ve 500 kB uyarısı kalktı.
+
+### Düzeltme — SQLite arşivi oluşturma
+- **Tanı:** Arşiv yazımı doğru çalışıyordu (geçerli `SQLite format 3`, 69 KB, `X-Archive-Stats`
+  doğru). Hata, önizleme sunucusunun `0.0.0.0` üzerinde `CINETRACK_TOKEN` olmadan
+  başlatılmasıydı: bu modda sunucu tüm mutasyonları `503 auth_required` ile reddediyor, bu
+  yüzden "SQLite arşivi oluştur" da düşüyordu.
+- **Düzeltme:** Yerel önizleme için `.env.local` içine `CINETRACK_TOKEN` eklendi (dosya
+  gitignore'lu). Sunucu artık anahtarla başlıyor; istemci anahtarı oturum deposunda tutuyor.
+- **Regresyon testi:** `SEC: SQLite arşivi oluşturma uzaktan erişim modunda anahtar ister` —
+  anahtarsız `503 auth_required`, anahtar tanımlıyken headersız `401`, doğru anahtarla `200`
+  ve gerçek SQLite imzası + profil/kayıt sayıları doğrulanıyor.
+- **UX:** Arşiv oluşturma hatası artık `error` türünde toast ile gösteriliyor (önceden nötr).
+
+### Testler
+- `tests/archive-restore-consistency.test.mjs`: çökme kurtarma (aynı dataDir ile yeniden
+  açılış), `409 archive_source_changed` yarışı, finalize sonrası rollback reddi ve
+  geçerli başlıklı/bozuk sayfalı arşivin `quick_check` ile reddi.
+- `tests/image-proxy-hardening.test.mjs`: yukarıdaki P1-02 senaryoları.
+- `tests/api-error-policy.test.mjs`: 409/401/5xx/geçersiz gövde/ağ kesintisi sınıflandırması.
+- Toplam: `npm test` **404/404**, `npm run test:taste` **362/362**, `npm run lint`
+  0 hata/0 uyarı, `npm run build` uyarısız.
+
 ## [Unreleased — 2026-11-15 ikinci tur]
 
 ### P0 — Yayın öncesi güvenilirlik

@@ -6,11 +6,9 @@ import {
   calculateCastSim,
   calculateAtmosphereSim,
   calculateEraSim,
-  computeItemToItemLovedSim,
   computeLovedSimilarityScore,
   buildTasteProfileV3,
   scoreCandidatesV3,
-  RECOMMENDATION_WEIGHTS_V3,
 } from '../src/core/cinetrack-core.ts';
 
 test('1. Tür Benzerliği (calculateGenreSim): Dice katsayısı ortak türleri doğru hesaplar', () => {

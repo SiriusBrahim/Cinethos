@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { activateOnKeyDown } from '../utils/a11y.ts';
 import {
   PersistentTasteMapData,
   TasteProfileSummary,
@@ -670,6 +671,9 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                       key={t.id}
                       className="group cursor-pointer flex items-baseline gap-3 transition-transform hover:translate-x-1"
                       onClick={() => setSelectedEvidence(t.evidence)}
+                      onKeyDown={activateOnKeyDown(() => setSelectedEvidence(t.evidence))}
+                      role="button"
+                      tabIndex={0}
                       title="Kanıtlarını gör"
                     >
                       <span className="text-xs font-mono text-cinema-gold/60 tabular-nums">
@@ -846,6 +850,13 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                       setSelectedEvidence(item.evidence);
                       onOpenEvidenceModal?.(item.evidence);
                     }}
+                    onKeyDown={activateOnKeyDown(() => {
+                      setSelectedEvidence(item.evidence);
+                      onOpenEvidenceModal?.(item.evidence);
+                    })}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${item.categoryLabel} kanıtlarını gör`}
                     className="group relative p-5 rounded-2xl bg-cinema-surface hover:bg-cinema-surfaceHover border border-white/7 hover:border-cinema-gold/40 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-2xl flex flex-col justify-between"
                   >
                     <div className="space-y-3">

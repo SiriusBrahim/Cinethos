@@ -95,17 +95,22 @@ export const DetailModal: React.FC<DetailModalProps> = ({
       return;
     }
 
+    const itemId = item?.id;
+    const itemMediaType = item?.media_type;
+    const itemTitle = item?.title;
+    const itemOverview = item?.overview;
+
     let active = true;
-    const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
-    fetchTmdb(`/${mediaType}/${item.id}`, { append_to_response: 'credits,videos' })
+    const mediaType = itemMediaType || (itemTitle ? 'movie' : 'tv');
+    fetchTmdb(`/${mediaType}/${itemId}`, { append_to_response: 'credits,videos' })
       .then(async (data) => {
         if (!active || !data) return;
         let resolvedOverview = typeof data.overview === 'string' ? data.overview.trim() : '';
         let usedFallback = false;
 
-        if (!resolvedOverview && !String(item.overview || '').trim()) {
+        if (!resolvedOverview && !String(itemOverview || '').trim()) {
           try {
-            const enData = await fetchTmdb(`/${mediaType}/${item.id}`, { language: 'en-US' });
+            const enData = await fetchTmdb(`/${mediaType}/${itemId}`, { language: 'en-US' });
             if (active && typeof enData?.overview === 'string' && enData.overview.trim()) {
               resolvedOverview = enData.overview.trim();
               usedFallback = true;
@@ -126,7 +131,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
             .map((c: any) => Number(c?.id))
             .filter((n: number) => Number.isInteger(n) && n > 0);
           if (top3Ids.length > 0) {
-            void enrichStockItemsTopCast({ [makeMediaKey(mediaType, item.id)]: top3Ids });
+            void enrichStockItemsTopCast({ [makeMediaKey(mediaType, itemId)]: top3Ids });
           }
         }
         if (mediaType === 'movie' && data.belongs_to_collection?.id) {
@@ -145,7 +150,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
     // Fetch providers
     setLoadingProviders(true);
-    fetchTmdb(`/${mediaType}/${item.id}/watch/providers`)
+    fetchTmdb(`/${mediaType}/${itemId}/watch/providers`)
       .then((data) => {
         if (!active) return;
         setProviders(data?.results?.TR || null);
@@ -155,7 +160,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
         if (active) setLoadingProviders(false);
       });
 
-    fetchTmdb(`/${mediaType}/${item.id}/similar`)
+    fetchTmdb(`/${mediaType}/${itemId}/similar`)
       .then((data) => {
         if (!active) return;
         setSimilarItems(Array.isArray(data?.results) ? data.results : []);
@@ -165,7 +170,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({
     return () => {
       active = false;
     };
-  }, [item?.id, item?.media_type, isOpen]);
+    // `item` yalnızca custom kayıt dalında bütünüyle kullanılıyor; detailItem state
+    // olduğu için kimliği sadece yeni içerik seçildiğinde değişir.
+  }, [item, isOpen]);
 
   useEffect(() => {
     if (!isOpen || !item) return;
@@ -324,6 +331,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
     <div
       id="detailModal"
       className="modal-wrap open"
+      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

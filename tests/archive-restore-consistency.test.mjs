@@ -76,13 +76,14 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-restore-'));
 }
 
-async function startApp() {
-  const dataDir = makeTempDir();
+async function startApp(existingDataDir, securityOverrides = {}) {
+  const dataDir = existingDataDir || makeTempDir();
   const { app, storage } = createCineTrackApp({
     dataDir,
     maxDataBytes: 25 * 1024 * 1024,
     maxProfiles: 20,
     maxItemsPerProfile: 25000,
+    ...securityOverrides,
   });
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -92,6 +93,9 @@ async function startApp() {
     storage,
     server,
     baseUrl: `http://127.0.0.1:${port}`,
+    async closeServerOnly() {
+      await new Promise((resolve) => server.close(resolve));
+    },
     async close() {
       await new Promise((resolve) => server.close(resolve));
       fs.rmSync(dataDir, { recursive: true, force: true });
@@ -169,7 +173,7 @@ test('P0-01 & P1-04: prepare veri değiştirmez, restore doğrular, rollback ger
     assert.equal(restored.documentHash, prepared.inspect.documentHash);
     assert.equal(restored.counts.profiles, 2);
     assert.equal(restored.counts.items, 3);
-    assert.equal(typeof restored.rollbackId, 'string');
+    assert.equal(typeof restored.restoreId, 'string');
     assert.equal(restored.postersComplete, true);
 
     const written = await ctx.storage.readDataAsync();
@@ -189,7 +193,7 @@ test('P0-01 & P1-04: prepare veri değiştirmez, restore doğrular, rollback ger
     const rollbackRes = await fetch(`${ctx.baseUrl}/api/archive/sqlite/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rollbackId: restored.rollbackId }),
+      body: JSON.stringify({ restoreId: restored.restoreId }),
     });
     assert.equal(rollbackRes.status, 200);
     assert.equal((await rollbackRes.json()).ok, true);
@@ -300,5 +304,247 @@ test('P0-04: yarıda kesilen yükleme temp dosya ve kilit bırakmaz', async (t) 
     assert.equal(retry.status, 400);
   } finally {
     await ctx.close();
+  }
+});
+
+test('P0-01-A: commit sonrası çökme yeniden açılışta önceki veriye döner', async (t) => {
+  if (!(await isSqliteArchiveAvailable())) {
+    t.skip('node:sqlite bu ortamda kullanılamıyor');
+    return;
+  }
+  const ctx = await startApp();
+  const dataDir = ctx.dataDir;
+  try {
+    await ctx.storage.saveDataSerialized(
+      {
+        version: 3,
+        schemaVersion: 3,
+        activeProfileId: 'profile-a',
+        updatedAt: AS_OF,
+        profiles: [
+          {
+            id: 'profile-a',
+            name: 'Çökme Öncesi',
+            createdAt: AS_OF,
+            preferences: { disliked: [], providers: [] },
+            favoriteActors: [],
+            items: [],
+          },
+        ],
+      },
+      { forceOverwrite: true, confirmBulkDelete: true, requirePrecondition: false }
+    );
+    const beforeHash = hashDocument(await ctx.storage.readDataAsync());
+
+    const archivePath = path.join(dataDir, 'crash-archive.sqlite');
+    await writeSqliteArchive(makeSnapshot(), archivePath);
+    const bytes = fs.readFileSync(archivePath);
+
+    const prepareRes = await postPrepare(ctx.baseUrl, bytes);
+    assert.equal(prepareRes.status, 200);
+    const prepared = await prepareRes.json();
+
+    const restoreRes = await fetch(`${ctx.baseUrl}/api/archive/sqlite/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId: prepared.restoreId }),
+    });
+    assert.equal(restoreRes.status, 200);
+    assert.equal((await ctx.storage.readDataAsync()).profiles[0].name, 'Ana Profil');
+
+    // İstemci yan verileri yazmadan süreç kapanır: yalnızca sunucu kapanır.
+    await ctx.closeServerOnly();
+
+    const restarted = await startApp(dataDir);
+    try {
+      // Açılış kurtarması asenkron; tamamlanması için kısa bekleme.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const recovered = await restarted.storage.readDataAsync();
+      assert.equal(hashDocument(recovered), beforeHash, 'yarım restore geri alınmalı');
+      assert.equal(recovered.profiles[0].name, 'Çökme Öncesi');
+
+      const journalDir = path.join(dataDir, 'restore-journal');
+      const leftovers = fs.existsSync(journalDir)
+        ? fs.readdirSync(journalDir).filter((name) => name.endsWith('.json'))
+        : [];
+      assert.deepEqual(leftovers, [], 'kurtarma sonrası journal kaydı kalmamalı');
+    } finally {
+      await restarted.closeServerOnly();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  } catch (error) {
+    await ctx.closeServerOnly().catch(() => {});
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    throw error;
+  }
+});
+
+test('P0-01-C: önizlemeden sonra veri değişirse commit 409 ile durur', async (t) => {
+  if (!(await isSqliteArchiveAvailable())) {
+    t.skip('node:sqlite bu ortamda kullanılamıyor');
+    return;
+  }
+  const ctx = await startApp();
+  try {
+    const archivePath = path.join(ctx.dataDir, 'race-archive.sqlite');
+    await writeSqliteArchive(makeSnapshot(), archivePath);
+    const bytes = fs.readFileSync(archivePath);
+
+    const prepareRes = await postPrepare(ctx.baseUrl, bytes);
+    assert.equal(prepareRes.status, 200);
+    const prepared = await prepareRes.json();
+
+    // Başka bir sekme/senkron araya girer.
+    await ctx.storage.saveDataSerialized(
+      {
+        version: 3,
+        schemaVersion: 3,
+        activeProfileId: 'profile-a',
+        updatedAt: AS_OF,
+        profiles: [
+          {
+            id: 'profile-a',
+            name: 'Araya Giren',
+            createdAt: AS_OF,
+            preferences: { disliked: [], providers: [] },
+            favoriteActors: [],
+            items: [],
+          },
+        ],
+      },
+      { forceOverwrite: true, confirmBulkDelete: true, requirePrecondition: false }
+    );
+    const racedHash = hashDocument(await ctx.storage.readDataAsync());
+
+    const restoreRes = await fetch(`${ctx.baseUrl}/api/archive/sqlite/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId: prepared.restoreId }),
+    });
+    assert.equal(restoreRes.status, 409);
+    assert.equal((await restoreRes.json()).code, 'archive_source_changed');
+    assert.equal(
+      hashDocument(await ctx.storage.readDataAsync()),
+      racedHash,
+      'araya giren veri ezilmemeli'
+    );
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('P0-01: finalize journal kaydını kapatır ve rollback artık kullanılamaz', async (t) => {
+  if (!(await isSqliteArchiveAvailable())) {
+    t.skip('node:sqlite bu ortamda kullanılamıyor');
+    return;
+  }
+  const ctx = await startApp();
+  try {
+    const archivePath = path.join(ctx.dataDir, 'finalize-archive.sqlite');
+    await writeSqliteArchive(makeSnapshot(), archivePath);
+    const bytes = fs.readFileSync(archivePath);
+
+    const prepareRes = await postPrepare(ctx.baseUrl, bytes);
+    const prepared = await prepareRes.json();
+    const restoreRes = await fetch(`${ctx.baseUrl}/api/archive/sqlite/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId: prepared.restoreId }),
+    });
+    assert.equal(restoreRes.status, 200);
+    const restored = await restoreRes.json();
+
+    const finalizeRes = await fetch(`${ctx.baseUrl}/api/archive/sqlite/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId: restored.restoreId }),
+    });
+    assert.equal(finalizeRes.status, 200);
+    assert.equal((await finalizeRes.json()).state, 'finalized');
+
+    const rollbackRes = await fetch(`${ctx.baseUrl}/api/archive/sqlite/rollback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId: restored.restoreId }),
+    });
+    assert.equal(rollbackRes.status, 409);
+    assert.equal((await rollbackRes.json()).code, 'rollback_unavailable');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('P0-01: geçerli başlıklı ama bozuk sayfalı arşiv quick_check ile reddedilir', async (t) => {
+  if (!(await isSqliteArchiveAvailable())) {
+    t.skip('node:sqlite bu ortamda kullanılamıyor');
+    return;
+  }
+  const ctx = await startApp();
+  try {
+    const archivePath = path.join(ctx.dataDir, 'corrupt-archive.sqlite');
+    const snapshotWithPoster = makeSnapshot();
+    snapshotWithPoster.tasteMaps = {
+      'profile-a': { metrics: { novelty: 0.5, risk: 0.2 } },
+      'profile-b': { metrics: { novelty: 0.1 } },
+    };
+    await writeSqliteArchive(snapshotWithPoster, archivePath);
+    const bytes = fs.readFileSync(archivePath);
+    assert.equal(bytes.subarray(0, 15).toString('utf8'), 'SQLite format 3');
+
+    // Sayfa içeriğini boz: başlık geçerli kalır, b-tree/quick_check bozulur.
+    const corrupt = Buffer.from(bytes);
+    const start = 4096;
+    const end = Math.min(corrupt.length, start + 4096);
+    for (let i = start; i < end; i += 1) corrupt[i] = 0xff;
+
+    const res = await postPrepare(ctx.baseUrl, corrupt);
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.code, 'invalid_archive_file');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('SEC: SQLite arşivi oluşturma uzaktan erişim modunda anahtar ister', async () => {
+  const snapshot = makeSnapshot();
+
+  // 1) Loopback dışına bağlı ve anahtar tanımlı değil: mutasyon fail-closed olmalı.
+  const openCtx = await startApp(undefined, { bindHost: '0.0.0.0', authToken: '' });
+  try {
+    const res = await fetch(`${openCtx.baseUrl}/api/archive/sqlite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).code, 'auth_required');
+  } finally {
+    await openCtx.close();
+  }
+
+  // 2) Anahtar tanımlı: anahtarsız istek 401, doğru anahtarla arşiv üretilir.
+  const secureCtx = await startApp(undefined, { bindHost: '0.0.0.0', authToken: 'test-token-123' });
+  try {
+    const unauthorized = await fetch(`${secureCtx.baseUrl}/api/archive/sqlite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const authorized = await fetch(`${secureCtx.baseUrl}/api/archive/sqlite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CineTrack-Token': 'test-token-123' },
+      body: JSON.stringify(snapshot),
+    });
+    assert.equal(authorized.status, 200);
+    const bytes = Buffer.from(await authorized.arrayBuffer());
+    assert.equal(bytes.subarray(0, 15).toString('utf8'), 'SQLite format 3');
+    const stats = JSON.parse(authorized.headers.get('x-archive-stats') || '{}');
+    assert.equal(stats.profiles, 2);
+    assert.equal(stats.items, 3);
+  } finally {
+    await secureCtx.close();
   }
 });

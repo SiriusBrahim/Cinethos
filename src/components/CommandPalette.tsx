@@ -237,6 +237,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   return (
     <div
       className="modal-wrap command-palette-wrap open"
+      role="presentation"
       aria-hidden="false"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();

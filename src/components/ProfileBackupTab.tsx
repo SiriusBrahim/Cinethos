@@ -287,6 +287,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="JSON yedeği dosyası seç"
             accept=".json,application/json"
             className="file-input-hidden"
             onChange={handleFileChange}
@@ -327,6 +328,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
             <input
               ref={sqliteInputRef}
               type="file"
+              aria-label="SQLite arşiv dosyası seç"
               accept=".sqlite,application/vnd.sqlite3,application/octet-stream"
               className="file-input-hidden"
               onChange={(e) => void handleSqliteFileChange(e)}
@@ -372,6 +374,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           <label className="excel-github-toggle mt-2">
             <input
               type="checkbox"
+              aria-label="Oluşturulan xlsx arşivini GitHub deposuna yükle"
               checked={uploadExcelToGithub}
               disabled={exportingExcelMode !== null}
               onChange={(e) => setUploadExcelToGithub(e.target.checked)}
@@ -554,6 +557,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           <input
             ref={csvInputRef}
             type="file"
+            aria-label="CSV dosyası seç"
             accept=".csv,text/csv"
             className="file-input-hidden"
             onChange={handleCsvFileChange}

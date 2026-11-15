@@ -65,6 +65,7 @@ export const AddCustomModal: React.FC<AddCustomModalProps> = ({ isOpen, onClose,
     <div
       id="addModal"
       className="modal-wrap open"
+      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -98,6 +99,7 @@ export const AddCustomModal: React.FC<AddCustomModalProps> = ({ isOpen, onClose,
             Başlık
             <input
               id="customTitle"
+              aria-label="Başlık"
               className="field"
               type="text"
               required
@@ -124,6 +126,7 @@ export const AddCustomModal: React.FC<AddCustomModalProps> = ({ isOpen, onClose,
               Yıl
               <input
                 id="customYear"
+                aria-label="Yıl"
                 className="field"
                 type="number"
                 min="1888"
@@ -140,6 +143,7 @@ export const AddCustomModal: React.FC<AddCustomModalProps> = ({ isOpen, onClose,
               TMDB puanı
               <input
                 id="customRating"
+                aria-label="TMDB puanı"
                 className="field"
                 type="number"
                 min="0"
@@ -154,6 +158,7 @@ export const AddCustomModal: React.FC<AddCustomModalProps> = ({ isOpen, onClose,
               Poster URL
               <input
                 id="customPoster"
+                aria-label="Poster URL"
                 className="field"
                 type="url"
                 value={poster}

@@ -317,6 +317,7 @@ export const Controls: React.FC<ControlsProps> = ({
               <input
                 type="checkbox"
                 className="filter-checkbox-input"
+                aria-label="Listemdekileri Gizle"
                 checked={hideListedItems}
                 onChange={(e) => onHideListedItemsChange?.(e.target.checked)}
               />

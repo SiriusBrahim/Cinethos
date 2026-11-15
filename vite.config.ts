@@ -123,6 +123,16 @@ export default defineConfig({
           ) {
             return 'd3-graph';
           }
+          // P1-08: ana chunk'ı 500 kB altında tutmak için ağır yardımcı paketler ayrılır.
+          if (/[\\/]node_modules[\\/]framer-motion[\\/]/.test(id)) {
+            return 'motion-vendor';
+          }
+          if (/[\\/]node_modules[\\/](lucide-react|cmdk)[\\/]/.test(id)) {
+            return 'ui-vendor';
+          }
+          if (/[\\/]node_modules[\\/]exceljs[\\/]/.test(id)) {
+            return 'excel-vendor';
+          }
           return undefined;
         },
       },
