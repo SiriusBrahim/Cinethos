@@ -1,6 +1,11 @@
 import React from 'react';
+import type { MainTab } from './module-registry.ts';
 
-export type MainTab = 'discover' | 'list' | 'taste-map' | 'relationships';
+/**
+ * @deprecated Geriye dönük uyumluluk için yeniden dışa aktarılır; tek doğruluk
+ * kayıt defteri `module-registry.ts`'dir.
+ */
+export type { MainTab };
 
 interface MobileTabBarProps {
   tab: MainTab;

@@ -8,11 +8,12 @@ import {
   type ThemeMode,
 } from '../utils/theme.ts';
 import { handleTabListKeyDown } from '../utils/tabListKeyboard.ts';
-import type { MainTab } from './MobileTabBar.tsx';
+import type { ModuleId } from './module-registry.ts';
+import { SIDEBAR_NAV_ITEMS } from './navigation.ts';
 
 interface AppSidebarProps {
-  tab: MainTab | 'identity' | 'universes';
-  onTabChange: (tab: MainTab) => void;
+  tab: ModuleId;
+  onTabChange: (tab: ModuleId) => void;
   myListCount: number;
   profileName: string;
   streakDays: number;
@@ -93,60 +94,24 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           aria-label="Ana Çalışma Alanı Sekmeleri"
           onKeyDown={handleTabListKeyDown}
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'discover'}
-            className={`sidebar-nav-btn ${tab === 'discover' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('discover')}
-          >
-            <svg className="icon" aria-hidden="true">
-              <use href="#icon-film" />
-            </svg>
-            <span className="sidebar-nav-label">Keşfet</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'list'}
-            className={`sidebar-nav-btn ${tab === 'list' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('list')}
-          >
-            <svg className="icon" aria-hidden="true">
-              <use href="#icon-bookmark" />
-            </svg>
-            <span className="sidebar-nav-label">Listem</span>
-            {myListCount > 0 && (
-              <span className="sidebar-nav-count tabular-nums">{myListCount}</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'taste-map' || tab === 'identity'}
-            className={`sidebar-nav-btn ${tab === 'taste-map' || tab === 'identity' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('taste-map')}
-          >
-            <svg className="icon" aria-hidden="true">
-              <use href="#icon-dna" />
-            </svg>
-            <span className="sidebar-nav-label">Zevkim</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'relationships' || tab === 'universes'}
-            className={`sidebar-nav-btn ${tab === 'relationships' || tab === 'universes' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('relationships')}
-          >
-            <svg className="icon" aria-hidden="true">
-              <use href="#icon-network" />
-            </svg>
-            <span className="sidebar-nav-label">Evrenler</span>
-          </button>
+          {SIDEBAR_NAV_ITEMS.map(({ id, label, iconRef, counter }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              className={`sidebar-nav-btn ${tab === id ? 'is-active' : ''}`}
+              onClick={() => onTabChange(id)}
+            >
+              <svg className="icon" aria-hidden="true">
+                <use href={iconRef} />
+              </svg>
+              <span className="sidebar-nav-label">{label}</span>
+              {counter === 'myList' && myListCount > 0 && (
+                <span className="sidebar-nav-count tabular-nums">{myListCount}</span>
+              )}
+            </button>
+          ))}
         </nav>
       </div>
 

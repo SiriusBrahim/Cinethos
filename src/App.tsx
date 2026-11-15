@@ -10,6 +10,8 @@ import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 import { AppFooter } from './app/AppFooter.tsx';
 import { AppSidebar } from './app/AppSidebar.tsx';
+import type { ModuleId } from './app/module-registry.ts';
+import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileDock } from './app/mobile/MobileDock.tsx';
 import { MobileTopBar } from './app/mobile/MobileTopBar.tsx';
 import { AppModals } from './app/AppModals.tsx';
@@ -367,10 +369,12 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<string>('Kayıt yeri: data/cinetrack-data.json');
 
   // Discover & Grid State
-  const [tab, setTab] = useState<'discover' | 'list' | 'taste-map' | 'relationships'>('discover');
+  const [tab, setTab] = useState<ModuleId>('discover');
   /** Mobil "Ana" dashboard görünümü açık mı. */
   const [mobileHomeOpen, setMobileHomeOpen] = useState(true);
   const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'identity'>('identity');
+  // M1: hash derin bağlantısı (`#/discover`, `#/list`, …) sekme durumuyla eşitlenir
+  useHashNavigation(tab, setTab);
   const isMobileViewport = useMediaQuery('(max-width: 768px)');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
   const [category, setCategory] = useState<string>('trending');

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Compass, Fingerprint, Home, Library, UserRound } from 'lucide-react';
-import type { MainTab } from '../MobileTabBar.tsx';
+import { Home, UserRound } from 'lucide-react';
+import type { MainTab } from '../../app/module-registry.ts';
+import { DOCK_NAV_ITEMS } from '../../app/navigation.ts';
 
 interface MobileDockProps {
   homeOpen: boolean;
@@ -10,16 +11,6 @@ interface MobileDockProps {
   onSelectTab: (tab: MainTab) => void;
   onOpenProfile: () => void;
 }
-
-const TAB_ITEMS: ReadonlyArray<{
-  id: MainTab;
-  label: string;
-  Icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
-}> = [
-  { id: 'list', label: 'Kütüphane', Icon: Library },
-  { id: 'discover', label: 'Keşfet', Icon: Compass },
-  { id: 'taste-map', label: 'Zevkim', Icon: Fingerprint },
-];
 
 /**
  * Mobile Dock — yüzen kapsül alt gezinme.
@@ -46,7 +37,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
           <span>Ana</span>
         </button>
 
-        {TAB_ITEMS.map(({ id, label, Icon }) => {
+        {DOCK_NAV_ITEMS.map(({ id, label, Icon, counter }) => {
           const isActive = !homeOpen && tab === id;
           return (
             <button
@@ -58,7 +49,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
             >
               <span className="mobile-dock-icon-wrap">
                 <Icon className="mobile-dock-icon" aria-hidden={true} />
-                {id === 'list' && myListCount > 0 && (
+                {counter === 'myList' && myListCount > 0 && (
                   <span className="mobile-dock-badge tabular-nums">
                     {myListCount > 99 ? '99+' : myListCount}
                   </span>

@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
+import type { ModuleId } from '../app/module-registry.ts';
+import { getModuleByShortcut } from '../app/module-registry.ts';
 
 export interface KeyboardShortcutsHandlers {
   onFocusSearch?: () => void;
-  onSelectTab?: (tab: 'discover' | 'list' | 'taste-map' | 'relationships') => void;
+  onSelectTab?: (tab: ModuleId) => void;
   onOpenSettings?: () => void;
   onQuickSaveOrSync?: () => void;
   onOpenAddCustom?: () => void;
@@ -46,25 +48,11 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutsHandlers): void 
         return;
       }
 
-      // 1-5 switches tabs and opens settings
-      if (e.key === '1') {
+      // 1-4 → kayıtlı modüller (module-registry'den), 5 → ayarlar
+      const moduleByShortcut = getModuleByShortcut(e.key);
+      if (moduleByShortcut) {
         e.preventDefault();
-        handlers.onSelectTab?.('discover');
-        return;
-      }
-      if (e.key === '2') {
-        e.preventDefault();
-        handlers.onSelectTab?.('list');
-        return;
-      }
-      if (e.key === '3') {
-        e.preventDefault();
-        handlers.onSelectTab?.('taste-map');
-        return;
-      }
-      if (e.key === '4') {
-        e.preventDefault();
-        handlers.onSelectTab?.('relationships');
+        handlers.onSelectTab?.(moduleByShortcut.id);
         return;
       }
       if (e.key === '5') {
