@@ -1,5 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { Monitor, Moon, Sun } from 'lucide-react';
 import { BRAND_NAME } from '../shared/brand.ts';
+import {
+  getStoredTheme,
+  setStoredTheme,
+  subscribeThemeChange,
+  type ThemeMode,
+} from '../utils/theme.ts';
 import { handleTabListKeyDown } from '../utils/tabListKeyboard.ts';
 import type { MainTab } from './MobileTabBar.tsx';
 
@@ -29,6 +36,19 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onOpenCommandPalette,
 }) => {
   const avatarInitial = (profileName || 'P').trim().charAt(0).toUpperCase();
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
+
+  useEffect(() => subscribeThemeChange(setThemeMode), []);
+
+  const themeOptions: ReadonlyArray<{
+    id: ThemeMode;
+    label: string;
+    Icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
+  }> = [
+    { id: 'light', label: 'Açık', Icon: Sun },
+    { id: 'dark', label: 'Koyu', Icon: Moon },
+    { id: 'system', label: 'Sistem', Icon: Monitor },
+  ];
   const sourceText =
     tmdbSource === 'live'
       ? 'Canlı TMDB'
@@ -161,15 +181,24 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
       {/* Curator Footer */}
       <div className="sidebar-footer">
-        {streakDays >= 2 && (
-          <div className="sidebar-streak-row">
-            <svg className="icon" aria-hidden="true">
-              <use href="#icon-fire" />
-            </svg>
-            <span>İzleme Serisi</span>
-            <strong className="tabular-nums">{streakDays} gün</strong>
+        <div className="sidebar-theme-row" role="group" aria-label="Tema seçimi">
+          <span className="sidebar-theme-label">GÖRÜNÜM</span>
+          <div className="sidebar-theme-toggle">
+            {themeOptions.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                className={`sidebar-theme-btn ${themeMode === id ? 'is-active' : ''}`}
+                onClick={() => setStoredTheme(id)}
+                aria-pressed={themeMode === id}
+                aria-label={`${label} tema`}
+              >
+                <Icon className="sidebar-theme-icon" aria-hidden={true} />
+                <span>{label}</span>
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         <div
           className="sidebar-source-row"
@@ -197,6 +226,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <span className="sidebar-profile-name">{profileName || 'Profilim'}</span>
             <span className="sidebar-profile-role">Küratör Profili & Eşitleme</span>
           </span>
+          {streakDays >= 2 && (
+            <span
+              className="sidebar-profile-streak tabular-nums"
+              title={`İzleme serisi: ${streakDays} gün`}
+            >
+              <svg className="icon" aria-hidden="true">
+                <use href="#icon-fire" />
+              </svg>
+              {streakDays}g
+            </span>
+          )}
         </button>
       </div>
     </aside>

@@ -10,7 +10,8 @@ import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 import { AppFooter } from './app/AppFooter.tsx';
 import { AppSidebar } from './app/AppSidebar.tsx';
-import { MobileTabBar } from './app/MobileTabBar.tsx';
+import { MobileDock } from './app/mobile/MobileDock.tsx';
+import { MobileTopBar } from './app/mobile/MobileTopBar.tsx';
 import { AppModals } from './app/AppModals.tsx';
 import { BRAND_NAME } from './shared/brand.ts';
 import { useAppModals } from './hooks/useAppModals.ts';
@@ -31,6 +32,7 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 const TasteMapView = lazyWithRetry(() => import('./components/TasteMapView.tsx'));
 const RelationshipExplorer = lazyWithRetry(() => import('./components/RelationshipExplorer.tsx'));
 const TasteProfileDashboard = lazyWithRetry(() => import('./components/taste/TasteProfileDashboard.tsx'));
+const MobileDashboard = lazyWithRetry(() => import('./app/mobile/MobileDashboard.tsx'));
 const TasteProfileMinimal = lazyWithRetry(() => import('./components/taste/TasteProfileMinimal.tsx'));
 
 import {
@@ -366,6 +368,8 @@ export function App() {
 
   // Discover & Grid State
   const [tab, setTab] = useState<'discover' | 'list' | 'taste-map' | 'relationships'>('discover');
+  /** Mobil "Ana" dashboard görünümü açık mı. */
+  const [mobileHomeOpen, setMobileHomeOpen] = useState(true);
   const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'identity'>('identity');
   const isMobileViewport = useMediaQuery('(max-width: 768px)');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
@@ -4209,7 +4213,7 @@ export function App() {
         queueFailure={queueFailure}
         maxQueueAttempts={maxQueueAttempts}
       />
-      <div className="app-workspace-frame">
+      <div className={isMobileViewport ? 'app-workspace-frame mobile-frame' : 'app-workspace-frame'}>
         <AppSidebar
           tab={tab}
           onTabChange={setTab}
@@ -4222,7 +4226,20 @@ export function App() {
           onOpenAdd={() => setAddCustomOpen(true)}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         />
-        <div className="app-main-stage">
+        <div
+          className={isMobileViewport ? 'app-main-stage mobile-shell' : 'app-main-stage'}
+          data-theme={isMobileViewport ? 'dark' : undefined}
+        >
+          {isMobileViewport && (
+            <MobileTopBar
+              profileName={profileName}
+              streakDays={streakDays}
+              query={query}
+              onSearchChange={setQuery}
+              onSearchSubmit={() => handleSearchSubmit(query)}
+              onOpenProfile={() => setProfileOpen(true)}
+            />
+          )}
           <Header
             profileName={profileName}
             query={query}
@@ -4250,6 +4267,49 @@ export function App() {
           />
 
           <main className="shell">
+        {isMobileViewport && mobileHomeOpen && !query.trim() ? (
+          <Suspense
+            fallback={
+              <div className="mobile-dashboard-fallback" role="status">
+                Dashboard hazırlanıyor…
+              </div>
+            }
+          >
+            <MobileDashboard
+              profileName={profileName}
+              personalizationKey={activeProfileId}
+              heroItem={currentHeroItem}
+              heroSaved={Boolean(findSavedItem(savedItems, currentHeroItem as never))}
+              isLoading={isLoading}
+              savedItems={savedItems}
+              recommendations={displayedItems}
+              reasons={
+                category === 'for-you'
+                  ? forYouSubTab === 'series' && !query.trim()
+                    ? seriesUniverseData.reasonsMap
+                    : forYouReasons
+                  : EMPTY_REASONS_MAP
+              }
+              genresMap={genresMap}
+              universeCount={seriesUniverseData.universesCount}
+              mood={preferences.mood}
+              onMoodChange={(nextMood) => handleSavePreferences(preferences.providers, nextMood)}
+              onOpenItem={(item) => setDetailItem(item as never)}
+              onQuickSave={(item) => setQuickSaveItem(item as never)}
+              onIncrementEpisode={(item) => handleIncrementTvEpisode(item as never)}
+              onNavigate={(target) => {
+                setMobileHomeOpen(false);
+                setTab(target);
+              }}
+              onOpenIdentity={() => {
+                setMobileHomeOpen(false);
+                setTab('taste-map');
+                setTasteMapDisplayMode('identity');
+              }}
+            />
+          </Suspense>
+        ) : (
+          <>
         {tab === 'discover' && !query && (
           <Hero
             heroItem={currentHeroItem}
@@ -4447,13 +4507,31 @@ export function App() {
             />
           </ErrorBoundary>
         )}
+          </>
+        )}
           </main>
 
           <AppFooter tmdbSource={tmdbSourceMeta.source} />
         </div>
       </div>
 
-      <MobileTabBar tab={tab} allListCount={allListCount} onSelectTab={setTab} />
+      {isMobileViewport && (
+        <MobileDock
+          homeOpen={mobileHomeOpen}
+          tab={tab}
+          myListCount={allListCount}
+          onSelectHome={() => {
+            setMobileHomeOpen(true);
+            setTab('discover');
+            if (query.trim()) handleSearchClear();
+          }}
+          onSelectTab={(target) => {
+            setMobileHomeOpen(false);
+            setTab(target);
+          }}
+          onOpenProfile={() => setProfileOpen(true)}
+        />
+      )}
 
       <AppModals
         detailItem={detailItem}
@@ -4469,6 +4547,12 @@ export function App() {
         authPrompt={authPrompt}
         toasts={toasts}
         isMobileViewport={isMobileViewport}
+        onOpenIdentityTab={() => {
+          setProfileOpen(false);
+          setMobileHomeOpen(false);
+          setTab('taste-map');
+          setTasteMapDisplayMode('identity');
+        }}
         profiles={profiles}
         activeProfile={activeProfile}
         activeProfileId={activeProfileId}

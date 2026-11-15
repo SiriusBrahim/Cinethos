@@ -13,11 +13,18 @@ import {
   makeMediaKey,
   normalizeFavoriteActors,
 } from '../core/cinetrack-core.ts';
-import { imageUrl, handleImageError } from '../utils/helpers.ts';
+import { displayTitle, getPoster, imageUrl, handleImageError } from '../utils/helpers.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 
 /** Listem sekmesinde tek seferde çizilen kart sayısı; "Daha fazla" ile büyür. */
 const LIST_WINDOW_SIZE = 60;
+
+/** Liste satırında öneri nedenini kısaltır; yoksa boş döner. */
+function recommendationReasonForList(reason: string): string {
+  if (!reason) return '';
+  const trimmed = reason.trim();
+  return trimmed.length > 42 ? `${trimmed.slice(0, 42)}…` : trimmed;
+}
 
 interface MediaGridProps {
   title: string;
@@ -158,7 +165,26 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
     () => normalizeFavoriteActors(favoriteActors),
     [favoriteActors]
   );
+  // Kütüphane görünüm modu — cihazda hatırlanır (Faz 4).
+  const [listView, setListView] = useState<'grid' | 'list'>(() => {
+    try {
+      const stored = localStorage.getItem('ct:library-view');
+      return stored === 'list' ? 'list' : 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
+  const changeListView = (mode: 'grid' | 'list') => {
+    setListView(mode);
+    try {
+      localStorage.setItem('ct:library-view', mode);
+    } catch {
+      /* depolama kapalıysa görünüm yalnızca bu oturumda geçerli */
+    }
+  };
+
   const isActorsListMode = tab === 'list' && listStatus === 'actors';
+  const showListRows = tab === 'list' && listView === 'list' && !isActorsListMode;
   const isForYouSeriesMode = tab === 'discover' && category === 'for-you' && !query.trim() && forYouSubTab === 'series';
 
   // Keşfet sayfalama ile sınırlı; Listem ve Stok (1000+ yapım) pencereleme ile DOM yükü hafifletilir
@@ -198,6 +224,26 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               <span className={`refresh-icon ${isStockReplenishing ? 'spinning' : ''}`} aria-hidden="true">↻</span>{' '}
               <span>{isStockReplenishing ? 'Stok Çekiliyor…' : 'Stok İçerik Çek'}</span>
             </button>
+          )}
+          {tab === 'list' && !isActorsListMode && (
+            <div className="library-view-toggle" role="group" aria-label="Kütüphane görünümü">
+              <button
+                type="button"
+                className={`library-view-btn ${listView === 'grid' ? 'is-active' : ''}`}
+                onClick={() => changeListView('grid')}
+                aria-pressed={listView === 'grid'}
+              >
+                Izgara
+              </button>
+              <button
+                type="button"
+                className={`library-view-btn ${listView === 'list' ? 'is-active' : ''}`}
+                onClick={() => changeListView('list')}
+                aria-pressed={listView === 'list'}
+              >
+                Liste
+              </button>
+            </div>
           )}
           <div className={`loading ${isLoading || loadingMore ? 'visible' : ''}`} aria-live="polite">
             <span className="spinner"></span>
@@ -414,7 +460,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
           />
         </ErrorBoundary>
       ) : (
-      <div id="catalogGrid" className="grid">
+      <div id="catalogGrid" className={showListRows ? 'media-list' : 'grid'}>
         {isLoading ? (
           Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="skeleton-card" aria-hidden="true"></div>
@@ -742,6 +788,72 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               '';
             const isDisliked = dislikedKeySet.has(itemKey) || dislikedKeySet.has(legacyKey);
             const saved = getSaved(item);
+
+            if (showListRows) {
+              const title = displayTitle(item);
+              const poster = getPoster(item, 'w185');
+              const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+              const statusLabel =
+                saved?.status === 'completed'
+                  ? 'İzlendi'
+                  : saved?.status === 'watching'
+                    ? 'İzliyorum'
+                    : saved?.status === 'watchlist'
+                      ? 'İzlenecek'
+                      : 'Listede yok';
+              return (
+                <article key={itemKey} className="media-list-row">
+                  <button
+                    type="button"
+                    className="media-list-hit"
+                    onClick={() => cardHandlers.onOpenDetails(item)}
+                  >
+                    <span className="media-list-poster">
+                      {poster ? (
+                        <img src={poster} alt="" loading="lazy" decoding="async" onError={handleImageError} />
+                      ) : (
+                        <span className="media-list-poster-fallback" aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="media-list-copy">
+                      <span className="media-list-title">{title}</span>
+                      <span className="media-list-meta">
+                        {item.media_type === 'tv' ? 'Dizi' : 'Film'}
+                        {year ? ` · ${year}` : ''}
+                        {recommendationReasonForList(reason) ? ` · ${recommendationReasonForList(reason)}` : ''}
+                      </span>
+                      <span className="media-list-status">{statusLabel}</span>
+                    </span>
+                  </button>
+                  <span className="media-list-actions">
+                    <button
+                      type="button"
+                      className={`media-list-btn ${saved?.status === 'watchlist' ? 'is-active' : ''}`}
+                      onClick={() => cardHandlers.onSetStatus(item, 'watchlist')}
+                      aria-pressed={saved?.status === 'watchlist'}
+                    >
+                      İzlenecek
+                    </button>
+                    <button
+                      type="button"
+                      className={`media-list-btn ${saved?.status === 'watching' ? 'is-active' : ''}`}
+                      onClick={() => cardHandlers.onSetStatus(item, 'watching')}
+                      aria-pressed={saved?.status === 'watching'}
+                    >
+                      İzliyorum
+                    </button>
+                    <button
+                      type="button"
+                      className={`media-list-btn ${saved?.status === 'completed' ? 'is-active' : ''}`}
+                      onClick={() => cardHandlers.onSetStatus(item, 'completed')}
+                      aria-pressed={saved?.status === 'completed'}
+                    >
+                      İzlendi
+                    </button>
+                  </span>
+                </article>
+              );
+            }
 
             return (
               <MediaCard

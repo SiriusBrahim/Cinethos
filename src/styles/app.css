@@ -4841,3 +4841,523 @@
     overflow-wrap: anywhere;
   }
 }
+
+/* ==========================================================================
+   Premium Shell — Profil hero, kompakt sinema kimliği, kenar çubuğu ve
+   mobil sekme çubuğu rafinasyonları.
+   ========================================================================== */
+@layer components {
+  /* --- Profil modalı: küratör hero başlığı --- */
+  .profile-hero {
+    position: relative;
+    flex-shrink: 0;
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid var(--border-subtle);
+    background:
+      radial-gradient(140% 160% at 0% 0%, var(--accent-soft) 0%, transparent 58%),
+      var(--bg-surface);
+    background-color: var(--bg-surface);
+  }
+
+  .profile-hero-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .profile-hero-avatar {
+    width: 52px;
+    height: 52px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    background-image: linear-gradient(140deg, var(--accent) 0%, var(--accent-deep) 100%);
+    border: 1px solid var(--accent-border);
+    color: var(--text-on-accent);
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 10px 24px -14px var(--gold-glow);
+  }
+
+  .profile-hero-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .profile-hero-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .profile-hero-name {
+    font-family: var(--font-display);
+    font-size: 23px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .profile-hero-meta {
+    margin: 2px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-3);
+  }
+
+  .profile-hero-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 16px 0 0;
+  }
+
+  .profile-hero-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 11px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-elevated);
+  }
+
+  .profile-hero-stat dt {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  .profile-hero-stat dd {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-1);
+  }
+
+  .profile-nav-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .profile-nav-tab .profile-nav-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    opacity: 0.8;
+  }
+
+  .profile-nav-tab.active .profile-nav-icon {
+    opacity: 1;
+  }
+
+  @media (max-width: 640px) {
+    .profile-hero {
+      padding: 16px 16px 14px;
+    }
+
+    .profile-hero-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      font-size: 19px;
+    }
+
+    .profile-hero-name {
+      font-size: 20px;
+    }
+
+    .profile-hero-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .profile-hero-stat {
+      padding: 7px 10px;
+      flex-direction: row;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+  }
+
+  /* --- Profildeki kompakt Sinema Kimliği kartı --- */
+  .identity-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px 18px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background-color: var(--bg-surface);
+    box-shadow: var(--shadow-card);
+  }
+
+  .identity-compact-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .identity-compact-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .identity-compact-icon {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background-color: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+  }
+
+  .identity-compact-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-1);
+  }
+
+  .identity-compact-subtitle {
+    margin: 2px 0 0;
+    font-size: 11.5px;
+    color: var(--text-3);
+  }
+
+  .identity-compact-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .identity-compact-updated {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-3);
+  }
+
+  .identity-compact-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--accent-border);
+    background-color: var(--bg-surface);
+    color: var(--accent);
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: background-color var(--dur-fast) var(--ease);
+  }
+
+  .identity-compact-link:hover {
+    background-color: var(--accent-soft);
+  }
+
+  .identity-compact-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+
+  .identity-compact-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .identity-compact-item-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .identity-compact-item-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .identity-compact-item-value {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-2);
+  }
+
+  .identity-compact-track {
+    height: 6px;
+    border-radius: 999px;
+    background-color: var(--bg-panel);
+    overflow: hidden;
+  }
+
+  .identity-compact-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background-image: linear-gradient(90deg, var(--accent) 0%, var(--accent-deep) 100%);
+  }
+
+  .identity-compact-fill.is-negative {
+    background-image: linear-gradient(90deg, var(--turquoise) 0%, var(--turquoise) 100%);
+    opacity: 0.75;
+  }
+
+  .identity-compact-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--text-3);
+  }
+
+  .identity-compact-dot {
+    opacity: 0.6;
+  }
+
+  .identity-compact-empty {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text-2);
+  }
+
+  .identity-compact-state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--danger-border);
+    background-color: var(--danger-soft);
+  }
+
+  .identity-compact-state-title {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--danger);
+  }
+
+  .identity-compact-state-text {
+    margin: 2px 0 0;
+    font-size: 11.5px;
+    color: var(--text-2);
+  }
+
+  .identity-compact-retry {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--danger-border);
+    background-color: var(--bg-surface);
+    color: var(--danger);
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+
+  .identity-compact-skeleton {
+    display: grid;
+    gap: 10px;
+  }
+
+  .identity-compact-skeleton-row {
+    display: block;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    background-image: linear-gradient(
+      90deg,
+      var(--bg-panel) 0%,
+      var(--bg-elevated) 50%,
+      var(--bg-panel) 100%
+    );
+    background-size: 220% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  /* --- Kenar çubuğu: premium rafinasyon --- */
+  @media (min-width: 1024px) {
+    .app-sidebar {
+      background-image: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
+      background-color: var(--bg-surface);
+      box-shadow: inset -1px 0 0 var(--border-subtle);
+      border-right: 0;
+      gap: 18px;
+      padding: 22px 14px 16px;
+    }
+
+    .sidebar-brand-block {
+      padding: 0 4px 14px;
+    }
+
+    .sidebar-brand-btn .brand-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      background-image: linear-gradient(140deg, var(--accent) 0%, var(--accent-deep) 100%);
+      border: 1px solid var(--accent-border);
+      color: var(--text-on-accent);
+      box-shadow: 0 8px 18px -12px var(--gold-glow);
+    }
+
+    .sidebar-section-label {
+      font-size: 9.5px;
+      letter-spacing: 0.12em;
+      color: var(--text-3);
+      opacity: 0.85;
+    }
+
+    .sidebar-nav-btn,
+    .sidebar-action-btn {
+      position: relative;
+      padding: 9px 12px;
+      border-radius: 10px;
+    }
+
+    .sidebar-nav-btn.is-active {
+      background-image: linear-gradient(90deg, var(--accent-soft) 0%, transparent 92%);
+      border-color: var(--accent-border);
+    }
+
+    .sidebar-nav-btn.is-active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 2px;
+      height: 18px;
+      border-radius: 999px;
+      background-color: var(--accent);
+      transform: translateY(-50%);
+    }
+
+    .sidebar-nav-btn.is-active .icon {
+      color: var(--accent);
+    }
+
+    .sidebar-profile-btn {
+      border-radius: 12px;
+      background-color: var(--bg-surface);
+      box-shadow: var(--shadow-card);
+    }
+
+    .sidebar-profile-btn .profile-avatar-circle {
+      width: 32px;
+      height: 32px;
+      font-size: 13px;
+    }
+  }
+
+  /* --- Mobil sekme çubuğu: kapsül aktif durum --- */
+  @media (max-width: 768px) {
+    .mobile-tab-bar {
+      height: calc(60px + env(safe-area-inset-bottom, 0px));
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+      gap: 2px;
+      justify-content: space-between;
+    }
+
+    .mobile-tab-btn {
+      height: 100%;
+      border-radius: 12px;
+      gap: 4px;
+      padding: 4px 2px;
+      transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+    }
+
+    .mobile-tab-btn.active {
+      background-color: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .mobile-tab-btn.active .icon {
+      transform: translateY(-1px);
+    }
+
+    .mobile-tab-btn .mobile-tab-label {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .mobile-tab-badge {
+      border: 1px solid var(--bg-surface);
+    }
+  }
+}
+
+@layer components {
+  @media (min-width: 1024px) {
+    .sidebar-profile-streak {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: auto;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--accent-border);
+      background-color: var(--accent-soft);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    .sidebar-profile-streak .icon {
+      width: 11px;
+      height: 11px;
+    }
+  }
+}

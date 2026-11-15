@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
+import { initTheme } from './utils/theme.ts';
+
+initTheme();
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   registerSW({ immediate: true });

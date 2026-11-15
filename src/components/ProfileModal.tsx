@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ChartColumn, DatabaseBackup, RefreshCw, UserRound } from 'lucide-react';
 import type {
   DataDocument,
   FavoriteActorInfo,
@@ -68,6 +69,8 @@ interface ProfileModalProps {
     dropId: SavedItem['id'],
     mediaType: 'movie' | 'tv'
   ) => void;
+  /** Profildeki kompakt kimlik kartından menüdeki geniş görünüme geçer. */
+  onOpenIdentity?: () => void;
   isDemo?: boolean;
   onToggleDemoMode?: () => void;
 }
@@ -104,6 +107,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onMergeDuplicates,
   isDemo = false,
   onToggleDemoMode,
+  onOpenIdentity,
 }) => {
   const [activeTab, setActiveTab] = useState<ProfileModalTabKey>('stats');
   const [name, setName] = useState(activeProfileName);
@@ -123,6 +127,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     () => profiles.filter((p) => p.id !== activeProfileId),
     [profiles, activeProfileId]
   );
+
+  const heroStats = useMemo(() => {
+    let completed = 0;
+    let watchlist = 0;
+    for (const item of savedItems) {
+      if (item.status === 'completed') completed += 1;
+      else if (item.status === 'watchlist') watchlist += 1;
+    }
+    return { total: savedItems.length, completed, watchlist, profiles: profiles.length };
+  }, [savedItems, profiles.length]);
+
+  const heroInitial = (activeProfileName || 'P').trim().charAt(0).toUpperCase();
 
   useEffect(() => {
     if (isOpen) {
@@ -257,20 +273,46 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         aria-describedby="profileDescription"
         tabIndex={-1}
       >
-        <header className="profile-modal-header">
+        <header className="profile-hero">
           <button className="modal-close" type="button" onClick={onClose} aria-label="Kapat">
             <svg className="icon" aria-hidden="true">
               <use href="#icon-close"></use>
             </svg>
           </button>
-          <div>
-            <h2 id="profileModalTitle" className="detail-title mb-1.5">
-              {activeProfileName}
-            </h2>
-            <div id="profileDescription" className="detail-meta">
-              Kişisel izleme istatistikleri, tercihler, yedekleme ve sistem bakımı.
+
+          <div className="profile-hero-main">
+            <span className="profile-hero-avatar" aria-hidden="true">
+              {heroInitial}
+            </span>
+            <div className="profile-hero-copy">
+              <span className="profile-hero-eyebrow">Küratör Profili</span>
+              <h2 id="profileModalTitle" className="profile-hero-name">
+                {activeProfileName}
+              </h2>
+              <p id="profileDescription" className="profile-hero-meta">
+                Kişisel izleme istatistikleri, tercihler, yedekleme ve sistem bakımı.
+              </p>
             </div>
           </div>
+
+          <dl className="profile-hero-stats">
+            <div className="profile-hero-stat">
+              <dt>Yapım</dt>
+              <dd className="tabular-nums">{heroStats.total}</dd>
+            </div>
+            <div className="profile-hero-stat">
+              <dt>Tamamlanan</dt>
+              <dd className="tabular-nums">{heroStats.completed}</dd>
+            </div>
+            <div className="profile-hero-stat">
+              <dt>İzlenecek</dt>
+              <dd className="tabular-nums">{heroStats.watchlist}</dd>
+            </div>
+            <div className="profile-hero-stat">
+              <dt>Profil</dt>
+              <dd className="tabular-nums">{heroStats.profiles}</dd>
+            </div>
+          </dl>
         </header>
 
         <nav className="profile-modal-tabs-bar" aria-label="Profil Sekmeleri">
@@ -282,7 +324,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'stats'}
               onClick={() => setActiveTab('stats')}
             >
-              İstatistikler & Analiz
+              <ChartColumn className="profile-nav-icon" aria-hidden="true" />
+              <span>İstatistikler</span>
             </button>
             <button
               type="button"
@@ -291,7 +334,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'profile'}
               onClick={() => setActiveTab('profile')}
             >
-              Profil & Tercihler
+              <UserRound className="profile-nav-icon" aria-hidden="true" />
+              <span>Profil & Tercihler</span>
             </button>
             <button
               type="button"
@@ -300,7 +344,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'backup'}
               onClick={() => setActiveTab('backup')}
             >
-              Yedekleme & Aktarım
+              <DatabaseBackup className="profile-nav-icon" aria-hidden="true" />
+              <span>Yedekleme</span>
             </button>
             <button
               type="button"
@@ -309,7 +354,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'sync'}
               onClick={() => setActiveTab('sync')}
             >
-              Eşitleme & Bakım
+              <RefreshCw className="profile-nav-icon" aria-hidden="true" />
+              <span>Eşitleme & Bakım</span>
             </button>
           </div>
         </nav>
@@ -323,6 +369,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               genresMap={genresMap}
               tasteEntries={tasteEntries}
               cinemaKunye={cinemaKunye}
+              onOpenIdentity={onOpenIdentity}
             />
           )}
 

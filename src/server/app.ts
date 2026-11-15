@@ -15,6 +15,7 @@ import {
   type SavedItem,
 } from '../core/cinetrack-core.ts';
 import { createDataStorage, countTotalItems, type StorageOptions } from './storage.ts';
+import { resolveStorageDriver } from './sqlite-primary-store.ts';
 import { brandProfileFileName } from '../shared/brand.ts';
 import {
   createContentSecurityPolicy,
@@ -394,7 +395,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
 } {
   const resolvedDataDir = path.resolve(options.dataDir || path.join(process.cwd(), 'data'));
   const maxDataBytes = options.maxDataBytes ?? DEFAULT_MAX_DATA_BYTES;
-  const storage = createDataStorage({ ...options, dataDir: resolvedDataDir, maxDataBytes });
+  const storage = createDataStorage({
+    ...options,
+    dataDir: resolvedDataDir,
+    maxDataBytes,
+    storageDriver: options.storageDriver ?? resolveStorageDriver(),
+  });
   const tmdbProxy = createTmdbProxyService(options);
   const persistentStore =
     options.persistentStore ??
@@ -504,7 +510,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.get('/api/health', async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     const posterCache = await getPosterCacheStatsAsync(path.join(resolvedDataDir, 'cache', 'posters'));
-    res.json({ ok: true, posterCache });
+    res.json({ ok: true, posterCache, storage: storage.sqliteStatus() });
   });
 
   // === SQLite arşivi: profil + stok + stok görsellerinin tek dosyalık tam yedeği ===

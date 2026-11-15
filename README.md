@@ -32,6 +32,7 @@ TMDB metaverileriyle çalışan, tamamen deterministik (kural tabanlı) öneri v
    - `PORT`: HTTP dinleme portu (varsayılan `3000`).
    - `CINETRACK_HOST`: Bağlanılacak ağ arayüzü (varsayılan `127.0.0.1` — yalnızca yerel makine).
    - `CINETRACK_TOKEN`: LAN / uzaktan erişimde (`CINETRACK_HOST=0.0.0.0`) zorunlu kimlik doğrulama parolası (`Authorization: Bearer <token>` veya `X-CineTrack-Token`). Loopback dışı arayüzde token tanımlanmamışsa tüm yazma ve hassas durum uç noktaları güvenli biçimde `503 auth_required` döner.
+   - `CINETRACK_STORAGE`: Depolama sürücüsü. Varsayılan `json` (`data/cinetrack-data.json` + yedekler). `sqlite` seçildiğinde `data/cinetrack.db` asıl kaynak olur, JSON dosyası yedek/taşınabilir kopya olarak yazılmaya devam eder; ilk açılışta mevcut JSON tek seferlik migrate edilir ve JSON bozulursa veri SQLite'tan okunur. Durum `GET /api/health` yanıtındaki `storage` alanından izlenir. (`node:sqlite`, Node >= 22.5)
    - `CINETRACK_TRUST_PROXY`: Yalnızca güvenilir bir ters vekil (Nginx/Caddy vb.) arkasında çalışırken `true` yapılmalıdır; `false` iken sahte `X-Forwarded-For` ve `X-Forwarded-Host` başlıkları yok sayılır.
    - `CINETRACK_TMDB_RATE_LIMIT`: Loopback dışı bağlantılarda dakikadaki maksimum `/api/tmdb` istek sınırı (varsayılan `60`).
    - `TMDB_API_KEY`: Sunucu tarafı TMDB vekil anahtarı.

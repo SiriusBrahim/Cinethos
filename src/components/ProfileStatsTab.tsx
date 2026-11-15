@@ -6,12 +6,15 @@ import {
 } from '../core/cinema-kunye.ts';
 import {
   buildMediaJourneyTimeline,
-  buildTasteDnaProfile,
   computeProfileWatchlistIntersection,
 } from '../core/exporters.ts';
 import { calculateItemWatchMinutes, getTvShowEpisodesCount } from '../utils/helpers.ts';
-// Zevk paneli ağır bir modül: yalnızca istatistik sekmesi görünür olduğunda yüklensin.
-const TasteProfileDashboard = React.lazy(() => import('./taste/TasteProfileDashboard.tsx'));
+// Zevk motoru taksonomisini ana pakete taşımamak için kart isteğe bağlı yüklenir.
+const ProfileIdentityCard = React.lazy(() =>
+  import('./profile/ProfileIdentityCard.tsx').then((mod) => ({
+    default: mod.ProfileIdentityCard,
+  }))
+);
 import { ColumnChart } from './charts/ColumnChart.tsx';
 import {
   buildRatingHistogramColumns,
@@ -25,6 +28,8 @@ interface ProfileStatsTabProps {
   genresMap: Record<number, string>;
   tasteEntries: Record<string, unknown>;
   cinemaKunye?: CinemaKunyeDocument | null;
+  /** Menüdeki geniş Sinema Kimliği görünümünü açar. */
+  onOpenIdentity?: () => void;
 }
 
 function formatMinutes(totalMinutes: number): {
@@ -65,6 +70,7 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
   genresMap,
   tasteEntries,
   cinemaKunye,
+  onOpenIdentity,
 }) => {
   const [genreMediaTypeFilter, setGenreMediaTypeFilter] = useState<'all' | 'movie' | 'tv'>('all');
   const [compareProfileId, setCompareProfileId] = useState<string>(
@@ -74,11 +80,6 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
   const enrichedSavedItems = useMemo(
     () => enrichSavedItemsFromCinemaKunye(savedItems, cinemaKunye),
     [savedItems, cinemaKunye]
-  );
-
-  const tasteDna = useMemo(
-    () => buildTasteDnaProfile(effectiveActiveProfile, genresMap, cinemaKunye),
-    [effectiveActiveProfile, genresMap, cinemaKunye]
   );
 
   const journeyTimeline = useMemo(
@@ -222,6 +223,21 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Sinema Kimliği — menüdeki geniş görünümle aynı canlı kaynak, kompakt özet */}
+      <React.Suspense
+        fallback={
+          <div className="identity-compact" role="status" aria-label="Sinema kimliği yükleniyor">
+            <div className="identity-compact-skeleton" aria-hidden="true">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <span key={index} className="identity-compact-skeleton-row" />
+              ))}
+            </div>
+          </div>
+        }
+      >
+        <ProfileIdentityCard onOpenIdentity={onOpenIdentity} />
+      </React.Suspense>
 
       {/* Movie & TV Separate Time Breakdown Grid */}
       <div className="profile-stats-grid">
@@ -424,49 +440,6 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
         )}
       </div>
 
-      {/* Sinema Kimliğim — Algoritmik Zevk Takımyıldızı (Derin Sinema) */}
-      <div className="profile-tools-section">
-        <React.Suspense
-          fallback={
-            <div className="lazy-tab-fallback" role="status">
-              Zevk profili yükleniyor…
-            </div>
-          }
-        >
-          <TasteProfileDashboard compact />
-        </React.Suspense>
-      </div>
-
-      {/* Zevk DNA Özeti */}
-      <div className="profile-tools-section">
-        <h4 className="profile-tools-heading">
-          <svg className="icon" width="16" height="16" aria-hidden="true">
-            <use href="#icon-dna"></use>
-          </svg>
-          <span>Zevk DNA Özeti</span>
-        </h4>
-        <div className="dna-traits-grid">
-          {tasteDna.signatureTraits.map((trait) => (
-            <div key={trait.label} className="dna-trait-item">
-              <span className="dna-trait-label">{trait.label}</span>
-              <span className="dna-trait-value">{trait.value}</span>
-              <span className="dna-trait-detail">{trait.detail}</span>
-            </div>
-          ))}
-        </div>
-        {tasteDna.topGenres.length > 0 && (
-          <p className="dna-inline-meta">
-            <strong>Baskın Türler:</strong>{' '}
-            {tasteDna.topGenres.map((g) => `${g.name} (%${g.sharePercent})`).join(' · ')}
-          </p>
-        )}
-        {tasteDna.topPeople.length > 0 && (
-          <p className="dna-inline-meta">
-            <strong>Öne Çıkan İsimler:</strong>{' '}
-            {tasteDna.topPeople.map((p) => `${p.name} (${p.role})`).join(' · ')}
-          </p>
-        )}
-      </div>
 
       {/* Birlikte Ne İzlesek? */}
       {otherProfiles.length > 0 && (

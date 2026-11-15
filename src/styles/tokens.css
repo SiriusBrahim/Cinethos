@@ -216,3 +216,92 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+@layer tokens {
+  /* ======================================================================
+     Koyu sinematik tema — aynı token adları, karanlık yüzeyler.
+     html[data-theme='dark'] ile etkinleşir (Faz 6).
+     ====================================================================== */
+  html[data-theme='dark'] {
+    color-scheme: dark;
+
+    --bg-app: #0a0c11;
+    --bg-canvas: #0d1016;
+    --bg-surface: #12151d;
+    --bg-elevated: #171b25;
+    --bg-panel: #1c2230;
+    --bg-header: rgba(13, 16, 22, 0.92);
+    --bg-scrim: rgba(3, 5, 9, 0.62);
+    --bg-overlay: rgba(3, 5, 9, 0.82);
+    --bg-hover: rgba(255, 255, 255, 0.055);
+
+    --border-subtle: #232a39;
+    --border-strong: #33405a;
+    --text-1: #f4f6fb;
+    --text-2: #b9c2d4;
+    --text-3: #8590a6;
+    --text-on-accent: #12151d;
+
+    --gold: #f0b24a;
+    --gold-hover: #f7c46c;
+    --gold-deep: #c98a1e;
+    --gold-soft: rgba(240, 178, 74, 0.16);
+    --gold-border: rgba(240, 178, 74, 0.36);
+    --gold-glow: rgba(240, 178, 74, 0.22);
+
+    --accent: #f0b24a;
+    --accent-hover: #f7c46c;
+    --accent-strong: #e0a037;
+    --accent-deep: #c98a1e;
+    --accent-soft: rgba(240, 178, 74, 0.16);
+    --accent-border: rgba(240, 178, 74, 0.36);
+
+    --turquoise: #35c6b4;
+    --turquoise-soft: rgba(53, 198, 180, 0.16);
+    --turquoise-border: rgba(53, 198, 180, 0.34);
+    --cyan-glow: rgba(53, 198, 180, 0.2);
+    --purple-ambient: rgba(139, 123, 255, 0.06);
+
+    --success: #4ade80;
+    --success-soft: rgba(74, 222, 128, 0.14);
+    --success-border: rgba(74, 222, 128, 0.34);
+    --warning: #fbbf24;
+    --warning-soft: rgba(251, 191, 36, 0.14);
+    --warning-border: rgba(251, 191, 36, 0.34);
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --danger-border: rgba(248, 113, 113, 0.34);
+    --violet: #a99bff;
+    --violet-soft: rgba(139, 123, 255, 0.18);
+    --violet-border: rgba(139, 123, 255, 0.38);
+
+    --link-person: #a99bff;
+    --link-atmosphere: #35c6b4;
+    --link-contrast: #fb923c;
+    --link-universe: #4ade80;
+    --node-profile: #7aa2ff;
+
+    --ring-0: #4ade80;
+    --ring-1: #94a3b8;
+    --ring-2: #f0b24a;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 26px -18px rgba(0, 0, 0, 0.9);
+    --shadow-float: 0 22px 50px -20px rgba(0, 0, 0, 0.85), 0 6px 18px rgba(0, 0, 0, 0.5);
+
+    --focus-ring: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--accent);
+
+    --panel-solid: #12151d;
+  }
+
+  html[data-theme='dark'] body {
+    background-image: radial-gradient(
+      ellipse 90% 45% at 60% -10%,
+      rgba(240, 178, 74, 0.08) 0%,
+      transparent 70%
+    );
+  }
+
+  html[data-theme='dark'] body::after {
+    opacity: 0.02;
+  }
+}

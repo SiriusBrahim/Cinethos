@@ -48,6 +48,8 @@ export interface AppModalsProps {
   authPrompt: AuthPromptState | null;
   toasts: ToastEntry[];
   isMobileViewport: boolean;
+  /** Profil modalındaki kompakt kimlik kartından menüdeki geniş görünüme geçiş. */
+  onOpenIdentityTab: () => void;
 
   profiles: Profile[];
   activeProfile?: Profile;
@@ -138,6 +140,7 @@ export const AppModals: React.FC<AppModalsProps> = ({
   authPrompt,
   toasts,
   isMobileViewport,
+  onOpenIdentityTab,
   profiles,
   activeProfile,
   activeProfileId,
@@ -288,6 +291,7 @@ export const AppModals: React.FC<AppModalsProps> = ({
         tasteEntries={tasteMap.entries}
         syncStatus={syncStatus}
         onClose={onCloseProfile}
+        onOpenIdentity={onOpenIdentityTab}
         onSaveProfileName={onSaveProfileName}
         onSwitchProfile={onSwitchProfile}
         onCreateProfile={onCreateProfile}
