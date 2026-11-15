@@ -1,6 +1,8 @@
 import React from 'react';
 import { Bookmark, Compass, Fingerprint, Network } from 'lucide-react';
 import { lazyWithRetry } from './lazy-with-retry.ts';
+import { DiscoverSection } from '../modules/discover/DiscoverSection.tsx';
+import { ListSection } from '../modules/list/ListSection.tsx';
 
 /**
  * M1 — Modül Kayıt Defteri (tek doğruluk kaynağı).
@@ -62,6 +64,8 @@ export const MODULES: readonly ModuleDefinition[] = [
     shortcut: '1',
     hash: 'discover',
     keywords: ['katalog', 'trend', 'öneri', 'discover'],
+    // Varsayılan sekme: statik bölüm (ilk boyamada Suspense flaşı olmasın).
+    Section: DiscoverSection,
   },
   {
     id: 'list',
@@ -72,6 +76,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     hash: 'list',
     keywords: ['kütüphane', 'izlediklerim', 'list'],
     counter: 'myList',
+    Section: ListSection,
   },
   {
     id: 'taste-map',

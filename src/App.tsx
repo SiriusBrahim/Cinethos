@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { Header } from './components/Header.tsx';
-import { Hero } from './components/Hero.tsx';
-import { Stats } from './components/Stats.tsx';
 import { Controls } from './components/Controls.tsx';
-import { MediaGrid } from './components/MediaGrid.tsx';
 import { type ToastEntry, type ToastKind } from './components/Toast.tsx';
-import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 import { AppFooter } from './app/AppFooter.tsx';
@@ -25,9 +21,12 @@ import { useAppModals } from './hooks/useAppModals.ts';
 // M1: lazyWithRetry ortak yardımcıya taşındı (src/app/lazy-with-retry.ts)
 
 const MobileDashboard = lazyWithRetry(() => import('./app/mobile/MobileDashboard.tsx'));
-// M1: modül bölümleri kayıt defterinden tembel yüklenir
+// M1: modül bölümleri kayıt defterinden yüklenir
+// (taste-map/relationships tembel; discover/list statik — varsayılan sekme flaşı olmasın)
 const TasteMapSection = getModule('taste-map')?.Section;
 const RelationshipsSection = getModule('relationships')?.Section;
+const DiscoverSection = getModule('discover')?.Section;
+const ListSection = getModule('list')?.Section;
 
 import {
   SavedItem,
@@ -4218,6 +4217,100 @@ export function App() {
     }
   };
 
+  // M1: Katalog modüllerinin ortak parçaları — tek kez oluşturulur
+  const controlsNode = (
+    <Controls
+      tab={tab}
+      onTabChange={setTab}
+      myListCount={allListCount}
+      upcomingCount={upcomingCount}
+      dislikedCount={preferences.disliked.length}
+      favoriteActorsCount={favoriteActors.length}
+      watchingCount={watchingCount}
+      watchlistCount={watchlistCount}
+      completedCount={completedCount}
+      genres={genresMap}
+      selectedGenre={selectedGenre}
+      onGenreChange={handleSelectGenre}
+      selectedType={selectedType}
+      onTypeChange={handleSelectType}
+      selectedCategory={category}
+      onCategoryChange={setCategory}
+      isSearchActive={Boolean(query.trim())}
+      selectedSort={selectedSort}
+      onSortChange={setSelectedSort}
+      selectedProvider={selectedProvider}
+      onProviderChange={setSelectedProvider}
+      listStatus={listStatus}
+      onListStatusChange={setListStatus}
+      hideListedItems={hideListedItems}
+      onHideListedItemsChange={setHideListedItems}
+      stockStats={stockStats}
+      onReplenishStock={handleManualStockReplenish}
+      isStockReplenishing={stockEngineState.isReplenishing}
+    />
+  );
+  const catalogGrid = {
+    title: catalogTitle,
+    description: catalogDescription,
+    isLoading:
+      category === 'for-you' && forYouSubTab === 'series' && !query.trim() ? false : isLoading,
+    loadingMore,
+    items: displayedItems,
+    savedItems,
+    genres: genresMap,
+    recommendationReasons:
+      category === 'for-you'
+        ? forYouSubTab === 'series' && !query.trim()
+          ? seriesUniverseData.reasonsMap
+          : forYouReasons
+        : EMPTY_REASONS_MAP,
+    dislikedKeys: preferences.disliked,
+    preferredProviders: preferences.providers,
+    tab,
+    query,
+    listStatus,
+    category,
+    page: catalogPage,
+    totalPages: catalogTotalPages,
+    hasMore: tab === 'discover' && category !== 'for-you' && catalogPage < catalogTotalPages,
+    favoriteActors,
+    onLoadMore: handleLoadMore,
+    onOpenDetails: (item: any) => setDetailItem(item),
+    onQuickAdd: handleQuickAdd,
+    onSetStatus: handleSetStatus,
+    onQuickSave: (item: any) => setQuickSaveItem(item),
+    onToggleDislike: handleToggleDislike,
+    onEmptyAction: handleEmptyAction,
+    onOpenPerson: (id: number, name: string) => {
+      setPersonId(id);
+      setPersonName(name);
+    },
+    onToggleFavoriteActor: handleToggleFavoriteActor,
+    onRefreshForYou: handleRefreshForYou,
+    forYouProgressStep,
+    tmdbSource: tmdbSourceMeta.source,
+    tmdbStaleReason: tmdbSourceMeta.staleReason,
+    selectedType,
+    onTypeChange: handleSelectType,
+    selectedGenre,
+    onGenreChange: handleSelectGenre,
+    selectedSort,
+    onSortChange: setSelectedSort,
+    forYouSubTab,
+    onForYouSubTabChange: setForYouSubTab,
+    seriesCount: seriesUniverseData.universesCount,
+    hiddenKeys: preferences.hidden,
+    mood: preferences.mood,
+    isDemo: Boolean(activeProfile?.isDemo),
+    onIncrementEpisode: handleIncrementTvEpisode,
+    stockStats,
+    isStockReplenishing: stockEngineState.isReplenishing,
+    stockReplenishError: stockEngineState.lastError,
+    onReplenishStock: handleManualStockReplenish,
+    onOpenAddCustom: () => setAddCustomOpen(true),
+  };
+
   // M1: kabuk eylemleri — modüller ortak servisere useShell() ile ulaşır
   const shellActions: ShellActions = {
     openDetails: (item) => setDetailItem(item),
@@ -4334,62 +4427,38 @@ export function App() {
               }}
             />
           </Suspense>
+        ) : tab === 'discover' ? (
+          DiscoverSection ? (
+            <DiscoverSection
+              query={query}
+              heroItem={currentHeroItem}
+              featuredItems={featuredHeroItems}
+              isWatching={Boolean(watchingItem)}
+              onOpenDetails={(item: any) => setDetailItem(item)}
+              controls={controlsNode}
+              grid={catalogGrid}
+            />
+          ) : null
         ) : (
-          <>
-        {tab === 'discover' && !query && (
-          <Hero
-            heroItem={currentHeroItem}
-            featuredItems={featuredHeroItems}
-            isWatching={Boolean(watchingItem)}
-            onOpenDetails={(item) => setDetailItem(item)}
-          />
+          ListSection ? (
+            <ListSection
+              stats={{
+                items: savedItems,
+                profileName,
+                favoriteActors,
+                genresMap,
+                cinemaKunye,
+                onSelectItem: (id: number, mediaType: string) => {
+                  const found = findSavedItem(savedItems, { id, media_type: mediaType });
+                  setDetailItem(found || { id, media_type: mediaType });
+                },
+                onMergeDuplicates: handleMergeDuplicates,
+              }}
+              controls={controlsNode}
+              grid={catalogGrid}
+            />
+          ) : null
         )}
-
-        {tab === 'list' && (
-          <Stats
-            items={savedItems}
-            profileName={profileName}
-            favoriteActors={favoriteActors}
-            genresMap={genresMap}
-            cinemaKunye={cinemaKunye}
-            onSelectItem={(id, mediaType) => {
-              const found = findSavedItem(savedItems, { id, media_type: mediaType });
-              setDetailItem(found || { id, media_type: mediaType });
-            }}
-            onMergeDuplicates={handleMergeDuplicates}
-          />
-        )}
-
-        <Controls
-          tab={tab}
-          onTabChange={setTab}
-          myListCount={allListCount}
-          upcomingCount={upcomingCount}
-          dislikedCount={preferences.disliked.length}
-          favoriteActorsCount={favoriteActors.length}
-          watchingCount={watchingCount}
-          watchlistCount={watchlistCount}
-          completedCount={completedCount}
-          genres={genresMap}
-          selectedGenre={selectedGenre}
-          onGenreChange={handleSelectGenre}
-          selectedType={selectedType}
-          onTypeChange={handleSelectType}
-          selectedCategory={category}
-          onCategoryChange={setCategory}
-          isSearchActive={Boolean(query.trim())}
-          selectedSort={selectedSort}
-          onSortChange={setSelectedSort}
-          selectedProvider={selectedProvider}
-          onProviderChange={setSelectedProvider}
-          listStatus={listStatus}
-          onListStatusChange={setListStatus}
-          hideListedItems={hideListedItems}
-          onHideListedItemsChange={setHideListedItems}
-          stockStats={stockStats}
-          onReplenishStock={handleManualStockReplenish}
-          isStockReplenishing={stockEngineState.isReplenishing}
-        />
 
         {tab === 'relationships' ? (
           RelationshipsSection ? (
@@ -4435,72 +4504,7 @@ export function App() {
               />
             </Suspense>
           ) : null
-        ) : (
-          <ErrorBoundary sectionName="Katalog ve Listem">
-            <MediaGrid
-              title={catalogTitle}
-              description={catalogDescription}
-              isLoading={category === 'for-you' && forYouSubTab === 'series' && !query.trim() ? false : isLoading}
-              loadingMore={loadingMore}
-              items={displayedItems}
-              savedItems={savedItems}
-              genres={genresMap}
-              recommendationReasons={
-                category === 'for-you'
-                  ? forYouSubTab === 'series' && !query.trim()
-                    ? seriesUniverseData.reasonsMap
-                    : forYouReasons
-                  : EMPTY_REASONS_MAP
-              }
-              dislikedKeys={preferences.disliked}
-              preferredProviders={preferences.providers}
-              tab={tab}
-              query={query}
-              listStatus={listStatus}
-              category={category}
-              page={catalogPage}
-              totalPages={catalogTotalPages}
-              hasMore={tab === 'discover' && category !== 'for-you' && catalogPage < catalogTotalPages}
-              favoriteActors={favoriteActors}
-              onLoadMore={handleLoadMore}
-              onOpenDetails={(item) => setDetailItem(item)}
-              onQuickAdd={handleQuickAdd}
-              onSetStatus={handleSetStatus}
-              onQuickSave={(item) => setQuickSaveItem(item)}
-              onToggleDislike={handleToggleDislike}
-              onEmptyAction={handleEmptyAction}
-              onOpenPerson={(id, name) => {
-                setPersonId(id);
-                setPersonName(name);
-              }}
-              onToggleFavoriteActor={handleToggleFavoriteActor}
-              onRefreshForYou={handleRefreshForYou}
-              forYouProgressStep={forYouProgressStep}
-              tmdbSource={tmdbSourceMeta.source}
-              tmdbStaleReason={tmdbSourceMeta.staleReason}
-              selectedType={selectedType}
-              onTypeChange={handleSelectType}
-              selectedGenre={selectedGenre}
-              onGenreChange={handleSelectGenre}
-              selectedSort={selectedSort}
-              onSortChange={setSelectedSort}
-              forYouSubTab={forYouSubTab}
-              onForYouSubTabChange={setForYouSubTab}
-              seriesCount={seriesUniverseData.universesCount}
-              hiddenKeys={preferences.hidden}
-              mood={preferences.mood}
-              isDemo={Boolean(activeProfile?.isDemo)}
-              onIncrementEpisode={handleIncrementTvEpisode}
-              stockStats={stockStats}
-              isStockReplenishing={stockEngineState.isReplenishing}
-              stockReplenishError={stockEngineState.lastError}
-              onReplenishStock={handleManualStockReplenish}
-              onOpenAddCustom={() => setAddCustomOpen(true)}
-            />
-          </ErrorBoundary>
-        )}
-          </>
-        )}
+        ) : null}
           </main>
 
           <AppFooter tmdbSource={tmdbSourceMeta.source} />
