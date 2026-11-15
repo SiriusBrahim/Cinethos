@@ -53,7 +53,7 @@ export const TasteEvolutionPanel: React.FC<TasteEvolutionPanelProps> = ({
         </div>
 
         {drifts.length === 0 ? (
-          <div className="rounded-2xl bg-cinema-surface/50 border border-white/10 p-5 text-xs text-cinema-textMuted">
+          <div className="rounded-xl bg-cinema-surface border border-cinema-borderSubtle p-5 text-xs text-cinema-textMuted">
             Uzun vadeli zevk profilin ile güncel izlemelerin şu an uyumlu ilerliyor; belirgin bir zevk kayması algılanmadı.
           </div>
         ) : (
@@ -85,7 +85,7 @@ export const TasteEvolutionPanel: React.FC<TasteEvolutionPanelProps> = ({
                       <span>{drift.delta > 0 ? `+${drift.delta}` : drift.delta}</span>
                     </span>
                   </div>
-                  <div className="text-xs text-cinema-textMuted flex items-center justify-between pt-2 border-t border-white/5">
+                  <div className="text-xs text-cinema-textMuted flex items-center justify-between pt-2 border-t border-cinema-borderSubtle">
                     <span className="metric-value">
                       Uzun vade:{" "}
                       {drift.longTermAffinity > 0
@@ -118,7 +118,7 @@ export const TasteEvolutionPanel: React.FC<TasteEvolutionPanelProps> = ({
         </div>
 
         {snapshots.length === 0 ? (
-          <div className="rounded-2xl bg-cinema-surface/50 border border-white/10 p-6 text-xs text-cinema-textMuted">
+          <div className="rounded-xl bg-cinema-surface border border-cinema-borderSubtle p-6 text-xs text-cinema-textMuted">
             Henüz tarihli etkileşim kaydı bulunmuyor. Yeni film veya dizileri puanladıkça aylık snapshot geçmişi otomatik oluşur.
           </div>
         ) : (
@@ -126,10 +126,10 @@ export const TasteEvolutionPanel: React.FC<TasteEvolutionPanelProps> = ({
             {[...snapshots].reverse().map((snap) => (
               <div
                 key={snap.month}
-                className="rounded-2xl bg-cinema-surface/60 border border-white/10 p-4 flex flex-wrap items-center justify-between gap-4"
+                className="rounded-xl bg-cinema-surface border border-cinema-borderSubtle p-4 flex flex-wrap items-center justify-between gap-4"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-cinema-gold shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle flex items-center justify-center text-cinema-gold shrink-0">
                     <Calendar className="w-4 h-4" aria-hidden="true" />
                   </div>
                   <div>
@@ -153,7 +153,7 @@ export const TasteEvolutionPanel: React.FC<TasteEvolutionPanelProps> = ({
                         key={tm.metricId}
                         type="button"
                         onClick={() => onSelectMetric(tm.metricId)}
-                        className="px-3 py-1.5 rounded-lg bg-cinema-bg/80 border border-white/10 hover:border-cinema-gold/40 text-xs text-cinema-textPrimary transition-colors flex items-center gap-2 whitespace-nowrap"
+                        className="px-3 py-1.5 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-gold/50 text-xs text-cinema-textPrimary transition-colors flex items-center gap-2 whitespace-nowrap"
                       >
                         <span>{getMetricDisplayTitle(tm.metricId)}</span>
                         <span className="metric-value text-cinema-gold font-semibold">

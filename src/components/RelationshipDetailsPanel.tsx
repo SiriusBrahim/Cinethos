@@ -38,9 +38,9 @@ function getStatusSignalDescription(
 }
 
 function formatConfidenceTier(score: number): { label: string; badgeClass: string } {
-  if (score >= 85) return { label: 'Yüksek Güven', badgeClass: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' };
-  if (score >= 65) return { label: 'Orta Güven', badgeClass: 'bg-amber-500/20 text-amber-300 border border-amber-500/40' };
-  return { label: 'Temel Güven', badgeClass: 'bg-zinc-500/20 text-zinc-300 border border-zinc-500/40' };
+  if (score >= 85) return { label: 'Yüksek Güven', badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-200' };
+  if (score >= 65) return { label: 'Orta Güven', badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200' };
+  return { label: 'Temel Güven', badgeClass: 'bg-cinema-elevated text-cinema-textMuted border border-cinema-borderSubtle' };
 }
 
 export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> = ({
@@ -121,7 +121,7 @@ export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> =
                       {detail.evidenceTypes.map((et) => (
                         <span
                           key={et}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-zinc-300 font-mono"
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textSecondary font-mono"
                         >
                           {et === 'director'
                             ? '🎬 Yönetmen'
@@ -147,47 +147,47 @@ export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> =
 
                   {/* Özellik Ayrımı (Features) */}
                   {detail.features && (
-                    <div className="text-[11px] text-zinc-400 space-y-0.5 my-1.5">
+                    <div className="text-[11px] text-cinema-textMuted space-y-0.5 my-1.5">
                       {detail.features.matchedDirectors && detail.features.matchedDirectors.length > 0 && (
                         <div>
-                          <span className="text-zinc-500">Ortak Yönetmen:</span>{' '}
-                          <span className="text-zinc-200">{detail.features.matchedDirectors.join(', ')}</span>
+                          <span className="text-cinema-textMuted">Ortak Yönetmen:</span>{' '}
+                          <span className="text-cinema-textPrimary font-medium">{detail.features.matchedDirectors.join(', ')}</span>
                         </div>
                       )}
                       {detail.features.matchedWriters && detail.features.matchedWriters.length > 0 && (
                         <div>
-                          <span className="text-zinc-500">Ortak Senarist:</span>{' '}
-                          <span className="text-zinc-200">{detail.features.matchedWriters.join(', ')}</span>
+                          <span className="text-cinema-textMuted">Ortak Senarist:</span>{' '}
+                          <span className="text-cinema-textPrimary font-medium">{detail.features.matchedWriters.join(', ')}</span>
                         </div>
                       )}
                       {detail.features.matchedActors && detail.features.matchedActors.length > 0 && (
                         <div>
-                          <span className="text-zinc-500">Ortak Oyuncular:</span>{' '}
-                          <span className="text-zinc-200">{detail.features.matchedActors.join(', ')}</span>
+                          <span className="text-cinema-textMuted">Ortak Oyuncular:</span>{' '}
+                          <span className="text-cinema-textPrimary font-medium">{detail.features.matchedActors.join(', ')}</span>
                         </div>
                       )}
                       {detail.features.universeName && (
                         <div>
-                          <span className="text-zinc-500">Seri / Evren:</span>{' '}
-                          <span className="text-emerald-300 font-medium">{detail.features.universeName}</span>
+                          <span className="text-cinema-textMuted">Seri / Evren:</span>{' '}
+                          <span className="text-emerald-800 font-semibold">{detail.features.universeName}</span>
                         </div>
                       )}
                       {detail.features.matchedConcepts && detail.features.matchedConcepts.length > 0 && (
                         <div>
-                          <span className="text-zinc-500">Tematik Konseptler:</span>{' '}
-                          <span className="text-teal-300">{detail.features.matchedConcepts.join(', ')}</span>
+                          <span className="text-cinema-textMuted">Tematik Konseptler:</span>{' '}
+                          <span className="text-teal-800 font-medium">{detail.features.matchedConcepts.join(', ')}</span>
                         </div>
                       )}
                       {detail.features.matchedKeywords && detail.features.matchedKeywords.length > 0 && (
                         <div>
-                          <span className="text-zinc-500">TMDB Anahtar Kelimeleri:</span>{' '}
-                          <span className="text-indigo-300">{detail.features.matchedKeywords.join(', ')}</span>
+                          <span className="text-cinema-textMuted">TMDB Anahtar Kelimeleri:</span>{' '}
+                          <span className="text-indigo-800 font-medium">{detail.features.matchedKeywords.join(', ')}</span>
                         </div>
                       )}
                       {detail.features.atmosphereCluster && (
                         <div>
-                          <span className="text-zinc-500">Atmosfer Kümesi:</span>{' '}
-                          <span className="text-amber-300">{detail.features.atmosphereCluster}</span>
+                          <span className="text-cinema-textMuted">Atmosfer Kümesi:</span>{' '}
+                          <span className="text-amber-800 font-medium">{detail.features.atmosphereCluster}</span>
                         </div>
                       )}
                     </div>
@@ -195,64 +195,64 @@ export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> =
 
                   {/* Katkı Payı Dağılımı (Breakdown) */}
                   {detail.breakdown && (
-                    <div className="flex flex-wrap gap-1.5 my-1.5 text-[11px] text-zinc-300">
+                    <div className="flex flex-wrap gap-1.5 my-1.5 text-[11px] text-cinema-textPrimary">
                       {detail.breakdown.vectorContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">
+                        <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
                           %{detail.breakdown.vectorContribution} Vektör
                         </span>
                       )}
                       {detail.breakdown.conceptContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200">
                           %{detail.breakdown.conceptContribution} Konsept
                         </span>
                       )}
                       {detail.breakdown.keywordContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200">
                           %{detail.breakdown.keywordContribution} Kelime
                         </span>
                       )}
                       {detail.breakdown.genreContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300">
+                        <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200">
                           %{detail.breakdown.genreContribution} Tür
                         </span>
                       )}
                       {detail.breakdown.directorContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">
+                        <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200">
                           %{detail.breakdown.directorContribution} Yönetmen
                         </span>
                       )}
                       {detail.breakdown.writerContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300">
+                        <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-800 border border-orange-200">
                           %{detail.breakdown.writerContribution} Senarist
                         </span>
                       )}
                       {detail.breakdown.actorContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-pink-500/15 text-pink-300">
+                        <span className="px-1.5 py-0.5 rounded bg-pink-50 text-pink-800 border border-pink-200">
                           %{detail.breakdown.actorContribution} Oyuncu
                         </span>
                       )}
                       {detail.breakdown.personContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-pink-500/15 text-pink-300">
+                        <span className="px-1.5 py-0.5 rounded bg-pink-50 text-pink-800 border border-pink-200">
                           %{detail.breakdown.personContribution} Kadro
                         </span>
                       )}
                       {detail.breakdown.universeContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
                           %{detail.breakdown.universeContribution} Evren
                         </span>
                       )}
                       {detail.breakdown.toneContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
                           %{detail.breakdown.toneContribution} Ton
                         </span>
                       )}
                       {detail.breakdown.seriesContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
                           %{detail.breakdown.seriesContribution} Evren
                         </span>
                       )}
                       {detail.breakdown.contrastContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-600/15 text-amber-300">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
                           %{detail.breakdown.contrastContribution} Karşıtlık
                         </span>
                       )}

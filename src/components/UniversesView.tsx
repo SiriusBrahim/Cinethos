@@ -145,7 +145,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       era: '1967 - 1980',
       reason: 'Listenizdeki modern yönetmenlerin ilham aldığı auteur dönemi.',
       representative: ['Taksi Şoförü (1976)', 'Kıyamet (Apocalypse Now)', 'Çin Mahallesi'],
-      color: '#d3b579',
+      color: '#C83724',
     },
     {
       id: 'bs-2',
@@ -153,7 +153,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       era: '2000 - 2015',
       reason: 'Karanlık gerilim zevkinizle %94 örtüşen ama listenizde az yer bulan coğrafya.',
       representative: ['İhtiyar Delikanlı (Oldboy)', 'Cinayet Günlüğü (Memories of Murder)', 'Şüphe (Burning)'],
-      color: '#63b8ab',
+      color: '#0F766E',
     },
     {
       id: 'bs-3',
@@ -161,7 +161,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       era: '1920 - 1935',
       reason: 'Sevdiğiniz neon-noir ve klostrofobik stillerin kökeni.',
       representative: ['Metropolis', 'Dr. Caligari’nin Muayenehanesi', 'M (Bir Şehir Katilini Arıyor)'],
-      color: '#a58fd0',
+      color: '#6D28D9',
     },
     {
       id: 'bs-4',
@@ -169,33 +169,33 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       era: '1988 - 1999',
       reason: 'Yüksek teknoloji distopya kavramlarını felsefi derinlikle işleyen kült akım.',
       representative: ['Akira', 'Ghost in the Shell', 'Tetsuo: The Iron Man'],
-      color: '#e0645e',
+      color: '#B91C1C',
     },
   ], []);
 
   return (
     <div className="universes-view w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-8 animate-fade-in text-cinema-text">
       {/* Universes Header & Sub-Nav */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-white/10">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-cinema-borderSubtle">
         <div>
           <span className="text-[11px] font-semibold uppercase tracking-widest text-cinema-purple">
             Sinematik Evrenler & Bağlantı Ağları
           </span>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-cinema-textPrimary flex items-center gap-2">
             <span>🌐 Evrenler</span>
-            <span className="text-xs px-2.5 py-1 rounded-full bg-cinema-purple/10 text-cinema-purple border border-cinema-purple/30 font-medium">
+            <span className="text-xs px-2.5 py-1 rounded-full bg-cinema-purpleDim text-cinema-purple border border-cinema-purple/30 font-medium">
               Çok Boyutlu Ağ
             </span>
           </h1>
         </div>
 
         {/* 5 Sub-Tabs Navigation */}
-        <div className="flex items-center gap-1 p-1 rounded-2xl bg-cinema-surface border border-white/7 backdrop-blur-md overflow-x-auto max-w-full">
+        <div className="flex items-center gap-1 p-1 rounded-2xl bg-cinema-elevated border border-cinema-borderSubtle overflow-x-auto max-w-full">
           <button
             type="button"
             className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
               activeSubTab === 'franchises'
-                ? 'bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/40 shadow-[0_0_15px_rgba(165,143,208,0.18)]'
+                ? 'bg-cinema-surface text-cinema-purple border border-cinema-purple/40 shadow-sm'
                 : 'text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
             onClick={() => setActiveSubTab('franchises')}
@@ -206,7 +206,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             type="button"
             className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
               activeSubTab === 'connections'
-                ? 'bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/40 shadow-[0_0_15px_rgba(165,143,208,0.18)]'
+                ? 'bg-cinema-surface text-cinema-purple border border-cinema-purple/40 shadow-sm'
                 : 'text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
             onClick={() => setActiveSubTab('connections')}
@@ -217,7 +217,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             type="button"
             className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
               activeSubTab === 'cast-network'
-                ? 'bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/40 shadow-[0_0_15px_rgba(165,143,208,0.18)]'
+                ? 'bg-cinema-surface text-cinema-purple border border-cinema-purple/40 shadow-sm'
                 : 'text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
             onClick={() => setActiveSubTab('cast-network')}
@@ -228,7 +228,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             type="button"
             className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
               activeSubTab === 'taste-graph'
-                ? 'bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/40 shadow-[0_0_15px_rgba(165,143,208,0.18)]'
+                ? 'bg-cinema-surface text-cinema-purple border border-cinema-purple/40 shadow-sm'
                 : 'text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
             onClick={() => setActiveSubTab('taste-graph')}
@@ -239,7 +239,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             type="button"
             className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
               activeSubTab === 'blind-spots'
-                ? 'bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/40 shadow-[0_0_15px_rgba(165,143,208,0.18)]'
+                ? 'bg-cinema-surface text-cinema-purple border border-cinema-purple/40 shadow-sm'
                 : 'text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
             onClick={() => setActiveSubTab('blind-spots')}
@@ -265,21 +265,21 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             {curatedFranchises.map((f) => (
               <div
                 key={f.id}
-                className="group relative rounded-3xl overflow-hidden bg-cinema-surface border border-white/7 hover:border-cinema-purple/40 transition-all duration-300 shadow-xl flex flex-col justify-between"
+                className="group relative rounded-3xl overflow-hidden bg-cinema-surface border border-cinema-borderSubtle hover:border-cinema-purple/45 transition-all duration-200 shadow-sm hover:shadow-md flex flex-col justify-between"
               >
-                {/* Backdrop header */}
-                <div className="relative h-44 w-full overflow-hidden bg-[#0a0b0e]">
+                {/* Backdrop header (photographic scrim preserves crisp white title overlay) */}
+                <div className="relative h-44 w-full overflow-hidden bg-slate-900">
                   <img
                     src={f.backdrop}
                     alt={f.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-60"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-75"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0b0e] via-[#0a0b0e]/40 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent" />
                   <div className="absolute bottom-3 left-4 right-4">
-                    <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 rounded bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/30">
+                    <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 rounded bg-slate-950/80 text-white border border-white/20">
                       {f.universe}
                     </span>
-                    <h3 className="text-xl font-bold text-cinema-textPrimary mt-1 group-hover:text-cinema-purple transition-colors">
+                    <h3 className="text-xl font-bold text-white mt-1.5">
                       {f.name}
                     </h3>
                   </div>
@@ -291,7 +291,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                     {f.description}
                   </p>
 
-                  <div className="space-y-2 pt-2 border-t border-white/5">
+                  <div className="space-y-2 pt-2 border-t border-cinema-borderSubtle">
                     <span className="text-[11px] font-semibold text-cinema-textMuted uppercase tracking-wider">
                       Önemli Parçalar:
                     </span>
@@ -299,7 +299,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                       {f.sampleItems.map((item, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between text-xs py-1 px-2.5 rounded-lg bg-[#0a0b0e]/60 border border-white/5"
+                          className="flex items-center justify-between text-xs py-1 px-2.5 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle"
                         >
                           <span className="text-cinema-textPrimary truncate pr-2 font-medium">
                             {item.title}
@@ -321,20 +321,20 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       {/* SUB-TAB 2: SERİ BAĞLANTILARI */}
       {activeSubTab === 'connections' && (
         <div className="space-y-6">
-          <div className="p-5 rounded-2xl bg-cinema-surface border border-white/7 flex flex-wrap items-center justify-between gap-4">
+          <div className="p-5 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle flex flex-wrap items-center justify-between gap-4 shadow-sm">
             <div>
               <h3 className="font-bold text-cinema-textPrimary">İzleme Listenizdeki Seri Evrenleri</h3>
               <p className="text-xs text-cinema-textMuted mt-1">
                 Listenize eklediğiniz veya izlediğiniz filmlerin devam halkaları, öncülleri (prequels) ve eksik parçaları.
               </p>
             </div>
-            <span className="px-3 py-1 rounded-xl bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/30 text-xs font-mono">
+            <span className="px-3 py-1 rounded-xl bg-cinema-purpleDim text-cinema-purple border border-cinema-purple/30 text-xs font-mono">
               {userUniverses.length} Aktif Seri Tespit Edildi
             </span>
           </div>
 
           {userUniverses.length === 0 ? (
-            <div className="p-12 text-center rounded-3xl bg-cinema-surface border border-white/5 space-y-3">
+            <div className="p-12 text-center rounded-3xl bg-cinema-surface border border-cinema-borderSubtle space-y-3 shadow-sm">
               <span className="text-3xl">🎭</span>
               <h4 className="text-base font-semibold text-cinema-textPrimary">Henüz Seri Bağlantısı Bulunmuyor</h4>
               <p className="text-xs text-cinema-textMuted max-w-md mx-auto">
@@ -346,7 +346,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
               {userUniverses.map((u, idx) => (
                 <div
                   key={idx}
-                  className="p-5 rounded-2xl bg-cinema-surface border border-white/7 space-y-3 hover:border-cinema-purple/30 transition-all"
+                  className="p-5 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle space-y-3 hover:border-cinema-purple/35 transition-all shadow-sm"
                 >
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-cinema-textPrimary text-base">{u.displayName || u.collection?.name || 'Seri'}</h4>
@@ -359,9 +359,9 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                     {u.userOwnedParts.map((p, pIdx) => (
                       <div
                         key={pIdx}
-                        className="p-2.5 rounded-xl bg-[#0a0b0e]/70 border border-[#6fbf8a]/35 text-xs"
+                        className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs"
                       >
-                        <div className="text-[10px] text-[#6fbf8a] font-semibold mb-1">✓ Listenizde</div>
+                        <div className="text-[10px] text-cinema-success font-semibold mb-1">✓ Listenizde</div>
                         <div className="font-medium text-cinema-textPrimary truncate">{p.title || p.name}</div>
                         <div className="text-[10px] text-cinema-textMuted mt-0.5">
                           {p.release_date?.slice(0, 4) || p.first_air_date?.slice(0, 4) || ''}
@@ -372,7 +372,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                       <div
                         key={pIdx}
                         onClick={() => onOpenDetails(p)}
-                        className="p-2.5 rounded-xl bg-[#0a0b0e]/40 border border-cinema-gold/35 hover:border-cinema-gold text-xs cursor-pointer transition-colors"
+                        className="p-2.5 rounded-xl bg-cinema-elevated border border-cinema-gold/35 hover:border-cinema-gold text-xs cursor-pointer transition-colors"
                       >
                         <div className="text-[10px] text-cinema-gold font-semibold mb-1">⏳ Eksik Halka (İncele)</div>
                         <div className="font-medium text-cinema-textPrimary truncate">{p.title || p.name}</div>
@@ -392,7 +392,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       {/* SUB-TAB 3: OYUNCU & YÖNETMEN AĞI */}
       {activeSubTab === 'cast-network' && (
         <div className="space-y-6">
-          <div className="p-5 rounded-2xl bg-cinema-surface border border-white/7 flex items-center justify-between">
+          <div className="p-5 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle flex items-center justify-between shadow-sm">
             <div>
               <h3 className="font-bold text-cinema-textPrimary">Yaratıcı Zihinler & Oyuncu Kümeleri</h3>
               <p className="text-xs text-cinema-textMuted mt-1">
@@ -408,9 +408,9 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             {favoriteActors.map((actor) => (
               <div
                 key={actor.id}
-                className="p-4 rounded-2xl bg-cinema-surface border border-white/7 hover:border-cinema-cyan/35 transition-all flex items-center gap-4"
+                className="p-4 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle hover:border-cinema-cyan/40 transition-all flex items-center gap-4 shadow-sm"
               >
-                <div className="w-14 h-14 rounded-full overflow-hidden bg-[#0a0b0e] shrink-0 border border-white/7">
+                <div className="w-14 h-14 rounded-full overflow-hidden bg-cinema-elevated shrink-0 border border-cinema-borderSubtle">
                   {actor.profile_path ? (
                     <img
                       src={`https://image.tmdb.org/t/p/w185${actor.profile_path}`}
@@ -441,13 +441,13 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       {/* SUB-TAB 4: ZEVK AĞI (INTERACTIVE 2D FORCE-GRAPH) */}
       {activeSubTab === 'taste-graph' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-cinema-surface border border-white/7 text-xs text-cinema-textMuted flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle text-xs text-cinema-textMuted flex items-center justify-between shadow-sm">
             <span>
               <strong className="text-cinema-textPrimary">İnteraktif Zevk Ağı:</strong> Düğümler arasındaki mesafeler tür, yönetmen, oyuncu ve içerik vektörü benzerliğini ifade eder. Düğümlere tıklayarak yapım detaylarına ulaşabilirsiniz.
             </span>
           </div>
 
-          <div className="rounded-3xl overflow-hidden border border-white/7 bg-[#0a0b0e] shadow-2xl min-h-[600px]">
+          <div className="rounded-3xl overflow-hidden border border-cinema-borderSubtle bg-cinema-bg shadow-sm min-h-[600px]">
             <RelationshipExplorer
               mode="relationships"
               profileId={profileId}
@@ -467,7 +467,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
       {/* SUB-TAB 5: KEŞİF ALANLARI (BLIND SPOTS) */}
       {activeSubTab === 'blind-spots' && (
         <div className="space-y-6">
-          <div className="p-5 rounded-2xl bg-cinema-surface border border-white/7">
+          <div className="p-5 rounded-2xl bg-cinema-surface border border-cinema-borderSubtle shadow-sm">
             <h3 className="font-bold text-cinema-textPrimary">Keşfedilmemiş Sinematik Topraklar (Kör Noktalar)</h3>
             <p className="text-xs text-cinema-textMuted mt-1">
               Listenizdeki yoğunluk haritasına göre ilgi duyabileceğiniz ancak henüz derinlemesine adım atmadığınız dönemler ve sinema akımları.
@@ -478,12 +478,12 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
             {blindSpots.map((spot) => (
               <div
                 key={spot.id}
-                className="p-6 rounded-3xl bg-cinema-surface border border-white/7 hover:border-cinema-gold/30 transition-all space-y-4"
+                className="p-6 rounded-3xl bg-cinema-surface border border-cinema-borderSubtle hover:border-cinema-gold/35 transition-all space-y-4 shadow-sm"
               >
                 <div className="flex items-center justify-between">
                   <span
                     className="text-[10px] font-mono px-2 py-0.5 rounded border font-semibold"
-                    style={{ borderColor: `${spot.color}40`, color: spot.color, backgroundColor: `${spot.color}15` }}
+                    style={{ borderColor: `${spot.color}40`, color: spot.color, backgroundColor: `${spot.color}12` }}
                   >
                     {spot.era}
                   </span>
@@ -493,7 +493,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                 <h4 className="text-lg font-bold text-cinema-textPrimary">{spot.title}</h4>
                 <p className="text-xs text-cinema-textMuted leading-relaxed">{spot.reason}</p>
 
-                <div className="pt-2 border-t border-white/5 space-y-2">
+                <div className="pt-2 border-t border-cinema-borderSubtle space-y-2">
                   <span className="text-[11px] font-semibold text-cinema-textMuted uppercase tracking-wider">
                     Örnek Başlangıç Yapımları:
                   </span>
@@ -501,7 +501,7 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
                     {spot.representative.map((r, i) => (
                       <span
                         key={i}
-                        className="text-xs px-2.5 py-1 rounded-lg bg-[#0a0b0e] border border-white/7 text-cinema-textPrimary"
+                        className="text-xs px-2.5 py-1 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textPrimary"
                       >
                         {r}
                       </span>

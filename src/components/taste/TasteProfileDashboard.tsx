@@ -176,7 +176,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center divide-x divide-white/10 rounded-lg border border-white/10 bg-cinema-elevated/60">
+            <div className="flex items-center divide-x divide-cinema-borderSubtle rounded-lg border border-cinema-borderSubtle bg-cinema-elevated">
               <div className="px-4 py-2 text-right">
                 <div className="text-[11px] text-cinema-textMuted">Aktif Metrik</div>
                 <div className="metric-value text-base font-bold text-cinema-gold tabular-nums">
@@ -229,7 +229,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
                   isSelected
-                    ? "bg-cinema-gold text-cinema-bg"
+                    ? "bg-cinema-gold text-cinema-onAccent"
                     : "bg-cinema-surface text-cinema-textMuted hover:text-cinema-textPrimary border border-cinema-border"
                 }`}
               >
@@ -340,7 +340,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
                   </p>
                 </div>
 
-                <div className="mt-5 pt-4 border-t border-white/5 flex items-end justify-between gap-3">
+                <div className="mt-5 pt-4 border-t border-cinema-borderSubtle flex items-end justify-between gap-3">
                   <div>
                     <div className="text-[11px] text-cinema-textMuted mb-0.5">
                       Eğilim Skoru

@@ -93,6 +93,14 @@ export const Hero: React.FC<HeroProps> = ({
             </button>
           </div>
         </div>
+        <div className="hero-media-frame hero-media-frame--empty" aria-hidden="true">
+          <div className="hero-media-placeholder">
+            <svg className="icon">
+              <use href="#icon-film" />
+            </svg>
+            <span>Öne Çıkan Seçki</span>
+          </div>
+        </div>
       </section>
     );
   }
@@ -130,20 +138,6 @@ export const Hero: React.FC<HeroProps> = ({
       onFocus={() => setIsHoveredOrFocused(true)}
       onBlur={() => setIsHoveredOrFocused(false)}
     >
-      {heroImage && (
-        <img
-          id="heroPoster"
-          className={`hero-poster ${backdropImage ? 'hero-poster--backdrop' : 'hero-poster--portrait'}`}
-          src={heroImage}
-          alt=""
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-          referrerPolicy="no-referrer"
-          onError={(e) => handleImageError(e, heroImage, backdropImage ? 'w1280' : 'w500')}
-        />
-      )}
-
       <div className="hero-copy">
         <div className="hero-top-row">
           <span id="heroEyebrow" className="eyebrow">
@@ -229,6 +223,29 @@ export const Hero: React.FC<HeroProps> = ({
             Detayları gör
           </button>
         </div>
+      </div>
+
+      <div className="hero-media-frame">
+        {heroImage ? (
+          <img
+            id="heroPoster"
+            className={`hero-poster ${backdropImage ? 'hero-poster--backdrop' : 'hero-poster--portrait'}`}
+            src={heroImage}
+            alt=""
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            referrerPolicy="no-referrer"
+            onError={(e) => handleImageError(e, heroImage, backdropImage ? 'w1280' : 'w500')}
+          />
+        ) : (
+          <div className="hero-media-placeholder" aria-hidden="true">
+            <svg className="icon">
+              <use href="#icon-film" />
+            </svg>
+            <span>{title}</span>
+          </div>
+        )}
       </div>
     </section>
   );

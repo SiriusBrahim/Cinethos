@@ -47,7 +47,7 @@ function AffinityBar({ metric, tone }: { metric: TrendMetric; tone: 'gold' | 'da
     <li className="flex items-center justify-between gap-3">
       <span className="text-sm text-cinema-textPrimary truncate">{metric.title}</span>
       <span className="flex items-center gap-2 shrink-0">
-        <span className="hidden sm:block h-1.5 w-24 rounded-full bg-white/10 overflow-hidden">
+        <span className="hidden sm:block h-1.5 w-24 rounded-full bg-cinema-borderSubtle overflow-hidden">
           <span className={`block h-full rounded-full ${barColor}`} style={{ width: `${width}%` }} />
         </span>
         <span className={`metric-value text-xs font-bold tabular-nums ${textColor}`}>
@@ -174,7 +174,7 @@ export const TasteProfileMinimal: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center divide-x divide-white/10 border border-white/10 rounded-lg bg-cinema-elevated/60">
+          <div className="flex items-center divide-x divide-cinema-borderSubtle border border-cinema-borderSubtle rounded-lg bg-cinema-elevated">
             <div className="px-4 py-2 text-right">
               <div className="text-[11px] text-cinema-textMuted">Aktif Metrik</div>
               <div className="metric-value text-base font-bold text-cinema-gold tabular-nums">

@@ -118,23 +118,8 @@ async function startServer() {
       console.warn('[GitHub-Token] Yenileme atlandı:', e?.message || e);
     }
   };
-  await applyFreshGitHubToken('başlangıç', 8_000);
-
-  // Başlangıçta mevcut izleme listesi ve profillerdeki yapımları asenkron olarak kalıcı kataloğa aktar (BUG-04)
-  try {
-    const initialData = await storage.readDataAsync();
-    const allItems: SavedItem[] = [];
-    for (const p of initialData.profiles || []) {
-      if (Array.isArray(p.items)) allItems.push(...p.items);
-    }
-    if (allItems.length > 0) {
-      await persistentStore.upsertCatalogItemsSerialized(allItems);
-    }
-  } catch (e: any) {
-    console.warn('[Catalog] Başlangıç indeksleme uyarısı:', e?.message || e);
-  }
-
   const httpServer = createHttpServer(app);
+  let viteInstance: { close: () => Promise<void> } | null = null;
 
   if (!isDevMode) {
     const distPath = path.join(root, 'dist');
@@ -149,18 +134,37 @@ async function startServer() {
     app.use(createSpaFallbackMiddleware(indexHtmlPath));
   } else {
     const hmrDisabled = process.env.DISABLE_HMR === 'true' || isAiStudioContainerEnv(process.env);
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        host: listenHost,
-        port,
-        allowedHosts: isContainerDeployment ? true : ['localhost', '127.0.0.1', '.run.app'],
-        hmr: hmrDisabled ? false : { server: httpServer },
-      },
-      appType: 'spa',
+    let viteMiddleware: express.RequestHandler | null = null;
+    const viteReadyPromise = (async () => {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          host: listenHost,
+          port,
+          allowedHosts: isContainerDeployment ? true : ['localhost', '127.0.0.1', '.run.app'],
+          hmr: hmrDisabled ? false : { server: httpServer },
+          ...(hmrDisabled ? { ws: false } : {}),
+        },
+        appType: 'spa',
+      });
+      viteInstance = vite;
+      viteMiddleware = vite.middlewares;
+      return vite;
+    })();
+    viteReadyPromise.catch((err) => {
+      console.error('[Vite] Geliştirme sunucusu başlatılamadı:', err);
     });
-    app.use(vite.middlewares);
+
+    app.use((req, res, next) => {
+      if (viteMiddleware) {
+        viteMiddleware(req, res, next);
+        return;
+      }
+      viteReadyPromise
+        .then((vite) => vite.middlewares(req, res, next))
+        .catch(next);
+    });
   }
 
   httpServer.listen(port, listenHost, () => {
@@ -175,6 +179,23 @@ async function startServer() {
     if (!resolved.tmdbApiKey) {
       console.log('TMDB_API_KEY is not configured; running in fallback demo mode.');
     }
+
+    // Başlangıç token tazeleme ve katalog indeksleme TCP port 3000 açıldıktan sonra arka planda çalışır.
+    void (async () => {
+      await applyFreshGitHubToken('başlangıç', 8_000);
+      try {
+        const initialData = await storage.readDataAsync();
+        const allItems: SavedItem[] = [];
+        for (const p of initialData.profiles || []) {
+          if (Array.isArray(p.items)) allItems.push(...p.items);
+        }
+        if (allItems.length > 0) {
+          await persistentStore.upsertCatalogItemsSerialized(allItems);
+        }
+      } catch (e: any) {
+        console.warn('[Catalog] Başlangıç indeksleme uyarısı:', e?.message || e);
+      }
+    })();
 
     let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingMutationWhileBusy = false;
@@ -280,6 +301,10 @@ async function startServer() {
         process.exit(1);
       }, 10_000);
       forceExitTimer.unref?.();
+
+      if (viteInstance) {
+        await viteInstance.close().catch(() => undefined);
+      }
 
       await new Promise<void>((resolve) => {
         httpServer.close(() => resolve());

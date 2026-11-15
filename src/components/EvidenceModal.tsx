@@ -50,7 +50,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   if (!isOpen || !data) return null;
 
   const scoreColor =
-    data.score >= 80 ? '#6fbf8a' : data.score >= 60 ? '#d3b579' : data.score >= 40 ? '#63b8ab' : '#8b9099';
+    data.score >= 80 ? '#15803D' : data.score >= 60 ? '#C83724' : data.score >= 40 ? '#0F766E' : '#64748B';
 
   const circumference = 2 * Math.PI * 28;
   const strokeDashoffset = circumference - (data.score / 100) * circumference;
@@ -75,21 +75,21 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0a0b0e]/85 backdrop-blur-xl animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/55 backdrop-blur-md animate-fade-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-labelledby="evidenceModalTitle"
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-[#13151a]/95 border border-white/7 shadow-[0_25px_60px_rgba(0,0,0,0.85)] p-6 md:p-8 text-[#eef0f2]"
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-cinema-surface border border-cinema-borderStrong shadow-2xl p-6 md:p-8 text-cinema-textPrimary"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-xl text-[#8b9099] hover:text-[#eef0f2] hover:bg-white/5 transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-lg text-cinema-textMuted hover:text-cinema-textPrimary hover:bg-cinema-elevated transition-colors"
           aria-label="Kapat"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -106,7 +106,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                 cx="32"
                 cy="32"
                 r="28"
-                stroke="rgba(255,255,255,0.07)"
+                stroke="#E2E6ED"
                 strokeWidth="5"
                 fill="none"
               />
@@ -124,45 +124,44 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center font-mono">
-              <span className="text-sm font-bold leading-none text-[#eef0f2]">%{data.score}</span>
-              <span className="text-[9px] text-[#8b9099] tracking-tight">UYUM</span>
+              <span className="text-sm font-bold leading-none text-cinema-textPrimary">%{data.score}</span>
+              <span className="text-[9px] text-cinema-textMuted tracking-tight">UYUM</span>
             </div>
           </div>
 
           <div>
             <div className="flex items-center gap-2 mb-1">
               {data.category && (
-                <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/7 text-[#8b9099]">
+                <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textMuted">
                   {data.category}
                 </span>
               )}
               {data.confidence && (
                 <span
-                  className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                  className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border ${
                     data.confidence === 'high'
-                      ? 'bg-[#6fbf8a]/15 border-[#6fbf8a]/35 text-[#6fbf8a]'
+                      ? 'bg-emerald-50 border-emerald-200 text-cinema-success'
                       : data.confidence === 'medium'
-                      ? 'bg-[#d3b579]/15 border-[#d3b579]/35 text-[#d3b579]'
-                      : 'bg-white/5 border-white/7 text-[#8b9099]'
+                      ? 'bg-cinema-gold/10 border-cinema-gold/30 text-cinema-gold'
+                      : 'bg-cinema-elevated border-cinema-borderSubtle text-cinema-textMuted'
                   }`}
                 >
                   {data.confidence === 'high' ? 'Güçlü Kanıt' : data.confidence === 'medium' ? 'Çıkarım' : 'Az Veri'}
                 </span>
               )}
             </div>
-            <h2 id="evidenceModalTitle" className="text-xl md:text-2xl font-serif font-bold text-[#eef0f2] tracking-tight">
+            <h2 id="evidenceModalTitle" className="text-xl md:text-2xl font-display font-bold text-cinema-textPrimary tracking-tight">
               {data.title}
             </h2>
-            <p className="text-sm text-[#8b9099] mt-1 leading-relaxed">
+            <p className="text-sm text-cinema-textSecondary mt-1 leading-relaxed">
               {data.description || 'Bu metrik, izleme geçmişinizdeki tematik ve ton benzerliklerinden türetilmiştir.'}
             </p>
           </div>
         </div>
 
         {/* "Bunu Nasıl Bildin?" Bilgi Notu */}
-        <div className="mb-6 p-4 rounded-2xl bg-[#0a0b0e]/70 border border-[#63b8ab]/25 text-xs leading-relaxed text-[#8b9099]">
-          <div className="flex items-center gap-2 text-[#63b8ab] font-semibold mb-1">
-            <span>💡</span>
+        <div className="mb-6 p-4 rounded-lg bg-cinema-elevated border border-cinema-cyan/30 text-xs leading-relaxed text-cinema-textSecondary">
+          <div className="flex items-center gap-2 text-cinema-cyan font-semibold mb-1">
             <span>Bunu Nasıl Bildik?</span>
           </div>
           <p>
@@ -171,39 +170,39 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           </p>
         </div>
 
-        {/* ✅ Tercihini Güçlendiren İçerikler */}
+        {/* Tercihini Güçlendiren İçerikler */}
         {data.positiveEvidence && data.positiveEvidence.length > 0 && (
           <div className="mb-5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#6fbf8a] mb-2 flex items-center gap-1.5">
-              <span>✅</span> Tercihini Güçlendiren Yapımlar ({data.positiveEvidence.length})
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-cinema-success mb-2 flex items-center gap-1.5">
+              Tercihini Güçlendiren Yapımlar ({data.positiveEvidence.length})
             </h3>
             <div className="space-y-2">
               {data.positiveEvidence.map((item) => (
                 <div
                   key={`${item.media_type}:${item.id}`}
                   onClick={() => onSelectMedia?.(item)}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-[#0a0b0e]/50 border border-white/5 hover:border-[#6fbf8a]/35 hover:bg-white/5 transition-colors cursor-pointer group"
+                  className="flex items-center justify-between p-2.5 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-success/40 hover:bg-cinema-surface transition-colors cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {item.poster_path ? (
                       <img
                         src={`https://image.tmdb.org/t/p/w92${item.poster_path}`}
                         alt={item.title}
-                        className="w-8 h-12 object-cover rounded-md shrink-0 border border-white/7"
+                        className="w-8 h-12 object-cover rounded shrink-0 border border-cinema-borderSubtle"
                       />
                     ) : (
-                      <div className="w-8 h-12 rounded-md bg-[#13151a] flex items-center justify-center text-xs text-cinema-textTertiary">
-                        🎬
+                      <div className="w-8 h-12 rounded bg-cinema-surface border border-cinema-borderSubtle flex items-center justify-center text-xs text-cinema-textTertiary">
+                        Film
                       </div>
                     )}
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-[#eef0f2] group-hover:text-[#6fbf8a] transition-colors truncate">
+                      <div className="text-sm font-medium text-cinema-textPrimary group-hover:text-cinema-success transition-colors truncate">
                         {item.title}
                       </div>
-                      <div className="text-[11px] text-[#8b9099] font-mono">{item.year || '—'}</div>
+                      <div className="text-[11px] text-cinema-textMuted font-mono">{item.year || '—'}</div>
                     </div>
                   </div>
-                  <span className="text-xs font-medium text-[#6fbf8a] font-mono shrink-0 pl-2">
+                  <span className="text-xs font-medium text-cinema-success font-mono shrink-0 pl-2">
                     {item.contribution}
                   </span>
                 </div>
@@ -212,28 +211,28 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           </div>
         )}
 
-        {/* ❌ Tercihini Zayıflatan İçerikler */}
+        {/* Tercihini Zayıflatan İçerikler */}
         {data.negativeEvidence && data.negativeEvidence.length > 0 && (
           <div className="mb-5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#e0645e] mb-2 flex items-center gap-1.5">
-              <span>❌</span> Tercihini Zayıflatan İçerikler ({data.negativeEvidence.length})
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-cinema-danger mb-2 flex items-center gap-1.5">
+              Tercihini Zayıflatan İçerikler ({data.negativeEvidence.length})
             </h3>
             <div className="space-y-2">
               {data.negativeEvidence.map((item) => (
                 <div
                   key={`${item.media_type}:${item.id}`}
                   onClick={() => onSelectMedia?.(item)}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-[#0a0b0e]/50 border border-white/5 hover:border-[#e0645e]/35 hover:bg-white/5 transition-colors cursor-pointer group"
+                  className="flex items-center justify-between p-2.5 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-danger/40 hover:bg-cinema-surface transition-colors cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-[#eef0f2] group-hover:text-[#e0645e] transition-colors truncate">
+                      <div className="text-sm font-medium text-cinema-textPrimary group-hover:text-cinema-danger transition-colors truncate">
                         {item.title}
                       </div>
-                      <div className="text-[11px] text-[#8b9099] font-mono">{item.year || '—'}</div>
+                      <div className="text-[11px] text-cinema-textMuted font-mono">{item.year || '—'}</div>
                     </div>
                   </div>
-                  <span className="text-xs font-medium text-[#e0645e] font-mono shrink-0 pl-2">
+                  <span className="text-xs font-medium text-cinema-danger font-mono shrink-0 pl-2">
                     {item.contribution}
                   </span>
                 </div>
@@ -242,17 +241,17 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           </div>
         )}
 
-        {/* 🔗 İlgili Metrikler */}
+        {/* İlgili Metrikler */}
         {data.relatedMetrics && data.relatedMetrics.length > 0 && (
           <div className="mb-6">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#8b9099] mb-2 block">
-              🔗 Bağlantılı Zevk Düğümleri
+            <span className="text-xs font-semibold uppercase tracking-wider text-cinema-textMuted mb-2 block">
+              Bağlantılı Zevk Düğümleri
             </span>
             <div className="flex flex-wrap gap-2">
               {data.relatedMetrics.map((rm) => (
                 <span
                   key={rm.id}
-                  className="px-2.5 py-1 rounded-lg bg-[#0a0b0e]/60 border border-white/7 text-xs text-[#8b9099] font-mono"
+                  className="px-2.5 py-1 rounded bg-cinema-elevated border border-cinema-borderSubtle text-xs text-cinema-textSecondary font-mono"
                 >
                   {rm.name} · %{rm.score}
                 </span>
@@ -261,17 +260,17 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           </div>
         )}
 
-        {/* ⚙️ Manuel Kontrol Paneli */}
-        <div className="pt-4 border-t border-white/7">
+        {/* Manuel Kontrol Paneli */}
+        <div className="pt-4 border-t border-cinema-borderSubtle">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-[#8b9099] flex items-center gap-1.5">
-              <span>⚙️</span> Bu Özelliği Yönet
+            <span className="text-xs font-semibold text-cinema-textSecondary flex items-center gap-1.5">
+              Bu Özelliği Yönet
             </span>
             {currentAdjustment && (
               <button
                 type="button"
                 onClick={() => handleAction('reset')}
-                className="text-[11px] text-[#d3b579] hover:underline transition-colors"
+                className="text-[11px] text-cinema-gold hover:underline transition-colors"
               >
                 Varsayılana Sıfırla
               </button>
@@ -281,68 +280,68 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
             <button
               type="button"
               onClick={() => handleAction('boost')}
-              className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              className={`p-2 rounded-lg text-xs font-medium border transition-all ${
                 currentAdjustment === 'boost'
-                  ? 'bg-[#6fbf8a]/20 text-[#6fbf8a] border-[#6fbf8a]'
-                  : 'bg-[#0a0b0e]/40 text-[#8b9099] border-white/7 hover:border-[#6fbf8a]/40 hover:text-[#eef0f2]'
+                  ? 'bg-emerald-50 text-cinema-success border-emerald-300'
+                  : 'bg-cinema-elevated text-cinema-textSecondary border-cinema-borderSubtle hover:border-cinema-success/50 hover:text-cinema-textPrimary'
               }`}
             >
-              🚀 Güçlendir
+              Güçlendir
             </button>
             <button
               type="button"
               onClick={() => handleAction('reduce')}
-              className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              className={`p-2 rounded-lg text-xs font-medium border transition-all ${
                 currentAdjustment === 'reduce'
-                  ? 'bg-[#d3b579]/20 text-[#d3b579] border-[#d3b579]'
-                  : 'bg-[#0a0b0e]/40 text-[#8b9099] border-white/7 hover:border-[#d3b579]/40 hover:text-[#eef0f2]'
+                  ? 'bg-cinema-gold/10 text-cinema-gold border-cinema-gold'
+                  : 'bg-cinema-elevated text-cinema-textSecondary border-cinema-borderSubtle hover:border-cinema-gold/50 hover:text-cinema-textPrimary'
               }`}
             >
-              📉 Azalt
+              Azalt
             </button>
             <button
               type="button"
               onClick={() => handleAction('pin')}
-              className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              className={`p-2 rounded-lg text-xs font-medium border transition-all ${
                 currentAdjustment === 'pin'
-                  ? 'bg-[#63b8ab]/20 text-[#63b8ab] border-[#63b8ab]'
-                  : 'bg-[#0a0b0e]/40 text-[#8b9099] border-white/7 hover:border-[#63b8ab]/40 hover:text-[#eef0f2]'
+                  ? 'bg-teal-50 text-cinema-cyan border-teal-300'
+                  : 'bg-cinema-elevated text-cinema-textSecondary border-cinema-borderSubtle hover:border-cinema-cyan/50 hover:text-cinema-textPrimary'
               }`}
             >
-              📌 Sabitle
+              Sabitle
             </button>
             <button
               type="button"
               onClick={() => handleAction('ignore')}
-              className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              className={`p-2 rounded-lg text-xs font-medium border transition-all ${
                 currentAdjustment === 'ignore'
-                  ? 'bg-[#e0645e]/20 text-[#e0645e] border-[#e0645e]'
-                  : 'bg-[#0a0b0e]/40 text-[#8b9099] border-white/7 hover:border-[#e0645e]/40 hover:text-[#eef0f2]'
+                  ? 'bg-rose-50 text-cinema-danger border-rose-300'
+                  : 'bg-cinema-elevated text-cinema-textSecondary border-cinema-borderSubtle hover:border-cinema-danger/50 hover:text-cinema-textPrimary'
               }`}
             >
-              🚫 İlgisiz
+              İlgisiz
             </button>
           </div>
 
-          {/* İtiraz Butonu ("Bu film aslında X değil") */}
-          <div className="flex items-center justify-between text-xs text-[#8b9099]">
+          {/* İtiraz Butonu */}
+          <div className="flex items-center justify-between text-xs text-cinema-textMuted">
             {objectionSent ? (
-              <span className="text-[#6fbf8a] flex items-center gap-1">
+              <span className="text-cinema-success flex items-center gap-1">
                 <span>✓</span> İtirazınız kaydedildi, profil algoritması güncellendi.
               </span>
             ) : (
               <button
                 type="button"
                 onClick={handleObjection}
-                className="text-[#8b9099] hover:text-[#e0645e] underline underline-offset-2 transition-colors"
+                className="text-cinema-textMuted hover:text-cinema-danger underline underline-offset-2 transition-colors"
               >
-                ⚠️ "Bu çıkarım profilimi tam yansıtmıyor" (İtiraz et)
+                "Bu çıkarım profilimi tam yansıtmıyor" (İtiraz et)
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-[#eef0f2] font-medium transition-colors"
+              className="px-4 py-2 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-borderStrong text-cinema-textPrimary font-medium transition-colors"
             >
               Kapat
             </button>

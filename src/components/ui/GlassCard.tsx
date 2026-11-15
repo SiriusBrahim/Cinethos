@@ -19,7 +19,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   const glowStyles = {
     gold: "hover:border-cinema-gold/40",
     cyan: "hover:border-cinema-cyan/40",
-    none: "hover:border-white/16",
+    none: "hover:border-cinema-borderStrong",
   };
 
   if (onClick) {

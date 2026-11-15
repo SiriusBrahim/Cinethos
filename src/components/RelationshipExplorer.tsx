@@ -866,7 +866,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
                 graphData={graphData as any}
                 width={size.width}
                 height={size.height}
-                backgroundColor="#0d0e12"
+                backgroundColor={typeof document !== 'undefined' ? (getComputedStyle(document.documentElement).getPropertyValue('--bg-canvas').trim() || '#eaecef') : '#eaecef'}
                 nodeRelSize={6}
                 nodeCanvasObject={nodeCanvasObject}
                 nodeLabel={(rawNode: any) => {

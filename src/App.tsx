@@ -9,6 +9,7 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 import { AppFooter } from './app/AppFooter.tsx';
+import { AppSidebar } from './app/AppSidebar.tsx';
 import { MobileTabBar } from './app/MobileTabBar.tsx';
 import { AppModals } from './app/AppModals.tsx';
 import { BRAND_NAME } from './shared/brand.ts';
@@ -4115,33 +4116,47 @@ export function App() {
         queueFailure={queueFailure}
         maxQueueAttempts={maxQueueAttempts}
       />
-      <Header
-        profileName={profileName}
-        query={query}
-        tab={tab}
-        onTabChange={setTab}
-        myListCount={allListCount}
-        streakDays={streakDays}
-        onSearchChange={setQuery}
-        onSearchSubmit={handleSearchSubmit}
-        onSearchClear={handleSearchClear}
-        onOpenProfile={() => setProfileOpen(true)}
-        onOpenAdd={() => setAddCustomOpen(true)}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-        onSelectItem={(item) => setDetailItem(item)}
-        getSaved={(item) => findSavedItem(savedItems, item)}
-        tmdbSource={tmdbSourceMeta.source}
-        tmdbStaleReason={tmdbSourceMeta.staleReason}
-      />
-      <ConflictBanner
-        conflict={serverConflict}
-        onMergeBoth={handleMergeBothOnConflict}
-        onKeepLocal={handleKeepLocalOnConflict}
-        onUseServer={handleUseServerOnConflict}
-        onDismiss={() => setServerConflict(null)}
-      />
+      <div className="app-workspace-frame">
+        <AppSidebar
+          tab={tab}
+          onTabChange={setTab}
+          myListCount={allListCount}
+          profileName={profileName}
+          streakDays={streakDays}
+          tmdbSource={tmdbSourceMeta.source}
+          tmdbStaleReason={tmdbSourceMeta.staleReason}
+          onOpenProfile={() => setProfileOpen(true)}
+          onOpenAdd={() => setAddCustomOpen(true)}
+          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        />
+        <div className="app-main-stage">
+          <Header
+            profileName={profileName}
+            query={query}
+            tab={tab}
+            onTabChange={setTab}
+            myListCount={allListCount}
+            streakDays={streakDays}
+            onSearchChange={setQuery}
+            onSearchSubmit={handleSearchSubmit}
+            onSearchClear={handleSearchClear}
+            onOpenProfile={() => setProfileOpen(true)}
+            onOpenAdd={() => setAddCustomOpen(true)}
+            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+            onSelectItem={(item) => setDetailItem(item)}
+            getSaved={(item) => findSavedItem(savedItems, item)}
+            tmdbSource={tmdbSourceMeta.source}
+            tmdbStaleReason={tmdbSourceMeta.staleReason}
+          />
+          <ConflictBanner
+            conflict={serverConflict}
+            onMergeBoth={handleMergeBothOnConflict}
+            onKeepLocal={handleKeepLocalOnConflict}
+            onUseServer={handleUseServerOnConflict}
+            onDismiss={() => setServerConflict(null)}
+          />
 
-      <main className="shell">
+          <main className="shell">
         {tab === 'discover' && !query && (
           <Hero
             heroItem={currentHeroItem}
@@ -4339,9 +4354,11 @@ export function App() {
             />
           </ErrorBoundary>
         )}
-      </main>
+          </main>
 
-      <AppFooter tmdbSource={tmdbSourceMeta.source} />
+          <AppFooter tmdbSource={tmdbSourceMeta.source} />
+        </div>
+      </div>
 
       <MobileTabBar tab={tab} allListCount={allListCount} onSelectTab={setTab} />
 

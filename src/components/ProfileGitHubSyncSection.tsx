@@ -379,7 +379,7 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
       {(remoteSyncInfo?.authFailed || showTokenInput) && (
         <form
           onSubmit={(e) => void handleSavePatToken(e)}
-          className="my-3 rounded border border-cinema-gold/30 bg-cinema-card/90 p-3 text-xs"
+          className="my-3 rounded border border-cinema-gold/30 bg-cinema-elevated p-3 text-xs"
         >
           <div className="font-semibold text-cinema-gold mb-1">
             {remoteSyncInfo?.authFailed
@@ -397,7 +397,7 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
               value={patTokenInput}
               onChange={(e) => setPatTokenInput(e.target.value)}
               placeholder="github_pat_... veya ghp_..."
-              className="flex-1 min-w-[240px] px-2.5 py-1.5 rounded border border-white/10 bg-black/40 text-cinema-text font-mono text-xs focus:outline-none focus:border-cinema-gold"
+              className="flex-1 min-w-[240px] px-2.5 py-1.5 rounded border border-cinema-borderStrong bg-cinema-surface text-cinema-textPrimary font-mono text-xs focus:outline-none focus:border-cinema-gold"
               autoComplete="off"
               disabled={savingToken}
             />

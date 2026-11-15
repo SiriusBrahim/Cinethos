@@ -658,7 +658,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                   </div>
                 )}
                 {lovedSimDetail && lovedSimDetail.matchedTitle && (
-                  <div className="mt-3.5 pt-3 border-t border-white/[0.08]" aria-label="Sevilen yapım benzerlik analizi">
+                  <div className="mt-3.5 pt-3 border-t border-cinema-borderSubtle" aria-label="Sevilen yapım benzerlik analizi">
                     <div className="flex items-center justify-between text-xs mb-2">
                       <span className="font-display font-medium text-cinema-gold">
                         Sevilen Yapımlarla Benzerlik: &ldquo;{lovedSimDetail.matchedTitle}&rdquo;
@@ -667,7 +667,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                         %{Math.round(lovedSimDetail.similarity * 100)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-5 divide-x divide-white/[0.08] rounded-md border border-white/[0.08] bg-cinema-elevated text-center text-[11px]">
+                    <div className="grid grid-cols-5 divide-x divide-cinema-borderSubtle rounded-md border border-cinema-borderSubtle bg-cinema-elevated text-center text-[11px]">
                       <div className="py-1.5 px-1">
                         <div className="text-[10px] text-cinema-textMuted">Tür</div>
                         <div className="font-mono text-cinema-textPrimary mt-0.5 font-medium tabular-nums">

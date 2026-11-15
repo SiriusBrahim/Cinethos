@@ -81,7 +81,7 @@ export const TasteComparePanel: React.FC<TasteComparePanelProps> = ({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-2xl bg-cinema-surface/60 border border-white/10 p-5 flex items-center justify-between">
+        <div className="rounded-xl bg-cinema-surface border border-cinema-borderSubtle p-5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs text-cinema-gold font-medium">
               <Film className="w-4 h-4" aria-hidden="true" />
@@ -99,7 +99,7 @@ export const TasteComparePanel: React.FC<TasteComparePanelProps> = ({
           </div>
         </div>
 
-        <div className="rounded-2xl bg-cinema-surface/60 border border-white/10 p-5 flex items-center justify-between">
+        <div className="rounded-xl bg-cinema-surface border border-cinema-borderSubtle p-5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs text-cinema-cyan font-medium">
               <Tv className="w-4 h-4" aria-hidden="true" />
@@ -162,7 +162,7 @@ export const TasteComparePanel: React.FC<TasteComparePanelProps> = ({
                   )}
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-4">
+                <div className="mt-4 pt-3 border-t border-cinema-borderSubtle flex items-center justify-between gap-4">
                   <div className="flex items-center gap-5">
                     <div>
                       <div className="text-[11px] text-cinema-textMuted">Film</div>
@@ -198,7 +198,7 @@ export const TasteComparePanel: React.FC<TasteComparePanelProps> = ({
       )}
 
       {seriesOnlyRows.length > 0 && (
-        <div className="rounded-2xl bg-cinema-surface/40 border border-white/10 p-5">
+        <div className="rounded-xl bg-cinema-surface border border-cinema-borderSubtle p-5">
           <h4 className="text-xs font-mono uppercase tracking-wider text-cinema-textMuted mb-3">
             Yalnızca Dizilere Özgü Biçim Metrikleri
           </h4>
@@ -208,7 +208,7 @@ export const TasteComparePanel: React.FC<TasteComparePanelProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => onSelectMetric(item.id)}
-                className="px-4 py-2.5 rounded-xl bg-cinema-bg/70 border border-white/10 hover:border-cinema-cyan/40 transition-colors flex items-center gap-3 text-left"
+                className="px-4 py-2.5 rounded-lg bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-cyan/50 transition-colors flex items-center gap-3 text-left"
               >
                 <span className="text-sm font-medium text-cinema-textPrimary">
                   {item.title}
