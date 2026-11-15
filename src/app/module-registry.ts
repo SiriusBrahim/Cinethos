@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bookmark, Compass, Fingerprint, Network } from 'lucide-react';
+import { lazyWithRetry } from './lazy-with-retry.ts';
 
 /**
  * M1 — Modül Kayıt Defteri (tek doğruluk kaynağı).
@@ -28,6 +29,11 @@ export type ModuleIcon = React.ComponentType<{
 export interface ModuleDefinition {
   /** Modül kimliği — hash rotası ve olay adlarında kullanılır. */
   readonly id: ModuleId;
+  /**
+   * Modülün ana bölüm bileşeni. Tanımlıysa yönetici (App), ilgili sekmede bu
+   * bileşeni render eder — sekme içeriği App'te değil, modül dosyasında yaşar.
+   */
+  readonly Section?: React.ComponentType<any>;
   /** Görünen ad. */
   readonly label: string;
   /** Kenar çubuğu/üst sekmelerde kullanılan SVG sembol referansı (`<use href>`). */
@@ -70,6 +76,9 @@ export const MODULES: readonly ModuleDefinition[] = [
     Icon: Fingerprint,
     shortcut: '3',
     hash: 'taste-map',
+    Section: lazyWithRetry(
+      () => import('../modules/taste-map/TasteMapSection.tsx')
+    ) as unknown as React.ComponentType<any>,
   },
   {
     id: 'relationships',
@@ -78,6 +87,9 @@ export const MODULES: readonly ModuleDefinition[] = [
     Icon: Network,
     shortcut: '4',
     hash: 'relationships',
+    Section: lazyWithRetry(
+      () => import('../modules/relationships/RelationshipsSection.tsx')
+    ) as unknown as React.ComponentType<any>,
   },
 ];
 

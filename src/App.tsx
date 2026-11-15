@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
 import { Stats } from './components/Stats.tsx';
@@ -11,31 +11,23 @@ import { ConflictBanner } from './components/ConflictBanner.tsx';
 import { AppFooter } from './app/AppFooter.tsx';
 import { AppSidebar } from './app/AppSidebar.tsx';
 import type { ModuleId } from './app/module-registry.ts';
+import { getModule } from './app/module-registry.ts';
 import { useHashNavigation } from './app/useHashNavigation.ts';
+import { lazyWithRetry } from './app/lazy-with-retry.ts';
+import { ShellProvider, type ShellActions } from './app/shell-context.tsx';
+import { emitShellEvent } from './app/shell-events.ts';
 import { MobileDock } from './app/mobile/MobileDock.tsx';
 import { MobileTopBar } from './app/mobile/MobileTopBar.tsx';
 import { AppModals } from './app/AppModals.tsx';
 import { BRAND_NAME } from './shared/brand.ts';
 import { useAppModals } from './hooks/useAppModals.ts';
 
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  importer: () => Promise<{ default: T }>
-): React.LazyExoticComponent<T> {
-  return lazy(async () => {
-    try {
-      return await importer();
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      return importer();
-    }
-  });
-}
+// M1: lazyWithRetry ortak yardımcıya taşındı (src/app/lazy-with-retry.ts)
 
-const TasteMapView = lazyWithRetry(() => import('./components/TasteMapView.tsx'));
-const RelationshipExplorer = lazyWithRetry(() => import('./components/RelationshipExplorer.tsx'));
-const TasteProfileDashboard = lazyWithRetry(() => import('./components/taste/TasteProfileDashboard.tsx'));
 const MobileDashboard = lazyWithRetry(() => import('./app/mobile/MobileDashboard.tsx'));
-const TasteProfileMinimal = lazyWithRetry(() => import('./components/taste/TasteProfileMinimal.tsx'));
+// M1: modül bölümleri kayıt defterinden tembel yüklenir
+const TasteMapSection = getModule('taste-map')?.Section;
+const RelationshipsSection = getModule('relationships')?.Section;
 
 import {
   SavedItem,
@@ -974,6 +966,14 @@ export function App() {
       if (!shouldStayDirty) {
         setServerConflict(null);
       }
+
+      // M1: senkron tamamlandığını modüllere bildir
+      // (kesin yükleme/indirme sayaçları Y2 delta yazma yoluyla netleşecek)
+      emitShellEvent('sync:completed', {
+        uploaded: localHasUnpushedAdditions ? 1 : 0,
+        downloaded: remoteDoc.profiles.reduce((n, p) => n + (p.items?.length || 0), 0),
+        merged: mergedDoc.profiles.reduce((n, p) => n + (p.items?.length || 0), 0),
+      });
 
       return mergedDoc;
     },
@@ -2916,6 +2916,9 @@ export function App() {
       prev.filter((i) => makeMediaKey(i) !== itemKey)
     );
 
+    // M1: kaydetme olayını modüllere bildir (çapraz-modül olay yolu)
+    emitShellEvent('item:saved', { key: itemKey, title: displayTitle(rawItem) });
+
     // Sorun D: Kalıcı Zevk Haritasında yapımı 'saved' olarak işaretle
     try {
       const currentTasteMap = loadPersistentTasteMap(activeProfileIdRef.current);
@@ -3125,6 +3128,11 @@ export function App() {
   };
 
   const handleToggleDislike = (key: string) => {
+    // M1: beğenmeme değişimini modüllere bildir (updater çalışmadan önceki durum)
+    emitShellEvent('item:disliked', {
+      key,
+      disliked: !preferencesRef.current?.disliked?.includes(key),
+    });
     setPreferences((prev) => {
       const isCurrentlyDisliked = prev.disliked.includes(key);
       const disliked = isCurrentlyDisliked
@@ -3926,6 +3934,8 @@ export function App() {
 
     setActiveProfileId(newId);
     activeProfileIdRef.current = newId;
+    // M1: modüllere profil değişimini bildir (çapraz-modül olay yolu)
+    emitShellEvent('profile:changed', { profileId: newId });
     const target = updatedProfiles.find((p) => p.id === newId);
     const nextName = target?.name || 'Profilim';
     profileNameRef.current = nextName;
@@ -4208,8 +4218,20 @@ export function App() {
     }
   };
 
+  // M1: kabuk eylemleri — modüller ortak servisere useShell() ile ulaşır
+  const shellActions: ShellActions = {
+    openDetails: (item) => setDetailItem(item),
+    openQuickSave: (item) => setQuickSaveItem(item),
+    setStatus: (item, status) => handleSetStatus(item, status),
+    toggleDislike: (key) => handleToggleDislike(key),
+    refreshTasteMap: () => handleRefreshTasteMap(),
+    openCommandPalette: () => setCommandPaletteOpen(true),
+    openAddCustom: () => setAddCustomOpen(true),
+    openProfile: () => setProfileOpen(true),
+  };
+
   return (
-    <>
+    <ShellProvider value={shellActions}>
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
@@ -4370,7 +4392,7 @@ export function App() {
         />
 
         {tab === 'relationships' ? (
-          <ErrorBoundary sectionName="İlişki Keşfi">
+          RelationshipsSection ? (
             <Suspense
               fallback={
                 <div className="lazy-tab-fallback" role="status">
@@ -4378,75 +4400,41 @@ export function App() {
                 </div>
               }
             >
-              <RelationshipExplorer
-                key={`${activeProfileId}-relationships`}
-                mode="relationships"
+              <RelationshipsSection
                 profileId={activeProfileId}
                 savedItems={savedItems}
                 preferences={preferences}
-                candidates={[]}
                 favoriteActors={favoriteActors}
                 genreNames={genresMap}
                 onRefresh={handleLoadRelationshipCandidates}
-                onOpenDetails={(item) => setDetailItem(item as SavedItem)}
-                onQuickSave={(item) => setQuickSaveItem(item as SavedItem)}
                 initialSourceKey={relationshipInitialSourceKey}
               />
             </Suspense>
-          </ErrorBoundary>
+          ) : null
         ) : tab === 'taste-map' ? (
-          <div className="taste-map-page">
-            <div className="taste-map-view-toggle segmented-control" role="group" aria-label="Zevkim görünüm modu">
-              <button
-                className={`segmented-btn ${tasteMapDisplayMode === 'identity' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setTasteMapDisplayMode('identity')}
-                aria-pressed={tasteMapDisplayMode === 'identity'}
-              >
-                Zevkim
-              </button>
-              <button
-                className={`segmented-btn ${tasteMapDisplayMode === 'poster' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setTasteMapDisplayMode('poster')}
-                aria-pressed={tasteMapDisplayMode === 'poster'}
-              >
-                Poster Duvarı
-              </button>
-            </div>
-
-            <ErrorBoundary sectionName="Zevkim">
-              <Suspense
-                fallback={
-                  <div className="lazy-tab-fallback" role="status">
-                    Zevkim yükleniyor…
-                  </div>
-                }
-              >
-                {tasteMapDisplayMode === 'poster' ? (
-                  <TasteMapView
-                    tasteMap={tasteMap}
-                    summary={tasteSummary}
-                    genresMap={genresMap}
-                    savedItems={savedItems}
-                    onOpenDetails={(item) => setDetailItem(item)}
-                    onQuickSave={(item) => setQuickSaveItem(item)}
-                    onSetStatus={(item, status) => handleSetStatus(item, status)}
-                    onToggleDislike={(key) => handleToggleDislike(key)}
-                    onRefreshTasteMap={handleRefreshTasteMap}
-                    isLoading={isLoading}
-                    isDemo={Boolean(activeProfile?.isDemo)}
-                    tmdbSource={tmdbSourceMeta.source}
-                    tmdbStaleReason={tmdbSourceMeta.staleReason}
-                  />
-                ) : isMobileViewport ? (
-                  <TasteProfileDashboard />
-                ) : (
-                  <TasteProfileMinimal />
-                )}
-              </Suspense>
-            </ErrorBoundary>
-          </div>
+          TasteMapSection ? (
+            <Suspense
+              fallback={
+                <div className="lazy-tab-fallback" role="status">
+                  Zevkim yükleniyor…
+                </div>
+              }
+            >
+              <TasteMapSection
+                tasteMap={tasteMap}
+                tasteSummary={tasteSummary}
+                genresMap={genresMap}
+                savedItems={savedItems}
+                displayMode={tasteMapDisplayMode}
+                onDisplayModeChange={setTasteMapDisplayMode}
+                isLoading={isLoading}
+                isDemo={Boolean(activeProfile?.isDemo)}
+                tmdbSource={tmdbSourceMeta.source}
+                tmdbStaleReason={tmdbSourceMeta.staleReason}
+                isMobileViewport={isMobileViewport}
+              />
+            </Suspense>
+          ) : null
         ) : (
           <ErrorBoundary sectionName="Katalog ve Listem">
             <MediaGrid
@@ -4652,7 +4640,7 @@ export function App() {
         onMergeDuplicates={handleMergeDuplicates}
         onToggleDemoMode={handleToggleDemoMode}
       />
-    </>
+    </ShellProvider>
   );
 }
 export default App;
