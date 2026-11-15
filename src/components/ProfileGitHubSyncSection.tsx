@@ -9,6 +9,7 @@ import {
   reconcileGitHubSync,
   setPublicRepoPersonalSyncConsent,
   testGitHubConnection,
+  updateGitHubSyncToken,
   uploadStockSnapshot,
   type HybridMergeResult,
 } from '../services/api.ts';
@@ -24,6 +25,8 @@ import {
 
 export interface RemoteSyncStatusPayload {
   configured?: boolean;
+  authFailed?: boolean;
+  missingReason?: string;
   syncInProgress?: boolean;
   isPublicRepo?: boolean;
   allowPublicPersonalSync?: boolean;
@@ -95,6 +98,36 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
   const [csvMergeDryRun, setCsvMergeDryRun] = useState(true);
   const [csvMergeBusy, setCsvMergeBusy] = useState(false);
   const [csvMergeResult, setCsvMergeResult] = useState<HybridMergeResult | null>(null);
+
+  const [patTokenInput, setPatTokenInput] = useState('');
+  const [savingToken, setSavingToken] = useState(false);
+  const [tokenSaveMessage, setTokenSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showTokenInput, setShowTokenInput] = useState(false);
+
+  const handleSavePatToken = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = patTokenInput.trim();
+    if (!trimmed || savingToken) return;
+    setSavingToken(true);
+    setTokenSaveMessage(null);
+    try {
+      const res = await updateGitHubSyncToken(trimmed);
+      if (res.ok) {
+        setTokenSaveMessage({ type: 'success', text: 'GitHub PAT anahtarı güncellendi ve hafızaya alındı.' });
+        setPatTokenInput('');
+        setShowTokenInput(false);
+        const updatedInfo = (await fetchSyncStatus()) as RemoteSyncStatusPayload | null;
+        if (updatedInfo) onRemoteSyncInfoChange(updatedInfo);
+      } else {
+        setTokenSaveMessage({ type: 'error', text: res.error || 'Token güncellenemedi.' });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTokenSaveMessage({ type: 'error', text: msg || 'Token kaydedilirken hata oluştu.' });
+    } finally {
+      setSavingToken(false);
+    }
+  };
 
   const handleCsvFilePicked = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -320,6 +353,13 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
           <button
             type="button"
             className="btn btn-sm whitespace-nowrap"
+            onClick={() => setShowTokenInput((v) => !v)}
+          >
+            {showTokenInput ? 'PAT Alanını Gizle' : 'PAT Token Güncelle'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm whitespace-nowrap"
             disabled={isSyncActionDisabled}
             onClick={() => void handleTestConnection()}
           >
@@ -335,6 +375,60 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
           </button>
         </div>
       </div>
+
+      {(remoteSyncInfo?.authFailed || showTokenInput) && (
+        <form
+          onSubmit={(e) => void handleSavePatToken(e)}
+          className="my-3 rounded border border-cinema-gold/30 bg-cinema-card/90 p-3 text-xs"
+        >
+          <div className="font-semibold text-cinema-gold mb-1">
+            {remoteSyncInfo?.authFailed
+              ? 'GitHub Erişim Yetkisi Gerekli (401 - Bad Credentials)'
+              : 'GitHub Personal Access Token (PAT) Güncelle'}
+          </div>
+          <p className="mb-2 text-cinema-secondary">
+            {remoteSyncInfo?.authFailed
+              ? 'Mevcut GitHub PAT anahtarınız geçersiz, süresi dolmuş veya iptal edilmiş. Uygulama verilerinizin kaybolmaması için yerel modda (local_only) çalışmayı sürdürüyor. GitHub eşitlemesini yeniden açmak için geçerli bir PAT girin.'
+              : 'GitHub ile çift yönlü eşitleme için fine-grained veya klasik PAT anahtarınızı girebilirsiniz.'}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="password"
+              value={patTokenInput}
+              onChange={(e) => setPatTokenInput(e.target.value)}
+              placeholder="github_pat_... veya ghp_..."
+              className="flex-1 min-w-[240px] px-2.5 py-1.5 rounded border border-white/10 bg-black/40 text-cinema-text font-mono text-xs focus:outline-none focus:border-cinema-gold"
+              autoComplete="off"
+              disabled={savingToken}
+            />
+            <button
+              type="submit"
+              disabled={savingToken || !patTokenInput.trim()}
+              className="btn btn-primary btn-sm whitespace-nowrap"
+            >
+              {savingToken ? 'Kaydediliyor…' : 'Tokenı Kaydet & Eşitle'}
+            </button>
+            {showTokenInput && !remoteSyncInfo?.authFailed && (
+              <button
+                type="button"
+                onClick={() => setShowTokenInput(false)}
+                className="btn btn-sm whitespace-nowrap"
+              >
+                Kapat
+              </button>
+            )}
+          </div>
+          {tokenSaveMessage && (
+            <div
+              className={`mt-2 font-medium ${
+                tokenSaveMessage.type === 'success' ? 'text-cinema-success' : 'text-cinema-danger'
+              }`}
+            >
+              {tokenSaveMessage.text}
+            </div>
+          )}
+        </form>
+      )}
 
       <div className="github-sync-target-meta tabular-nums">
         {remoteSyncInfo?.remoteTarget ? (

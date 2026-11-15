@@ -18,9 +18,15 @@ import { createRespanTracing } from './src/server/respan-telemetry.ts';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const CINETRACK_HOST = '127.0.0.1';
 const resolved = resolveConfig({ rootDir: root });
+const isContainerDeployment = Boolean(
+  isAiStudioContainerEnv(process.env) ||
+  process.env.K_SERVICE ||
+  process.env.K_REVISION ||
+  process.env.CLOUD_RUN_JOB
+);
 const port = resolved.port;
 const bindHost = resolved.explicitHost || CINETRACK_HOST;
-const listenHost = resolved.listenHost;
+const listenHost = resolved.explicitHost || (isContainerDeployment ? '0.0.0.0' : resolved.listenHost);
 
 const dataDir = path.join(root, 'data');
 const maxDataBytes = DEFAULT_MAX_DATA_BYTES;
@@ -149,6 +155,7 @@ async function startServer() {
         middlewareMode: true,
         host: listenHost,
         port,
+        allowedHosts: isContainerDeployment ? true : ['localhost', '127.0.0.1', '.run.app'],
         hmr: hmrDisabled ? false : { server: httpServer },
       },
       appType: 'spa',
@@ -177,7 +184,7 @@ async function startServer() {
     const runSafeAutoReconcile = async (label: string) => {
       try {
         const currentStatus = persistentStore.getSyncStatus();
-        if (!currentStatus.configured) return;
+        if (!currentStatus.configured || currentStatus.authFailed) return;
         if (persistentStore.isSyncBusy()) {
           pendingMutationWhileBusy = true;
           return;
@@ -188,13 +195,20 @@ async function startServer() {
             `[Auto-Sync:${label}] Kayıpsız iki yönlü eşitleme tamamlandı (indirilen: ${report.filesDownloaded.length}, yüklenen: ${report.filesUploaded.length}, birleştirilen: ${report.filesMerged.length}, doğrulandı: ${report.verifiedEqual}).`
           );
         } else if (report.errors.length > 0) {
-          console.warn(
-            `[Auto-Sync:${label}] Eşitleme uyarısı:`,
-            redactSecrets(
-              report.errors.map((e) => e.message).join('; '),
-              persistentStore.getKnownSecretsForRedaction()
-            )
-          );
+          const isAuthError = report.errors.some((e) => e.category === 'auth_error');
+          if (isAuthError) {
+            console.warn(
+              `[Auto-Sync:${label}] GitHub kimlik doğrulama hatası (HTTP 401). Otomatik arka plan eşitlemesi duraklatıldı; geçerli bir CINETRACK_GITHUB_PAT tanımlandığında eşitleme devam edecektir.`
+            );
+          } else {
+            console.warn(
+              `[Auto-Sync:${label}] Eşitleme uyarısı:`,
+              redactSecrets(
+                report.errors.map((e) => e.message).join('; '),
+                persistentStore.getKnownSecretsForRedaction()
+              )
+            );
+          }
         }
       } catch (err: any) {
         console.error(

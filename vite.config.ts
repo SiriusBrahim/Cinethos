@@ -129,8 +129,12 @@ export default defineConfig({
     },
   },
   server: {
-    host: process.env.APP_URL ? '0.0.0.0' : '127.0.0.1',
+    host: process.env.APP_URL || process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1',
     port: 3000,
+    allowedHosts:
+      process.env.APP_URL || process.env.SHARED_APP_URL || process.env.K_SERVICE || process.env.K_REVISION
+        ? true
+        : ['localhost', '127.0.0.1', '.run.app'],
     hmr: process.env.DISABLE_HMR === 'true' || Boolean(process.env.APP_URL) ? false : true,
   },
 });

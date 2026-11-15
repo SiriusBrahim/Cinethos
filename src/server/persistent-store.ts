@@ -184,6 +184,7 @@ export interface SyncFileStateRecord {
 
 export interface SyncStatus {
   configured: boolean;
+  authFailed?: boolean;
   mode: 'github' | 'local_only';
   reason?: string;
   isPublicRepo: boolean;
@@ -2148,7 +2149,16 @@ export class PersistentDataStore {
   // --- SYNC & GITHUB OPERATIONS ---
 
   public getSyncStatus(): SyncStatus {
-    const configured = Boolean(this.githubToken && this.githubOwner && this.githubRepo);
+    const isTokenInvalid = Boolean(
+      this.githubToken && this.invalidatedGitHubTokens.has(this.githubToken)
+    );
+    const configured = Boolean(
+      this.githubToken &&
+      !isTokenInvalid &&
+      this.githubOwner &&
+      this.githubRepo
+    );
+    const authFailed = isTokenInvalid;
     const corruptionWarnings: string[] = [];
 
     let movieCount = 0;
@@ -2203,7 +2213,9 @@ export class PersistentDataStore {
 
     const hasTargetRepo = Boolean(this.githubOwner && this.githubRepo);
     const missingReason = !configured
-      ? hasTargetRepo
+      ? authFailed
+        ? 'GitHub erişim hatası: Token geçersiz veya süresi dolmuş (HTTP 401 - Bad credentials). Lütfen geçerli bir CINETRACK_GITHUB_PAT tanımlayın.'
+        : hasTargetRepo
         ? `Hedef depo (${this.githubOwner}/${this.githubRepo} · ${this.githubBranch}) tanımlı; CINETRACK_GITHUB_PAT ortam değişkeni bekleniyor`
         : 'GitHub token veya hedef repository yapılandırılmadı'
       : undefined;
@@ -2220,6 +2232,7 @@ export class PersistentDataStore {
 
     return {
       configured,
+      authFailed,
       mode: configured ? 'github' : 'local_only',
       reason: missingReason,
       isPublicRepo: effectiveConfiguredIsPublic,
