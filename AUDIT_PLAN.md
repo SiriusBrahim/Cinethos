@@ -1,89 +1,108 @@
-# Cinethos — Denetim Planı (4. Tur, Güncellenmiş)
+# Cinethos — Denetim Planı (5. Tur: Modüler Mimari Dönüşümü)
 
-> Baz: `master` @ `9b2d2eb` (2026-11-15 üçüncü tur sonrası) · Önceki raporlar: `CODE_REVIEW_REPORT.md`, `DEEP_DIVE_REVIEW.md`
-> Doğrulama: `npm ci` sonrası **405/405 birim + 362 taste testi yeşil**, `npm run lint` (`--max-warnings 0`) yeşil, `npm run build` başarılı, `npm audit --omit=dev --audit-level=high` **exit 0**.
+> Baz: `master` @ `9b2d2eb` · Önceki raporlar: `CODE_REVIEW_REPORT.md`, `DEEP_DIVE_REVIEW.md`
+> Karar: Önceki planın Y2–Y7 kalemleri **bekletiliyor** (§C'de saklandı). Aktif iş: **M1 — modüler mimari + navigasyon dönüşümü, tek seferde.**
 
 ---
 
-## A. Tamamlanan Kalemler (plandan çıkarıldı)
+## M1 Öncesi Mimari Görüş: "Ajan Sistemi" Verimli mi?
 
-Önceki iki raporun şu kalemleri **doğrulanmış biçimde tamamlandı** ve bu plandan silindi:
+**Kısa cevap: Evet ama doğru varyantıyla.** Yönetici + altında iş başına modül şekli bu kod tabanına tam oturuyor; buna karşılık *gerçek* ajan sistemi (çalışma zamanında modül keşfi, otonom mesajlaşma, genel amaçlı event bus) bu ürün için **aşırı mühendislik** olur — akışlar deterministik, kullanıcı tek, gereksinim yok.
 
-| Kalem | Kanıt |
+**Önerilen desen: Modüler Monolit + Orkestratör Kabuk (registry tabanlı).**
+
+Neden verimli olduğu (ölçülmüş kanıtlar):
+1. **`App.tsx` 4.570 satır, 39 `useState`, `createContext` = 0** — her yeni özellik App'e dokunuyor; modül sınırı çizmek merge/regresyon riskini kökten azaltır.
+2. **Navigasyon 4 yerde kopya:** `FloatingGlassDock.tsx` (`DOCK_ITEMS` + `ShellTabId`), `Header.tsx` (hardcoded 4 tab), `useKeyboardShortcuts.ts` (1-4 tuşları), `CommandPalette`. Tek kayıt defteri bu dört kopyayı öldürür; yeni modül eklemek = tek manifest dosyası.
+3. Mevcut altyapı zaten yarı yolda: `lazyWithRetry` (`App.tsx:5-8`), `cmdk` paleti, `candidate-pool-store-port.ts` port deseni, `core/taste/` modülerliği — kabuk bunların üzerine **tek yönetim katmanı** ekler.
+
+Kaçınılacaklar: dinamik plugin yükleme, DI framework'ü, string tabanlı yayın-abone bus'u. Bunun yerine **statik, tipli, tree-shakeable** manifest kaydı + küçük tipli olay arayüzü.
+
+---
+
+## M1 — Tek Seferde Uygulanacak Dönüşüm (tek dal, tek teslim)
+
+### Hedef yapı
+
+```
+src/
+  app/
+    AppShell.tsx            # YÖNETİCİ: registry, aktif modül çözümleme, provider'lar (~400 satır)
+    module-registry.ts      # Modül manifest'lerinin kaydı + sıralama
+    navigation.ts           # Registry'den sidebar/dock/tabs/shortcut/palette türetimi
+    shell-context.tsx       # Paylaşılan servisler: profileStore, toast, auth, tmdb, sync
+    shell-events.ts         # Tipli çapraz-modül olayları (~40 satır)
+  modules/
+    discover/               # manifest.ts + DiscoverView.tsx + state.ts (filtre/sayfalama)
+    list/                   # manifest.ts + ListView.tsx + state.ts (durumlar, aktörler)
+    taste-map/              # mevcut TasteMapView etrafına manifest
+    relationships/          # mevcut RelationshipExplorer etrafına manifest
+    settings/               # ProfilModal + senkron + yedek + arşiv (bugün modal olanlar)
+    detail/                 # DetailModal + PersonDrawer → shell servisi (her modül çağırır)
+  shared/                   # mevcut components/, services/, utils/ (dokunulmaz)
+  core/                     # DOKUNULMAZ (zaten temiz, 767 test korunuyor)
+```
+
+### Modül manifest sözleşmesi
+
+```ts
+// src/app/module-registry.ts
+export interface AppModuleManifest {
+  id: ModuleId;                          // 'discover' | 'list' | 'taste-map' | 'relationships' | 'settings'
+  nav: {
+    label: string;
+    Icon: React.ComponentType<{ className?: string }>;
+    section: 'main' | 'settings';        // dock/üst çubuk vs. ayarlar menüsü
+    order: number;
+    shortcut?: string;                   // '1'..'5'
+    badge?: (ctx: ShellContext) => number | undefined;   // örn. Listem sayısı
+  };
+  Component: React.LazyExoticComponent<React.ComponentType<ModuleProps>>;
+  paletteCommands?: (ctx: ShellContext) => PaletteCommand[];   // cmdk girdileri
+  onActivate?: (ctx: ShellContext) => void | (() => void);     // cleanup dönebilir
+}
+```
+
+### Navigasyon güncellemesi (tek kaynak)
+
+1. **`navigation.ts`**: `registry` → `headerTabs`, `dockItems`, `shortcutMap`, `paletteEntries` türetimi. `ShellTabId` tek yerde tanımlanır; `FloatingGlassDock`, `Header`, `useKeyboardShortcuts`, `CommandPalette` **props olarak türetilmiş listeyi alır**, kendi kopyasını siler.
+2. **Deep-link (hash tabanlı):** `#/discover`, `#/list`, `#/taste-map`, `#/relationships`, `#/settings` + alt durum (`#/discover/stock`, `#/list/watching`). `hashchange` dinleyicisi AppShell'de; sunucu tarafı gerektirmez → PWA/çevrimdışı ve `createSpaFallbackMiddleware` ile uyumlu. Açılışta hash'ten ilk modül çözümlenir; modül değişince `history.replaceState`.
+3. **Mobil dock:** `DOCK_ITEMS` silinir; `section: 'main'` modüllerinden otomatik üretilir (mevcut görsel sınıflar manifest'e taşınır).
+4. **Ayarlar:** `settings` modülü `section: 'settings'` ile dock dışında kalır; mevcut `onOpenSettings` akışı registry üzerinden çözümlenir.
+
+### AppShell (yönetici) sorumlulukları — tek dosya, tek doğruluk
+
+- Registry'den aktif modülü çözümleme (hash + shortcut + palette komutu)
+- `ShellContext` sağlama: aktif profil + items (`profile-context`), toast kuyruğu, auth (`api-client` + `AuthTokenModal`), tmdb kaynak durumu, senkron durumu
+- Modül yaşam döngüsü: `onActivate` cleanup, `lazyWithRetry` + ErrorBoundary sarmalama (mevcut desen korunur)
+- Tipli olaylar (`shell-events.ts`): `item:saved`, `profile:changed`, `sync:completed` — modüller yalnızca kabukla konuşur, birbirleriyle değil
+
+### Yürütme sırası (tek dalda commit serisi — faz değil, teslim içindeki doğal sıra)
+
+1. `app/shell-context.tsx` + `app/shell-events.ts` + `app/module-registry.ts` iskeleti
+2. Her modülün manifest + view + state çıkarımı: `discover` → `list` → `taste-map` → `relationships` → `settings` → `detail` servisi
+3. `AppShell.tsx`: registry'den render + hash routing + provider'lar; `App.tsx` ~500 satırlık kabuğa iner
+4. Navigasyon: `navigation.ts` türetimi; `FloatingGlassDock`/`Header`/`useKeyboardShortcuts`/`CommandPalette` kopyalarının silinmesi
+5. Temizlik: `App.tsx`'teki 39 `useState`'in modüllere dağıtımı (modül state'i `useReducer`); ölü kodun silinmesi
+
+### Güvence (big-bang riskine karşı — değişmeden korunanlar)
+
+- **767 test** (405 birim + 362 taste) değişmeden yeşil kalmalı; `core/` ve `server/` katmanına **sıfır dokunuş**
+- 5 Playwright E2E spec'i + üretim smoke testi (CI) yeşil kalmalı
+- Her commit sonrası: `npm run lint && npm test && npm run test:taste && npm run build`
+- Kabul kriterleri: `App.tsx` < 1.000 satır · `createContext` > 0 · navigasyon kopyası = 1 · yeni modül eklemek = tek `manifest.ts` + view dosyası · hash deep-link çalışır
+
+---
+
+## C. Bekletilen Kalemler (önceki plandan — aklımızda, M1 sonrası)
+
+| Kalem | Özet |
 | --- | --- |
-| 🔴 zod *high* (GHSA-mrhx-c7xc-m3w5) | `package.json:33-34` override `^4.6.6`; audit exit 0; audit artık **bloklayıcı** CI job'ı (P0-05) |
-| 🔴 LAN modu istemci auth eksik | `src/services/api-client.ts` (ApiError, `apiFetch`, sessionStorage token, `cinetrack:auth-required`), `AuthTokenModal.tsx`, `main.tsx:14` unhandledrejection → bildirim (SEC-02/03) |
-| 🔴 `.env.example` yabancı depo | `CINETRACK_DATA_OWNER=` ve `CINETRACK_DATA_REPO=` boşaltıldı |
-| 🟠 Offline kuyruk dayanıklılığı | 5 denemeli üstel backoff (2 sn → 5 dk) + "Yeniden dene" + IDB→localStorage→bellek katmanı + serializer (SEC-04, P0-03) |
-| 🟠 Resim proxy bellek/limit | 64 MB bayt bütçeli LRU + `/api/tmdb-image` rate limiter + 8 MB akış sınırı + MIME allowlist + tek uçuş paylaşımı (SEC-05, P1-02) |
-| 🟠 Rate limiter FIFO evict | LRU tahliyesine çevrildi (IP rotasyonu meşru istemciyi atamaz) |
-| 🟠 `exhaustive-deps` uyarıları | 0 uyarı; lint `--max-warnings 0` kapısı (P1-08) |
-| 🟡 66 sessiz `catch {}` | `no-empty` sıkılaştırıldı, hepsi gerekçelendirildi (grep: 0) |
-| 🟡 Toast tek mesajlı | Kuyruklu + `ToastKind` (success/error/info) + elle kapatma (UX-01) |
-| 🟡 Skeleton yok | `MediaGrid`/`DetailModal`/`PersonDrawer` + CSS |
-| 🟡 Dependabot yok | `.github/dependabot.yml` eklendi |
-| 🟡 CI tek job | `quality` / `Playwright E2E` / `security` ayrı joblar + üretim smoke testi + actions v5 |
-| Ek (kendi planlarından) | SQLite restore prepare/commit/rollback + journal + finalize (P0-01 A-E), SIGTERM güvenli kapanış, `content-visibility: auto`, a11y lint kuralları, `prefers-reduced-motion`, `core/media/poster.ts`, güvenlik istisna kaydı (`docs/SECURITY-AUDIT.md`) |
+| Y2 | Delta yazma yolu: `PUT /api/profiles/:profileId` + `pushProfileDelta` (tam belge PUT kaldırılır) |
+| Y3 | Depo hijyeni: `phase-0-findings.md` → `docs/`; README "eski ad: CineTrack" notu + CI badge |
+| Y4 | E2E'ye `firefox` + `webkit` projeleri |
+| Y5 | Çok dillilik: `tr.ts`/`en.ts` bölmesi, `navigator.language` tespiti |
+| Y6 | Yenilikler: Zevk Anlatıcısı (LLM özet) · Ortak izleme listesi (`watch-party.json`) · Semantik arama (worker içi indeks) · Prediktif detay ısınması · Zevk İkizi |
+| Y7 | Gerçek `runtime` ile izleme süresi; `DetailModal`'a fragman embed'i |
 
----
-
-## B. Kalan İşler — Yeni Plan
-
-### 🟠 Y1. UI durum yönetimi: Context katmanı ve `App.tsx` bölünmesi *(en büyük borç — bu turda büyüdü)*
-
-- **Durum:** `App.tsx` 4.466 → **4.570 satıra** büyüdü; `createContext` grep'i hâlâ **0** sonuç. 39+ `useState` prop drilling ile 15+ bileşene akıyor. `cinetrack-core.ts` (4.690), `github-bidirectional-sync.ts` (4.753), `persistent-store.ts` (4.229) değişmedi.
-- **Plan (3 PR'lık kademeli geçiş):**
-  1. `src/stores/ui-context.tsx` — toast/modal/tab state'i App'ten çıkarılır (en düşük risk, ~0,5 gün).
-  2. `src/stores/profile-context.tsx` — aktif profil + items + `detailItem`; App'teki 21 `detailItem` referansı tek provider'a iner (~1 gün).
-  3. Sekmeler `src/features/{discover,list,stock}` altına `React.lazy` ile taşınır; `App.tsx` ~500 satırlık kabuğa iner (~2-3 gün).
-- **Kabul kriteri:** `App.tsx` < 1.000 satır; her sekmenin kendi state dosyası; mevcut 405 test + 5 E2E spec'i değişmeden yeşil.
-
-### 🟠 Y2. Yazma yolu delta'ya geçirilecek (tam belge PUT kaldırılacak)
-
-- **Durum:** `PUT /api/data` hâlâ tüm `DataDocument`'ı gönderiyor (~2 KB/öğe × tüm profiller; 25 MiB tavan ≈ 12 bin öğe). `GET /api/isolated/profile` var ama yazma karşılığı yok (`PUT /api/profiles/:profileId` grep: 0).
-- **Plan:** `app.ts`'e `PUT /api/profiles/:profileId` (mevcut `validateAndPrepareSave` + `If-Match` sözleşmesiyle); istemciye `pushProfileDelta()`; `PUT /api/data` yalnızca geri yükleme/migrasyon için kalır. Mobil veri/batarya yükü O(profiller×öğeler) → O(delta).
-- **Kabul kriteri:** Tek öğe ekleme isteği gövdesi < 10 KB; 409/428 akışı değişmeden korunur; çift yönlü GitHub senkron testleri yeşil.
-
-### 🟡 Y3. Depo hijyeni
-
-- `phase-0-findings.md` (36 KB iç denetim raporu) hâlâ kökte → `docs/phase-0-findings.md` taşı + README'deki referansları güncelle (~10 dk).
-- Marka/repo uyumu: repo `cinetrack` ↔ marka `Cinethos` ↔ paket `cinetrack`; README başlığına tek satırlık "eski ad: CineTrack" notu ekle; README üstüne CI badge (`quality` + `security` jobları için) ekle (~15 dk).
-
-### 🟡 Y4. E2E tarayıcı kapsamı
-
-- **Durum:** `playwright.config.ts` hâlâ yalnızca `chromium` projesi. CI'da E2E job'ı var ama tek motor.
-- **Plan:** `firefox` + `webkit` projeleri eklenir (CI'da `workers: 2` ile paralel); responsive spec'i mobil viewport'lu üçüncü proje olarak çalışır. WebKit, Safari/PWA kullanıcıları için tek gerçek doğrulama yolu. (~0,5 gün + CI süresi.)
-
-### 🟡 Y5. Çok dillilik (EN)
-
-- **Durum:** `i18n/index.ts` hâlâ `SupportedLocale = 'tr'`. Tip-güvenli sözlük yapısı hazır.
-- **Plan:** `tr.ts` + `en.ts` sözlüklerine böl, `getLocale()`'i `navigator.language`'dan türet, `tr` fallback. ~200 string kataloğu; çeviri dış iş ~1 gün.
-
-### 🟢 Y6. Ürün yenilikleri (önceki Bölüm 2 §5'ten — hiçbiri başlanmadı)
-
-| # | Özellik | Durum | Maliyet | Değer |
-| --- | --- | --- | --- | --- |
-| 6.1 | **Zevk Anlatıcısı** — `evidence-ledger` + `profile-explainer` kanıtlarını `/api/taste/narrative` ile LLM'e verip doğal dil özeti (deterministik motor dokunulmaz, LLM yalnız sunum) | Başlanmadı | ~2 gün | ⭐⭐⭐ |
-| 6.2 | **Prediktif detay ısınması** — `idle-enrichment-service`'e IntersectionObserver ön-çekme; `DetailModal`'ın 3 fetch'i önbellekten | Başlanmadı | ~1 gün | ⭐⭐ |
-| 6.3 | **Ortak izleme listesi** — `data/shared/watch-party.json` + `proposedBy`/`votes`; `hybrid-merge.ts`'e oy birliği stratejisi; `.ics` zaten var | Başlanmadı | ~1 hafta | ⭐⭐⭐ |
-| 6.4 | **Semantik arama** — `encoding.worker` + `mood-affinity` ile cihaz üstü indeks; Cmd+K paletinde "hüzünlü ama umut veren bilim kurgu" serbest form sorgu | Başlanmadı | ~1 hafta | ⭐⭐⭐ |
-| 6.5 | **Zevk İkizi** — hash'lenmiş kanıt-ağırlık özeti paylaşımı; gizlilik korumalı benzerlik karşılaştırması | Başlanmadı | ~3-4 gün | ⭐⭐ |
-
-### 🟢 Y7. Küçük kalıntılar (önceki raporlardan, yarım kalan)
-
-- **İzleme süresi doğruluğu:** profil istatistiği hâlâ 110 dk/45 dk varsayımıyla hesaplanıyor; TMDB `runtime` + `episode_run_time` (`append_to_response` allowlist'te) ile gerçek veriye geçiş (~0,5 gün).
-- **Fragman:** `videos` allowlist'te ama detay penceresinde gösterilmiyor; `DetailModal`'a YouTube embed (CSP'ye `https://www.youtube-nocookie.com` frame-src eklenerek) (~0,5 gün).
-
----
-
-## C. Önerilen Sıra
-
-1. **Hızlı kazanım:** Y3 (depo hijyeni, 30 dk) + Y7 (~1 gün)
-2. **Y1** (UI state — en büyük borç, 3 PR)
-3. **Y2** (delta yazma yolu — Y1'in 3. adımıyla aynı feature dalında olabilir)
-4. **Y4 + Y5** (kapsam/dil — paralel yürütülebilir)
-5. **Y6.1 → Y6.3 → Y6.4 → Y6.2 → Y6.5** (değer/iş oranına göre)
-
-## D. Doğrulama Notu
-
-İlk kurulumda eski `package-lock` ile `npm install` yapıldığından `fake-indexeddb` (yeni dev bağımlılığı) eksikti ve `offline-queue-durability.test.mjs` 2 test `ERR_MODULE_NOT_FOUND` ile düşüyordu; `npm ci` sonrası 405/405 yeşil. **Depo tarafında hata yok**; CI zaten `npm ci` kullandığı için etkilenmez.
+> **Not:** M1'in modül yapısı Y6'yı kolaylaştırır — her yenilik artık tek manifest + view dosyası olacak. Y2 (delta yazma) M1'den hemen sonra gelmeli; `modules/list/state.ts` yazma çağrılarını tek yerden topladığı için geçiş maliyeti düşer.
