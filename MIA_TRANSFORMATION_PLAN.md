@@ -95,7 +95,7 @@ Sorumluluk: kalıcı verinin güvenli saklanması. **İş mantığı kararı ver
 
 | Mevcut | Hedef | İşlem |
 | --- | --- | --- |
-| `server/sqlite-primary-store.ts` | `data/adapters/SQLiteAdapter.ts` | SQLite = ana kullanıcı verisi birincil kaynağı |
+| `server/sqlite-primary-store.ts` | `data/adapters/SQLiteAdapter.ts` | SQLite = **opt-in** sürücü (`CINETRACK_STORAGE=sqlite`); varsayılan hâlâ JSON — Faz 2 kontrollü birincile yükseltme yapar |
 | `services/storage-idb.ts` (775), `idb-schema-version.ts`, `discovery-storage.ts` (536), `relationship-cache.ts`, `client-depots.ts` | `data/adapters/IndexedDBAdapter.ts` + `repositories/` | idb = büyük katalog, aday havuzu, tarayıcı önbelleği |
 | `server/storage.ts` (780), `server/atomic-json.ts` | `data/adapters/JsonBackupAdapter.ts` | JSON = taşınabilir yedek/kurtarma formatı |
 | `server/restore-journal.ts`, `archive-integrity.ts`, `server/excel-profile-backup.ts` (3.446), `sqlite-archive.ts` (698), `auto-backup-service.ts` | `data/backup/` | BackupManager + RestoreManager |
@@ -214,6 +214,8 @@ export interface AppEvent<T extends keyof AppEventMap = keyof AppEventMap> {
 | Mimari sınır testleri yok | P2 | — | Faz 8: import sınırı testleri |
 
 ### 5.1 SQLite çalışma modu (Faz 2'de uygulanır)
+
+> **Düzeltme (Faz 0 v2):** SQLite varsayılan değildir — `resolveStorageDriver()` yalnızca `CINETRACK_STORAGE=sqlite` ile sqlite döner, aksi hâlde json. Aşağıdaki maddeler opt-in sürücü için geçerlidir.
 - `sqlite` **açıkça seçilmişse** başlatma hatası belirgin hata + durum bildirimi üretir; sessiz JSON'a dönüşmez.
 - JSON fallback yalnızca **açık kurtarma modunda** çalışır.
 - Sağlık ekranında (§6) gerçek aktif veri kaynağı gösterilir.
@@ -272,7 +274,7 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 | Ana yapı | Yönetici → alt modül → yardımcı bileşen (8 yönetici) |
 | İletişim | Servis sözleşmeleri (sorgu/komut) + tipli olaylar |
 | Arka plan | Kalıcı olay kuyruğu (Outbox, idb) + idle işleyici |
-| Ana veri kaynağı | SQLite (tek ana kaynak; JSON yalnızca açık kurtarma modunda) |
+| Ana veri kaynağı | Hedef: SQLite birincil. **Mevcut: JSON varsayılan** (`resolveStorageDriver`), SQLite opt-in; Faz 2'de kontrollü yükseltme + tek ana kaynak güvencesi |
 | Tarayıcı depolaması | IndexedDB |
 | Taşınabilir yedek | JSON |
 | Uzak yedek | GitHub |

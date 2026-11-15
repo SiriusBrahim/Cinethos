@@ -1,6 +1,100 @@
 # CineTrack — FAZ 0 Envanter ve Kod/Veri Denetim Raporu (`phase-0-findings.md`)
 
-**Durum:** Tamamlandı (Salt Okunur Denetim — **Hiçbir kaynak kod veya veri dosyası değiştirilmemiştir**)  
+**Durum:** v2 — Güncel (statik + dinamik denetim tamamlandı)  
+**v2 Denetim Tarihi:** `2026-11-16` · **Denetlenen dal:** `vibe/modular-shell-m1-b66b9a` @ `83016f5` (M1 üstünde)  
+**v1 (aşağıda arşiv):** `2026-11-01` @ `ef031af` — salt okunur denetim
+
+---
+
+## v2 — Faz 0 Tamamlama Raporu
+
+### A. Düzeltmeler (v1'e ve önceki planlara göre)
+
+1. **SQLite varsayılan DEĞİL:** `resolveStorageDriver()` (`sqlite-primary-store.ts:53`) — `CINETRACK_STORAGE=sqlite` açıkça verilmezse sürücü **json**. Önceki MIA planındaki "SQLite = ana kullanıcı verisi birincil kaynağı" ifadesi düzeltildi: SQLite **opt-in** sürücü; JSON hâlâ varsayılan doğruluk kaynağı. Faz 2 kararı buna göre güncellendi (aşağıda F).
+2. **Arka plan altyapısı kısmen mevcut:** `TasteEvent` modeli (`core/taste/types.ts`), olay depolaması (`server/taste-store.ts`, 224), öğrenme projeksiyonu (`core/taste/taste-event-projector.ts`, 65), kanıt defteri (`core/taste/evidence-ledger.ts`, 202), worker tabanlı hesap (`workers/taste-profile-worker.ts`, 173), koordinatör (`server/taste-rebuild-coordinator.ts`, 655) ve kalıcı kuyruk (`services/offline-queue.ts`). **Karar:** Bunlar kaldırılmaz; Arka Plan Yöneticisi bunları koordine eden üst katman olur. `TasteEvent` ikinci bir genel kuyrukla çoğaltılmaz — görev sınırı: TasteEvent = zevk öğrenme olay modeli; Outbox = genel arka plan iş kuyruğu.
+3. **Depo referansı:** `6yildiz9-maker` eski sahiptir; güncel depo `SiriusBrahim/cinetrack` (M1 dalı `ef031af`'in çok ötesinde: shell-events, 4 modül bölümü, kayıt defteri commit'leri).
+
+### B. Dinamik Denetim Sonuçları (bu dalda çalıştırıldı)
+
+| Kontrol | Sonuç |
+| --- | --- |
+| Lint (`--max-warnings 0` + 2× tsc) | ✅ 0 hata / 0 uyarı |
+| Birim testleri | ✅ 422/422 |
+| Taste testleri | ✅ 362/362 |
+| Üretim build + PWA | ✅ (chunk haritası korundu) |
+| madge import grafiği | ✅ 208 dosya, 7 döngü (bkz. C) |
+
+### C. Import Bağımlılık Grafiği ve Döngüler (madge)
+
+Yön kuralı `modules → services → core` genel olarak sağlanıyor. **7 döngü:**
+
+| Döngü | Nitelik | Çözüm |
+| --- | --- | --- |
+| `cinetrack-core` ↔ `actor-recommendations` / `candidate-pool-store-port` / `cinema-kunye` / `ring-lifecycle` | 4 × **yalnızca `import type`** — çalışma zamanında yok | Faz 1: `core/media/types.ts` (SavedItem, DataDocument, FavoriteActorInfo, PersistentCandidatePoolData, PersistentTasteMapData, TasteMapEntry) + `core/media/keys.ts` (makeMediaKey ailesi). Eski dosya yeniden export eder → uyumluluk korunur |
+| `persistent-store` ↔ `github-bidirectional-sync` (± `github-catalog-sync`) | **GERÇEK değer döngüsü** (sınıf + 9 sembol) | Faz 2 ön koşulu: `SyncStorePort` arayüzü; store portu verir, sınıfı import etmez |
+| `relationship-explorer` → `relationship-semantics` → `relationship-wordlists` | Yönsel zincir, saf veri | Faz 5'te doğrulanır; düşük risk |
+
+### D. Katman İhlalleri
+
+| Kural | Sonuç |
+| --- | --- |
+| `core/` → `services/`/`server/` | ❌ 2 ihlal: `relationship-explorer.ts` (encoding-service, storage-idb, series-tv-seeds), `actor-recommendations.ts` (api-client) → Faz 5'te port/enjeksiyon desenine çevrilir |
+| `components`/`modules`/`app` → `server/` | ✅ sıfır |
+| `modules/*` → `modules/*` | ✅ sıfır |
+| `core/` içinde localStorage | ✅ sıfır |
+
+### E. Fonksiyon Bazında Sınıflandırma — `cinetrack-core.ts` (4.690 satır, **117 export**)
+
+| Sorumluluk | Temsilci semboller | MIA hedefi |
+| --- | --- | --- |
+| Veri modeli + normalizasyon | `normalizeSavedItem`, `findSavedItem`, `buildSavedItemsIndex`, `normalizePreferences`, `normalizeProfile`, `normalizeDataDocument`, `dedupeItems`, `parseBackupText` | `core/media/` (Faz 1) |
+| Zevk profili hesabı | `buildTasteProfileV3`, `calculateTastePillars`, `getUserSignalV*`, `signalDecay`, `normalizeUserRating`, `computeTasteProfileSignature` | Intelligence/taste (core'da kalır) |
+| Öneri puanlama + aday havuzu | `scoreCandidatesV3`, `RECOMMENDATION_WEIGHTS_V3`, `normalizePoolCandidate`, `balanceCandidatePool`, `multiDimensionalDiversify`, `selectBalancedRecommendations`, `hydratePoolFromCatalog`, `POOL_*` | Recommendation (core'da kalır) |
+| Zevk Haritası kalıcılığı | `getTasteMapStorageKey`, `markTasteMapItemStatus`, `archive/restore/pruneArchivedTasteEntries`, impression fonksiyonları | Intelligence/taste + Veri (anahtar Veri'nin) |
+| Altyapı yardımcıları | `createRequestGate`, `escapeHTML`, `safeHttpsUrl`, season sanitizer'ları | `shared/` (Faz 8 temizliği) |
+
+**Paylaşılan semboller:** `SavedItem` (7 dosya), `makeMediaKey` (4), `DataDocument` (3) — Faz 1 tip modülünün ilk sakinleri.
+
+### F. Veri Sahipliği ve Kalıcılık Haritası
+
+- **IndexedDB (12 depo):** profile-db, user-lists-db (Veri) · stock-db, series-index-db, actor-credits-db, poster-lru-db (İçerik) · encodings-db (Zevk/Hafıza) · relationship-cache (İlişkiler) · offline-queue-db (Senkron) · skip-log-db, surfaced-db (Öneri) · ui-prefs-db (Deneyim).
+- **localStorage:** `cinetrack.profile.*` (Profil), `cinetrack_disliked_cache`, `cinetrack_evidence_objections` (Zevk), `ct:library-view`, `ct:mobile-dashboard:*` (Deneyim → DashboardRepository), `cinetrack_offline_sync_queue_v1` (Senkron). **Faz 2 kuralı:** tüm anahtarlar `keys.ts`'te sahibiyle kayıtlı; kayıtsız anahtar ESLint ile engellenir.
+- **Sunucu:** JSON (varsayılan, atomik yazım + karantina/kurtarma) · SQLite (opt-in) · GitHub (uzak yedek). **İki ana kaynak oluşamaz:** opt-in SQLite'ta JSON yalnızca açık kurtarma modunda; sağlık ekranında aktif kaynak + revision farkı gösterilir.
+
+### G. Profil Değiştirme Yarışları (asenkron güvenlik incelemesi)
+
+Mevcut korumalar (App.tsx) — **taşıma sırasında birebir korunacak:**
+
+1. `requestGateRef` (`createRequestGate`): uçuştaki öneri/katalog istekleri bilet bazlı (`begin`/`isCurrent`) geçersizleşir — 5 çağrı noktası tespit edildi.
+2. `handleSwitchProfile` girişte `requestGateRef.current.invalidate()` + yükleme durumlarının sıfırlanması.
+3. `applyingRemoteSnapshotRef`: uzak doküman uygulaması sırasında yerel yazımların bastırılması (4 nokta).
+4. Profil başına `*_ref` senkronizasyonu (`profilesRef`, `savedItemsRef`, `preferencesRef`, `favoriteActorsRef`) — state güncellemeleri asenkron olduğundan handler'lar ref'lerden okur.
+
+**Faz 6/7 kuralı:** bu korumalar yönetici kancalarına taşınırken davranış değiştirilemez; profil geçişi `ProfileSwitched` olayı + kuyruk profil izolasyonu ile güçlendirilir.
+
+### H. Test Kapsamı → Modül Eşlemesi
+
+25 test dosyası; risk sıralaması: `core.test` / `persistent-store` / `sqlite-*` / `github-bidirectional-sync` / `offline-queue-durability` / `relationship-explorer` / `loved-similarity` = **yüksek** (taşımada export uyumluluğu şart) · `api-*` / `image-proxy` / `respan` = düşük (dokunulmaz) · `module-registry` / `shell-events` = düşük (M1). Kural: testler davranışa göre yeşil kalmalı; yalnızca import yolu güncellenebilir.
+
+### I. Doküman Güncelliği
+
+- Bu dosya (v2) güncellendi. ✅
+- `ARCHITECTURE.md`'nin "JSON tek doğruluk kaynağı" kararı **hâlâ doğrudur** (SQLite opt-in) — ancak SQLite bölümünün eklenmesi gerekir → Faz 2'de güncellenecek.
+- `docs/mia/faz0-envanter.md` (madge envanteri) bu raporla tutarlı; ayrıntı orada.
+
+### J. Faz 1'e Kesin Geçiş Planı
+
+1. `core/media/types.ts` + `core/media/keys.ts` — 4 tip döngüsünü koparır, `cinetrack-core.ts` yeniden export eder (davranış değişikliği sıfır).
+2. 4 yönetici sözleşmesi: `LibraryManager`, `TasteManager` (mevcut TasteEvent modeline referanslı), `MemoryManager` (evidence-ledger üstüne), `RecommendationManager`.
+3. `SyncStorePort` — Faz 2'nin gerçek döngü ön koşulu.
+4. Kabul: lint + 422 + 362 + build yeşil; madge döngü sayısı 7 → 3 (yalnızca gerçek değer zincirleri kalır).
+
+---
+---
+
+# CineTrack — FAZ 0 Envanter ve Kod/Veri Denetim Raporu (`phase-0-findings.md`)
+
+**Durum:** v1 — ARŞİV (aşağıdaki içerik 2026-11-01 tarihli ilk denetimdir; güncel bulgular yukarıdaki v2 bölümündedir)  
 **Denetim Tarihi:** `2026-11-01`  
 **Denetlenen Şema / Motor Sürümü:** `schemaVersion: 3` · `version: 3` · `engineVersion: "v3.2.0"`
 
