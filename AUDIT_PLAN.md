@@ -86,9 +86,14 @@ export interface AppModuleManifest {
 3. ✅ `app/useHashNavigation.ts` — `#/discover…#/relationships` çift yönlü eşitleme (açılışta hash'ten çözümleme, `hashchange` geri/ileri desteği, `replaceState` ile geçmiş kirlenmeden sekme→hash)
 4. ✅ Navigasyon kopyalarının silinmesi: `AppSidebar`, `Header`, `MobileDock`, `useKeyboardShortcuts` artık kayıttan türetilmiş listeleri kullanıyor; `MobileTabBar.tsx`'in `MainTab`'i kayıt defterine devredildi (`@deprecated` re-export)
 5. ✅ Sözleşme testleri: `tests/module-registry.test.mjs` (8 test: benzersizlik, çözümleyiciler, dock UX korunumu, hash kayıpsızlığı)
-6. ⏳ Sırada: `app/shell-context.tsx` + `app/shell-events.ts`; modül view/state çıkarımı (`discover` → `list` → `taste-map` → `relationships` → `settings` → `detail` servisi); `App.tsx`'in ~500 satırlık kabuğa inmesi; `CommandPalette` komutlarının kayıttan türetimi
+6. ✅ `app/shell-context.tsx` — `ShellProvider`/`useShell`/`useOptionalShell`; 8 kabuk aksiyonu (openDetails, openQuickSave, setStatus, toggleDislike, refreshTasteMap, openCommandPalette, openAddCustom, openProfile)
+7. ✅ `app/shell-events.ts` — tipli `ShellEventMap` (`item:saved`, `item:disliked`, `profile:changed`, `sync:completed`) + emit/subscribe/reset; App'te dört yayın noktası bağlandı (commitSavedItem, handleToggleDislike, handleSwitchProfile, mergeRemoteDocumentIntoState); `tests/shell-events.test.mjs` (5 sözleşme testi)
+8. ✅ `modules/taste-map/TasteMapSection.tsx` + `modules/relationships/RelationshipsSection.tsx` — registry `Section` alanından tembel yüklü; chunk'lar korundu (TasteMapSection 14 kB, RelationshipsSection 28.6 kB, TasteProfileDashboard/Minimal ayrı)
+9. ✅ `modules/discover/DiscoverSection.tsx` + `modules/list/ListSection.tsx` — Hero/Stats + ortak MediaGrid modüllere taşındı; Controls slot olarak paylaşılıyor (`controlsNode`), MediaGrid propları tek yerde (`catalogGrid`); registry'de statik Section (varsayılan sekme Suspense flaşı olmasın)
+10. ✅ `CommandPalette` sekme komutları `MODULES`'ten türetildi; `ModuleDefinition.keywords` alanı eklendi; `PaletteTab` → `ModuleId` takma adı
+11. ⏳ Sırada: katalog/öneri/senkron mantığının kancalara çıkarılması (`useCatalog`, `useForYou`, `useProfiles`, `useSync`) → `App.tsx` < 1.000 satır; `settings` modül manifesti (ProfilModal içeriği) + `detail` kabuk servisi (DetailModal/PersonDrawer); `useShell` tüketicilerinin artırılması (şu an 2 bölüm)
 
-**Doğrulama (6. tur itibarıyla):** 417/417 birim + 362 taste testi yeşil · lint (`--max-warnings 0`) yeşil · build başarılı.
+**Doğrulama (7. tur itibarıyla):** 422/422 birim + 362 taste testi yeşil · lint (`--max-warnings 0`) yeşil · build başarılı, code-splitting korundu.
 
 ### Güvence (big-bang riskine karşı — değişmeden korunanlar)
 
