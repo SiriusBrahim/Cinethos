@@ -1,6 +1,7 @@
 # MIA Faz 0 — Denetim Kontrol Listesi Sonuçları
 
 > **Durum:** 2026-11-16 · dal `freebuff/faz0-f47140` · 202 kaynak dosya, 25+1 test dosyası
+> **İlkeler:** Faz 1'den itibaren bağlayıcı sekiz kural ve doğrulama eşlemesi: [`mimari-ilkeler.md`](./mimari-ilkeler.md).
 > **Kural:** Her madde bir kanıta bağlanır. Doğrulanmayan davranış "doğrulanmadı" olarak işaretlenir; tamamlanmış gibi gösterilmez.
 > **Doğrulama:** `npm run lint` temiz · `npm test` **425/425** · `npm run test:taste` **362/362** · `npm run build` başarılı · Playwright **4/11** (nedenleri §0.5)
 

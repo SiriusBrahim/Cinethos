@@ -72,7 +72,7 @@ En kritik yönetici. Üç sorumluluk birlikte çalışır, **birbirinin verisini
 
 | Alt modül | Mevcut kaynak | İşlem |
 | --- | --- | --- |
-| `taste/` | `core/taste/taxonomy.ts` (674), `core/loved-similarity.ts`, `core/mood-affinity.ts` (641), `core/scoring.ts` | Hesaplama **core'da kalır** (767 test); `ProfileAnalyzer`/`FeatureExtractor` ince sarmalayıcı |
+| `taste/` | `core/taste/taxonomy.ts` (674), `core/loved-similarity.ts`, `core/mood-affinity.ts` (641), `core/scoring.ts` | Hesaplama **core'da kalır** (787 test: 425 çekirdek + 362 zevk); `ProfileAnalyzer`/`FeatureExtractor` ince sarmalayıcı |
 | `memory/` | **YOK — yeni** | `EvidenceLedger` (kanıtlar), `LearningState` (öğrenme durumu), `decay` (solma/pekiştirme); idb deposu + `MemoryRepository` |
 | `relationships/` | `core/relationship-explorer.ts` (925), `relationship-semantics.ts` (790), `core/person-insights.ts` | `SemanticAnalyzer` + `GraphBuilder`; UI `modules/relationships/`'ta kalır |
 | Sinyal ağırlıkları | `RECOMMENDATION_WEIGHTS_V3` | `core/scoring.ts`'e `SIGNAL_WEIGHTS`: watchlist 0.3 · watching 0.6 · watched 1.0 (puanla çarpılır) · disliked −0.8 |
@@ -175,6 +175,8 @@ export interface AppEvent<T extends keyof AppEventMap = keyof AppEventMap> {
 ---
 
 ## 4. Bağımlılık Kuralları ve Mimari Yasaklar
+
+> Sekiz bağlayıcı ilke ve her birinin doğrulama eşlemesi: [`docs/mia/mimari-ilkeler.md`](docs/mia/mimari-ilkeler.md).
 
 **Sorgu / Komut / Olay** — modüller arası üç haberleşme yolu. Modüller birbirinin iç işleyişini bilmez; dışa açılmış `service.ts` arayüzünü kullanır.
 
@@ -282,4 +284,4 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 | Öneri | Bağımsız yönetici; hafızaya yazamaz |
 | Dağıtım | Tek uygulama, tek sunucu |
 
-**Değişmez güvence:** Mevcut kullanıcı profilleri, içerik stokları, Zevk Haritası, ilişki verileri ve öneri geçmişi hiçbir aşamada kaybolmaz; 767 test + E2E her fazda yeşil kalmak zorundadır.
+**Değişmez güvence:** Mevcut kullanıcı profilleri, içerik stokları, Zevk Haritası, ilişki verileri ve öneri geçmişi hiçbir aşamada kaybolmaz; 787 test (425 çekirdek + 362 zevk) + E2E her fazda yeşil kalmak zorundadır.
