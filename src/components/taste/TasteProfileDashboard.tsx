@@ -152,7 +152,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
       }
     >
       {/* Hero & Özet Üst Bölümü */}
-      <header className="glass-panel relative overflow-hidden rounded-xl p-6 sm:p-8">
+      <header className="relative overflow-hidden rounded-2xl border border-white/10 bg-cinema-surface/80 p-6 sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 text-cinema-gold text-xs font-semibold uppercase tracking-widest mb-2">
@@ -176,23 +176,21 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center divide-x divide-cinema-borderSubtle rounded-lg border border-cinema-borderSubtle bg-cinema-elevated">
-              <div className="px-4 py-2 text-right">
-                <div className="text-[11px] text-cinema-textMuted">Aktif Metrik</div>
-                <div className="metric-value text-base font-bold text-cinema-gold tabular-nums">
-                  {knownCount}/{enrichedMetrics.length}
+            <div className="px-3.5 py-2 rounded-xl bg-cinema-bg/70 border border-white/10 text-right">
+              <div className="text-[11px] text-cinema-textMuted">Aktif Metrik</div>
+              <div className="metric-value text-base font-bold text-cinema-gold">
+                {knownCount}/{enrichedMetrics.length}
+              </div>
+            </div>
+
+            {overrideCount > 0 && (
+              <div className="px-3.5 py-2 rounded-xl bg-cinema-cyanDim border border-cinema-cyan/30 text-right">
+                <div className="text-[11px] text-cinema-cyan">Manuel Kontrol</div>
+                <div className="metric-value text-base font-bold text-cinema-cyan">
+                  {overrideCount}
                 </div>
               </div>
-
-              {overrideCount > 0 && (
-                <div className="px-4 py-2 text-right">
-                  <div className="text-[11px] text-cinema-cyan">Manuel Kontrol</div>
-                  <div className="metric-value text-base font-bold text-cinema-cyan tabular-nums">
-                    {overrideCount}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
 
             <button
               type="button"
@@ -210,7 +208,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
       {/* Kategori Sekmeleri & Hızlı Görünüm Anahtarı */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
-          className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full"
+          className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full"
           role="tablist"
           aria-label="Zevk kategorileri"
         >
@@ -227,9 +225,9 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
                 type="button"
                 aria-selected={isSelected}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
                   isSelected
-                    ? "bg-cinema-gold text-cinema-onAccent"
+                    ? "bg-cinema-gold text-cinema-bg shadow-glowGold"
                     : "bg-cinema-surface text-cinema-textMuted hover:text-cinema-textPrimary border border-cinema-border"
                 }`}
               >
@@ -243,7 +241,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
           type="button"
           aria-pressed={onlyWithSignal}
           onClick={() => setOnlyWithSignal((v) => !v)}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
             onlyWithSignal
               ? "bg-cinema-cyanDim border-cinema-cyan/40 text-cinema-cyan"
               : "bg-cinema-surface border-cinema-border text-cinema-textMuted hover:text-cinema-textPrimary"
@@ -340,7 +338,7 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
                   </p>
                 </div>
 
-                <div className="mt-5 pt-4 border-t border-cinema-borderSubtle flex items-end justify-between gap-3">
+                <div className="mt-5 pt-4 border-t border-white/5 flex items-end justify-between gap-3">
                   <div>
                     <div className="text-[11px] text-cinema-textMuted mb-0.5">
                       Eğilim Skoru

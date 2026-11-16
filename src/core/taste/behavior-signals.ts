@@ -70,12 +70,10 @@ export function computeBehaviorSignal(input: BehaviorSignalInput): BehaviorSigna
     }
 
     case "watched_no_rating": {
-      // Tamamlanmış ama puanlanmamış içerik zayıf pozitif kanıttır; puanlı kayıtlardan
-      // daha düşük ağırlıkla katkı verir, böylece izleme geçmişi profili otomatik besler.
       return {
-        signal: BEHAVIOR_SIGNALS.watched_no_rating,
-        isEvidence: true,
-        category: "positive",
+        signal: 0,
+        isEvidence: false, // kanıt değil
+        category: "neutral",
       };
     }
 

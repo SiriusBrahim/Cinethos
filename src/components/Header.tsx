@@ -1,24 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  displayTitle,
-  getPoster,
-  releaseYear,
-  handleImageError,
-} from '../utils/helpers.ts';import { SavedItem, makeMediaKey } from '../core/cinetrack-core.ts';
+import { displayTitle, getPoster, releaseYear, handleImageError } from '../utils/helpers.ts';
+import { SavedItem, makeMediaKey } from '../core/cinetrack-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
-import { BRAND_NAME } from '../shared/brand.ts';
-import { handleTabListKeyDown } from '../utils/tabListKeyboard.ts';
-import type { ModuleId } from '../app/module-registry.ts';
-import { HEADER_NAV_ITEMS } from '../app/navigation.ts';
 
 interface HeaderProps {
   profileName: string;
-  tab: ModuleId;
-  onTabChange: (tab: ModuleId) => void;
+  tab: 'discover' | 'list' | 'taste-map' | 'relationships' | 'identity' | 'universes';
+  onTabChange: (tab: any) => void;
   myListCount: number;
-  streakDays: number;
   query: string;
   onSearchChange: (q: string) => void;
   onSearchSubmit: (q: string) => void;
@@ -29,7 +20,8 @@ interface HeaderProps {
   getSaved: (item: TmdbItem) => SavedItem | undefined;
   tmdbSource?: string;
   tmdbStaleReason?: string;
-  onOpenCommandPalette?: () => void;
+  onOpenTvdbStock?: () => void;
+  tvdbCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,7 +29,6 @@ export const Header: React.FC<HeaderProps> = ({
   tab,
   onTabChange,
   myListCount,
-  streakDays,
   query,
   onSearchChange,
   onSearchSubmit,
@@ -48,7 +39,8 @@ export const Header: React.FC<HeaderProps> = ({
   getSaved,
   tmdbSource = 'live',
   tmdbStaleReason,
-  onOpenCommandPalette,
+  onOpenTvdbStock,
+  tvdbCount,
 }) => {
   const [dropdownItems, setDropdownItems] = useState<TmdbItem[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -221,55 +213,62 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="app-header">
       <div className="shell topbar">
         {/* Brand Zone */}
-        <div
-          className="brand"
-          onClick={() => onTabChange('discover')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onTabChange('discover');
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          aria-label="Ana sayfa"
-        >
+        <div className="brand" onClick={() => onTabChange('discover')} role="button" tabIndex={0}>
           <span className="brand-icon" aria-hidden="true">
             <svg className="icon">
               <use href="#icon-film"></use>
             </svg>
           </span>
-          <span className="brand-title">
-            <span className="brand-title-lead">{BRAND_NAME.slice(0, 4)}</span>
-            <span className="brand-title-accent">{BRAND_NAME.slice(4)}</span>
-          </span>
+          <span className="brand-title">Cinethos</span>
         </div>
 
-        {/* Primary Desktop Nav Tabs */}
-        <nav
-          className="header-nav-tabs"
-          role="tablist"
-          aria-label="Ana Gezinme"
-          onKeyDown={handleTabListKeyDown}
-        >
-          {HEADER_NAV_ITEMS.map(({ id, label, counter }) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              className={`nav-tab-btn ${tab === id ? 'is-active' : ''}`}
-              onClick={() => onTabChange(id)}
-            >
-              <span>{label}</span>
-              {counter === 'myList' && myListCount > 0 && (
-                <span className="nav-tab-count tabular-nums">{myListCount}</span>
-              )}
-            </button>
-          ))}
+        {/* Primary Desktop Nav Tabs (Section 4) */}
+        <nav className="header-nav-tabs" role="tablist" aria-label="Ana Gezinme">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'discover'}
+            className={`nav-tab-btn ${tab === 'discover' ? 'is-active' : ''}`}
+            onClick={() => onTabChange('discover')}
+          >
+            <span>Keşfet</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'list'}
+            className={`nav-tab-btn ${tab === 'list' ? 'is-active' : ''}`}
+            onClick={() => onTabChange('list')}
+          >
+            <span>Listem</span>
+            {myListCount > 0 && (
+              <>
+                {' '}
+                <span className="nav-tab-badge tabular-nums">{myListCount}</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'taste-map' || tab === 'identity'}
+            className={`nav-tab-btn ${tab === 'taste-map' || tab === 'identity' ? 'is-active' : ''}`}
+            onClick={() => onTabChange('identity')}
+          >
+            <span>Kimliğim</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'relationships' || tab === 'universes'}
+            className={`nav-tab-btn ${tab === 'relationships' || tab === 'universes' ? 'is-active' : ''}`}
+            onClick={() => onTabChange('universes')}
+          >
+            <span>Evrenler</span>
+          </button>
         </nav>
 
-        {/* Architectural Search Area (k / /) */}
+        {/* Expandable Search Area (k / /) */}
         <div className={`search ${isSearchFocused ? 'is-focused' : ''}`} ref={searchRef}>
           <svg className="icon search-icon" aria-hidden="true">
             <use href="#icon-search"></use>
@@ -288,7 +287,7 @@ export const Header: React.FC<HeaderProps> = ({
             onKeyDown={handleKeyDown}
             onFocus={() => setIsSearchFocused(true)}
             onBlur={() => !dropdownOpen && setIsSearchFocused(false)}
-            placeholder="Film veya dizi ara… (k veya /)"
+            placeholder="Film veya dizi ara… (Kısayol: k veya /)"
             autoComplete="off"
             aria-label="Film veya dizi ara"
           />
@@ -303,18 +302,6 @@ export const Header: React.FC<HeaderProps> = ({
               <svg className="icon" aria-hidden="true">
                 <use href="#icon-close"></use>
               </svg>
-            </button>
-          )}
-          {onOpenCommandPalette && (
-            <button
-              id="commandPaletteTrigger"
-              className="search-palette-trigger"
-              type="button"
-              onClick={onOpenCommandPalette}
-              aria-label="Komut paletini aç (Kısayol: Cmd/Ctrl + K)"
-              title="Komut paleti (Cmd/Ctrl + K)"
-            >
-              ⌘K
             </button>
           )}
 
@@ -385,26 +372,13 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="search-dropdown-info">
                           <span className="search-dropdown-title">{title}</span>
                           <div className="search-dropdown-meta">
-                            <span className="search-dropdown-kind">{kind}</span>
-                            {year ? (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="tabular-nums">{year}</span>
-                              </>
-                            ) : null}
-                            {rating > 0 && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="tabular-nums">★ {rating.toFixed(1)}</span>
-                              </>
-                            )}
+                            <span className="search-dropdown-badge">{kind}</span>
+                            <span className="tabular-nums">{year || ''}</span>
+                            {rating > 0 && <span className="tabular-nums">★ {rating.toFixed(1)}</span>}
                             {saved && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className={`search-dropdown-status status-${saved.status}`}>
-                                  {statusLabel}
-                                </span>
-                              </>
+                              <span className={`search-dropdown-badge search-dropdown-badge-saved status-${saved.status}`}>
+                                {statusLabel}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -428,22 +402,8 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Actions Zone */}
+        {/* Right Actions Zone: Source tag, PWA, Profile, Add */}
         <div className="topbar-actions">
-          {streakDays >= 2 && (
-            <span
-              className="streak-chip"
-              title={`${streakDays} gündür üst üste izleme etkinliği var`}
-              aria-label={`${streakDays} günlük izleme serisi`}
-            >
-              <svg className="icon" aria-hidden="true">
-                <use href="#icon-fire"></use>
-              </svg>
-              <span className="streak-chip-value tabular-nums">{streakDays}</span>
-              <span className="streak-chip-label">GÜN</span>
-            </span>
-          )}
-
           {tmdbSource && tmdbSource !== 'live' && (
             <span
               className={`topbar-source-badge ${
@@ -455,12 +415,44 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'Örnek katalog aktif'
               }
             >
-              {tmdbSource === 'stale-cache' ? 'Önbellek' : 'Demo'}
+              <span>{tmdbSource === 'stale-cache' ? 'Önbellek' : 'Demo'}</span>
             </span>
           )}
 
           <PWAInstallButton />
 
+          {onOpenTvdbStock && (
+            <button
+              type="button"
+              className="btn profile-btn"
+              onClick={onOpenTvdbStock}
+              title={`TheTVDB v4 Stoğu: ${tvdbCount ?? 0} Yapım • İçe/Dışa Aktar`}
+              aria-label={`TVDB Stok (${tvdbCount ?? 0}) ve İçe Dışa Aktar`}
+              style={{
+                borderColor: 'rgba(99, 184, 171, 0.35)',
+                color: '#63b8ab',
+                backgroundColor: 'rgba(99, 184, 171, 0.1)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: '#63b8ab',
+                }}
+              />
+              TVDB {tvdbCount !== undefined ? `(${tvdbCount})` : ''}
+            </button>
+          )}
+
+          {/* Profile Switcher Button with Avatar Initial */}
           <button
             id="profileButton"
             className="btn profile-btn"

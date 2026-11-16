@@ -9,7 +9,6 @@ import {
   reconcileGitHubSync,
   setPublicRepoPersonalSyncConsent,
   testGitHubConnection,
-  updateGitHubSyncToken,
   uploadStockSnapshot,
   type HybridMergeResult,
 } from '../services/api.ts';
@@ -25,8 +24,6 @@ import {
 
 export interface RemoteSyncStatusPayload {
   configured?: boolean;
-  authFailed?: boolean;
-  missingReason?: string;
   syncInProgress?: boolean;
   isPublicRepo?: boolean;
   allowPublicPersonalSync?: boolean;
@@ -98,36 +95,6 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
   const [csvMergeDryRun, setCsvMergeDryRun] = useState(true);
   const [csvMergeBusy, setCsvMergeBusy] = useState(false);
   const [csvMergeResult, setCsvMergeResult] = useState<HybridMergeResult | null>(null);
-
-  const [patTokenInput, setPatTokenInput] = useState('');
-  const [savingToken, setSavingToken] = useState(false);
-  const [tokenSaveMessage, setTokenSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showTokenInput, setShowTokenInput] = useState(false);
-
-  const handleSavePatToken = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = patTokenInput.trim();
-    if (!trimmed || savingToken) return;
-    setSavingToken(true);
-    setTokenSaveMessage(null);
-    try {
-      const res = await updateGitHubSyncToken(trimmed);
-      if (res.ok) {
-        setTokenSaveMessage({ type: 'success', text: 'GitHub PAT anahtarı güncellendi ve hafızaya alındı.' });
-        setPatTokenInput('');
-        setShowTokenInput(false);
-        const updatedInfo = (await fetchSyncStatus()) as RemoteSyncStatusPayload | null;
-        if (updatedInfo) onRemoteSyncInfoChange(updatedInfo);
-      } else {
-        setTokenSaveMessage({ type: 'error', text: res.error || 'Token güncellenemedi.' });
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setTokenSaveMessage({ type: 'error', text: msg || 'Token kaydedilirken hata oluştu.' });
-    } finally {
-      setSavingToken(false);
-    }
-  };
 
   const handleCsvFilePicked = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -353,13 +320,6 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
           <button
             type="button"
             className="btn btn-sm whitespace-nowrap"
-            onClick={() => setShowTokenInput((v) => !v)}
-          >
-            {showTokenInput ? 'PAT Alanını Gizle' : 'PAT Token Güncelle'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm whitespace-nowrap"
             disabled={isSyncActionDisabled}
             onClick={() => void handleTestConnection()}
           >
@@ -375,61 +335,6 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
           </button>
         </div>
       </div>
-
-      {(remoteSyncInfo?.authFailed || showTokenInput) && (
-        <form
-          onSubmit={(e) => void handleSavePatToken(e)}
-          className="my-3 rounded border border-cinema-gold/30 bg-cinema-elevated p-3 text-xs"
-        >
-          <div className="font-semibold text-cinema-gold mb-1">
-            {remoteSyncInfo?.authFailed
-              ? 'GitHub Erişim Yetkisi Gerekli (401 - Bad Credentials)'
-              : 'GitHub Personal Access Token (PAT) Güncelle'}
-          </div>
-          <p className="mb-2 text-cinema-secondary">
-            {remoteSyncInfo?.authFailed
-              ? 'Mevcut GitHub PAT anahtarınız geçersiz, süresi dolmuş veya iptal edilmiş. Uygulama verilerinizin kaybolmaması için yerel modda (local_only) çalışmayı sürdürüyor. GitHub eşitlemesini yeniden açmak için geçerli bir PAT girin.'
-              : 'GitHub ile çift yönlü eşitleme için fine-grained veya klasik PAT anahtarınızı girebilirsiniz.'}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="password"
-              aria-label="GitHub kişisel erişim anahtarı (PAT)"
-              value={patTokenInput}
-              onChange={(e) => setPatTokenInput(e.target.value)}
-              placeholder="github_pat_... veya ghp_..."
-              className="flex-1 min-w-[240px] px-2.5 py-1.5 rounded border border-cinema-borderStrong bg-cinema-surface text-cinema-textPrimary font-mono text-xs focus:outline-none focus:border-cinema-gold"
-              autoComplete="off"
-              disabled={savingToken}
-            />
-            <button
-              type="submit"
-              disabled={savingToken || !patTokenInput.trim()}
-              className="btn btn-primary btn-sm whitespace-nowrap"
-            >
-              {savingToken ? 'Kaydediliyor…' : 'Tokenı Kaydet & Eşitle'}
-            </button>
-            {showTokenInput && !remoteSyncInfo?.authFailed && (
-              <button
-                type="button"
-                onClick={() => setShowTokenInput(false)}
-                className="btn btn-sm whitespace-nowrap"
-              >
-                Kapat
-              </button>
-            )}
-          </div>
-          {tokenSaveMessage && (
-            <div
-              className={`mt-2 font-medium ${
-                tokenSaveMessage.type === 'success' ? 'text-cinema-success' : 'text-cinema-danger'
-              }`}
-            >
-              {tokenSaveMessage.text}
-            </div>
-          )}
-        </form>
-      )}
 
       <div className="github-sync-target-meta tabular-nums">
         {remoteSyncInfo?.remoteTarget ? (
@@ -475,12 +380,11 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
       )}
 
       {isObservedOrConfiguredPublic && (
-        <div className="my-2 rounded border border-cinema-gold/30 bg-cinema-gold/10 p-2.5 text-xs text-cinema-text">
+        <div className="my-2 rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs">
           <label className="flex cursor-pointer items-start gap-2">
             <input
               type="checkbox"
               className="mt-0.5"
-              aria-label="Herkese açık repoya kişisel veri eşitlemesine izin ver"
               checked={Boolean(remoteSyncInfo?.allowPublicPersonalSync)}
               disabled={updatingPublicConsent || activeSyncOp !== null}
               onChange={(e) => void handleTogglePublicConsent(e.target.checked)}
@@ -498,8 +402,8 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
         <div
           className={`my-2 rounded border p-2.5 text-xs tabular-nums ${
             connectionProbeResult.ok
-              ? 'border-cinema-success/30 bg-cinema-successDim text-cinema-text'
-              : 'border-cinema-danger/30 bg-cinema-dangerDim text-cinema-text'
+              ? 'border-emerald-500/30 bg-emerald-500/10'
+              : 'border-rose-500/30 bg-rose-500/10'
           }`}
           role="status"
         >
@@ -614,14 +518,12 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
               type="file"
               accept=".csv,text/csv"
               className="hidden"
-              aria-label="CSV dosyası seç"
               onChange={handleCsvFilePicked}
             />
           </label>
           <label className="flex cursor-pointer items-center gap-1.5 text-xs">
             <input
               type="checkbox"
-              aria-label="Önce önizle (kaydetme)"
               checked={csvMergeDryRun}
               onChange={(e) => setCsvMergeDryRun(e.target.checked)}
             />
@@ -647,8 +549,8 @@ export const ProfileGitHubSyncSection: React.FC<ProfileGitHubSyncSectionProps> =
           <div
             className={`my-2 rounded border p-2.5 text-xs tabular-nums ${
               csvMergeResult.ok
-                ? 'border-cinema-success/30 bg-cinema-successDim text-cinema-text'
-                : 'border-cinema-danger/30 bg-cinema-dangerDim text-cinema-text'
+                ? 'border-emerald-500/30 bg-emerald-500/10'
+                : 'border-rose-500/30 bg-rose-500/10'
             }`}
             role="status"
           >

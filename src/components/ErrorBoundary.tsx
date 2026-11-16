@@ -1,6 +1,5 @@
 import React from 'react';
 import { resetDerivedCachesPreserveProfileAndStock } from '../services/idb-schema-version.ts';
-import { BRAND_NAME } from '../shared/brand.ts';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -68,7 +67,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: unknown, info: React.ErrorInfo): void {
     console.error(
-      `[${BRAND_NAME} ErrorBoundary${this.props.sectionName ? `: ${this.props.sectionName}` : ''}]`,
+      `[Cinethos ErrorBoundary${this.props.sectionName ? `: ${this.props.sectionName}` : ''}]`,
       error,
       info
     );

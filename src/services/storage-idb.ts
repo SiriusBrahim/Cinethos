@@ -1,7 +1,6 @@
 import { get, set, del, createStore, type UseStore } from 'idb-keyval';
 import type { TmdbItem } from '../types/tmdb.ts';
 import type { SavedItem, Preferences, FavoriteActorInfo } from '../core/cinetrack-core.ts';
-import { sanitizeStockPosterDepot } from './stock-poster-utils.ts';
 import {
   type IdbWriteResult,
   recordDepotWriteOutcome,
@@ -152,7 +151,7 @@ export async function loadIsolatedProfileIdb(profileId: string): Promise<Isolate
           updatedAt: new Date().toISOString(),
         };
       }
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
   return record || null;
 }
@@ -169,10 +168,6 @@ export interface UserListItemCompact {
   media_type: 'movie' | 'tv';
   status: 'watching' | 'watchlist' | 'completed';
   personal_rating: number | '';
-  title?: string;
-  poster_path?: string;
-  release_date?: string;
-  first_air_date?: string;
   addedAt?: string;
   updatedAt?: string;
   custom?: boolean;
@@ -186,11 +181,6 @@ interface RawUserListCandidate {
   media_type?: string;
   status?: string;
   personal_rating?: number | '';
-  title?: string;
-  name?: string;
-  poster_path?: string;
-  release_date?: string;
-  first_air_date?: string;
   addedAt?: string;
   updatedAt?: string;
   custom?: boolean;
@@ -216,12 +206,6 @@ export function toCompactUserListItem(
   };
   if (item.addedAt) compact.addedAt = String(item.addedAt);
   if (item.updatedAt) compact.updatedAt = String(item.updatedAt);
-  const rawName = (item as { name?: unknown }).name;
-  const title = typeof item.title === 'string' ? item.title : typeof rawName === 'string' ? rawName : '';
-  if (title) compact.title = title;
-  if (item.poster_path) compact.poster_path = String(item.poster_path);
-  if (item.release_date) compact.release_date = String(item.release_date);
-  if (item.first_air_date) compact.first_air_date = String(item.first_air_date);
   if (item.custom) compact.custom = true;
   if (typeof item.current_season === 'number') compact.current_season = item.current_season;
   if (typeof item.episodes_watched === 'number') compact.episodes_watched = item.episodes_watched;
@@ -245,7 +229,7 @@ export async function loadUserListsIdb(profileId: string): Promise<UserListItemC
           return parsed.map(toCompactUserListItem);
         }
       }
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
   return [];
 }
@@ -282,9 +266,7 @@ export interface StockDepot {
 export async function loadStockIdb(): Promise<StockDepot> {
   const data = await safeIdbGet<StockDepot>('ct_stock', 'stock_main');
   if (data && Array.isArray(data.movies) && Array.isArray(data.tv)) {
-    // Geçersiz demo poster yolları ağ isteğini boşa çıkarmasın diye okuma anında
-    // ayıklanır (poster hidrasyonu TMDB'den yeniden doldurur).
-    return sanitizeStockPosterDepot(data).depot;
+    return data;
   }
   return { movies: [], tv: [], updatedAt: '', cursors: {} };
 }

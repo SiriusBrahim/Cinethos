@@ -43,19 +43,20 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-    padding: 12px 14px;
+    padding: 11px 13px;
     border-radius: var(--radius-md);
     background-color: var(--bg-surface);
+    backdrop-filter: blur(12px);
     border: 1px solid var(--border-subtle);
     color: var(--text-1);
     text-align: left;
-    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+    transition: border-color var(--dur-med) var(--ease), transform var(--dur-med) var(--ease), box-shadow var(--dur-med) var(--ease);
   }
 
   .season-calendar-card:hover {
-    border-color: var(--gold-border);
-    background-color: var(--bg-elevated);
+    border-color: rgba(255, 255, 255, 0.2);
     transform: translateY(-2px);
+    box-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.6), 0 0 14px rgba(99, 184, 171, 0.12);
   }
 
   .season-calendar-date {
@@ -355,7 +356,7 @@
   .excel-backup-error {
     margin-top: 8px;
     font-size: 12px;
-    color: var(--danger);
+    color: #fca5a5;
   }
 
   /* --- v6 Set I & Set J Styles (IMP-09..IMP-16) --- */
@@ -365,10 +366,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 12px;
-    padding: 2px 0 10px;
-    border-bottom: 1px solid var(--border-subtle);
-    background: transparent;
+    margin-bottom: 10px;
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
     font-size: 12px;
     color: var(--text-2);
   }
@@ -381,15 +383,15 @@
   .stats-backup-counter {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--text-3);
+    color: var(--text-2);
   }
 
   .taste-dna-summary-card {
-    margin-top: 14px;
-    padding: 18px 20px;
+    margin-top: 12px;
+    padding: 14px 18px;
     border-radius: var(--radius-lg);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--accent-border);
   }
 
   .taste-dna-summary-head {
@@ -398,9 +400,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
 
   .taste-dna-summary-title-group {
@@ -410,11 +410,10 @@
   }
 
   .taste-dna-summary-title {
-    font-family: var(--font-display);
-    font-size: 15px;
+    font-size: 13.5px;
     font-weight: 700;
-    color: var(--gold);
-    letter-spacing: -0.01em;
+    color: var(--accent);
+    letter-spacing: 0.01em;
   }
 
   .taste-dna-summary-profile {
@@ -431,41 +430,26 @@
   .taste-dna-traits-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 0;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background-color: var(--bg-elevated);
-    overflow: hidden;
-    margin-bottom: 12px;
+    gap: 8px;
+    margin-bottom: 10px;
   }
 
   .taste-dna-trait-item {
-    padding: 10px 14px;
-    border-right: 1px solid var(--border-subtle);
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  @media (min-width: 768px) {
-    .taste-dna-trait-item {
-      border-bottom: 0;
-    }
-    .taste-dna-trait-item:last-child {
-      border-right: 0;
-    }
+    padding: 8px 11px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
   }
 
   .taste-dna-trait-label {
-    font-size: 10.5px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-3);
+    font-size: 11px;
+    color: var(--text-2);
   }
 
   .taste-dna-trait-value {
-    margin-top: 3px;
-    font-size: 13.5px;
-    font-weight: 650;
+    margin-top: 2px;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--text-1);
   }
 
@@ -486,20 +470,19 @@
 
   .taste-dna-genres-caption {
     font-weight: 600;
-    color: var(--text-3);
+    color: var(--text-2);
   }
 
   .taste-dna-genres-values {
     color: var(--text-1);
   }
 
-  /* IMP-09: Wrapped Summary Card (Editorial Monograph) */
-  .wrapped-summary-card,
+  /* IMP-09: Wrapped Card */
   .wrapped-card {
     margin-top: 14px;
-    padding: 20px 22px;
+    padding: 18px 20px;
     border-radius: var(--radius-lg);
-    background-color: var(--bg-surface);
+    background-color: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
   }
 
@@ -509,30 +492,24 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--border-subtle);
   }
 
   .wrapped-card-eyebrow {
     display: block;
     font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 600;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--gold);
+    letter-spacing: 0.06em;
+    color: var(--accent);
   }
 
   .wrapped-card-title {
-    margin: 4px 0 0;
-    font-family: var(--font-display);
-    font-size: 20px;
+    margin: 2px 0 0;
+    font-size: 18px;
     font-weight: 700;
-    letter-spacing: -0.015em;
     color: var(--text-1);
   }
 
-  .wrapped-card-subtitle,
   .wrapped-card-headline {
     margin: 4px 0 0;
     font-size: 12.5px;
@@ -549,121 +526,86 @@
   .wrapped-year-switcher {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     padding: 2px;
     border-radius: var(--radius-sm);
-    background-color: var(--bg-app);
+    background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
   }
 
   .wrapped-year-btn {
-    padding: 4px 10px;
+    padding: 4px 9px;
     border-radius: var(--radius-xs);
-    font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-2);
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
-  }
-
-  .wrapped-year-btn:hover {
-    color: var(--text-1);
   }
 
   .wrapped-year-btn.is-active {
-    background-color: var(--gold);
-    color: var(--text-on-accent);
+    background-color: var(--accent);
+    color: #fff;
   }
 
   .wrapped-card-body {
     margin-top: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
   }
 
-  .wrapped-kpi-strip,
   .wrapped-metrics-strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 0;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background-color: var(--bg-elevated);
-    overflow: hidden;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
   }
 
-  .wrapped-kpi-item,
   .wrapped-metric-item {
-    padding: 12px 15px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    border-right: 1px solid var(--border-subtle);
-    border-bottom: 1px solid var(--border-subtle);
+    gap: 2px;
   }
 
-  @media (min-width: 640px) {
-    .wrapped-kpi-item,
-    .wrapped-metric-item {
-      border-bottom: 0;
-    }
-    .wrapped-kpi-item:last-child,
-    .wrapped-metric-item:last-child {
-      border-right: 0;
-    }
-  }
-
-  .wrapped-kpi-label,
   .wrapped-metric-label {
-    font-size: 10.5px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-3);
+    font-size: 11px;
+    color: var(--text-2);
   }
 
-  .wrapped-kpi-val,
   .wrapped-metric-value {
     font-size: 16px;
     font-weight: 700;
     color: var(--text-1);
   }
 
-  .wrapped-kpi-meta,
   .wrapped-metric-sub {
     font-size: 11px;
     color: var(--text-2);
   }
 
-  .wrapped-triad-grid,
   .wrapped-pillars-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 18px;
-    padding: 14px 0;
-    border-top: 1px solid var(--border-subtle);
-    border-bottom: 1px solid var(--border-subtle);
+    gap: 12px;
   }
 
-  .wrapped-triad-col,
   .wrapped-pillar {
-    padding: 0;
-    min-width: 0;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
   }
 
-  .wrapped-section-label,
   .wrapped-pillar-title {
-    display: block;
-    margin: 0 0 10px;
-    font-size: 11px;
+    margin: 0 0 8px;
+    font-size: 12.5px;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--gold);
+    color: var(--text-1);
   }
 
   .wrapped-ranked-list {
@@ -672,12 +614,12 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 6px;
   }
 
   .wrapped-ranked-row {
     display: grid;
-    grid-template-columns: 20px 1fr auto;
+    grid-template-columns: 22px 1fr auto;
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
@@ -686,16 +628,14 @@
   .wrapped-rank-num {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--gold);
+    color: var(--accent);
   }
 
   .wrapped-rank-name {
     color: var(--text-1);
     font-weight: 500;
-    min-width: 0;
   }
 
-  .wrapped-rank-stat,
   .wrapped-rank-count {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -705,31 +645,16 @@
   .wrapped-empty-note {
     margin: 0;
     font-size: 12px;
-    color: var(--text-3);
+    color: var(--text-2);
   }
 
-  .wrapped-bottom-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  @media (max-width: 768px) {
-    .wrapped-bottom-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .wrapped-months-box,
   .wrapped-months-section {
-    padding: 14px 16px;
+    padding: 12px 14px;
     border-radius: var(--radius-md);
-    background-color: var(--bg-elevated);
+    background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
   }
 
-  .wrapped-months-header,
   .wrapped-months-head {
     display: flex;
     flex-wrap: wrap;
@@ -739,15 +664,9 @@
     margin-bottom: 10px;
   }
 
-  .wrapped-months-header .wrapped-section-label {
-    margin-bottom: 0;
-  }
-
-  .wrapped-months-caption,
   .wrapped-peak-month {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-3);
+    font-size: 11.5px;
+    color: var(--text-2);
   }
 
   .wrapped-months-bars {
@@ -763,104 +682,76 @@
     gap: 4px;
   }
 
-  .wrapped-month-svg {
-    width: 14px;
-    height: 40px;
-    display: block;
-  }
-
-  .wrapped-month-track {
-    fill: var(--bg-surface);
-  }
-
-  .wrapped-month-fill {
-    fill: var(--border-subtle);
-  }
-
-  .wrapped-month-fill.is-non-zero {
-    fill: var(--gold);
-  }
-
   .wrapped-month-count {
     font-family: var(--font-mono);
     font-size: 10.5px;
     color: var(--text-2);
   }
 
+  .wrapped-month-progress {
+    width: 100%;
+    height: 6px;
+    accent-color: var(--accent);
+  }
+
   .wrapped-month-label {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-3);
+    font-size: 10.5px;
+    color: var(--text-2);
   }
 
-  .wrapped-favorite-box {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .wrapped-favorite-card,
   .wrapped-loved-banner {
     display: flex;
     align-items: center;
-    gap: 12px;
-    width: 100%;
-    flex: 1;
+    justify-content: space-between;
+    gap: 14px;
     padding: 12px 14px;
     border-radius: var(--radius-md);
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--gold-border);
-    color: var(--text-1);
-    text-align: left;
-    cursor: pointer;
-    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--accent-border);
   }
 
-  .wrapped-favorite-card:hover {
-    border-color: var(--gold);
-    background-color: var(--bg-panel);
+  .wrapped-loved-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
   }
 
-  .wrapped-favorite-poster,
   .wrapped-loved-poster {
     width: 44px;
     height: 66px;
     object-fit: cover;
     border-radius: var(--radius-xs);
-    background-color: var(--bg-surface);
     flex-shrink: 0;
   }
 
-  .wrapped-favorite-poster--fallback {
-    display: grid;
-    place-items: center;
-    color: var(--text-3);
-    border: 1px solid var(--border-subtle);
+  .wrapped-loved-eyebrow {
+    display: block;
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 600;
   }
 
-  .wrapped-favorite-info {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .wrapped-favorite-title {
-    font-family: var(--font-display);
+  .wrapped-loved-title-btn {
+    padding: 0;
+    margin: 2px 0;
+    background: none;
+    border: none;
     font-size: 14.5px;
     font-weight: 700;
     color: var(--text-1);
+    cursor: pointer;
+    text-align: left;
   }
 
-  .wrapped-favorite-meta {
-    font-size: 11.5px;
+  .wrapped-loved-title-btn:hover {
+    color: var(--accent);
+  }
+
+  .wrapped-loved-reason {
+    margin: 0;
+    font-size: 12px;
     color: var(--text-2);
-  }
-
-  .wrapped-favorite-match {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--gold);
   }
 
   /* IMP-13: Stock Health Panel */
@@ -1174,11 +1065,11 @@
   }
 
   .profile-data-mode-indicator.is-demo {
-    color: var(--warning);
+    color: #fcd34d;
   }
 
   .profile-data-mode-indicator.is-live {
-    color: var(--success);
+    color: #6ee7b7;
   }
 
   .profile-save-prefs-btn {
@@ -1223,7 +1114,7 @@
     padding: 18px 20px;
     border-radius: var(--radius-lg);
     background-color: var(--bg-surface);
-    border: 1px solid var(--danger-border);
+    border: 1px solid rgba(248, 113, 113, 0.35);
   }
 
   .error-diagnostic-header {
@@ -1243,11 +1134,11 @@
     width: 100%;
     padding: 10px 12px;
     border-radius: var(--radius-md);
-    background-color: var(--danger-soft);
-    border: 1px solid var(--danger-border);
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
     font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--danger);
+    color: #fca5a5;
     word-break: break-word;
   }
 
@@ -1267,7 +1158,7 @@
     margin-top: 8px;
     padding: 10px;
     border-radius: var(--radius-sm);
-    background-color: var(--bg-elevated);
+    background-color: rgba(9, 13, 22, 0.75);
     border: 1px solid var(--border-subtle);
     font-family: var(--font-mono);
     font-size: 11px;
@@ -1279,7 +1170,7 @@
 
   .error-diagnostic-notice {
     font-size: 12px;
-    color: var(--warning);
+    color: #fcd34d;
   }
 
   .error-diagnostic-actions {
@@ -1300,7 +1191,7 @@
     margin-top: 6px;
     font-family: var(--font-mono);
     font-size: 11.5px;
-    color: var(--danger);
+    color: #fca5a5;
   }
 
   .cache-reset-note {
@@ -1308,240 +1199,5 @@
     line-height: 1.5;
     color: var(--text-2);
     margin-bottom: 8px;
-  }
-
-  /* Evrenler Single-Piece Workspace Styles */
-  .universes-page {
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
-    padding: 8px 0 40px;
-  }
-
-  .universes-hero-header {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    padding-bottom: 22px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .universes-hero-top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 20px;
-  }
-
-  .universes-eyebrow {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 6px;
-  }
-
-  .universes-title {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: clamp(28px, 3.6vw, 40px);
-    font-weight: 700;
-    letter-spacing: -0.025em;
-    color: var(--text-1);
-    line-height: 1.1;
-  }
-
-  .universes-subtitle {
-    margin: 8px 0 0;
-    max-width: 66ch;
-    font-size: 13.5px;
-    line-height: 1.55;
-    color: var(--text-2);
-  }
-
-  .universes-ledger-metrics {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    font-size: 12.5px;
-    color: var(--text-2);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .universes-ledger-metrics strong {
-    color: var(--text-1);
-    font-weight: 700;
-  }
-
-  .universes-control-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .universes-jump-nav {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .universes-jump-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .universes-jump-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 11px;
-    border: 0;
-    background: transparent;
-    color: var(--text-2);
-    font-size: 12.5px;
-    font-weight: 600;
-    white-space: nowrap;
-    flex-shrink: 0;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-  }
-
-  .universes-jump-link:hover {
-    color: var(--text-1);
-    border-bottom-color: var(--accent);
-  }
-
-  .universes-focus-banner {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 14px;
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--accent-border);
-    font-size: 12.5px;
-    color: var(--text-1);
-  }
-
-  .universes-zone {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    scroll-margin-top: 84px;
-  }
-
-  .universes-zone + .universes-zone {
-    padding-top: 28px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .universes-zone-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .universes-zone-title {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: -0.015em;
-    color: var(--text-1);
-  }
-
-  .universes-zone-sub {
-    margin: 3px 0 0;
-    font-size: 12.5px;
-    color: var(--text-2);
-  }
-
-  .universes-concepts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 10px;
-  }
-
-  .universes-concept-card {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    padding: 12px 14px;
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    text-align: left;
-    cursor: pointer;
-    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
-  }
-
-  .universes-concept-card:hover {
-    border-color: var(--border-strong);
-    background-color: var(--bg-elevated);
-  }
-
-  .universes-concept-card.is-active {
-    border-color: var(--accent);
-    background-color: var(--bg-surface);
-  }
-
-  .universes-people-ledger {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-    gap: 10px;
-  }
-
-  .universes-person-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 13px;
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    text-align: left;
-    cursor: pointer;
-    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
-  }
-
-  .universes-person-row:hover {
-    border-color: var(--border-strong);
-    background-color: var(--bg-elevated);
-  }
-
-  .universes-person-row.is-active {
-    border-color: var(--accent);
-  }
-
-  .universes-blindspots-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .universes-blindspot-band {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    padding: 18px 20px;
-    border-radius: var(--radius-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
   }
 }

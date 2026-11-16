@@ -1,18 +1,9 @@
 // ===========================================================================
-// Cinethos Taste Engine — Taste Archaeology (v1.1)
-// Zaman sıralı holdout, tie-aware Spearman ρ, taban karşılaştırma (TP-036, §13.2)
+// Cinethos Taste Engine — Taste Archaeology (v1.0)
+// Zaman sıralı holdout, Spearman ρ, taban karşılaştırma (TP-036, §13.2)
 //
 // KRİTİK: ratedAt/watchedAt yoksa (Faz 0 bulgusu), zaman sıralı ayrım yapılamaz.
 // Bu durumda sonuç "insufficient_data" olur, başarısız değil.
-//
-// v1.1 düzeltmeleri:
-// - Holdout yalnızca timeSource: "actual" olaylarla kurulur; imported olaylar
-//   gerçek zaman sırasına karışmaz.
-// - Eşit puanlar ortalama sıra (average rank) alır; Spearman, sıraların
-//   Pearson korelasyonu olarak hesaplanır (bağlı sıralarda 6Σd² formülü geçersiz).
-// - Tüm gözlemler aynı değeri taşıyorsa korelasyon null döner (yapay sıralama yok).
-// - Özellik verisi olmayan içerikler 0 puanla cezalandırılmaz, değerlendirme
-//   dışı bırakılır ve rapora eksik veri olarak yazılır.
 // ===========================================================================
 
 import type { TasteEvent, TasteProfile, ContentTasteItem } from "./types.ts";
@@ -65,25 +56,29 @@ export async function runTasteArchaeology(
   // 1. Sadece rating_changed olaylarını al (TP-036: test puanları)
   const ratingEvents = events.filter((e) => e.eventType === "rating_changed");
 
-  // 2. Holdout yalnızca gerçek zaman kaynağı olan olaylarla kurulur (TP-029).
-  //    Imported olayların gerçek tarihi bilinmediği için zaman sırasına katılmaz.
-  const actualTimeEvents = ratingEvents.filter((e) => e.timeSource === "actual");
-  const excludedImported = ratingEvents.length - actualTimeEvents.length;
-  if (excludedImported > 0) {
-    warnings.push(
-      `${excludedImported} imported olay gerçek zaman sırası bilinmediği için holdout dışı bırakıldı`
-    );
-  }
-
-  if (actualTimeEvents.length === 0) {
+  // 2. Zaman sıralı ayrım yapabilir miyiz?
+  // Faz 0 bulgusu: tüm migration olayları imported → zaman sıralı ayrım yapılamaz
+  const hasActualTimeSource = ratingEvents.some((e) => e.timeSource === "actual");
+  if (!hasActualTimeSource) {
     warnings.push(
       "Tüm olaylar timeSource: imported — zaman sıralı ayrım yapılamaz"
     );
-    return insufficient(asOf, warnings, 0);
+    return {
+      spearmanRho: null,
+      testSampleSize: 0,
+      baselineResults: {
+        genreOnly: null,
+        voteAverage: null,
+        currentMethod: null,
+      },
+      status: "insufficient_data",
+      warnings,
+      completedAt: asOf,
+    };
   }
 
-  // 3. Zaman sıralı sırala
-  const sorted = [...actualTimeEvents].sort(
+  // 3. Zaman sıralı sırala (actual olanları önce dene)
+  const sorted = [...ratingEvents].sort(
     (a, b) =>
       new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
   );
@@ -97,30 +92,32 @@ export async function runTasteArchaeology(
     warnings.push(
       `Test seti çok küçük: ${testEvents.length} < ${minTestSize}`
     );
-    return insufficient(asOf, warnings, testEvents.length);
+    return {
+      spearmanRho: null,
+      testSampleSize: testEvents.length,
+      baselineResults: {
+        genreOnly: null,
+        voteAverage: null,
+        currentMethod: null,
+      },
+      status: "insufficient_data",
+      warnings,
+      completedAt: asOf,
+    };
   }
 
   // 5. Eğitim setinden profil çıkar
   const profiles = aggregateProfiles(trainEvents, asOf, contentIndex);
   const unifiedProfile = profiles.unified;
 
-  // 6. Test seti için uyum skoru hesapla.
-  //    Özellik verisi olmayan içerikler 0 verilerek cezalandırılmaz; değerlendirme
-  //    dışı bırakılır (eksik veri ≠ kötü uyum).
-  let missingFeatureCount = 0;
-  const testScores: Array<{
-    contentId: string;
-    tasteFit: number;
-    actualRating: number;
-  }> = [];
-
-  for (const event of testEvents) {
+  // 6. Test seti için uyum skoru hesapla
+  const testScores = testEvents.map((event) => {
     const contentItem = contentIndex[event.contentId];
     if (!contentItem) {
-      missingFeatureCount++;
-      continue;
+      return { contentId: event.contentId, tasteFit: 0, actualRating: 0 };
     }
 
+    // Basit uyum skoru: içeriğin özellikleri × profil afinite
     let tasteFit = 0;
     let featureCount = 0;
 
@@ -135,83 +132,48 @@ export async function runTasteArchaeology(
       }
     }
 
-    if (featureCount === 0) {
-      missingFeatureCount++;
-      continue;
+    if (featureCount > 0) {
+      tasteFit /= featureCount;
     }
 
-    const actualRating = Number(event.payload.newValue);
-    if (!Number.isFinite(actualRating)) {
-      missingFeatureCount++;
-      continue;
-    }
+    const actualRating = event.payload.newValue as number;
+    return { contentId: event.contentId, tasteFit, actualRating };
+  });
 
-    testScores.push({
-      contentId: event.contentId,
-      tasteFit: tasteFit / featureCount,
-      actualRating,
-    });
-  }
-
-  if (missingFeatureCount > 0) {
-    warnings.push(
-      `${missingFeatureCount} test olayı eksik özellik/puan verisi nedeniyle değerlendirme dışı bırakıldı`
-    );
-  }
-
-  const evaluatedEvents = testEvents.filter((event) =>
-    testScores.some((score) => score.contentId === event.contentId)
-  );
-
-  if (testScores.length < 2) {
-    warnings.push("Değerlendirilebilir test örneği 2'den az");
-    return insufficient(asOf, warnings, testScores.length);
-  }
-
-  // 7. Spearman korelasyonu hesapla (tie-aware)
+  // 7. Spearman korelasyonu hesapla
   const spearmanRho = computeSpearmanCorrelation(
     testScores.map((s) => s.tasteFit),
     testScores.map((s) => s.actualRating)
   );
 
-  if (spearmanRho === null) {
-    warnings.push(
-      "Test puanlarının tamamı aynı — sıralama korelasyonu tanımsız"
-    );
-  }
-
   // 8. Taban yöntemler (en az 3 taban — §13.2 kuralı)
   const baselineResults = {
     genreOnly: computeGenreOnlyBaseline(
-      evaluatedEvents,
+      testEvents,
       contentIndex,
       unifiedProfile
     ),
-    voteAverage: computeVoteAverageBaseline(evaluatedEvents, contentIndex, warnings),
-    currentMethod: computeCurrentMethodBaseline(evaluatedEvents, contentIndex, warnings),
+    voteAverage: computeVoteAverageBaseline(testEvents),
+    currentMethod: computeCurrentMethodBaseline(testEvents),
   };
 
   // 9. Gölge metrikler (TP-023)
   let shadowMetrics: ArchaeologyResult["shadowMetrics"] | undefined;
   if (includeShadowMetrics) {
     shadowMetrics = {
-      baseRate: computeBaseRateMetric(evaluatedEvents),
-      centeredRating: computeCenteredRatingMetric(evaluatedEvents),
+      baseRate: computeBaseRateMetric(testEvents, contentIndex),
+      centeredRating: computeCenteredRatingMetric(testEvents),
     };
   }
 
   // 10. Durum belirle
-  const status: ArchaeologyResult["status"] =
-    spearmanRho === null
-      ? "insufficient_data"
-      : spearmanRho > 0.3
-      ? "pass"
-      : "fail";
+  const status =
+    spearmanRho !== null && spearmanRho > 0.3 ? "pass" : "fail";
 
   return {
     spearmanRho,
     confidenceInterval: computeBootstrapCI(testScores, 1000),
-    testSampleSize: testScores.length,
+    testSampleSize: testEvents.length,
     baselineResults,
     shadowMetrics,
     status,
@@ -220,82 +182,34 @@ export async function runTasteArchaeology(
   };
 }
 
-function insufficient(
-  asOf: string,
-  warnings: string[],
-  testSampleSize: number
-): ArchaeologyResult {
-  return {
-    spearmanRho: null,
-    testSampleSize,
-    baselineResults: {
-      genreOnly: null,
-      voteAverage: null,
-      currentMethod: null,
-    },
-    status: "insufficient_data",
-    warnings,
-    completedAt: asOf,
-  };
-}
-
 // === İstatistik Yardımcıları ===
 
-/**
- * Spearman sıra korelasyonu.
- * Sıralar tie-aware ortalama sıralardır ve korelasyon sıraların Pearson
- * katsayısı olarak hesaplanır; 6Σd² kısayolu bağlı (tie) sıralarda geçersizdir.
- * Tüm değerler eşitse (varyans 0) null döner.
- */
-export function computeSpearmanCorrelation(
+/** Spearman sıra korelasyonu */
+function computeSpearmanCorrelation(
   x: number[],
   y: number[]
 ): number | null {
   if (x.length !== y.length || x.length < 2) return null;
+  const n = x.length;
   const rankX = computeRanks(x);
   const rankY = computeRanks(y);
-  return computePearson(rankX, rankY);
+
+  let sumDiffSq = 0;
+  for (let i = 0; i < n; i++) {
+    const diff = rankX[i] - rankY[i];
+    sumDiffSq += diff * diff;
+  }
+  return 1 - (6 * sumDiffSq) / (n * (n * n - 1));
 }
 
-/** Eşit değerlere ortalama sıra atayan 1-tabanlı sıralama. */
-export function computeRanks(values: number[]): number[] {
-  const indexed = values.map((value, index) => ({ value, index }));
+function computeRanks(values: number[]): number[] {
+  const indexed = values.map((v, i) => ({ value: v, index: i }));
   indexed.sort((a, b) => a.value - b.value);
-
-  const ranks = new Array<number>(values.length).fill(0);
-  let i = 0;
-  while (i < indexed.length) {
-    let j = i;
-    while (j + 1 < indexed.length && indexed[j + 1].value === indexed[i].value) {
-      j++;
-    }
-    const averageRank = (i + j) / 2 + 1;
-    for (let k = i; k <= j; k++) {
-      ranks[indexed[k].index] = averageRank;
-    }
-    i = j + 1;
+  const ranks = new Array(values.length);
+  for (let i = 0; i < indexed.length; i++) {
+    ranks[indexed[i].index] = i + 1;
   }
   return ranks;
-}
-
-function computePearson(a: number[], b: number[]): number | null {
-  const n = a.length;
-  if (n < 2 || b.length !== n) return null;
-  const meanA = a.reduce((s, v) => s + v, 0) / n;
-  const meanB = b.reduce((s, v) => s + v, 0) / n;
-
-  let numerator = 0;
-  let varA = 0;
-  let varB = 0;
-  for (let i = 0; i < n; i++) {
-    const da = a[i] - meanA;
-    const db = b[i] - meanB;
-    numerator += da * db;
-    varA += da * da;
-    varB += db * db;
-  }
-  if (varA === 0 || varB === 0) return null;
-  return numerator / Math.sqrt(varA * varB);
 }
 
 /** Bootstrap güven aralığı (%95) */
@@ -332,12 +246,9 @@ function computeGenreOnlyBaseline(
   contentIndex: Record<string, ContentTasteItem>,
   profile: TasteProfile
 ): number | null {
-  const scores: number[] = [];
-  const ratings: number[] = [];
-
-  for (const event of testEvents) {
+  const scores = testEvents.map((event) => {
     const contentItem = contentIndex[event.contentId];
-    if (!contentItem) continue;
+    if (!contentItem) return 0;
 
     let genreFit = 0;
     let genreCount = 0;
@@ -346,76 +257,51 @@ function computeGenreOnlyBaseline(
       if (metricId.startsWith("genre.")) {
         const profileMetric = profile.metrics[metricId];
         if (profileMetric && profileMetric.status !== "unknown") {
-          genreFit += (feature.strength / 100) * (profileMetric.affinity / 100);
+          genreFit +=
+            (feature.strength / 100) * (profileMetric.affinity / 100);
           genreCount++;
         }
       }
     }
+    return genreCount > 0 ? genreFit / genreCount : 0;
+  });
 
-    const actualRating = Number(event.payload.newValue);
-    if (genreCount === 0 || !Number.isFinite(actualRating)) continue;
-
-    scores.push(genreFit / genreCount);
-    ratings.push(actualRating);
-  }
-
-  return computeSpearmanCorrelation(scores, ratings);
+  const actualRatings = testEvents.map((e) => e.payload.newValue as number);
+  return computeSpearmanCorrelation(scores, actualRatings);
 }
 
-/**
- * Taban 2: TMDB vote_average.
- * ContentTasteItem şeması vote_average taşımadığı için bu taban şimdilik
- * hesaplanamaz; durum sessizce yutulmaz, rapora uyarı olarak yazılır.
- */
+/** Taban 2: TMDB vote_average */
 function computeVoteAverageBaseline(
-  _testEvents: TasteEvent[],
-  _contentIndex: Record<string, ContentTasteItem>,
-  warnings: string[]
+  _testEvents: TasteEvent[]
 ): number | null {
-  warnings.push(
-    "vote_average tabanı hesaplanamadı: içerik indeksinde TMDB oy ortalaması yok"
-  );
+  // V1'de placeholder: vote_average verisi contentIndex'te yok
+  // Gerçek implementasyonda TMDB catalog'dan alınır
   return null;
 }
 
-/**
- * Taban 3: mevcut öneri yöntemi.
- * Üretim motoru (scoreCandidatesV3) aday havuzu + profil imzası gerektirdiği ve
- * bu modül yalnızca olay/indeks verisi aldığı için burada çağrılamaz; ana
- * spearmanRho zaten mevcut yöntemin uyum skorunu ölçer.
- */
+/** Taban 3: mevcut öneri yöntemi */
 function computeCurrentMethodBaseline(
-  _testEvents: TasteEvent[],
-  _contentIndex: Record<string, ContentTasteItem>,
-  warnings: string[]
+  _testEvents: TasteEvent[]
 ): number | null {
-  warnings.push(
-    "currentMethod tabanı ayrıca hesaplanmadı: ana spearmanRho mevcut uyum skorunu ölçer"
-  );
+  // V1'de placeholder: mevcut recommendation-orchestrator çağrılır
   return null;
 }
 
 // === Gölge Metrikler ===
 
-/**
- * Gölge metrik: baz oran (TP-023).
- * Test setindeki olumlu puan (>= 7) oranı. 0.5 nötr tabandan farkı, modelin
- * gerçekten ayırt edici olup olmadığını gösterir.
- */
-function computeBaseRateMetric(testEvents: TasteEvent[]): number | null {
-  const ratings = testEvents
-    .map((event) => Number(event.payload.newValue))
-    .filter((value) => Number.isFinite(value));
-  if (ratings.length === 0) return null;
-  const positives = ratings.filter((value) => value >= 7).length;
-  return Math.round((positives / ratings.length) * 1000) / 1000;
+/** Gölge metrik: baz oran (TP-023) */
+function computeBaseRateMetric(
+  _testEvents: TasteEvent[],
+  _contentIndex: Record<string, ContentTasteItem>
+): number | null {
+  // V1'de placeholder: metriğin sevilen içeriklerdeki oranı / tüm geçmişteki oranı
+  return null;
 }
 
 /** Gölge metrik: merkezlenmiş puan (TP-023) */
 function computeCenteredRatingMetric(testEvents: TasteEvent[]): number | null {
   if (testEvents.length < 2) return null;
-  const ratings = testEvents.map((e) => Number(e.payload.newValue));
-  if (ratings.some((r) => !Number.isFinite(r))) return null;
+  const ratings = testEvents.map((e) => e.payload.newValue as number);
   const mean = ratings.reduce((a, b) => a + b, 0) / ratings.length;
   const centered = ratings.map((r) => r - mean);
   // Basit korelasyon: merkezlenmiş puan ile zaman indeksi

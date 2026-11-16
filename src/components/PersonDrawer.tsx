@@ -4,12 +4,11 @@ import {
   type FavoriteActorInfo,
   type SavedItem,
   findSavedItem,
+  loadPersistentPoolData,
   makeMediaKey,
 } from '../core/cinetrack-core.ts';
-import { loadPersistentPoolData } from '../services/discovery-storage.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { loadStockIdb } from '../services/storage-idb.ts';
-import { activateOnKeyDown } from '../utils/a11y.ts';
 import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
 import {
   computePersonTasteCompatibility,
@@ -195,7 +194,6 @@ export const PersonDrawer: React.FC<PersonDrawerProps> = ({
         key={work.mediaKey}
         className="person-shelf-item"
         onClick={() => onOpenDetails(fullItem)}
-        onKeyDown={activateOnKeyDown(() => onOpenDetails(fullItem))}
         role="button"
         tabIndex={0}
       >
@@ -216,11 +214,7 @@ export const PersonDrawer: React.FC<PersonDrawerProps> = ({
             </div>
           )}
 
-          <div
-            className="person-shelf-actions"
-            role="presentation"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="person-shelf-actions" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className={`credit-action-btn ${saved?.status === 'watchlist' ? 'is-active' : ''}`}

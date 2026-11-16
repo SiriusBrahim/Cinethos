@@ -4,12 +4,7 @@
 node_modules/
 dist/
 dev-dist/
-test-results/
-playwright-report/
-blob-report/
-.tmp/
 .aistudio/
-.bolt/
 bun.lock
 data/
 

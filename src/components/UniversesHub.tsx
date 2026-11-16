@@ -294,9 +294,9 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
   return (
     <section aria-label="Evrenler ve Bağlantılar" className="py-4 sm:py-6 space-y-6">
       {/* Evrenler Hero Başlığı */}
-      <header className="rounded-2xl border border-cinema-borderSubtle bg-cinema-surface p-6 sm:p-8 shadow-sm">
+      <header className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-cinema-surface/90 via-cinema-surface/75 to-violet-950/20 p-6 sm:p-8">
         <div className="max-w-2xl">
-          <div className="inline-flex items-center gap-2 text-cinema-purple text-xs font-mono font-semibold uppercase tracking-wider mb-2">
+          <div className="inline-flex items-center gap-2 text-violet-300 text-xs font-mono uppercase tracking-wider mb-2">
             <Orbit className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Bağlantıları Keşfet</span>
           </div>
@@ -321,8 +321,8 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
             onClick={() => setSubTab('franchises')}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               subTab === 'franchises'
-                ? 'bg-cinema-purpleDim border border-cinema-purple/40 text-cinema-purple'
-                : 'bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
+                ? 'bg-violet-500/25 border border-violet-400/50 text-violet-200'
+                : 'bg-cinema-bg/60 border border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
           >
             <Layers className="w-3.5 h-3.5" aria-hidden="true" />
@@ -336,8 +336,8 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
             onClick={() => setSubTab('people')}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               subTab === 'people'
-                ? 'bg-cinema-purpleDim border border-cinema-purple/40 text-cinema-purple'
-                : 'bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
+                ? 'bg-violet-500/25 border border-violet-400/50 text-violet-200'
+                : 'bg-cinema-bg/60 border border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
           >
             <Users className="w-3.5 h-3.5" aria-hidden="true" />
@@ -351,8 +351,8 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
             onClick={() => setSubTab('network')}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               subTab === 'network'
-                ? 'bg-cinema-purpleDim border border-cinema-purple/40 text-cinema-purple'
-                : 'bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
+                ? 'bg-violet-500/25 border border-violet-400/50 text-violet-200'
+                : 'bg-cinema-bg/60 border border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
           >
             <GitBranch className="w-3.5 h-3.5" aria-hidden="true" />
@@ -366,8 +366,8 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
             onClick={() => setSubTab('blind-spots')}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               subTab === 'blind-spots'
-                ? 'bg-cinema-purpleDim border border-cinema-purple/40 text-cinema-purple'
-                : 'bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
+                ? 'bg-violet-500/25 border border-violet-400/50 text-violet-200'
+                : 'bg-cinema-bg/60 border border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary'
             }`}
           >
             <Compass className="w-3.5 h-3.5" aria-hidden="true" />
@@ -402,7 +402,7 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
       {subTab === 'people' && (
         <div className="space-y-6">
           {topCollaborators.length > 0 && (
-            <div className="rounded-2xl bg-cinema-surface border border-cinema-borderSubtle p-5 shadow-sm">
+            <div className="rounded-2xl bg-cinema-surface/60 border border-white/10 p-5">
               <h3 className="text-sm font-semibold text-cinema-textPrimary mb-1">
                 Kütüphanendeki Yaratıcı & Oyuncu Düğümleri
               </h3>
@@ -415,13 +415,13 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
                     key={person.id}
                     type="button"
                     onClick={() => onOpenPerson(person.id, person.name)}
-                    className="px-3.5 py-2 rounded-xl bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-purple/50 transition-colors text-left flex items-center gap-2.5"
+                    className="px-3.5 py-2 rounded-xl bg-cinema-bg/80 border border-white/10 hover:border-violet-400/50 transition-colors text-left flex items-center gap-2.5"
                   >
                     <span className="text-xs font-medium text-cinema-textPrimary">
                       {person.name}
                     </span>
                     <span className="text-[11px] text-cinema-textMuted">
-                      {person.role} · <strong className="tabular-nums text-cinema-purple">{person.count}</strong>
+                      {person.role} · <strong className="tabular-nums text-violet-300">{person.count}</strong>
                     </span>
                   </button>
                 ))}
@@ -462,7 +462,7 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
       {subTab === 'network' && (
         <div className="space-y-6">
           {conceptClusters.length > 0 && (
-            <div className="rounded-2xl bg-cinema-surface border border-cinema-borderSubtle p-5 space-y-3 shadow-sm">
+            <div className="rounded-2xl bg-cinema-surface/60 border border-white/10 p-5 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-cinema-textPrimary">
                   Kavram & Atmosfer Kümeleri (Zevk Ağı)
@@ -475,12 +475,12 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
                 {conceptClusters.map(([groupKey, nodes]) => (
                   <div
                     key={groupKey}
-                    className="p-3.5 rounded-xl bg-cinema-elevated border border-cinema-borderSubtle flex flex-wrap items-center gap-2"
+                    className="p-3.5 rounded-xl bg-cinema-bg/70 border border-white/10 flex flex-wrap items-center gap-2"
                   >
                     {nodes.map((node, idx) => (
                       <React.Fragment key={node.id}>
                         {idx > 0 && (
-                          <span className="text-xs text-cinema-purple" aria-hidden="true">
+                          <span className="text-xs text-violet-300" aria-hidden="true">
                             →
                           </span>
                         )}
@@ -505,8 +505,8 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
               onClick={() => setGraphMode('relationships')}
               className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors whitespace-nowrap ${
                 graphMode === 'relationships'
-                  ? 'bg-cinema-purpleDim border-cinema-purple/40 text-cinema-purple'
-                  : 'bg-cinema-surface border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
+                  ? 'bg-violet-500/20 border-violet-400/50 text-violet-200'
+                  : 'bg-cinema-surface border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary'
               }`}
             >
               Yapım & Kadro Bağlantıları
@@ -517,8 +517,8 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
               onClick={() => setGraphMode('taste-map')}
               className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors whitespace-nowrap ${
                 graphMode === 'taste-map'
-                  ? 'bg-cinema-purpleDim border-cinema-purple/40 text-cinema-purple'
-                  : 'bg-cinema-surface border-cinema-borderSubtle text-cinema-textMuted hover:text-cinema-textPrimary hover:border-cinema-borderStrong'
+                  ? 'bg-violet-500/20 border-violet-400/50 text-violet-200'
+                  : 'bg-cinema-surface border-white/10 text-cinema-textMuted hover:text-cinema-textPrimary'
               }`}
             >
               Zevk Yakınlık Ağı
@@ -558,7 +558,7 @@ export const UniversesHub: React.FC<UniversesHubProps> = ({
             blindSpots.map((spot) => (
               <div
                 key={spot.id}
-                className="rounded-2xl bg-cinema-surface border border-cinema-borderSubtle p-5 sm:p-6 space-y-4 shadow-sm"
+                className="rounded-2xl bg-cinema-surface/60 border border-white/10 p-5 sm:p-6 space-y-4"
               >
                 <div>
                   <h3 className="text-lg font-display font-bold text-cinema-textPrimary">

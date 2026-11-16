@@ -2,16 +2,21 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   ALGORITHM_VERSION,
+  buildTasteProfileV3,
   computeTasteProfileSignature,
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
+  inferLifecycleRing,
+  isItemSaved,
   makeMediaKey,
   normalizeDataDocument,
+  normalizeDeletedKeys,
+  RECOMMENDATION_WEIGHTS_V3,
+  scoreCandidatesV3,
   validItemId,
   type DataDocument,
   type Profile,
 } from '../core/cinetrack-core.ts';
-import { BRAND_NAME, BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
 import {
   mergeTwoSavedItemsLossless,
   reconcileUserDataDocumentsLossless,
@@ -23,6 +28,7 @@ import {
   normalizeCinemaKunyeDocument,
   type CinemaKunyeDocument,
 } from '../core/cinema-kunye.ts';
+import { canonicalizeMediaKey, canonicalizeMediaKeyList } from '../core/keys.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb, measureUtf8Bytes } from '../core/limits.ts';
 import {
   computeDerivedProfileContentHash,
@@ -36,6 +42,7 @@ import type {
   SyncErrorCategory,
   SyncErrorRecord,
   SyncFileCategory,
+  SyncFileDiffDetail,
   SyncFileInspection,
   SyncOperationKind,
   SyncSideSummary,
@@ -47,6 +54,7 @@ import {
   redactSecrets,
   sanitizeProfileId,
   stringifyDeterministic,
+  toCanonicalKey,
   type CatalogManifest,
   type CatalogRecord,
   type DerivedProfileDocument,
@@ -66,42 +74,546 @@ import type { createDataStorage } from './storage.ts';
  * Geçici önbellekler, `.bak`, `data/backups/*`, `data/sync-state.json`, `.tmp`, `.corrupt.*`,
  * `.env` ve derleme çıktıları envantere kesinlikle dahil edilmez.
  */
-import {
-  SYNC_STATIC_INVENTORY,
-  computeRawUtf8Hash,
-  classifyGitHubHttpStatus,
-  stripUserDataVolatileFields,
-  computeUserDataSemanticHash,
-  buildFreshDerivedProfileDocumentOnServer,
-} from './sync-manifest.ts';
+export const SYNC_STATIC_INVENTORY: ReadonlyArray<{
+  repoPath: string;
+  category: SyncFileCategory;
+  personal: boolean;
+  description: string;
+}> = Object.freeze([
+  {
+    repoPath: 'data/catalog/movies.json',
+    category: 'catalog_movies',
+    personal: false,
+    description: 'Ortak film kataloğu metaverileri (movie:<id>)',
+  },
+  {
+    repoPath: 'data/catalog/tv.json',
+    category: 'catalog_tv',
+    personal: false,
+    description: 'Ortak dizi kataloğu metaverileri (tv:<id>)',
+  },
+  {
+    repoPath: 'data/catalog/manifest.json',
+    category: 'catalog_manifest',
+    personal: false,
+    description: 'Katalog film/dizi sayıları ve içerik özeti doğrulaması',
+  },
+  {
+    repoPath: 'data/cinetrack-data.json',
+    category: 'user_data',
+    personal: true,
+    description: 'Kullanıcı profilleri, izleme listeleri, puanlar, tercihler ve favori oyuncular',
+  },
+  // Faz 6: Taste Engine — varsayılan olarak yalnızca manifest + profile senkrona girer (TP-006)
+  // index ve events boyut nedeniyle dışarıda kalır
+  {
+    repoPath: 'data/taste/cinetrack-taste-manifest.json',
+    category: 'taste_manifest',
+    personal: true,
+    description: 'Taste Engine veri özeti ve versiyon bilgisi',
+  },
+  {
+    repoPath: 'data/taste/cinetrack-taste-profile.json',
+    category: 'taste_profile',
+    personal: true,
+    description: 'Kullanıcı Taste Engine profili ve metrikler',
+  },
+  {
+    repoPath: 'data/stock.json',
+    category: 'stock',
+    personal: true,
+    description: 'Stok içerik deposu (film + dizi, sınırsız ve media:key tekilleştirmeli)',
+  },
+  {
+    repoPath: 'data/sinema-kunyesi.json',
+    category: 'cinema_kunye',
+    personal: true,
+    description: 'Sinema Künyesi izlenen içerik tür/yıl/oyuncu metaverileri (içerik ID anahtarlı)',
+  },
+]);
 
-export {
-  SYNC_STATIC_INVENTORY,
-  computeRawUtf8Hash,
-  classifyGitHubHttpStatus,
-  stripUserDataVolatileFields,
-  computeUserDataSemanticHash,
-  buildFreshDerivedProfileDocumentOnServer,
-};
+function isPlainObject(val: unknown): val is Record<string, any> {
+  return Boolean(val && typeof val === 'object' && !Array.isArray(val));
+}
 
-import {
-  isPlainObject,
-  normalizeCatalogRecordStrict,
-  mergeCatalogRecordsLossless,
-  stripCatalogVolatileFields,
-  computeCatalogSemanticMapHash,
-  computeCatalogManifestContentHash,
-  mergeCatalogMapsLossless,
-} from './github-catalog-sync.ts';
+export function computeRawUtf8Hash(rawContent: string): string {
+  return hashContent(rawContent);
+}
 
-export {
-  normalizeCatalogRecordStrict,
-  mergeCatalogRecordsLossless,
-  stripCatalogVolatileFields,
-  computeCatalogSemanticMapHash,
-  computeCatalogManifestContentHash,
-  mergeCatalogMapsLossless,
-};
+function classifyGitHubHttpStatus(
+  status: number,
+  headers: Headers,
+  bodyMessage: string
+): SyncErrorCategory {
+  const remaining = headers.get('x-ratelimit-remaining');
+  const lower = (bodyMessage || '').toLowerCase();
+  if (
+    status === 429 ||
+    (status === 403 && (remaining === '0' || lower.includes('rate limit') || lower.includes('secondary rate')))
+  ) {
+    return 'rate_limit';
+  }
+  if (status === 401 || status === 403) {
+    return 'auth_error';
+  }
+  if (status === 404) {
+    return 'not_found';
+  }
+  if (status === 409) {
+    return 'conflict';
+  }
+  return 'http_error';
+}
+
+export function normalizeCatalogRecordStrict(
+  rawKey: string,
+  rawVal: any,
+  expectedType: 'movie' | 'tv'
+): CatalogRecord | null {
+  if (!isPlainObject(rawVal)) return null;
+  const parsedKeyMatch = /^((?:movie|tv)):(\d+)$/.exec(String(rawKey || '').trim());
+  const rawId = Number(rawVal.id ?? (parsedKeyMatch ? parsedKeyMatch[2] : NaN));
+  if (!Number.isSafeInteger(rawId) || rawId <= 0) return null;
+
+  const itemType =
+    rawVal.media_type === 'tv' || rawVal.media_type === 'movie'
+      ? rawVal.media_type
+      : parsedKeyMatch
+      ? (parsedKeyMatch[1] as 'movie' | 'tv')
+      : expectedType;
+
+  if (itemType !== expectedType) return null;
+
+  const key = `${expectedType}:${rawId}`;
+  const title = String(rawVal.title || rawVal.name || '').trim();
+  if (!title) return null;
+
+  const originalTitle = String(rawVal.original_title || rawVal.original_name || '').trim();
+  const overview = typeof rawVal.overview === 'string' ? rawVal.overview.trim() : '';
+  const genreSet = new Set<number>();
+  if (Array.isArray(rawVal.genre_ids)) {
+    for (const g of rawVal.genre_ids) {
+      if (Number.isSafeInteger(g) && g > 0) genreSet.add(g);
+    }
+  }
+
+  const voteAverage = Number.isFinite(Number(rawVal.vote_average)) ? Number(rawVal.vote_average) : 0;
+  const voteCount =
+    Number.isSafeInteger(Number(rawVal.vote_count)) && Number(rawVal.vote_count) > 0
+      ? Number(rawVal.vote_count)
+      : undefined;
+  const popularity = Number.isFinite(Number(rawVal.popularity))
+    ? Number(rawVal.popularity)
+    : undefined;
+
+  const releaseDate =
+    typeof rawVal.release_date === 'string' && rawVal.release_date.trim()
+      ? rawVal.release_date.trim()
+      : undefined;
+  const firstAirDate =
+    expectedType === 'tv' && typeof rawVal.first_air_date === 'string' && rawVal.first_air_date.trim()
+      ? rawVal.first_air_date.trim()
+      : undefined;
+
+  const firstStoredAt =
+    typeof rawVal.firstStoredAt === 'string' && rawVal.firstStoredAt.trim()
+      ? rawVal.firstStoredAt.trim()
+      : '1970-01-01T00:00:00.000Z';
+  const lastUpdatedAt =
+    typeof rawVal.lastUpdatedAt === 'string' && rawVal.lastUpdatedAt.trim()
+      ? rawVal.lastUpdatedAt.trim()
+      : firstStoredAt;
+
+  return {
+    key,
+    id: rawId,
+    media_type: expectedType,
+    title,
+    original_title: originalTitle || undefined,
+    overview: overview || undefined,
+    poster_path: rawVal.poster_path ?? null,
+    backdrop_path: rawVal.backdrop_path ?? null,
+    genre_ids: Array.from(genreSet).sort((a, b) => a - b),
+    vote_average: voteAverage,
+    vote_count: voteCount,
+    release_date: releaseDate,
+    first_air_date: firstAirDate,
+    popularity,
+    firstStoredAt,
+    lastUpdatedAt,
+    source: rawVal.source === 'demo' ? 'demo' : 'tmdb',
+  };
+}
+
+/**
+ * İki katalog kaydını hiçbir dolu alanı (poster, özet, türler, oy sayısı) kaybetmeden
+ * deterministik biçimde birleştirir.
+ */
+export function mergeCatalogRecordsLossless(
+  localRec: CatalogRecord,
+  remoteRec: CatalogRecord
+): CatalogRecord {
+  const localTs = localRec.lastUpdatedAt || localRec.firstStoredAt || '';
+  const remoteTs = remoteRec.lastUpdatedAt || remoteRec.firstStoredAt || '';
+  const remoteIsNewer = remoteTs > localTs;
+
+  const pickString = (a?: string, b?: string): string => {
+    const sa = (a || '').trim();
+    const sb = (b || '').trim();
+    if (sa && !sb) return sa;
+    if (sb && !sa) return sb;
+    if (!sa && !sb) return '';
+    if (sa === sb) return sa;
+    return remoteIsNewer ? sb : sa;
+  };
+
+  // Özet alanında daha zengin (boş olmayan ve daha kapsamlı) açıklamayı koru
+  const pickRicherOverview = (a?: string, b?: string): string | undefined => {
+    const sa = (a || '').trim();
+    const sb = (b || '').trim();
+    if (sa && !sb) return sa;
+    if (sb && !sa) return sb;
+    if (!sa && !sb) return undefined;
+    if (sb.length > sa.length) return sb;
+    if (sa.length > sb.length) return sa;
+    return remoteIsNewer ? sb : sa;
+  };
+
+  const pickNullablePath = (a?: string | null, b?: string | null): string | null => {
+    const sa = typeof a === 'string' && a.trim() ? a.trim() : null;
+    const sb = typeof b === 'string' && b.trim() ? b.trim() : null;
+    if (sa && !sb) return sa;
+    if (sb && !sa) return sb;
+    if (!sa && !sb) return null;
+    return remoteIsNewer ? sb : sa;
+  };
+
+  const genreSet = new Set<number>([...(localRec.genre_ids || []), ...(remoteRec.genre_ids || [])]);
+  const genreIds = Array.from(genreSet)
+    .filter((g) => Number.isSafeInteger(g) && g > 0)
+    .sort((a, b) => a - b);
+
+  const localVotes = localRec.vote_count || 0;
+  const remoteVotes = remoteRec.vote_count || 0;
+  const voteCount = Math.max(localVotes, remoteVotes) || undefined;
+
+  let voteAverage = 0;
+  if ((localRec.vote_average || 0) > 0 && !(remoteRec.vote_average > 0)) {
+    voteAverage = localRec.vote_average;
+  } else if ((remoteRec.vote_average || 0) > 0 && !(localRec.vote_average > 0)) {
+    voteAverage = remoteRec.vote_average;
+  } else if (remoteVotes > localVotes) {
+    voteAverage = remoteRec.vote_average;
+  } else if (localVotes > remoteVotes) {
+    voteAverage = localRec.vote_average;
+  } else {
+    voteAverage = remoteIsNewer ? remoteRec.vote_average : localRec.vote_average;
+  }
+
+  let popularity: number | undefined;
+  const popA = localRec.popularity;
+  const popB = remoteRec.popularity;
+  if (Number.isFinite(popA) && Number.isFinite(popB)) {
+    popularity = remoteIsNewer ? popB : popA;
+  } else if (Number.isFinite(popA)) {
+    popularity = popA;
+  } else if (Number.isFinite(popB)) {
+    popularity = popB;
+  }
+
+  const validFirstDates = [localRec.firstStoredAt, remoteRec.firstStoredAt]
+    .filter((d): d is string => Boolean(d && d !== '1970-01-01T00:00:00.000Z'))
+    .sort();
+  const firstStoredAt =
+    validFirstDates[0] || localRec.firstStoredAt || remoteRec.firstStoredAt || '1970-01-01T00:00:00.000Z';
+
+  const validLastDates = [localRec.lastUpdatedAt, remoteRec.lastUpdatedAt]
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  const lastUpdatedAt =
+    validLastDates[validLastDates.length - 1] || firstStoredAt;
+
+  const originalTitle = pickString(localRec.original_title, remoteRec.original_title);
+  const releaseDate = pickString(localRec.release_date, remoteRec.release_date);
+  const firstAirDate =
+    localRec.media_type === 'tv'
+      ? pickString(localRec.first_air_date, remoteRec.first_air_date) || releaseDate || undefined
+      : undefined;
+
+  return {
+    key: localRec.key,
+    id: localRec.id,
+    media_type: localRec.media_type,
+    title: pickString(localRec.title, remoteRec.title),
+    original_title: originalTitle || undefined,
+    overview: pickRicherOverview(localRec.overview, remoteRec.overview),
+    poster_path: pickNullablePath(localRec.poster_path, remoteRec.poster_path),
+    backdrop_path: pickNullablePath(localRec.backdrop_path, remoteRec.backdrop_path),
+    genre_ids: genreIds,
+    vote_average: voteAverage,
+    vote_count: voteCount,
+    release_date: releaseDate || undefined,
+    first_air_date: firstAirDate,
+    popularity,
+    firstStoredAt,
+    lastUpdatedAt,
+    source: localRec.source === 'tmdb' || remoteRec.source === 'tmdb' ? 'tmdb' : 'demo',
+  };
+}
+
+export function stripCatalogVolatileFields(map: Record<string, CatalogRecord>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const key of Object.keys(map).sort((a, b) => a.localeCompare(b))) {
+    const rec = map[key];
+    if (!rec) continue;
+    out[key] = {
+      ...rec,
+      firstStoredAt: '',
+      lastUpdatedAt: '',
+    };
+  }
+  return out;
+}
+
+export function computeCatalogSemanticMapHash(map: Record<string, CatalogRecord>): string {
+  return hashContent(stringifyDeterministic(stripCatalogVolatileFields(map)));
+}
+
+export function computeCatalogManifestContentHash(
+  movies: Record<string, CatalogRecord>,
+  tv: Record<string, CatalogRecord>
+): string {
+  return hashContent(stringifyDeterministic(movies) + stringifyDeterministic(tv));
+}
+
+export function mergeCatalogMapsLossless(
+  localMap: Record<string, CatalogRecord>,
+  remoteMap: Record<string, CatalogRecord>,
+  expectedType: 'movie' | 'tv'
+): {
+  merged: Record<string, CatalogRecord>;
+  addedToLocal: number;
+  addedToRemote: number;
+  updatedLocal: number;
+  updatedRemote: number;
+  unchanged: number;
+} {
+  const merged: Record<string, CatalogRecord> = {};
+  const allKeys = new Set<string>([...Object.keys(localMap), ...Object.keys(remoteMap)]);
+  const sortedKeys = Array.from(allKeys).sort((a, b) => a.localeCompare(b));
+
+  let addedToLocal = 0;
+  let addedToRemote = 0;
+  let updatedLocal = 0;
+  let updatedRemote = 0;
+  let unchanged = 0;
+
+  for (const rawKey of sortedKeys) {
+    const localRec = localMap[rawKey]
+      ? normalizeCatalogRecordStrict(rawKey, localMap[rawKey], expectedType)
+      : null;
+    const remoteRec = remoteMap[rawKey]
+      ? normalizeCatalogRecordStrict(rawKey, remoteMap[rawKey], expectedType)
+      : null;
+
+    if (localRec && !remoteRec) {
+      merged[localRec.key] = localRec;
+      addedToRemote++;
+      continue;
+    }
+    if (remoteRec && !localRec) {
+      merged[remoteRec.key] = remoteRec;
+      addedToLocal++;
+      continue;
+    }
+    if (!localRec || !remoteRec) continue;
+
+    const combined = mergeCatalogRecordsLossless(localRec, remoteRec);
+    merged[combined.key] = combined;
+
+    const localSem = stringifyDeterministic({ ...localRec, firstStoredAt: '', lastUpdatedAt: '' });
+    const remoteSem = stringifyDeterministic({ ...remoteRec, firstStoredAt: '', lastUpdatedAt: '' });
+    const combSem = stringifyDeterministic({ ...combined, firstStoredAt: '', lastUpdatedAt: '' });
+
+    const localDiff = localSem !== combSem;
+    const remoteDiff = remoteSem !== combSem;
+    if (!localDiff && !remoteDiff) {
+      unchanged++;
+    } else {
+      if (localDiff) updatedLocal++;
+      if (remoteDiff) updatedRemote++;
+    }
+  }
+
+  return { merged, addedToLocal, addedToRemote, updatedLocal, updatedRemote, unchanged };
+}
+
+function stripUserDataVolatileFields(doc: DataDocument): Record<string, any> {
+  const profiles = [...(doc.profiles || [])]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((p) => {
+      const items = [...(p.items || [])]
+        .map((it) => {
+          const key = makeMediaKey(it);
+          return {
+            key,
+            id: it.id,
+            media_type: it.media_type,
+            title: it.title,
+            status: it.status,
+            personal_rating: it.personal_rating === '' ? '' : Number(it.personal_rating),
+            personal_rating_cleared: Boolean(it.personal_rating_cleared),
+            season_progress: it.season_progress || {},
+            season_episode_counts: it.season_episode_counts || {},
+            genre_ids: [...(it.genre_ids || [])].sort((a, b) => a - b),
+            overview: it.overview || '',
+            poster_path: it.poster_path || '',
+            backdrop_path: it.backdrop_path || '',
+            isDemo: Boolean(it.isDemo),
+          };
+        })
+        .sort((a, b) => a.key.localeCompare(b.key));
+
+      const prefs = p.preferences || {
+        disliked: [],
+        providers: [],
+        mood: '',
+        reminders: false,
+        notified: [],
+      };
+      const normalizedTombstones = normalizeDeletedKeys(p.deleted_keys);
+      return {
+        id: p.id,
+        name: p.name,
+        isDemo: Boolean(p.isDemo),
+        preferences: {
+          disliked: canonicalizeMediaKeyList(prefs.disliked || []).sort(),
+          hidden: canonicalizeMediaKeyList(prefs.hidden || []).sort(),
+          providers: [...(prefs.providers || [])].map(String).sort(),
+          mood: prefs.mood || '',
+          reminders: Boolean(prefs.reminders),
+        },
+        favoriteActors: [...(p.favoriteActors || [])]
+          .map((a) => ({ id: a.id, name: a.name, profile_path: a.profile_path ?? null }))
+          .sort((a, b) => a.id - b.id),
+        ...(Object.keys(normalizedTombstones).length > 0
+          ? { deleted_keys: normalizedTombstones }
+          : {}),
+        items,
+      };
+    });
+
+  return {
+    version: 3,
+    schemaVersion: doc.schemaVersion || CURRENT_SCHEMA_VERSION,
+    activeProfileId: doc.activeProfileId,
+    profiles,
+  };
+}
+
+export function computeUserDataSemanticHash(doc: DataDocument): string {
+  return hashContent(stringifyDeterministic(stripUserDataVolatileFields(doc)));
+}
+
+/**
+ * Kaynak profil ve katalogdan sunucu tarafında güncel türetilmiş profil belgesi üretir.
+ * Eski/geçersiz profil önbellekleri yenilendiğinde kullanılır.
+ */
+export function buildFreshDerivedProfileDocumentOnServer(
+  profile: Profile,
+  movies: Record<string, CatalogRecord>,
+  tv: Record<string, CatalogRecord>,
+  sourceCatalogHash: string
+): DerivedProfileDocument {
+  const savedItems = profile.items || [];
+  const preferences = profile.preferences || {
+    disliked: [],
+    providers: [],
+    mood: '',
+    reminders: false,
+    notified: [],
+  };
+  const favoriteActors = profile.favoriteActors || [];
+  const fingerprint = computeTasteProfileSignature(savedItems, preferences, favoriteActors, {
+    targetType: 'all',
+    algorithmVersion: ALGORITHM_VERSION,
+  });
+
+  const candidates: CatalogRecord[] = [...Object.values(movies), ...Object.values(tv)];
+  const tasteProfile = buildTasteProfileV3(savedItems, {
+    dislikedKeys: preferences.disliked || [],
+  });
+  const scored = scoreCandidatesV3(candidates, tasteProfile, {
+    weights: RECOMMENDATION_WEIGHTS_V3,
+    mood: preferences.mood || '',
+  });
+
+  const nowIso = new Date().toISOString();
+  const items: Record<string, DerivedProfileItem> = {};
+
+  for (const s of scored) {
+    const cand = s.candidate || s;
+    const key = toCanonicalKey(cand);
+    if (!key) continue;
+    const tasteScore = Math.max(
+      1,
+      Math.min(100, Math.round(Number(s.tasteScore ?? s.score ?? 50)))
+    );
+    const saved = isItemSaved(savedItems, cand, cand.media_type);
+    const disliked = Boolean(
+      preferences.disliked?.some((k) => canonicalizeMediaKey(k) === key)
+    );
+    const hidden = Boolean(
+      preferences.hidden?.some((k) => canonicalizeMediaKey(k) === key)
+    );
+    const status: DerivedProfileItem['status'] = saved
+      ? 'saved'
+      : disliked
+      ? 'disliked'
+      : hidden
+      ? 'hidden'
+      : 'active';
+
+    const normalized = normalizeDerivedProfileItem(key, {
+      mediaKey: key,
+      matchScore: tasteScore,
+      tasteScore,
+      priorityScore: tasteScore,
+      lifecycleRing: inferLifecycleRing(key, { shownCount: 0, skippedCount: 0 }, []),
+      signals: s.parts && Object.keys(s.parts).length > 0 ? s.parts : undefined,
+      reasons: Array.isArray(s.tags) && s.tags.length > 0 ? s.tags : undefined,
+      shownCount: 0,
+      skippedCount: 0,
+      demotionPenalty: 0,
+      status,
+      scoreCoverage: 'basic',
+      calculatedAt: nowIso,
+    });
+    if (normalized) {
+      items[key] = normalized;
+    }
+  }
+
+  const contentHash = computeDerivedProfileContentHash({
+    schemaVersion: DERIVED_PROFILE_SCHEMA_VERSION,
+    profileId: profile.id,
+    algorithmVersion: ALGORITHM_VERSION,
+    profileFingerprint: fingerprint,
+    sourceCatalogHash,
+    items,
+  });
+
+  return {
+    schemaVersion: DERIVED_PROFILE_SCHEMA_VERSION,
+    profileId: profile.id,
+    algorithmVersion: ALGORITHM_VERSION,
+    profileFingerprint: fingerprint,
+    sourceCatalogHash,
+    contentHash,
+    generatedAt: nowIso,
+    items,
+  };
+}
 
 function inspectCatalogRawContent(
   repoPath: string,
@@ -527,7 +1039,7 @@ function inspectUserDataRawContent(
         recordCount: 0,
         uniqueKeyCount: 0,
         sha,
-        error: `cinetrack-data.json beklenen ${BRAND_NAME} veri şemasına uymuyor.`,
+        error: 'cinetrack-data.json beklenen Cinethos veri şemasına uymuyor.',
         errorCategory: 'schema_mismatch',
       },
     };
@@ -1015,9 +1527,207 @@ function inspectDerivedProfileRawContent(
   };
 }
 
-import { type ParsedSideBundle, compareSyncSides } from './sync-compare.ts';
-export { type ParsedSideBundle, compareSyncSides };
+interface ParsedSideBundle {
+  summary: SyncSideSummary;
+  movies: Record<string, CatalogRecord>;
+  tv: Record<string, CatalogRecord>;
+  manifest: CatalogManifest | null;
+  userData: DataDocument | null;
+  cinemaKunye: CinemaKunyeDocument | null;
+  derivedProfiles: Record<string, DerivedProfileDocument>;
+  errors: SyncErrorRecord[];
+}
 
+export function compareSyncSides(
+  localBundle: ParsedSideBundle,
+  remoteBundle: ParsedSideBundle,
+  options: { includePersonalFiles: boolean; includeCatalogFiles?: boolean }
+): SyncComparisonSummary {
+  const includeCatalog = options.includeCatalogFiles !== false;
+  const allPaths = new Set<string>([
+    ...Object.keys(localBundle.summary.files),
+    ...Object.keys(remoteBundle.summary.files),
+  ]);
+
+  const differingFiles: SyncFileDiffDetail[] = [];
+  const reasons: string[] = [];
+  let rawFilesEqual = true;
+  let semanticEqual = true;
+  let comparedFilesCount = 0;
+  let differentRecordsCount = 0;
+
+  const sortedPaths = Array.from(allPaths).sort((a, b) => a.localeCompare(b));
+  for (const repoPath of sortedPaths) {
+    const lf = localBundle.summary.files[repoPath];
+    const rf = remoteBundle.summary.files[repoPath];
+    const personal = Boolean(lf?.personal ?? rf?.personal);
+    if (personal && !options.includePersonalFiles) continue;
+    if (!personal && !includeCatalog) continue;
+
+    const lExists = Boolean(lf?.exists);
+    const rExists = Boolean(rf?.exists);
+    if (!lExists && !rExists) continue;
+
+    comparedFilesCount++;
+    const category: SyncFileCategory = lf?.category || rf?.category || 'catalog_movies';
+    const lValid = lExists ? Boolean(lf?.valid) : true;
+    const rValid = rExists ? Boolean(rf?.valid) : true;
+    const lRecords = lf?.uniqueKeyCount ?? 0;
+    const rRecords = rf?.uniqueKeyCount ?? 0;
+
+    const fileRawEqual = Boolean(
+      lExists && rExists && lValid && rValid && lf?.rawFileHash && lf.rawFileHash === rf?.rawFileHash
+    );
+    const fileSemanticEqual = Boolean(
+      lExists &&
+        rExists &&
+        lValid &&
+        rValid &&
+        lf?.semanticHash &&
+        lf.semanticHash === rf?.semanticHash
+    );
+
+    if (!fileRawEqual) rawFilesEqual = false;
+    if (!fileSemanticEqual) {
+      semanticEqual = false;
+      let reason = '';
+      if (!lValid && lf?.error) {
+        reason = `Yerel dosya geçersiz (${lf.error})`;
+      } else if (!rValid && rf?.error) {
+        reason = `GitHub dosyası geçersiz (${rf.error})`;
+      } else if (lExists && !rExists) {
+        reason = "Yalnızca yerelde mevcut (GitHub'da henüz yok)";
+      } else if (rExists && !lExists) {
+        reason = "Yalnızca GitHub'da mevcut (yerelde henüz yok)";
+      } else if (lRecords !== rRecords) {
+        reason = `Kayıt sayısı farklı (Yerel: ${lRecords}, GitHub: ${rRecords})`;
+      } else {
+        reason = 'Kayıt içerikleri veya özetleri farklı';
+      }
+
+      differingFiles.push({
+        repoPath,
+        category,
+        localExists: lExists,
+        remoteExists: rExists,
+        localValid: lValid,
+        remoteValid: rValid,
+        localRecords: lRecords,
+        remoteRecords: rRecords,
+        rawEqual: fileRawEqual,
+        semanticEqual: fileSemanticEqual,
+        reason,
+      });
+      reasons.push(`${repoPath}: ${reason}`);
+    }
+  }
+
+  // Katalog bazında farklı kayıt sayısını doğrudan anahtar farkından hesapla
+  if (includeCatalog) {
+    const allMovieKeys = new Set([
+      ...Object.keys(localBundle.movies),
+      ...Object.keys(remoteBundle.movies),
+    ]);
+    for (const k of allMovieKeys) {
+      const lm = localBundle.movies[k];
+      const rm = remoteBundle.movies[k];
+      if (!lm || !rm) {
+        differentRecordsCount++;
+      } else {
+        const ls = stringifyDeterministic({ ...lm, firstStoredAt: '', lastUpdatedAt: '' });
+        const rs = stringifyDeterministic({ ...rm, firstStoredAt: '', lastUpdatedAt: '' });
+        if (ls !== rs) differentRecordsCount++;
+      }
+    }
+
+    const allTvKeys = new Set([
+      ...Object.keys(localBundle.tv),
+      ...Object.keys(remoteBundle.tv),
+    ]);
+    for (const k of allTvKeys) {
+      const lt = localBundle.tv[k];
+      const rt = remoteBundle.tv[k];
+      if (!lt || !rt) {
+        differentRecordsCount++;
+      } else {
+        const ls = stringifyDeterministic({ ...lt, firstStoredAt: '', lastUpdatedAt: '' });
+        const rs = stringifyDeterministic({ ...rt, firstStoredAt: '', lastUpdatedAt: '' });
+        if (ls !== rs) differentRecordsCount++;
+      }
+    }
+  }
+
+  let localOnlyUserItemsCount = 0;
+  let remoteOnlyUserItemsCount = 0;
+  let conflictingUserItemsCount = 0;
+  let userDataConflicts: UserDataConflictItem[] = [];
+
+  if (options.includePersonalFiles) {
+    if (localBundle.userData && remoteBundle.userData) {
+      const mergePreview = reconcileUserDataDocumentsLossless(
+        localBundle.userData,
+        remoteBundle.userData
+      );
+      localOnlyUserItemsCount = mergePreview.addedToRemote;
+      remoteOnlyUserItemsCount = mergePreview.addedToLocal;
+      userDataConflicts = mergePreview.conflicts;
+      conflictingUserItemsCount = mergePreview.conflicts.length;
+      differentRecordsCount +=
+        localOnlyUserItemsCount + remoteOnlyUserItemsCount + mergePreview.updatedItems;
+    } else if (localBundle.userData && !remoteBundle.userData) {
+      localOnlyUserItemsCount = localBundle.summary.userUniqueSavedItemsCount;
+      differentRecordsCount += localOnlyUserItemsCount;
+    } else if (remoteBundle.userData && !localBundle.userData) {
+      remoteOnlyUserItemsCount = remoteBundle.summary.userUniqueSavedItemsCount;
+      differentRecordsCount += remoteOnlyUserItemsCount;
+    }
+
+    const allProfilePaths = new Set([
+      ...Object.keys(localBundle.derivedProfiles),
+      ...Object.keys(remoteBundle.derivedProfiles),
+    ]);
+    for (const pPath of allProfilePaths) {
+      const ld = localBundle.derivedProfiles[pPath];
+      const rd = remoteBundle.derivedProfiles[pPath];
+      if (!ld && rd) {
+        differentRecordsCount += Object.keys(rd.items || {}).length || 1;
+      } else if (ld && !rd) {
+        differentRecordsCount += Object.keys(ld.items || {}).length || 1;
+      } else if (ld && rd && ld.contentHash !== rd.contentHash) {
+        const pKeys = new Set([
+          ...Object.keys(ld.items || {}),
+          ...Object.keys(rd.items || {}),
+        ]);
+        let pDiff = 0;
+        for (const pk of pKeys) {
+          if (stringifyDeterministic(ld.items[pk]) !== stringifyDeterministic(rd.items[pk])) {
+            pDiff++;
+          }
+        }
+        differentRecordsCount += Math.max(1, pDiff);
+      }
+    }
+  }
+
+  if (differentRecordsCount === 0 && differingFiles.length > 0) {
+    differentRecordsCount = differingFiles.length;
+  }
+
+  return {
+    semanticEqual,
+    rawFilesEqual,
+    comparedFilesCount,
+    differentFilesCount: differingFiles.length,
+    differentRecordsCount,
+    differingFiles,
+    hasUserDataConflict: localOnlyUserItemsCount > 0 || conflictingUserItemsCount > 0,
+    localOnlyUserItemsCount,
+    remoteOnlyUserItemsCount,
+    conflictingUserItemsCount,
+    userDataConflicts,
+    reasons,
+  };
+}
 
 export interface BidirectionalSyncDependencies {
   dataDir: string;
@@ -1425,7 +2135,7 @@ export class GitHubBidirectionalSyncManager {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': BRAND_SYNC_USER_AGENT,
+          'User-Agent': 'Cinethos-Sync-Agent',
         },
       });
       if (res.status !== 200) {
@@ -1502,7 +2212,7 @@ export class GitHubBidirectionalSyncManager {
     const makeHeaders = (tok: string) => ({
       Authorization: `Bearer ${tok}`,
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': BRAND_SYNC_USER_AGENT,
+      'User-Agent': 'Cinethos-Sync-Agent',
     });
 
     try {
@@ -1672,7 +2382,7 @@ export class GitHubBidirectionalSyncManager {
           const dlRes = await fetch(fileData.download_url, {
             headers: {
               Authorization: `Bearer ${cfg.token}`,
-              'User-Agent': BRAND_SYNC_USER_AGENT,
+              'User-Agent': 'Cinethos-Sync-Agent',
             },
           });
           if (dlRes.status === 200) {
@@ -1737,7 +2447,7 @@ export class GitHubBidirectionalSyncManager {
         headers: {
           Authorization: `Bearer ${cfg.token}`,
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': BRAND_SYNC_USER_AGENT,
+          'User-Agent': 'Cinethos-Sync-Agent',
         },
       });
       if (res.status === 401 && typeof this.deps.store.recoverGitHubTokenOn401 === 'function') {
@@ -1748,7 +2458,7 @@ export class GitHubBidirectionalSyncManager {
             headers: {
               Authorization: `Bearer ${cfg.token}`,
               Accept: 'application/vnd.github.v3+json',
-              'User-Agent': BRAND_SYNC_USER_AGENT,
+              'User-Agent': 'Cinethos-Sync-Agent',
             },
           });
         }

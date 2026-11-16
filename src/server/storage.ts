@@ -35,19 +35,12 @@ import {
   writeJsonFileAtomic,
   writeJsonFileAtomicAsync,
 } from './atomic-json.ts';
-import {
-  createSqlitePrimaryStore,
-  resolveStorageDriver,
-  type StorageDriver,
-} from './sqlite-primary-store.ts';
 export interface StorageOptions {
   dataDir?: string;
   maxDataBytes?: number;
   maxProfiles?: number;
   maxItemsPerProfile?: number;
   maxSnapshots?: number;
-  /** 'sqlite' seçildiğinde SQLite asıl kaynak, JSON yedek/taşınabilir kopya olur. */
-  storageDriver?: StorageDriver;
 }
 
 export interface BackupMetadata {
@@ -60,8 +53,6 @@ export interface BackupMetadata {
 
 export interface SaveDataOptions {
   expectedRevision?: number | null;
-  expectedProfileId?: string;
-  strictProfileMatch?: boolean;
   confirmBulkDelete?: boolean;
   requirePrecondition?: boolean;
   forceOverwrite?: boolean;
@@ -83,7 +74,6 @@ export type SaveDataResult =
       code:
         | 'invalid_document'
         | 'revision_conflict'
-        | 'profile_conflict'
         | 'precondition_required'
         | 'sudden_item_drop'
         | 'payload_too_large'
@@ -142,12 +132,6 @@ export function createDataStorage(options: StorageOptions) {
 
   let unrecoverableCorruptionError: string | null = null;
   let writeQueue: Promise<unknown> = Promise.resolve();
-
-  // Faz 7 — SQLite birincil kaynak (opt-in). JSON her zaman yedek olarak yazılır.
-  const primaryStore = createSqlitePrimaryStore({
-    dataDir: resolvedDataDir,
-    enabled: (options.storageDriver ?? resolveStorageDriver()) === 'sqlite',
-  });
 
   function serialize<T>(task: () => Promise<T>): Promise<T> {
     const run = writeQueue.then(task);
@@ -216,7 +200,7 @@ export function createDataStorage(options: StorageOptions) {
     return [backupFile, ...snaps];
   }
 
-  function readJsonData(): DataDocument {
+  function readData(): DataDocument {
     const recovery = readJsonFileWithRecovery<DataDocument>(dataFile, {
       backupPaths: getDiskRecoveryBackupPathsSync(),
       validate: validateRawDocument,
@@ -234,7 +218,7 @@ export function createDataStorage(options: StorageOptions) {
     return recovery.data;
   }
 
-  async function readJsonDataAsync(): Promise<DataDocument> {
+  async function readDataAsync(): Promise<DataDocument> {
     const recovery = await readJsonFileWithRecoveryAsync<DataDocument>(dataFile, {
       backupPaths: await getDiskRecoveryBackupPathsAsync(),
       validate: validateRawDocument,
@@ -250,41 +234,6 @@ export function createDataStorage(options: StorageOptions) {
     }
     unrecoverableCorruptionError = null;
     return recovery.data;
-  }
-
-  /**
-   * JSON ile SQLite arasındaki birincil kaynak seçimi.
-   * - SQLite boşsa mevcut JSON dokümanı tek seferlik migrate edilir.
-   * - JSON revizyonu daha yüksekse (ör. SQLite silinmişse) JSON kazanır ve SQLite güncellenir.
-   * - Aksi halde SQLite asıl kaynak kabul edilir.
-   */
-  function selectPrimaryDocument(jsonDoc: DataDocument): DataDocument {
-    if (!primaryStore.enabled || !primaryStore.available) return jsonDoc;
-    const row = primaryStore.read();
-    if (!row) {
-      if ((jsonDoc.revision ?? 0) > 0 || (jsonDoc.profiles?.length ?? 0) > 0) {
-        primaryStore.write(jsonDoc, jsonDoc.revision ?? 0);
-      }
-      return jsonDoc;
-    }
-    const sqliteDoc = validateRawDocument(row.document);
-    if (!sqliteDoc) return jsonDoc;
-    sqliteDoc.revision = row.revision;
-    if (row.updatedAt) sqliteDoc.updatedAt = row.updatedAt;
-    if ((jsonDoc.revision ?? 0) > row.revision) {
-      primaryStore.write(jsonDoc, jsonDoc.revision ?? 0);
-      return jsonDoc;
-    }
-    unrecoverableCorruptionError = null;
-    return sqliteDoc;
-  }
-
-  function readData(): DataDocument {
-    return selectPrimaryDocument(readJsonData());
-  }
-
-  async function readDataAsync(): Promise<DataDocument> {
-    return selectPrimaryDocument(await readJsonDataAsync());
   }
 
   function buildIsolatedProfilePayload(doc: DataDocument) {
@@ -402,22 +351,6 @@ export function createDataStorage(options: StorageOptions) {
 
     const currentRevision = current.revision ?? 0;
     const expectedRevision = saveOptions.expectedRevision;
-
-    if (saveOptions.strictProfileMatch || saveOptions.expectedProfileId) {
-      const expectedPid = typeof saveOptions.expectedProfileId === 'string'
-        ? saveOptions.expectedProfileId.trim()
-        : '';
-      if (!expectedPid || normalized.activeProfileId !== expectedPid) {
-        return {
-          ok: false,
-          status: 409,
-          code: 'profile_conflict',
-          message: `Profil uyuşmazlığı: beklenen '${expectedPid || 'bilinmiyor'}', gelen '${normalized.activeProfileId || 'bilinmiyor'}'.`,
-          currentRevision,
-          serverDocument: current,
-        };
-      }
-    }
 
     if (saveOptions.hasInvalidIfMatch) {
       return {
@@ -595,9 +528,6 @@ export function createDataStorage(options: StorageOptions) {
       backupPath: backupFile,
       validateParsed: (p) => validateRawDocument(p) !== null,
     });
-    if (primaryStore.enabled) {
-      primaryStore.write(next, next.revision ?? 0);
-    }
     try {
       writeJsonFileAtomic(
         isolatedProfileFile,
@@ -620,9 +550,6 @@ export function createDataStorage(options: StorageOptions) {
       backupPath: backupFile,
       validateParsed: (p) => validateRawDocument(p) !== null,
     });
-    if (primaryStore.enabled) {
-      primaryStore.write(next, next.revision ?? 0);
-    }
     try {
       await writeJsonFileAtomicAsync(
         isolatedProfileFile,
@@ -793,7 +720,5 @@ export function createDataStorage(options: StorageOptions) {
     listBackupsAsync,
     restoreBackup,
     restoreBackupSerialized,
-    sqliteStatus: () => primaryStore.status(),
-    closeSqliteStore: () => primaryStore.close(),
   };
 }

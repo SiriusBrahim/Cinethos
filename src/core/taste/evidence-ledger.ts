@@ -33,11 +33,10 @@ export interface MetricMasses {
 
 export class EvidenceLedger {
   private evidence: Map<string, MetricEvidence[]> = new Map(); // metricId -> evidence[]
-  private processedKeys: Set<string> = new Set();
+  private processedEventIds: Set<string> = new Set();
 
   /**
    * Olay ekle (idempotent — TP-005)
-   * Idempotency anahtarı eventId+metricId: aynı olay her metrik için bir kez sayılır.
    */
   addEvent(
     event: TasteEvent,
@@ -47,8 +46,8 @@ export class EvidenceLedger {
     timeWeight: number,
     groupDamping: number
   ): void {
-    const idempotencyKey = `${event.eventId}::${metricId}`;
-    if (this.processedKeys.has(idempotencyKey)) {
+    // Idempotency: aynı eventId iki kez işlenmez
+    if (this.processedEventIds.has(event.eventId)) {
       return;
     }
 
@@ -87,7 +86,7 @@ export class EvidenceLedger {
       this.evidence.set(metricId, []);
     }
     this.evidence.get(metricId)!.push(evidence);
-    this.processedKeys.add(idempotencyKey);
+    this.processedEventIds.add(event.eventId);
   }
 
   /**
@@ -99,7 +98,9 @@ export class EvidenceLedger {
       const filtered = evidences.filter((e) => e.contentId !== contentId);
       this.evidence.set(metricId, filtered);
     }
-    // Artık o içerik için işlenmiş katkıları geri çekiyoruz; yeni olay yeni eventId ile gelecek.
+    // Artık o içerik için işlenmiş eventId'leri serbest bırak (yeni puan kabul edilsin)
+    // Not: processedEventIds'ten silmiyoruz — sadece katkıları geri çekiyoruz.
+    // Yeni olay yeni eventId ile gelecek.
   }
 
   /**
@@ -119,6 +120,7 @@ export class EvidenceLedger {
     const negativeContributions: Array<{ contentId: string; contribution: number }> = [];
 
     for (const e of evidences) {
+      const weight = Math.abs(e.contribution);
       evidenceMass += e.baseWeight; // D_m = Σ baseWeight (nötr dahil — KRİTİK KURAL)
 
       if (e.contribution > 0) {
@@ -161,6 +163,11 @@ export class EvidenceLedger {
   /** Kayıtlı metrik ID listesi */
   getMetricIds(): string[] {
     return Array.from(this.evidence.keys());
+  }
+
+  /** İşlenmiş olay sayısı */
+  getProcessedEventCount(): number {
+    return this.processedEventIds.size;
   }
 
   private extractSignal(event: TasteEvent): { signal: number; isEvidence: boolean } {

@@ -101,7 +101,6 @@ export function PaginatedMediaModal<T extends TmdbItem = TmdbItem>({
   return (
     <div
       className="modal-wrap open"
-      role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -113,6 +112,7 @@ export function PaginatedMediaModal<T extends TmdbItem = TmdbItem>({
         aria-modal="true"
         aria-labelledby="paginatedModalTitle"
         tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="actor-all-header">
           <div>

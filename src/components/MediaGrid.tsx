@@ -1,30 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { MediaCard } from './MediaCard.tsx';
 import { ActorRecommendationsSection } from './ActorRecommendationsSection.tsx';
 import { SeriesRecommendationsSection } from './SeriesRecommendationsSection.tsx';
 import { SeasonCalendarSection } from './SeasonCalendarSection.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
-import { BRAND_NAME } from '../shared/brand.ts';
 import {
   SavedItem,
   FavoriteActorInfo,
-  buildSavedItemsIndex,
-  findSavedIndexed,
+  findSavedItem,
   makeMediaKey,
   normalizeFavoriteActors,
 } from '../core/cinetrack-core.ts';
-import { displayTitle, getPoster, imageUrl, handleImageError } from '../utils/helpers.ts';
+import { imageUrl, handleImageError } from '../utils/helpers.ts';
 import { TmdbItem } from '../types/tmdb.ts';
-
-/** Listem sekmesinde tek seferde çizilen kart sayısı; "Daha fazla" ile büyür. */
-const LIST_WINDOW_SIZE = 60;
-
-/** Liste satırında öneri nedenini kısaltır; yoksa boş döner. */
-function recommendationReasonForList(reason: string): string {
-  if (!reason) return '';
-  const trimmed = reason.trim();
-  return trimmed.length > 42 ? `${trimmed.slice(0, 42)}…` : trimmed;
-}
 
 interface MediaGridProps {
   title: string;
@@ -134,62 +122,63 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
   onOpenAddCustom,
 }) => {
   const [actorsSubTab, setActorsSubTab] = useState<'actors' | 'recommendations'>('actors');
-  // 2.000+ kayıtlı listelerde kart başına lineer arama ve tek seferde DOM'a basım donma yaratıyordu:
-  // kayıtlar bir kez indekslenir, Listem sekmesi pencere pencere çizilir.
-  const savedIndex = useMemo(() => buildSavedItemsIndex(savedItems), [savedItems]);
-  const getSaved = (item: TmdbItem) => findSavedIndexed(savedIndex, item, savedItems);
-  const dislikedKeySet = useMemo(() => new Set(dislikedKeys), [dislikedKeys]);
-  // React.memo'nun işe yaraması için kart callback'leri render arasında kararlı kalmalı.
-  // Güncel işlevler ref'ten okunduğu için bayat kapanış (stale closure) oluşmaz.
-  const cardCallbackRefs = useRef({ onOpenDetails, onQuickAdd, onSetStatus, onQuickSave, onToggleDislike, onOpenEvidence });
-  useEffect(() => {
-    cardCallbackRefs.current = { onOpenDetails, onQuickAdd, onSetStatus, onQuickSave, onToggleDislike, onOpenEvidence };
-  }, [onOpenDetails, onQuickAdd, onSetStatus, onQuickSave, onToggleDislike, onOpenEvidence]);
-  const cardHandlers = useMemo(
-    () => ({
-      onOpenDetails: (item: TmdbItem) => cardCallbackRefs.current.onOpenDetails(item),
-      onQuickAdd: (item: TmdbItem) => cardCallbackRefs.current.onQuickAdd(item),
-      onSetStatus: (item: TmdbItem, status: 'watching' | 'watchlist' | 'completed') =>
-        cardCallbackRefs.current.onSetStatus(item, status),
-      onQuickSave: (item: TmdbItem) => cardCallbackRefs.current.onQuickSave(item),
-      onToggleDislike: (key: string) => cardCallbackRefs.current.onToggleDislike(key),
-      onOpenEvidence: (item: any, reason?: string) => cardCallbackRefs.current.onOpenEvidence?.(item, reason),
-    }),
-    []
-  );
-  const [windowSize, setWindowSize] = useState(LIST_WINDOW_SIZE);
-  useEffect(() => {
-    setWindowSize(LIST_WINDOW_SIZE);
-  }, [tab, listStatus, category, query]);
+  const getSaved = (item: TmdbItem) => findSavedItem(savedItems, item);
   const safeFavoriteActors = useMemo(
     () => normalizeFavoriteActors(favoriteActors),
     [favoriteActors]
   );
-  // Kütüphane görünüm modu — cihazda hatırlanır (Faz 4).
-  const [listView, setListView] = useState<'grid' | 'list'>(() => {
-    try {
-      const stored = localStorage.getItem('ct:library-view');
-      return stored === 'list' ? 'list' : 'grid';
-    } catch {
-      return 'grid';
-    }
-  });
-  const changeListView = (mode: 'grid' | 'list') => {
-    setListView(mode);
-    try {
-      localStorage.setItem('ct:library-view', mode);
-    } catch {
-      /* depolama kapalıysa görünüm yalnızca bu oturumda geçerli */
-    }
-  };
-
   const isActorsListMode = tab === 'list' && listStatus === 'actors';
-  const showListRows = tab === 'list' && listView === 'list' && !isActorsListMode;
   const isForYouSeriesMode = tab === 'discover' && category === 'for-you' && !query.trim() && forYouSubTab === 'series';
 
-  // Keşfet sayfalama ile sınırlı; Listem ve Stok (1000+ yapım) pencereleme ile DOM yükü hafifletilir
-  const isWindowedList = (tab === 'list' || category === 'stock') && !isActorsListMode && !isLoading;
-  const visibleItems = isWindowedList && windowSize < items.length ? items.slice(0, windowSize) : items;
+  // O(1) map for looking up saved items and disliked items across large libraries
+  const savedItemsMap = useMemo(() => {
+    const map = new Map<string, SavedItem>();
+    for (const s of savedItems) {
+      if (!s) continue;
+      const mType = s.media_type || (s.title ? 'movie' : 'tv');
+      map.set(`${mType}:${s.id}`, s);
+      map.set(`${mType}-${s.id}`, s);
+      map.set(String(s.id), s);
+    }
+    return map;
+  }, [savedItems]);
+
+  const dislikedSet = useMemo(() => new Set(dislikedKeys), [dislikedKeys]);
+
+  // Client-side progressive mounting for list tab to eliminate UI freeze
+  const LIST_PAGE_SIZE = 36;
+  const [listVisibleCount, setListVisibleCount] = useState<number>(LIST_PAGE_SIZE);
+  const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setListVisibleCount(LIST_PAGE_SIZE);
+  }, [tab, listStatus, query, selectedType, selectedGenre, selectedSort]);
+
+  const isListMode = tab === 'list';
+  const displayedCardItems = useMemo(() => {
+    if (isListMode && items.length > listVisibleCount) {
+      return items.slice(0, listVisibleCount);
+    }
+    return items;
+  }, [isListMode, items, listVisibleCount]);
+
+  useEffect(() => {
+    if (!isListMode || listVisibleCount >= items.length) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setListVisibleCount((prev) => Math.min(prev + LIST_PAGE_SIZE, items.length));
+        }
+      },
+      { rootMargin: '300px' }
+    );
+    const el = sentinelRef.current;
+    if (el) observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+    };
+  }, [isListMode, listVisibleCount, items.length]);
 
   return (
     <section aria-labelledby="catalogTitle">
@@ -225,26 +214,6 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               <span>{isStockReplenishing ? 'Stok Çekiliyor…' : 'Stok İçerik Çek'}</span>
             </button>
           )}
-          {tab === 'list' && !isActorsListMode && (
-            <div className="library-view-toggle" role="group" aria-label="Kütüphane görünümü">
-              <button
-                type="button"
-                className={`library-view-btn ${listView === 'grid' ? 'is-active' : ''}`}
-                onClick={() => changeListView('grid')}
-                aria-pressed={listView === 'grid'}
-              >
-                Izgara
-              </button>
-              <button
-                type="button"
-                className={`library-view-btn ${listView === 'list' ? 'is-active' : ''}`}
-                onClick={() => changeListView('list')}
-                aria-pressed={listView === 'list'}
-              >
-                Liste
-              </button>
-            </div>
-          )}
           <div className={`loading ${isLoading || loadingMore ? 'visible' : ''}`} aria-live="polite">
             <span className="spinner"></span>
             <span>
@@ -272,7 +241,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
         <div className="catalog-source-banner banner-demo" role="status">
           <span className="catalog-source-banner-icon">🟡</span>
           <div>
-            <strong>Örnek Katalog Modu:</strong> TMDB_API_KEY tanımlanmadığından içerikler {BRAND_NAME} örnek katalog verisiyle sunulmaktadır.
+            <strong>Örnek Katalog Modu:</strong> TMDB_API_KEY tanımlanmadığından içerikler Cinethos örnek katalog verisiyle sunulmaktadır.
           </div>
         </div>
       )}
@@ -460,7 +429,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
           />
         </ErrorBoundary>
       ) : (
-      <div id="catalogGrid" className={showListRows ? 'media-list' : 'grid'}>
+      <div id="catalogGrid" className="grid">
         {isLoading ? (
           Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="skeleton-card" aria-hidden="true"></div>
@@ -777,124 +746,48 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
             )}
           </div>
         ) : (
-          visibleItems.map((item) => {
-            const itemKey = makeMediaKey(item.media_type, item.id);
-            const legacyKey = `${item.media_type}-${item.id}`;
-            // Listem'de neden artık kaydın üstündeki kalıcı damgadan okunur; yeniden skorlanmaz.
-            const reason =
-              recommendationReasons.get(itemKey) ||
-              recommendationReasons.get(legacyKey) ||
-              item.tasteReason ||
-              '';
-            const isDisliked = dislikedKeySet.has(itemKey) || dislikedKeySet.has(legacyKey);
-            const saved = getSaved(item);
+          <>
+            {displayedCardItems.map((item) => {
+              const itemType = item.media_type || (item.title ? 'movie' : 'tv');
+              const itemKey = makeMediaKey(itemType, item.id);
+              const legacyKey = `${itemType}-${item.id}`;
+              const reason =
+                recommendationReasons.get(itemKey) || recommendationReasons.get(legacyKey);
+              const isDisliked = dislikedSet.has(itemKey) || dislikedSet.has(legacyKey);
+              const saved =
+                savedItemsMap.get(itemKey) ||
+                savedItemsMap.get(legacyKey) ||
+                savedItemsMap.get(String(item.id)) ||
+                getSaved(item);
 
-            if (showListRows) {
-              const title = displayTitle(item);
-              const poster = getPoster(item, 'w185');
-              const year = (item.release_date || item.first_air_date || '').slice(0, 4);
-              const statusLabel =
-                saved?.status === 'completed'
-                  ? 'İzlendi'
-                  : saved?.status === 'watching'
-                    ? 'İzliyorum'
-                    : saved?.status === 'watchlist'
-                      ? 'İzlenecek'
-                      : 'Listede yok';
               return (
-                <article key={itemKey} className="media-list-row">
-                  <button
-                    type="button"
-                    className="media-list-hit"
-                    onClick={() => cardHandlers.onOpenDetails(item)}
-                  >
-                    <span className="media-list-poster">
-                      {poster ? (
-                        <img src={poster} alt="" loading="lazy" decoding="async" onError={handleImageError} />
-                      ) : (
-                        <span className="media-list-poster-fallback" aria-hidden="true" />
-                      )}
-                    </span>
-                    <span className="media-list-copy">
-                      <span className="media-list-title">{title}</span>
-                      <span className="media-list-meta">
-                        {item.media_type === 'tv' ? 'Dizi' : 'Film'}
-                        {year ? ` · ${year}` : ''}
-                        {recommendationReasonForList(reason) ? ` · ${recommendationReasonForList(reason)}` : ''}
-                      </span>
-                      <span className="media-list-status">{statusLabel}</span>
-                    </span>
-                  </button>
-                  <span className="media-list-actions">
-                    <button
-                      type="button"
-                      className={`media-list-btn ${saved?.status === 'watchlist' ? 'is-active' : ''}`}
-                      onClick={() => cardHandlers.onSetStatus(item, 'watchlist')}
-                      aria-pressed={saved?.status === 'watchlist'}
-                    >
-                      İzlenecek
-                    </button>
-                    <button
-                      type="button"
-                      className={`media-list-btn ${saved?.status === 'watching' ? 'is-active' : ''}`}
-                      onClick={() => cardHandlers.onSetStatus(item, 'watching')}
-                      aria-pressed={saved?.status === 'watching'}
-                    >
-                      İzliyorum
-                    </button>
-                    <button
-                      type="button"
-                      className={`media-list-btn ${saved?.status === 'completed' ? 'is-active' : ''}`}
-                      onClick={() => cardHandlers.onSetStatus(item, 'completed')}
-                      aria-pressed={saved?.status === 'completed'}
-                    >
-                      İzlendi
-                    </button>
-                  </span>
-                </article>
+                <MediaCard
+                  key={itemKey}
+                  item={item}
+                  savedItem={saved}
+                  genres={genres}
+                  recommendationReason={reason}
+                  isDisliked={isDisliked}
+                  tab={tab}
+                  showMatch={tab === 'discover' && Boolean(item.tasteScore ?? item.matchScore)}
+                  matchScore={item.tasteScore ?? item.matchScore}
+                  showRing={tab === 'discover' && category === 'for-you' && !isForYouSeriesMode}
+                  selectionRing={item.lifecycleRing || item.ring}
+                  onOpenDetails={onOpenDetails}
+                  onQuickAdd={onQuickAdd}
+                  onSetStatus={onSetStatus}
+                  onQuickSave={onQuickSave}
+                  onToggleDislike={onToggleDislike}
+                  onOpenEvidence={onOpenEvidence}
+                />
               );
-            }
-
-            return (
-              <MediaCard
-                key={itemKey}
-                item={item}
-                savedItem={saved}
-                genres={genres}
-                recommendationReason={reason}
-                isDisliked={isDisliked}
-                tab={tab}
-                showMatch={Boolean(item.tasteScore ?? item.matchScore ?? item.tasteFit)}
-                matchScore={item.tasteScore ?? item.matchScore ?? item.tasteFit}
-                showRing={tab === 'discover' && category === 'for-you' && !isForYouSeriesMode}
-                selectionRing={item.lifecycleRing || item.ring}
-                onOpenDetails={cardHandlers.onOpenDetails}
-                onQuickAdd={cardHandlers.onQuickAdd}
-                onSetStatus={cardHandlers.onSetStatus}
-                onQuickSave={cardHandlers.onQuickSave}
-                onToggleDislike={cardHandlers.onToggleDislike}
-                onOpenEvidence={onOpenEvidence ? cardHandlers.onOpenEvidence : undefined}
-              />
-            );
-          })
+            })}
+            {isListMode && listVisibleCount < items.length && (
+              <div ref={sentinelRef} className="col-span-full h-2 w-full" aria-hidden="true" />
+            )}
+          </>
         )}
       </div>
-      )}
-
-      {isWindowedList && visibleItems.length < items.length && (
-        <div id="listWindowWrap">
-          <span id="listWindowStatus" aria-live="polite">
-            {visibleItems.length} / {items.length} kayıt gösteriliyor
-          </span>
-          <button
-            id="listWindowButton"
-            className="btn"
-            type="button"
-            onClick={() => setWindowSize((size) => size + LIST_WINDOW_SIZE)}
-          >
-            Daha fazla göster
-          </button>
-        </div>
       )}
 
       {tab === 'discover' && category === 'for-you' && !isForYouSeriesMode && items.length > 0 && onRefreshForYou && (
@@ -931,6 +824,33 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               onClick={onLoadMore}
             >
               Daha fazla göster
+            </button>
+          )}
+        </div>
+      )}
+
+      {tab === 'list' && items.length > listVisibleCount && (
+        <div id="loadMoreWrap" className="list-load-more-wrap">
+          <span id="loadMoreStatus" aria-live="polite">
+            {listVisibleCount} / {items.length} içerik gösteriliyor
+          </span>
+          <button
+            id="loadMoreButton"
+            className="btn btn-primary"
+            type="button"
+            onClick={() =>
+              setListVisibleCount((prev) => Math.min(prev + LIST_PAGE_SIZE, items.length))
+            }
+          >
+            Daha fazla göster (+{Math.min(LIST_PAGE_SIZE, items.length - listVisibleCount)})
+          </button>
+          {items.length - listVisibleCount > LIST_PAGE_SIZE && (
+            <button
+              className="btn btn-secondary ml-2"
+              type="button"
+              onClick={() => setListVisibleCount(items.length)}
+            >
+              Tümünü Göster ({items.length})
             </button>
           )}
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { displayTitle, formatMediaDates, getPoster, extractGenreNames, handleImageError } from '../utils/helpers.ts';
 import {
   SavedItem,
@@ -11,7 +11,6 @@ import {
 import { TmdbItem } from '../types/tmdb.ts';
 import { formatMatchBadge } from '../i18n/index.ts';
 import { getItemSeriesInfo } from '../services/series-service.ts';
-import { subscribeSeriesIndex } from '../services/storage-idb.ts';
 import { recordPosterAccess } from '../services/poster-cache-manager.ts';
 import { deriveTvProgressSummary } from '../core/tv-progress.ts';
 
@@ -39,7 +38,7 @@ export interface MediaCardProps {
   eager?: boolean;
 }
 
-const MediaCardView: React.FC<MediaCardProps> = ({
+const MediaCardComponent: React.FC<MediaCardProps> = ({
   item,
   savedItem,
   genres = {},
@@ -66,17 +65,10 @@ const MediaCardView: React.FC<MediaCardProps> = ({
   const poster = getPoster(item);
   const status = savedItem?.status || '';
   const [posterFailed, setPosterFailed] = useState(false);
-  const [, setSeriesRevision] = useState(0);
 
   useEffect(() => {
     setPosterFailed(false);
   }, [poster]);
-
-  useEffect(() => {
-    return subscribeSeriesIndex(() => {
-      setSeriesRevision((v) => v + 1);
-    });
-  }, []);
 
   const statusText =
     status === 'watching'
@@ -188,8 +180,10 @@ const MediaCardView: React.FC<MediaCardProps> = ({
           )}
         </button>
 
-        {/* Minimal high-signal top-left match indicator only (no multi-badge soup) */}
+        {/* Top-left Badges row */}
         <div className="poster-badges-row">
+          {size !== 'xs' && <span className="badge badge-kind">{kind}</span>}
+
           {shouldRenderMatchBadge && roundedScore !== null && (
             <span
               className="match-badge tabular-nums"
@@ -209,9 +203,65 @@ const MediaCardView: React.FC<MediaCardProps> = ({
               Öneri
             </span>
           )}
+
+            {shouldRenderRingChip && ringKey && (
+            <span
+              className={`ring-chip ring-chip--${isRing0 ? '0' : isRing1 ? '1' : isRing2 ? '2' : 'orbit'}`}
+              title={`Zevk Halkası: ${ringLabel}`}
+              aria-label={ringLabel}
+            >
+              <span className="ring-chip-dot" aria-hidden="true" />
+              {size !== 'xs' && size !== 'sm' && (
+                <>
+                  {' '}
+                  <span className="ring-chip-text">{ringLabel}</span>
+                </>
+              )}
+            </span>
+          )}
+
+          {countdownText && (
+            <span className="release-countdown" title={`Yayın tarihi: ${airDate}`}>
+              {countdownText}
+            </span>
+          )}
+
+          {(item._source === 'stale-cache' || item.stale) && size !== 'xs' && (
+            <span
+              className="source-tag source-stale"
+              title="Canlı TMDB'ye anlık erişilemediği için bu yapım önceki önbellekten sunuldu"
+            >
+              Önbellek
+            </span>
+          )}
+
+          {item._source === 'demo' && size !== 'xs' && (
+            <span
+              className="source-tag source-demo"
+              title="TMDB API anahtarı girilmediğinden örnek katalogdan listelendi"
+            >
+              Demo
+            </span>
+          )}
+
+          {item.source === 'tvdb' && size !== 'xs' && (
+            <span
+              className="source-tag source-tvdb"
+              style={{
+                background: 'rgba(99, 184, 171, 0.2)',
+                color: '#63b8ab',
+                border: '1px solid rgba(99, 184, 171, 0.35)',
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+              }}
+              title="TheTVDB v4 veritabanı stoğundan sağlanan içerik"
+            >
+              TVDB
+            </span>
+          )}
         </div>
 
-        {/* Minimal SERİ indicator on poster artwork (kept for series recognition & contract) */}
+        {/* Absolutely positioned SERİ badge on poster image (FEAT-01 #9 & Section 3.1) */}
         {isSeries && size !== 'xs' && (
           <span
             className={`poster-series-badge badge-series ${
@@ -236,13 +286,9 @@ const MediaCardView: React.FC<MediaCardProps> = ({
           </span>
         )}
 
-        {/* Quick action buttons stack (top-right, hover/focus on desktop) */}
+        {/* Quick action buttons stack (top-right) */}
         {(onSetStatus || onToggleDislike || onQuickSave) && size !== 'xs' && (
-          <div
-            className="poster-actions-stack"
-            role="presentation"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="poster-actions-stack" onClick={(e) => e.stopPropagation()}>
             {onSetStatus && (
               <button
                 type="button"
@@ -341,24 +387,47 @@ const MediaCardView: React.FC<MediaCardProps> = ({
           </div>
         )}
 
-        {/* Hover / Focus quick actions overlay */}
+        {/* Bottom poster badges row (saved status, TMDB rating, personal rating) */}
+        {size !== 'xs' && (tmdbRating > 0 || savedItem || personalRating) && (
+          <div className="poster-bottom-row">
+            {savedItem && (
+              <span className={`saved-badge status-${status}`}>
+                <svg className="icon" aria-hidden="true">
+                  <use href={`#${statusIcon}`}></use>
+                </svg>{' '}
+                <span>{statusText}</span>
+              </span>
+            )}
+
+            {tmdbRating > 0 && (
+              <span className={`rating ${ratingClass}`} aria-label={`TMDB puanı ${tmdbRating.toFixed(1)}`}>
+                <svg className="icon" aria-hidden="true">
+                  <use href="#icon-star"></use>
+                </svg>{' '}
+                <span className="tabular-nums">{tmdbRating.toFixed(1)}</span>
+              </span>
+            )}
+
+            {personalRating && (
+              <span
+                className="personal-rating tabular-nums"
+                aria-label={`Kişisel puan ${personalRating} üzerinden 10`}
+              >
+                ★ {personalRating}/10
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Hover / Odak overlay */}
         <div className="poster-overlay">
           {savedItem ? (
-            <button
-              className="overlay-btn overlay-saved-btn"
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onQuickSave) onQuickSave(item);
-                else onOpenDetails(item);
-              }}
-              title="Listemdeki durumu düzenle"
-            >
+            <div className={`overlay-saved-pill status-${status}`}>
               <svg className="icon" aria-hidden="true">
                 <use href={`#${statusIcon}`}></use>
               </svg>{' '}
               <span>{statusText}</span>
-            </button>
+            </div>
           ) : onQuickAdd ? (
             <button
               className="overlay-btn overlay-add-btn"
@@ -393,7 +462,7 @@ const MediaCardView: React.FC<MediaCardProps> = ({
         </div>
       </div>
 
-      {/* Editorial Card Info Footer */}
+      {/* Card Info footer */}
       <div className="card-info">
         <button
           className="card-title clamp-2"
@@ -406,65 +475,21 @@ const MediaCardView: React.FC<MediaCardProps> = ({
 
         {size !== 'xs' && (
           <div className="card-meta">
-            <span className="card-kind-text">{kind}</span>
-            <span className="card-meta-sep" aria-hidden="true">·</span>
             <span
               className="card-date tabular-nums clamp-1"
               title={item.media_type === 'tv' ? 'İlk ve son yayınlanma yılları' : 'Yapım yılı'}
             >
               {formatMediaDates(item, savedItem)}
             </span>
-            {tmdbRating > 0 && (
+            {(size === 'lg' || size === 'xl' || size === 'md') && genreNames && (
               <>
-                <span className="card-meta-sep" aria-hidden="true">·</span>
-                <span className={`card-rating-text ${ratingClass} tabular-nums`} aria-label={`TMDB puanı ${tmdbRating.toFixed(1)}`}>
-                  ★ {tmdbRating.toFixed(1)}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-
-        {size !== 'xs' && (genreNames || savedItem || personalRating || countdownText || (shouldRenderRingChip && ringKey)) && (
-          <div className="card-submeta tabular-nums">
-            {savedItem && (
-              <span className={`card-status-inline status-${status}`}>
-                {statusText}
-              </span>
-            )}
-            {personalRating && (
-              <>
-                {savedItem && <span className="card-meta-sep" aria-hidden="true">·</span>}
-                <span className="card-personal-rating" aria-label={`Kişisel puan ${personalRating} üzerinden 10`}>
-                  Sen: {personalRating}/10
-                </span>
-              </>
-            )}
-            {shouldRenderRingChip && ringKey && (
-              <>
-                {(savedItem || personalRating) && <span className="card-meta-sep" aria-hidden="true">·</span>}
-                <span className={`card-ring-inline ring-${isRing0 ? '0' : isRing1 ? '1' : isRing2 ? '2' : 'orbit'}`}>
-                  {ringLabel}
-                </span>
-              </>
-            )}
-            {countdownText && (
-              <>
-                {(savedItem || personalRating || (shouldRenderRingChip && ringKey)) && (
-                  <span className="card-meta-sep" aria-hidden="true">·</span>
-                )}
-                <span className="card-countdown-inline" title={`Yayın tarihi: ${airDate}`}>
-                  {countdownText}
-                </span>
-              </>
-            )}
-            {(size === 'lg' || size === 'xl' || size === 'md') &&
-              genreNames &&
-              !savedItem &&
-              !countdownText &&
-              !(shouldRenderRingChip && ringKey) && (
+                {' '}
+                <span className="card-meta-sep" aria-hidden="true">
+                  ·
+                </span>{' '}
                 <span className="card-genres clamp-1">{genreNames}</span>
-              )}
+              </>
+            )}
           </div>
         )}
 
@@ -507,5 +532,5 @@ const MediaCardView: React.FC<MediaCardProps> = ({
   );
 };
 
-// Kartların veri öznitelikleri değişmediyse çizim atlanır; callback kararlılığı MediaGrid'den gelir.
-export const MediaCard = React.memo(MediaCardView);
+export const MediaCard = memo(MediaCardComponent);
+

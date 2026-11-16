@@ -2,20 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { BRAND_APP_TITLE, BRAND_NAME, BRAND_TAGLINE } from './src/shared/brand.ts';
-
-const brandHtmlPlugin = {
-  name: 'brand-html',
-  transformIndexHtml(html: string) {
-    return html
-      .replaceAll('%BRAND_NAME%', BRAND_NAME)
-      .replaceAll('%BRAND_TAGLINE%', BRAND_TAGLINE);
-  },
-};
 
 export default defineConfig({
   plugins: [
-    brandHtmlPlugin,
     tailwindcss(),
     react(),
     VitePWA({
@@ -23,11 +12,11 @@ export default defineConfig({
       includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'sw-poster-lru.js'],
       manifest: {
         id: '/',
-        name: BRAND_APP_TITLE,
-        short_name: BRAND_NAME,
-        description: `${BRAND_TAGLINE}, deterministik zevk haritası ve ilişki keşif motoru.`,
-        theme_color: '#F3F4F6',
-        background_color: '#F3F4F6',
+        name: 'Cinethos — Kişisel Film & Dizi Kataloğu',
+        short_name: 'Cinethos',
+        description: 'TMDB destekli kişisel film ve dizi izleme kataloğu, deterministik zevk haritası ve ilişki keşif motoru.',
+        theme_color: '#0a0b0e',
+        background_color: '#0a0b0e',
         display: 'standalone',
         start_url: '/',
         scope: '/',
@@ -123,31 +112,14 @@ export default defineConfig({
           ) {
             return 'd3-graph';
           }
-          // P1-08: ana chunk'ı 500 kB altında tutmak için ağır yardımcı paketler ayrılır.
-          if (/[\\/]node_modules[\\/]framer-motion[\\/]/.test(id)) {
-            return 'motion-vendor';
-          }
-          if (/[\\/]node_modules[\\/](lucide-react|cmdk)[\\/]/.test(id)) {
-            return 'ui-vendor';
-          }
-          if (/[\\/]node_modules[\\/]exceljs[\\/]/.test(id)) {
-            return 'excel-vendor';
-          }
           return undefined;
         },
       },
     },
   },
   server: {
-    host: process.env.APP_URL || process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1',
+    host: process.env.APP_URL ? '0.0.0.0' : '127.0.0.1',
     port: 3000,
-    allowedHosts:
-      process.env.APP_URL || process.env.SHARED_APP_URL || process.env.K_SERVICE || process.env.K_REVISION
-        ? true
-        : ['localhost', '127.0.0.1', '.run.app'],
-    ...(process.env.DISABLE_HMR === 'true' ||
-    Boolean(process.env.APP_URL || process.env.SHARED_APP_URL || process.env.K_SERVICE || process.env.K_REVISION)
-      ? { hmr: false, ws: false }
-      : { hmr: true }),
+    hmr: process.env.DISABLE_HMR === 'true' || Boolean(process.env.APP_URL) ? false : true,
   },
 });

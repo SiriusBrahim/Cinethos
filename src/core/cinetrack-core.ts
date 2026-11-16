@@ -1,3 +1,4 @@
+import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
 import {
   DEFAULT_MAX_DATA_BYTES,
   DEFAULT_MAX_ITEMS_PER_PROFILE,
@@ -13,115 +14,107 @@ import {
   normalizeCinemaKunyeDocument,
   type CinemaKunyeDocument,
 } from './cinema-kunye.ts';
-import { buildSavedIndex, findSaved, type SavedIndex } from './saved-index.ts';
-import { BRAND_NAME } from '../shared/brand.ts';
-import {
-  getCandidatePoolStorePort,
-} from './candidate-pool-store-port.ts';
-// Not (MIA Faz 1A ①): LifecycleRing/TasteRing tipleri artık `media/types.ts`
-// üzerinden export ediliyor (aşağıdaki blok); ring-lifecycle da aynı kaynağı
-// yeniden export ediyor. Burada ikinci bir tip export'u yapılmaz — TS2300.
-import {
-  assignTasteRing,
-  demoteTasteRing,
-  getTasteRingLabel,
-  inferLifecycleRing,
-  normalizeTasteMapEntries,
-  normalizeTasteMapRings,
-  normalizeTasteRing,
-} from './ring-lifecycle.ts';
 
-export {
-  assignTasteRing,
-  demoteTasteRing,
-  getTasteRingLabel,
-  inferLifecycleRing,
-  normalizeTasteMapEntries,
-  normalizeTasteMapRings,
-  normalizeTasteRing,
-};
+let discoveryHistoryIdbStore: UseStore | undefined;
+let candidatePoolIdbStore: UseStore | undefined;
+const idbHydratedTasteMaps = new Map<string, any>();
+const idbHydratedPools = new Map<string, any>();
+const pendingCoreIdbWrites = new Set<Promise<void>>();
 
-/**
- * MIA Faz 1A ① — Ortak medya/veri tipleri `core/media/types.ts`'e taşındı.
- * Burada yalnızca yeniden export edilir (geriye dönük uyumluluk);
- * alt modüller (actor-recommendations, candidate-pool-store-port,
- * cinema-kunye, ring-lifecycle) artık doğrudan media/types'tan alır —
- * 4 tip döngüsü koparıldı.
- */
-import type {
-  CandidatePoolCursors,
-  FavoriteActorInfo,
-  LifecycleRing,
-  NextEpisode,
-  PersistentCandidatePoolData,
-  PersistentTasteMapData,
-  PoolCandidateItem,
-  PoolSourceType,
-  SavedItem,
-  TasteMapEntry,
-  TasteMapImpression,
-  TastePillarsSummary,
-  TasteProfileSnapshot,
-  TasteProfileSummary,
-} from './media/types.ts';
+function getDiscoveryHistoryIdbStore(): UseStore | undefined {
+  if (typeof indexedDB === 'undefined') return undefined;
+  if (!discoveryHistoryIdbStore) {
+    discoveryHistoryIdbStore = createIdbStore('cinetrack-discovery-history-db', 'ct_discovery_history');
+  }
+  return discoveryHistoryIdbStore;
+}
 
-export type {
-  CandidatePoolCursors,
-  FavoriteActorInfo,
-  LifecycleRing,
-  NextEpisode,
-  PersistentCandidatePoolData,
-  PersistentTasteMapData,
-  PoolCandidateItem,
-  PoolSourceType,
-  SavedItem,
-  TasteMapEntry,
-  TasteMapImpression,
-  TastePillarsSummary,
-  TasteProfileSnapshot,
-  TasteProfileSummary,
-  TasteRing,
-} from './media/types.ts';
+function getCandidatePoolIdbStore(): UseStore | undefined {
+  if (typeof indexedDB === 'undefined') return undefined;
+  if (!candidatePoolIdbStore) {
+    candidatePoolIdbStore = createIdbStore('cinetrack-candidate-pool-db', 'ct_candidate_pool');
+  }
+  return candidatePoolIdbStore;
+}
 
-import {
-  type LovedItemFeatures,
-  type LovedSimBreakdown,
-  type LovedSimMatchResult,
-  calculateGenreSim,
-  calculateStorySim,
-  calculateCastSim,
-  calculateAtmosphereSim,
-  calculateEraSim,
-  computeItemToItemLovedSim,
-  computeLovedSimilarityScore,
-} from './loved-similarity.ts';
+function trackCoreIdbWrite(promise: Promise<void>): void {
+  pendingCoreIdbWrites.add(promise);
+  void promise.finally(() => {
+    pendingCoreIdbWrites.delete(promise);
+  });
+}
 
-export {
-  type LovedItemFeatures,
-  type LovedSimBreakdown,
-  type LovedSimMatchResult,
-  calculateGenreSim,
-  calculateStorySim,
-  calculateCastSim,
-  calculateAtmosphereSim,
-  calculateEraSim,
-  computeItemToItemLovedSim,
-  computeLovedSimilarityScore,
-};
+export async function flushCoreIdbWrites(): Promise<void> {
+  await Promise.allSettled(Array.from(pendingCoreIdbWrites));
+}
 
-import {
-  type MoodAffinityResult,
-  normalizeMoodKey,
-  calculateMoodAffinity,
-} from './mood-affinity.ts';
-
-export {
-  type MoodAffinityResult,
-  normalizeMoodKey,
-  calculateMoodAffinity,
-};
+export function resetCoreIdbMirrorsForTests(): void {
+  idbHydratedTasteMaps.clear();
+  idbHydratedPools.clear();
+  discoveryHistoryIdbStore = undefined;
+  candidatePoolIdbStore = undefined;
+}
 
 export const REMINDER_WINDOW_DAYS = 3;
+
+export interface NextEpisode {
+  air_date: string;
+  episode_number: number;
+  season_number: number;
+}
+
+export interface SavedItem {
+  id: number | string;
+  media_type: 'movie' | 'tv';
+  title: string;
+  name?: string;
+  original_title?: string;
+  original_name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  last_air_date?: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+  poster_url?: string;
+  poster_path?: string;
+  backdrop_path?: string;
+  overview?: string;
+  genre_ids: number[];
+  genres?: string[] | { id: number; name: string }[];
+  runtime?: number;
+  episode_run_time?: number[];
+  number_of_seasons?: number;
+  number_of_episodes?: number;
+  season_progress?: Record<number, number>;
+  season_episode_counts?: Record<number, number>;
+  next_episode_to_air?: NextEpisode | null;
+  current_season?: number;
+  episodes_watched?: number;
+  next_episode?: number;
+  status: 'watching' | 'watchlist' | 'completed';
+  personal_rating: number | '';
+  personal_rating_cleared?: boolean;
+  ratedAt?: string;
+  completedAt?: string;
+  addedAt?: string;
+  firstAddedAt?: string;
+  totalWatchTimeMinutes?: number;
+  updatedAt?: string;
+  custom?: boolean;
+  cast?: { id: number; name: string; popularity?: number; profile_path?: string; character?: string }[];
+  crew?: { id: number; name: string; job: string; department?: string }[];
+  poolSource?: string;
+  poolReason?: string;
+  poolSources?: number;
+  belongs_to_collection?: {
+    id: number;
+    name: string;
+    poster_path?: string | null;
+    backdrop_path?: string | null;
+  } | null;
+  isDemo?: boolean;
+}
 
 export interface Preferences {
   disliked: string[];
@@ -130,6 +123,14 @@ export interface Preferences {
   mood: string;
   reminders: boolean;
   notified: string[];
+}
+
+export interface FavoriteActorInfo {
+  id: number;
+  name: string;
+  profile_path?: string | null;
+  character?: string;
+  [key: string]: any;
 }
 
 export interface Profile {
@@ -447,32 +448,8 @@ export function normalizeSavedItem(item: any): SavedItem | null {
     custom: Boolean(item.custom || String(item.id).startsWith('custom-')),
     ...(normalizedCast.length > 0 ? { cast: normalizedCast } : {}),
     ...(normalizedCrew.length > 0 ? { crew: normalizedCrew } : {}),
-    ...(sanitizeTasteStamp(item) || {}),
     isDemo: item.isDemo === true,
   };
-}
-
-/** Liste kaydına yazılmış "Sana Özel" damgasını sınırları içinde geri taşır. */
-function sanitizeTasteStamp(item: any): Partial<SavedItem> | null {
-  const fit = Number(item?.tasteFit);
-  if (!Number.isFinite(fit) || fit < 0 || fit > 100) return null;
-  const stamp: Partial<SavedItem> = { tasteFit: Math.round(fit) };
-  if (typeof item.tasteReason === 'string' && item.tasteReason.trim()) {
-    stamp.tasteReason = item.tasteReason.trim().slice(0, 180);
-  }
-  if (Array.isArray(item.tasteTags) && item.tasteTags.length > 0) {
-    stamp.tasteTags = item.tasteTags
-      .filter((tag: any) => typeof tag === 'string' && tag.trim())
-      .map((tag: string) => tag.trim().slice(0, 40))
-      .slice(0, 6);
-  }
-  if (item.tasteConfidence === 'high' || item.tasteConfidence === 'standard') {
-    stamp.tasteConfidence = item.tasteConfidence;
-  }
-  if (typeof item.tasteComputedAt === 'string') {
-    stamp.tasteComputedAt = item.tasteComputedAt.slice(0, 32);
-  }
-  return stamp;
 }
 
 /**
@@ -483,23 +460,39 @@ export function findSavedItem(
   savedItems: SavedItem[] | undefined | null,
   item: any
 ): SavedItem | undefined {
-  return findSaved(savedItems, item) as SavedItem | undefined;
-}
+  if (!Array.isArray(savedItems) || !item || item.id == null) return undefined;
+  const targetId = String(item.id);
+  const targetType =
+    item.media_type || (item.title ? 'movie' : (item.name ? 'tv' : undefined));
 
-/**
- * Kart başına lineer taramayı kaldırmak için: indeks bir kez kurulur,
- * `findSavedIndexed(index, item)` her kartta O(1) çalışır.
- */
-export function buildSavedItemsIndex(savedItems: SavedItem[] | undefined | null): SavedIndex {
-  return buildSavedIndex(savedItems);
-}
+  // 1. Exact match by ID and media_type if type is known
+  if (targetType) {
+    const exact = savedItems.find(
+      (entry) => String(entry.id) === targetId && entry.media_type === targetType
+    );
+    if (exact) return exact;
+  }
 
-export function findSavedIndexed(
-  index: SavedIndex,
-  item: any,
-  savedItems?: SavedItem[] | undefined | null
-): SavedItem | undefined {
-  return findSaved(savedItems, item, index) as SavedItem | undefined;
+  // 2. Fallback: match by ID alone ONLY when targetType was not specified at all
+  if (!targetType) {
+    const byId = savedItems.filter((entry) => String(entry.id) === targetId);
+    if (byId.length > 0) return byId[0];
+  }
+
+  // 3. Fallback: match by title/name if available, respecting media_type if specified
+  const rawTitle = (item.title || item.name || '').trim().toLowerCase();
+  if (rawTitle) {
+    const byTitle = savedItems.filter(
+      (entry) =>
+        (entry.title || '').trim().toLowerCase() === rawTitle &&
+        (!targetType || entry.media_type === targetType)
+    );
+    if (byTitle.length > 0) {
+      return byTitle[0];
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -615,10 +608,10 @@ export function parseBackupText(
   }
   const backup = JSON.parse(text);
   if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
-    throw new Error(`Bu dosya geçerli bir ${BRAND_NAME} yedeği değil.`);
+    throw new Error('Bu dosya geçerli bir Cinethos yedeği değil.');
   }
   if (![1, 2, 3].includes(backup.version)) {
-    throw new Error(`Bu dosya geçerli bir ${BRAND_NAME} yedeği değil.`);
+    throw new Error('Bu dosya geçerli bir Cinethos yedeği değil.');
   }
 
   let rawItems: any[] = [];
@@ -646,7 +639,7 @@ export function parseBackupText(
     rawFavoriteActors = Array.isArray(backup.favoriteActors) ? backup.favoriteActors : [];
     isDemo = backup.isDemo === true;
   } else {
-    throw new Error(`Bu dosya geçerli bir ${BRAND_NAME} yedeği değil.`);
+    throw new Error('Bu dosya geçerli bir Cinethos yedeği değil.');
   }
 
   if (
@@ -901,9 +894,30 @@ export function createRequestGate() {
   };
 }
 
-import { clamp01, clamp11, bayesianRating, billingWeight } from './rating-math.ts';
+export const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+export const clamp11 = (value: number) => Math.min(1, Math.max(-1, value));
 
-export { clamp01, clamp11, bayesianRating, billingWeight };
+export function bayesianRating(
+  voteAverage: number | unknown,
+  voteCount: number | unknown,
+  { prior = 6.5, minVotes = 300 } = {}
+): number {
+  const average = Number(voteAverage);
+  const count = Number(voteCount);
+  if (!Number.isFinite(average) || average <= 0) return 5.5;
+  if (!Number.isFinite(count) || count <= 0) return 5.5;
+  const credibility = Math.min(1, count / minVotes);
+  return credibility * average + (1 - credibility) * prior;
+}
+
+export function billingWeight(order: number | unknown): number {
+  const index = Number(order);
+  if (order == null || !Number.isFinite(index) || index < 0) return 0.3;
+  if (index <= 2) return 1;
+  if (index <= 5) return 0.7;
+  if (index <= 9) return 0.45;
+  return 0.3;
+}
 
 // ---------------------------------------------------------
 // Sana Özel v3 — Personalized Recommendation Engine
@@ -1036,7 +1050,6 @@ export interface TasteProfileV3 {
   lovedOverviewTokens: Set<string>;
   positiveGenres: string[];
   coOccurredPairs: Set<string>;
-  lovedItemFeatures?: LovedItemFeatures[];
 }
 
 export function buildTasteProfileV3(
@@ -1082,7 +1095,6 @@ export function buildTasteProfileV3(
   const lovedProductionCompanyIds = new Set<number>();
   const lovedOverviewTokens = new Set<string>();
   const coOccurredPairs = new Set<string>();
-  const lovedItemFeatures: LovedItemFeatures[] = [];
 
   let rawItems: any[] = [...(Array.isArray(items) ? items : [])];
 
@@ -1163,47 +1175,9 @@ export function buildTasteProfileV3(
           if (company?.id) lovedProductionCompanyIds.add(Number(company.id));
         }
       }
-      const itemTokens = extractOverviewTokens(item.overview);
-      for (const token of itemTokens) {
+      for (const token of extractOverviewTokens(item.overview)) {
         lovedOverviewTokens.add(token);
       }
-
-      const itemGenres: number[] = Array.isArray(item.genre_ids)
-        ? item.genre_ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
-        : Array.isArray(item.genres)
-        ? item.genres.map((g: any) => Number(typeof g === 'object' ? g?.id : g)).filter((n: number) => Number.isFinite(n) && n > 0)
-        : [];
-
-      const rawCast = Array.isArray(item.cast) ? item.cast : [];
-      const itemCastIds: number[] = rawCast
-        .slice(0, 10)
-        .map((c: any) => Number(c?.id))
-        .filter((n: number) => Number.isFinite(n) && n > 0);
-
-      const rawCrew = Array.isArray(item.crew) ? item.crew : [];
-      const itemDirectorIds: number[] = rawCrew
-        .filter((m: any) => m && (m.job === 'Director' || m.job === 'Creator'))
-        .map((m: any) => Number(m.id))
-        .filter((n: number) => Number.isFinite(n) && n > 0);
-
-      const rawDate = item.release_date || item.first_air_date;
-      const itemYear = typeof rawDate === 'string' && /^\d{4}/.test(rawDate)
-        ? parseInt(rawDate.slice(0, 4), 10)
-        : undefined;
-
-      lovedItemFeatures.push({
-        key: makeMediaKey(item),
-        id: item.id,
-        media_type: item.media_type || (item.title ? 'movie' : 'tv'),
-        title: String(item.title || item.name || '').trim(),
-        genre_ids: itemGenres,
-        overviewTokens: new Set(itemTokens),
-        castIds: itemCastIds,
-        directorIds: itemDirectorIds,
-        collectionId: item.belongs_to_collection?.id ? Number(item.belongs_to_collection.id) : undefined,
-        year: itemYear,
-        weight: Math.max(0.5, effContribution),
-      });
     }
 
     // Genres
@@ -1381,13 +1355,21 @@ export function buildTasteProfileV3(
     lovedOverviewTokens,
     positiveGenres,
     coOccurredPairs,
-    lovedItemFeatures,
   };
 }
 
 /* ============================================================================
  * Aşama 3: Kalıcı Zevk Haritası (Taste Map) ve Konsantrik Halka Takibi (Sorun D & Zevk Haritası)
  * ============================================================================ */
+
+export type LifecycleRing = 'ring0' | 'ring1' | 'ring2';
+export type TasteRing = LifecycleRing | 'core' | 'inner' | 'outer' | 'orbit';
+
+export interface TastePillarsSummary {
+  genreStoryScore: number;       // 0-100 (Tür ve hikâye: tür, anahtar kelime, özet)
+  castCreatorsScore: number;     // 0-100 (Kadro ve yaratıcılar: oyuncu, yönetmen, kadro uyumu)
+  discoveryQualityScore: number; // 0-100 (Keşif ve kalite: kalite, popülerlik, yenilik)
+}
 
 export function calculateTastePillars(parts: Record<string, number> = {}): TastePillarsSummary {
   // 1. Tür ve hikâye (Tür: genre; Anahtar kelime: keywords; Özet: story, lovedSim)
@@ -1521,6 +1503,24 @@ export function computeTasteProfileSignature(
   return `sig_${algorithmVersion}_${weightsSig}_${targetType}_${effectiveItems.length}_${ratingsSum}_${mood || 'nomood'}_${sortedDisliked.length}_${sortedFavActors.length}_${hash32}`;
 }
 
+export interface TasteProfileSummary {
+  topGenres: Array<{ id: string; name: string; score: number }>;
+  topActors: Array<{ id: string; name: string; score: number; appearances: number }>;
+  topDirectors: Array<{ id: string; name: string; score: number }>;
+  storyKeywords: string[];
+  totalEvaluatedCandidates: number;
+  archivedCandidatesCount?: number;
+  ringCounts: {
+    core: number;
+    inner: number;
+    outer: number;
+    orbit: number;
+    ring0?: number;
+    ring1?: number;
+    ring2?: number;
+  };
+}
+
 export function buildTasteProfileSummary(
   tasteProfile: TasteProfileV3,
   tasteMap: PersistentTasteMapData,
@@ -1601,6 +1601,51 @@ export function buildTasteProfileSummary(
 
 export const MAX_IMPRESSION_HISTORY_PER_ENTRY = 30;
 
+export interface TasteMapImpression {
+  shownAt: string;
+  targetType: string;
+  rank?: number;
+}
+
+export interface TasteMapEntry {
+  mediaKey: string;
+  mediaType: 'movie' | 'tv';
+  id: number;
+  title: string;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  vote_average?: number;
+  popularity?: number;
+  genre_ids?: number[];
+  release_date?: string;
+  first_air_date?: string;
+  overview?: string;
+  matchScore: number;       // Gerçek zevk uyumu (1-100, demotion cezasından etkilenmez: örn 92)
+  tasteScore: number;       // Gerçek zevk uyumu (matchScore ile eşdeğer, açık sinyal ayrımı)
+  priorityScore: number;    // Gösterim ve seçim önceliği puanı (demotion cezası düşülmüş hali: örn 82)
+  rawScore: number;
+  ring: TasteRing;
+  initialRing: TasteRing;
+  pillars?: TastePillarsSummary;
+  parts: Record<string, number>;
+  tags: string[];
+  shownCount: number;
+  skippedCount: number;
+  ringDemotions: number;
+  demotionPenalty: number;
+  firstShownAt?: string | null;
+  lastShownAt: string | null;
+  lastScoredAt: string;
+  archivedImpressionCount?: number;
+  impressionHistory?: TasteMapImpression[];
+  status: 'active' | 'saved' | 'disliked' | 'hidden';
+  isArchived?: boolean;
+  archivedAt?: string | null;
+  archiveReason?: 'evicted_from_pool' | 'status_change' | 'manual';
+  scoreCoverage?: 'basic' | 'enriched';
+  confidenceLevel?: 'standard' | 'high';
+}
+
 export function appendBoundedImpression(
   existingHistory: TasteMapImpression[] = [],
   newImpression: TasteMapImpression,
@@ -1675,6 +1720,70 @@ export function getImpressionSummary(entry?: TasteMapEntry | null): {
   };
 }
 
+export interface TasteProfileSnapshot {
+  savedItemCount: number;
+  ratingsSum: number;
+  dislikedCount: number;
+  dislikedHash?: string;
+  providerHash?: string;
+  mood: string;
+  favActorCount: number;
+  favActorIds?: number[];
+  targetType: string;
+  hasLiveItems: boolean;
+  algorithmVersion?: string;
+  weightsSignature?: string;
+  scopedItemCount?: number;
+  scopedRatingsSum?: number;
+}
+
+export interface PersistentTasteMapData {
+  profileId: string;
+  profileSignature?: string;
+  profileSnapshot?: TasteProfileSnapshot;
+  algorithmVersion?: string;
+  engineVersion?: string;
+  weightsSignature?: string;
+  updatedAt: string;
+  entries: Record<string, TasteMapEntry>;
+  archivedEntries?: Record<string, TasteMapEntry>;
+  lastRecommendedKeys: string[];
+  lastBatchTimestamp: string | null;
+  cachedBalancedItems?: any[];
+  lastTargetType?: string;
+  lastExplanation?: string;
+  summary?: TasteProfileSummary;
+}
+
+export function inferLifecycleRing(
+  mediaKey: string,
+  entry:
+    | {
+        shownCount?: number;
+        skippedCount?: number;
+        lastShownAt?: string | null;
+      }
+    | undefined
+    | null,
+  lastRecommendedKeys: string[] = []
+): LifecycleRing {
+  const canonicalTarget = canonicalizeMediaKey(mediaKey);
+  if (
+    canonicalTarget &&
+    Array.isArray(lastRecommendedKeys) &&
+    lastRecommendedKeys.some((k) => canonicalizeMediaKey(k) === canonicalTarget)
+  ) {
+    return 'ring1';
+  }
+
+  const hasBeenShown =
+    (entry?.shownCount ?? 0) > 0 ||
+    (entry?.skippedCount ?? 0) > 0 ||
+    Boolean(entry?.lastShownAt);
+
+  return hasBeenShown ? 'ring2' : 'ring0';
+}
+
 export function filterOutLastRecommendedCandidates<T>(
   candidates: T[],
   lastRecommendedKeys?: string[] | null
@@ -1690,6 +1799,100 @@ export function filterOutLastRecommendedCandidates<T>(
     const key = canonicalizeMediaKey(makeMediaKey(cand));
     return !excluded.has(key);
   });
+}
+
+export function normalizeTasteRing(
+  ring?: TasteRing | null,
+  entry?: { shownCount?: number; skippedCount?: number; lastShownAt?: string | null } | null,
+  inLastBatch?: boolean
+): LifecycleRing {
+  if (inLastBatch) return 'ring1';
+  if (entry != null) {
+    const hasBeenShown =
+      (entry.shownCount ?? 0) > 0 ||
+      (entry.skippedCount ?? 0) > 0 ||
+      Boolean(entry.lastShownAt);
+    return hasBeenShown ? 'ring2' : 'ring0';
+  }
+  if (ring === 'ring1') return 'ring1';
+  if (ring === 'ring2') return 'ring2';
+  return 'ring0';
+}
+
+export function normalizeTasteMapEntries(
+  entries: Record<string, TasteMapEntry>,
+  lastRecommendedKeys: string[] = []
+): Record<string, TasteMapEntry> {
+  if (!entries) return {};
+  const normalized: Record<string, TasteMapEntry> = {};
+  for (const [key, entry] of Object.entries(entries)) {
+    if (!entry) continue;
+    const mediaKey = entry.mediaKey || key;
+    normalized[key] = {
+      ...entry,
+      ring: inferLifecycleRing(mediaKey, entry, lastRecommendedKeys),
+      initialRing: 'ring0',
+    };
+  }
+  return normalized;
+}
+
+export function normalizeTasteMapRings(tasteMap: PersistentTasteMapData): PersistentTasteMapData {
+  if (!tasteMap) return tasteMap;
+  const lastKeys = Array.isArray(tasteMap.lastRecommendedKeys) ? tasteMap.lastRecommendedKeys : [];
+  return {
+    ...tasteMap,
+    entries: tasteMap.entries ? normalizeTasteMapEntries(tasteMap.entries, lastKeys) : {},
+    archivedEntries: tasteMap.archivedEntries ? normalizeTasteMapEntries(tasteMap.archivedEntries, lastKeys) : {},
+  };
+}
+
+export function assignTasteRing(
+  _score?: number,
+  context?: { inLastBatch?: boolean; shownCount?: number; skippedCount?: number; lastShownAt?: string | null }
+): LifecycleRing {
+  if (context?.inLastBatch) return 'ring1';
+  if (
+    (context?.skippedCount || 0) > 0 ||
+    (context?.shownCount || 0) > 0 ||
+    Boolean(context?.lastShownAt)
+  ) {
+    return 'ring2';
+  }
+  return 'ring0';
+}
+
+export function demoteTasteRing(currentRing: TasteRing, steps: number = 1): LifecycleRing {
+  if (steps <= 0) {
+    if (currentRing === 'ring1') return 'ring1';
+    if (currentRing === 'ring2' || currentRing === 'outer' || currentRing === 'orbit') return 'ring2';
+    return 'ring0';
+  }
+  if (currentRing === 'ring0' || currentRing === 'core') {
+    return steps >= 2 ? 'ring2' : 'ring1';
+  }
+  return 'ring2';
+}
+
+export function getTasteRingLabel(ring?: TasteRing | null): string {
+  switch (ring) {
+    case 'ring0':
+      return 'Halka 0 — Yeni Eşleşme';
+    case 'ring1':
+      return 'Halka 1 — Yakın Zamanda Gösterildi';
+    case 'ring2':
+      return 'Halka 2 — Daha Önce Atlandı';
+    case 'core':
+      return 'Çekirdek Halka (1. Halka)';
+    case 'inner':
+      return 'Yakın Halka (2. Halka)';
+    case 'outer':
+      return 'Dış Halka (3. Halka)';
+    case 'orbit':
+      return 'Yörünge (4. Halka)';
+    default:
+      return 'Halka 0 — Yeni Eşleşme';
+  }
 }
 
 export function getTasteMapStorageKey(profileId: string): string {
@@ -1711,9 +1914,10 @@ export function createDefaultTasteMapData(profileId: string): PersistentTasteMap
   };
 }
 
-export const MAX_ARCHIVED_TASTE_ENTRIES = 250;
+const MAX_ARCHIVED_TASTE_ENTRIES = 250;
+const inMemoryTasteMapFallback = new Map<string, { storageRef: Storage | null; raw: string }>();
 
-export function pruneArchivedTasteEntries(
+function pruneArchivedTasteEntries(
   archived: Record<string, TasteMapEntry>,
   maxEntries = MAX_ARCHIVED_TASTE_ENTRIES
 ): Record<string, TasteMapEntry> {
@@ -1742,6 +1946,213 @@ export function pruneArchivedTasteEntries(
     trimmed[k] = archived[k];
   }
   return trimmed;
+}
+
+function compactTasteMapForQuota(data: PersistentTasteMapData): PersistentTasteMapData {
+  const lastKeysSet = new Set(canonicalizeMediaKeyList(data.lastRecommendedKeys || []));
+  const compactEntries: Record<string, TasteMapEntry> = {};
+  for (const [k, v] of Object.entries(data.entries || {})) {
+    if (!v) continue;
+    compactEntries[k] = {
+      ...v,
+      overview: lastKeysSet.has(k)
+        ? (v.overview || '').slice(0, 320)
+        : (v.overview || '').slice(0, 120),
+      impressionHistory: Array.isArray(v.impressionHistory) ? v.impressionHistory.slice(-10) : [],
+    };
+  }
+
+  const prunedArchived = pruneArchivedTasteEntries(data.archivedEntries || {}, 100);
+  const compactArchived: Record<string, TasteMapEntry> = {};
+  for (const [k, v] of Object.entries(prunedArchived)) {
+    if (!v) continue;
+    if (v.status === 'active' && (v.shownCount || 0) === 0 && (v.skippedCount || 0) === 0) {
+      continue;
+    }
+    compactArchived[k] = {
+      ...v,
+      overview: '',
+      impressionHistory: Array.isArray(v.impressionHistory) ? v.impressionHistory.slice(-5) : [],
+    };
+  }
+
+  return {
+    ...data,
+    entries: compactEntries,
+    archivedEntries: compactArchived,
+  };
+}
+
+function sanitizeLoadedTasteMapObject(
+  profileId: string,
+  rawParsed: any
+): { loadedData: PersistentTasteMapData; needsMigrationWrite: boolean } | null {
+  if (!rawParsed || typeof rawParsed.entries !== 'object') return null;
+  const migration = migratePersistentTasteMapData(rawParsed, MAX_IMPRESSION_HISTORY_PER_ENTRY);
+  const parsed = migration.data;
+  const lastRecommendedKeys: string[] = canonicalizeMediaKeyList(parsed.lastRecommendedKeys || []);
+  let needsMigrationWrite = migration.changed;
+
+  const sanitizedEntries: Record<string, TasteMapEntry> = {};
+  for (const [k, v] of Object.entries(parsed.entries || {})) {
+    const sanitized = sanitizeTasteMapEntryImpressions(v as TasteMapEntry);
+    const mediaKey = canonicalizeMediaKey(sanitized.mediaKey || k);
+    const inferredRing = inferLifecycleRing(mediaKey, sanitized, lastRecommendedKeys);
+    if (sanitized.ring !== inferredRing || sanitized.initialRing !== 'ring0' || k !== mediaKey) {
+      needsMigrationWrite = true;
+    }
+    sanitizedEntries[mediaKey] = {
+      ...sanitized,
+      mediaKey,
+      ring: inferredRing,
+      initialRing: 'ring0',
+    };
+  }
+
+  const sanitizedArchived: Record<string, TasteMapEntry> = {};
+  if (parsed.archivedEntries && typeof parsed.archivedEntries === 'object') {
+    for (const [k, v] of Object.entries(parsed.archivedEntries)) {
+      const sanitized = sanitizeTasteMapEntryImpressions(v as TasteMapEntry);
+      const mediaKey = canonicalizeMediaKey(sanitized.mediaKey || k);
+      if (sanitizedEntries[mediaKey]) {
+        needsMigrationWrite = true;
+        continue;
+      }
+      const inferredRing = inferLifecycleRing(mediaKey, sanitized, lastRecommendedKeys);
+      if (sanitized.ring !== inferredRing || sanitized.initialRing !== 'ring0' || k !== mediaKey) {
+        needsMigrationWrite = true;
+      }
+      sanitizedArchived[mediaKey] = {
+        ...sanitized,
+        mediaKey,
+        ring: inferredRing,
+        initialRing: 'ring0',
+      };
+    }
+  }
+
+  const loadedData: PersistentTasteMapData = {
+    profileId,
+    profileSignature: parsed.profileSignature || '',
+    profileSnapshot: parsed.profileSnapshot || undefined,
+    algorithmVersion: parsed.algorithmVersion || undefined,
+    weightsSignature: parsed.weightsSignature || undefined,
+    updatedAt: parsed.updatedAt || new Date().toISOString(),
+    entries: sanitizedEntries,
+    archivedEntries: sanitizedArchived,
+    lastRecommendedKeys,
+    lastBatchTimestamp: parsed.lastBatchTimestamp || null,
+    cachedBalancedItems: Array.isArray(parsed.cachedBalancedItems) ? parsed.cachedBalancedItems : undefined,
+    lastTargetType: parsed.lastTargetType || undefined,
+    lastExplanation: parsed.lastExplanation || undefined,
+    summary: parsed.summary || undefined,
+  };
+  return { loadedData, needsMigrationWrite };
+}
+
+export async function hydrateDiscoveryHistoryIdb(profileId: string): Promise<PersistentTasteMapData> {
+  const key = getTasteMapStorageKey(profileId);
+  const store = getDiscoveryHistoryIdbStore();
+  if (store) {
+    try {
+      const idbVal = await idbGet<PersistentTasteMapData>(key, store);
+      if (idbVal && typeof idbVal.entries === 'object') {
+        const sanitized = sanitizeLoadedTasteMapObject(profileId, idbVal);
+        if (sanitized) {
+          idbHydratedTasteMaps.set(key, sanitized.loadedData);
+          try {
+            if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+          } catch {}
+          if (sanitized.needsMigrationWrite) {
+            savePersistentTasteMap(profileId, sanitized.loadedData);
+          }
+          return sanitized.loadedData;
+        }
+      }
+    } catch {}
+  }
+  return loadPersistentTasteMap(profileId);
+}
+
+export function loadPersistentTasteMap(profileId: string): PersistentTasteMapData {
+  const key = getTasteMapStorageKey(profileId);
+  const store = getDiscoveryHistoryIdbStore();
+  if (store && idbHydratedTasteMaps.has(key)) {
+    return idbHydratedTasteMaps.get(key) as PersistentTasteMapData;
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const fallback = inMemoryTasteMapFallback.get(key);
+      let raw = localStorage.getItem(key);
+      if (fallback && fallback.storageRef === localStorage) {
+        raw = fallback.raw;
+      } else if (fallback && fallback.storageRef !== localStorage) {
+        inMemoryTasteMapFallback.delete(key);
+      }
+      if (raw) {
+        const rawParsed = JSON.parse(raw);
+        const sanitized = sanitizeLoadedTasteMapObject(profileId, rawParsed);
+        if (sanitized) {
+          if (store || sanitized.needsMigrationWrite) {
+            savePersistentTasteMap(profileId, sanitized.loadedData);
+          }
+          return sanitized.loadedData;
+        }
+      }
+    }
+  } catch {}
+  return createDefaultTasteMapData(profileId);
+}
+
+export function savePersistentTasteMap(profileId: string, data: PersistentTasteMapData): void {
+  const key = getTasteMapStorageKey(profileId);
+  const normalizedData: PersistentTasteMapData = {
+    ...data,
+    lastRecommendedKeys: canonicalizeMediaKeyList(data.lastRecommendedKeys || []),
+    archivedEntries: pruneArchivedTasteEntries(data.archivedEntries || {}),
+  };
+
+  // Primary browser storage: IndexedDB via idb-keyval (BUG-02 — zero localStorage bloat)
+  const store = getDiscoveryHistoryIdbStore();
+  if (store) {
+    idbHydratedTasteMaps.set(key, normalizedData);
+    inMemoryTasteMapFallback.delete(key);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(key);
+      }
+    } catch {}
+    trackCoreIdbWrite(
+      idbSet(key, normalizedData, store).catch((err) => {
+        console.warn('[Cinethos] Discovery history IDB write failed:', err);
+      })
+    );
+    return;
+  }
+
+  if (typeof localStorage === 'undefined') return;
+
+  const serialized = JSON.stringify(normalizedData);
+  try {
+    localStorage.setItem(key, serialized);
+    inMemoryTasteMapFallback.delete(key);
+    return;
+  } catch {
+    // Tarayıcı localStorage kotası dolduysa özetleri ve arşivi sıkıştırarak tekrar dene;
+    // böylece lastRecommendedKeys ve shownCount asla kaybolmaz.
+    const compacted = compactTasteMapForQuota(normalizedData);
+    const compactSerialized = JSON.stringify(compacted);
+    try {
+      localStorage.setItem(key, compactSerialized);
+      inMemoryTasteMapFallback.delete(key);
+    } catch {
+      inMemoryTasteMapFallback.set(key, {
+        storageRef: localStorage,
+        raw: compactSerialized,
+      });
+    }
+  }
 }
 
 export function markTasteMapItemStatus(
@@ -2028,9 +2439,6 @@ export function updateTasteMapWithBatch({
         archivedAt: null,
         scoreCoverage,
         confidenceLevel,
-        lovedSimDetail: poolItem.lovedSimDetail || cand.lovedSimDetail || existing?.lovedSimDetail || null,
-        moodDetail: poolItem.moodDetail || cand.moodDetail || existing?.moodDetail || null,
-        atmosphereScore: poolItem.atmosphereScore ?? cand.atmosphereScore ?? existing?.atmosphereScore,
       };
     }
   }
@@ -2358,7 +2766,6 @@ export function recordDisplayedRecommendations(
       archivedAt: null,
       scoreCoverage: existing?.scoreCoverage || 'basic',
       confidenceLevel: existing?.confidenceLevel || 'standard',
-      lovedSimDetail: rawItem?.candidate?.lovedSimDetail || rawItem?.lovedSimDetail || existing?.lovedSimDetail || null,
     };
   }
 
@@ -2638,7 +3045,6 @@ export function syncPoolCandidatesWithTasteMap(
       lastScoredAt: entry.lastScoredAt,
       tags: entry.tags,
       signalBreakdown: entry.parts,
-      lovedSimDetail: entry.lovedSimDetail || (item as any).lovedSimDetail || null,
     };
   });
 }
@@ -2651,25 +3057,13 @@ export function scoreCandidatesV3(
     genreNames = null as Record<number | string, string> | null,
     mood = '',
     tasteMap = null as PersistentTasteMapData | null,
-    now = new Date(),
   }: {
     weights?: typeof RECOMMENDATION_WEIGHTS_V3;
     genreNames?: Record<number | string, string> | null;
     mood?: string;
     tasteMap?: PersistentTasteMapData | null;
-    now?: Date | number | string;
   } = {}
 ) {
-  const referenceDate =
-    now instanceof Date
-      ? now
-      : typeof now === 'number' || typeof now === 'string'
-      ? new Date(now)
-      : new Date();
-  const currentYear = Number.isFinite(referenceDate.getTime())
-    ? referenceDate.getFullYear()
-    : new Date().getFullYear();
-
   const actorOf = (id: any) => profile.actors?.[String(id)] || null;
   const directorOf = (id: any) => profile.directors?.[String(id)] || null;
   const topGenreSet = new Set(profile.positiveGenres.slice(0, 4));
@@ -2720,13 +3114,17 @@ export function scoreCandidatesV3(
       storyScore = clamp01(0.3 + 0.7 * Math.min(1, ratio * 2));
     }
 
-    // 5. Sevilen Yapımlara Benzerlik (0.09) — Çok boyutlu anlamsal benzerlik
-    const lovedSimResult = computeLovedSimilarityScore(
-      candidate,
-      profile.lovedItemFeatures || [],
-      tokens
-    );
-    const lovedSimScore = lovedSimResult.score;
+    // 5. Sevilen Yapımlara Benzerlik (0.09)
+    let lovedSimScore = 0.5;
+    if (candidate.seedSourceType === 'completed') {
+      lovedSimScore = 0.95;
+    } else if (candidate.seedSourceType === 'watching') {
+      lovedSimScore = 0.85;
+    } else if (candidate.seedSourceType === 'watchlist') {
+      lovedSimScore = 0.65;
+    } else if (candidate.poolSources && candidate.poolSources >= 2) {
+      lovedSimScore = 0.75;
+    }
 
     // 6. Genel Oyuncu Tercihi (0.12) & 7. Tür x Oyuncu Tercihi (0.08)
     let actorScore = 0.5;
@@ -2820,22 +3218,17 @@ export function scoreCandidatesV3(
     const pop = Number(candidate.popularity) || 0;
     const popularityScore = clamp01(Math.log10(pop + 1) / 3.5);
 
-    // 13. Bağlam ve Yayın Zamanı (0.03) & Ruh Hâli / Atmosfer Uyumu
+    // 13. Bağlam ve Yayın Zamanı (0.03)
     let contextScore = 0.5;
-    let moodAffinity: MoodAffinityResult | null = null;
-    let atmosphereScore = 0.5;
-
-    if (mood && typeof mood === 'string' && mood.trim()) {
-      moodAffinity = calculateMoodAffinity(candidate, mood);
-      atmosphereScore = moodAffinity.atmosphereScore;
-      contextScore = atmosphereScore;
+    if (mood) {
+      contextScore = 0.75;
     }
-
     const releaseDate = candidate.release_date || candidate.first_air_date;
     if (releaseDate && typeof releaseDate === 'string') {
       const year = parseInt(releaseDate.slice(0, 4), 10);
-      if (Number.isFinite(year) && year >= currentYear - 2) {
-        contextScore = clamp01(contextScore + (mood ? 0.05 : 0.2));
+      const currentYear = new Date().getFullYear();
+      if (year >= currentYear - 2) {
+        contextScore = clamp01(contextScore + 0.2);
       }
     }
 
@@ -2866,7 +3259,6 @@ export function scoreCandidatesV3(
       exploration: explorationScore,
       popularity: popularityScore,
       context: contextScore,
-      atmosphere: atmosphereScore,
       franchise: franchiseScore,
       sourceSignal: sourceSignalScore,
     };
@@ -2899,18 +3291,11 @@ export function scoreCandidatesV3(
       tags.push(`${genreLabel} türünü sevdiğin için`);
     }
 
-    if (moodAffinity && !moodAffinity.isNeutralFallback && moodAffinity.atmosphereScore >= 0.70) {
-      tags.push(`${moodAffinity.label || 'Ruh hâli'} uyumu (%${Math.round(moodAffinity.atmosphereScore * 100)})`);
-    }
-
     if (knownDirector && knownDirector.personal >= 0.25) {
       tags.push(`Sevdiğin yönetmen ${knownDirector.name}`);
     }
     if (franchiseScore >= 0.8) {
       tags.push('Sevdiğin film serisinden');
-    }
-    if (lovedSimResult.breakdown && lovedSimResult.breakdown.similarity >= 0.58 && lovedSimResult.breakdown.matchedTitle) {
-      tags.push(`Sevdiğin "${lovedSimResult.breakdown.matchedTitle}" ile benzer (%${Math.round(lovedSimResult.breakdown.similarity * 100)})`);
     }
     if (qualityScore >= 0.72) {
       tags.push(`TMDB'de ${bayes.toFixed(1)} puan`);
@@ -2967,11 +3352,8 @@ export function scoreCandidatesV3(
     candidate.skippedCount = skippedCount;
     candidate.ringDemotions = ringDemotions;
     candidate.lastShownAt = lastShownAt;
-    candidate.atmosphereScore = atmosphereScore;
-    candidate.moodAffinity = moodAffinity;
     candidate.tags = tags.slice(0, 4);
     candidate.signalBreakdown = parts;
-    candidate.lovedSimDetail = lovedSimResult.breakdown;
 
     return {
       candidate,
@@ -2983,8 +3365,6 @@ export function scoreCandidatesV3(
       confidenceLevel,
       rawScore,
       parts,
-      atmosphereScore,
-      moodAffinity,
       tags: tags.slice(0, 4),
       ring,
       demotionPenalty,
@@ -2996,27 +3376,852 @@ export function scoreCandidatesV3(
   });
 }
 
-export {
-  type ActorRecommendationSignalBreakdown,
-  type ActorRecommendationItem,
-  type ScoreActorRecommendationsOptions,
-  calculateActorRoleBonus,
-  diversifyActorRecommendations,
-  type ActorFetchStatusCode,
-  type ActorFetchStatus,
-  type FetchActorCreditsBatchOptions,
-  type FetchActorCreditsBatchResult,
-  getInFlightActorCreditsCount,
-  clearInFlightActorCredits,
-  fetchActorCreditsBatch,
-  type ActorChipDisplayState,
-  describeActorFetchChipState,
-  scoreActorRecommendations,
-} from './actor-recommendations.ts';
+export interface ActorRecommendationSignalBreakdown {
+  actorPresence: number; // 0-30 (temel + kadro sırası/rol puanı)
+  actorRoleText: string; // örn: "1. Başrol (#1, +12)"
+  multiActorBonus: number; // 0 veya 10
+  genreScore: number; // 0-20
+  tasteScore: number; // 0-15 (kullanıcı puanları 1-10 ve tür/oyuncu benzerliğinden)
+  tasteExplanation: string; // kullanıcıya / geliştiriciye açıklama
+  qualityScore: number; // 0-10 (Bayesyen TMDB puanı)
+  recencyScore: number; // 0-5
+  platformScore: number; // 0-10 (doğrulanmışsa 10/6/3, bilinmiyorsa 5 nötr)
+  platformVerified: boolean;
+  confidenceScore: number; // 0-100
+  confidenceLevel: 'high' | 'medium' | 'low';
+  rawTotal: number;
+}
+
+export interface ActorRecommendationItem {
+  id: number;
+  title: string;
+  name?: string;
+  media_type: 'movie' | 'tv';
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  overview?: string;
+  genre_ids: number[];
+  release_date?: string;
+  first_air_date?: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+  character?: string;
+  order?: number;
+  matchedActors: Array<{
+    id: number;
+    name: string;
+    character?: string;
+    order?: number;
+  }>;
+  matchScore: number;
+  confidenceScore: number;
+  confidenceLevel: 'high' | 'medium' | 'low';
+  reason: string;
+  signalBreakdown: ActorRecommendationSignalBreakdown;
+  [key: string]: any;
+}
+
+export interface ScoreActorRecommendationsOptions {
+  favoriteActors: FavoriteActorInfo[];
+  actorCreditsMap: Record<number | string, any[]>;
+  savedItems?: any[];
+  dislikedKeys?: string[];
+  genresMap?: Record<number, string>;
+  providerIndex?: Record<string, any[]>;
+  preferredProviders?: string[];
+  sortMode?: 'best_match' | 'newest' | 'hidden_gems';
+  sortBy?: string;
+  mediaTypeFilter?: 'all' | 'movie' | 'tv' | string;
+  genreFilter?: string;
+  enableDiversity?: boolean;
+  maxPerGenre?: number;
+  limit?: number;
+  now?: number;
+}
+
+/**
+ * Kadro sırasına (TMDB order) göre rol ağırlığı ve etiketi üretir.
+ */
+export function calculateActorRoleBonus(order?: number): { bonus: number; label: string } {
+  if (order === 0) return { bonus: 12, label: '1. Başrol (#1)' };
+  if (order === 1 || order === 2) return { bonus: 10, label: `Başrol (#${order + 1})` };
+  if (order === 3 || order === 4) return { bonus: 7, label: `Ana Kadro (#${order + 1})` };
+  if (typeof order === 'number' && order >= 5 && order <= 9) return { bonus: 4, label: `Yardımcı Rol (#${order + 1})` };
+  if (typeof order === 'number' && order >= 10) return { bonus: 1, label: `Küçük Rol / Konuk (#${order + 1})` };
+  return { bonus: 3, label: 'Kadroda' };
+}
+
+/**
+ * Favori oyuncu önerilerinde aynı tür yığılmasını önlemek için çeşitlilik uygular.
+ */
+export function diversifyActorRecommendations(
+  items: ActorRecommendationItem[],
+  { maxPerGenre = 3, limit = 50 }: { maxPerGenre?: number; limit?: number } = {}
+): ActorRecommendationItem[] {
+  if (!Array.isArray(items) || items.length <= maxPerGenre) return items;
+
+  const picked: ActorRecommendationItem[] = [];
+  const deferred: ActorRecommendationItem[] = [];
+  const genreCounts: Record<number, number> = {};
+
+  for (const item of items) {
+    const dominantGenre = item.genre_ids?.[0];
+    if (dominantGenre != null) {
+      const count = genreCounts[dominantGenre] || 0;
+      if (count >= maxPerGenre) {
+        deferred.push(item);
+        continue;
+      }
+      genreCounts[dominantGenre] = count + 1;
+    }
+    picked.push(item);
+    if (picked.length >= limit) break;
+  }
+
+  return [...picked, ...deferred].slice(0, limit);
+}
+
+export type ActorFetchStatusCode = 'idle' | 'loading' | 'success' | 'error' | 'empty';
+
+export interface ActorFetchStatus {
+  actorId: number;
+  actorName: string;
+  status: ActorFetchStatusCode;
+  creditsCount: number;
+  error?: string;
+  updatedAt: number;
+}
+
+export interface FetchActorCreditsBatchOptions {
+  concurrency?: number;
+  signal?: AbortSignal;
+  ticketId?: number;
+  isCurrentTicket?: (ticketId: number) => boolean;
+  force?: boolean;
+  onActorStatusChange?: (status: ActorFetchStatus) => void;
+  fetchTmdbFn?: (path: string, params?: Record<string, string>, signal?: AbortSignal, ttl?: number) => Promise<any>;
+}
+
+export interface FetchActorCreditsBatchResult {
+  creditsMap: Record<number, any[]>;
+  statuses: Record<number, ActorFetchStatus>;
+  completedCount: number;
+  errorCount: number;
+  emptyCount: number;
+}
+
+// In-flight istek paylaşımı haritası: Aynı oyuncu için eşzamanlı istekleri tek Promise altında birleştirir
+const inFlightActorCredits = new Map<number, Promise<{ cast: any[]; error?: string }>>();
+
+export function getInFlightActorCreditsCount(): number {
+  return inFlightActorCredits.size;
+}
+
+export function clearInFlightActorCredits(): void {
+  inFlightActorCredits.clear();
+}
+
+/**
+ * Favori oyuncuların filmografilerini (combined_credits) sınırlı kuyruk (bounded queue),
+ * oyuncu bazında durum takibi, in-flight istek paylaşımı ve eski yanıt korumasıyla çeker.
+ */
+export async function fetchActorCreditsBatch(
+  favoriteActors: FavoriteActorInfo[],
+  options: FetchActorCreditsBatchOptions = {}
+): Promise<FetchActorCreditsBatchResult> {
+  const {
+    concurrency = 3,
+    signal,
+    ticketId,
+    isCurrentTicket,
+    force = false,
+    onActorStatusChange,
+    fetchTmdbFn,
+  } = options;
+
+  const creditsMap: Record<number, any[]> = {};
+  const statuses: Record<number, ActorFetchStatus> = {};
+  let completedCount = 0;
+  let errorCount = 0;
+  let emptyCount = 0;
+
+  if (!Array.isArray(favoriteActors) || favoriteActors.length === 0) {
+    return { creditsMap, statuses, completedCount: 0, errorCount: 0, emptyCount: 0 };
+  }
+
+  // 1. Oyuncu bazında başlangıç durumlarını (loading) oluştur ve bildir
+  const now = Date.now();
+  for (const actor of favoriteActors) {
+    if (!actor || !actor.id) continue;
+    statuses[actor.id] = {
+      actorId: actor.id,
+      actorName: actor.name || `Oyuncu #${actor.id}`,
+      status: 'loading',
+      creditsCount: 0,
+      updatedAt: now,
+    };
+    onActorStatusChange?.(statuses[actor.id]);
+  }
+
+  // Eski yanıtları engelleme kontrolü (Ticket Gate)
+  if (ticketId != null && isCurrentTicket && !isCurrentTicket(ticketId)) {
+    return { creditsMap, statuses, completedCount: 0, errorCount: 0, emptyCount: 0 };
+  }
+
+  // 2. Sınırlı Kuyruk (Bounded Concurrency Queue): Eşzamanlı istek sayısını sınırla (varsayılan: 3)
+  const validActors = favoriteActors.filter((a) => a && a.id);
+  const queueLimit = Math.max(1, Math.min(concurrency, 6));
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < validActors.length) {
+      if (signal?.aborted) break;
+      if (ticketId != null && isCurrentTicket && !isCurrentTicket(ticketId)) break;
+
+      const actor = validActors[cursor++];
+      const actorId = actor.id;
+
+      // 3. In-flight istek paylaşımı: Aynı oyuncu için halihazırda süren istek varsa mükerrer tetikleme
+      let creditPromise = inFlightActorCredits.get(actorId);
+      if (!creditPromise) {
+        creditPromise = (async () => {
+          let lastError: any = null;
+          try {
+            // Önce Türkçe ardından İngilizce yedek (Language fallback)
+            let data: any = null;
+            const fetcher = fetchTmdbFn || (async (p: string, params?: Record<string, string>) => {
+              const res = await fetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
+              return res.json();
+            });
+
+            if (!force) {
+              try {
+                data = await fetcher(`/person/${actorId}/combined_credits`, { language: 'tr-TR' });
+              } catch (e) {
+                lastError = e;
+              }
+            }
+            if (!data || !Array.isArray(data.cast) || data.cast.length === 0) {
+              try {
+                data = await fetcher(`/person/${actorId}/combined_credits`, { language: 'en-US' });
+              } catch (e) {
+                lastError = e;
+              }
+            }
+
+            if (data && Array.isArray(data.cast)) {
+              return { cast: data.cast };
+            }
+            if (lastError && (!data || !Array.isArray(data.cast))) {
+              return { cast: [], error: lastError?.message || 'Bağlantı hatası' };
+            }
+            return { cast: [] };
+          } catch (err: any) {
+            return { cast: [], error: err?.message || 'Bağlantı hatası' };
+          }
+        })().finally(() => {
+          inFlightActorCredits.delete(actorId);
+        });
+
+        inFlightActorCredits.set(actorId, creditPromise);
+      }
+
+      const res = await creditPromise;
+
+      // 4. Eski yanıtları engelleme: Eğer yeni bir ticket başlatıldıysa veya iptal edildiyse sonucu yut
+      if (ticketId != null && isCurrentTicket && !isCurrentTicket(ticketId)) {
+        return;
+      }
+      if (signal?.aborted) {
+        return;
+      }
+
+      // 5. Oyuncu bazında durum güncellemesi
+      const cast = Array.isArray(res.cast) ? res.cast : [];
+      creditsMap[actorId] = cast;
+
+      let status: ActorFetchStatusCode = 'success';
+      if (res.error) {
+        status = 'error';
+        errorCount++;
+      } else if (cast.length === 0) {
+        status = 'empty';
+        emptyCount++;
+      } else {
+        status = 'success';
+        completedCount++;
+      }
+
+      statuses[actorId] = {
+        actorId,
+        actorName: actor.name || `Oyuncu #${actorId}`,
+        status,
+        creditsCount: cast.length,
+        error: res.error,
+        updatedAt: Date.now(),
+      };
+
+      onActorStatusChange?.(statuses[actorId]);
+    }
+  };
+
+  const runners = Array.from({ length: Math.min(queueLimit, validActors.length) }, () => worker());
+  await Promise.all(runners);
+
+  return { creditsMap, statuses, completedCount, errorCount, emptyCount };
+}
+
+export interface ActorChipDisplayState {
+  state: 'loading' | 'pending' | 'error' | 'empty' | 'success';
+  title: string;
+  creditsCount: number;
+}
+
+export function describeActorFetchChipState(
+  actor: Partial<FavoriteActorInfo> | null | undefined,
+  status?: ActorFetchStatus | null,
+  isBatchLoading = false
+): ActorChipDisplayState {
+  const actorName = String(actor?.name || 'Oyuncu').trim() || 'Oyuncu';
+  if (!status) {
+    if (isBatchLoading) {
+      return {
+        state: 'loading',
+        title: `${actorName}: Kuyrukta yükleniyor...`,
+        creditsCount: 0,
+      };
+    }
+    return {
+      state: 'pending',
+      title: `${actorName}: Filmografi verisi hazırlanıyor...`,
+      creditsCount: 0,
+    };
+  }
+
+  if (status.status === 'loading') {
+    return {
+      state: 'loading',
+      title: `${actorName}: Kuyrukta yükleniyor...`,
+      creditsCount: 0,
+    };
+  }
+
+  if (status.status === 'error') {
+    return {
+      state: 'error',
+      title: `${actorName}: ${status.error || 'Hata'}`,
+      creditsCount: 0,
+    };
+  }
+
+  if (status.status === 'empty') {
+    return {
+      state: 'empty',
+      title: `${actorName}: Filmografide uygun içerik bulunamadı`,
+      creditsCount: 0,
+    };
+  }
+
+  const count = Math.max(0, Number(status.creditsCount) || 0);
+  return {
+    state: 'success',
+    title: `${actorName}: ${count} yapım yüklendi`,
+    creditsCount: count,
+  };
+}
+
+/**
+ * Favori oyuncuların yer aldığı, kullanıcının henüz izlemediği / listesine eklemediği
+ * yapımları bir havuzda toplayıp sinyal ağırlıklarına göre puanlar.
+ */
+export function scoreActorRecommendations(options: ScoreActorRecommendationsOptions): ActorRecommendationItem[] {
+  const {
+    favoriteActors = [],
+    actorCreditsMap = {},
+    savedItems = [],
+    dislikedKeys = [],
+    genresMap = {},
+    providerIndex = {},
+    preferredProviders = [],
+    sortMode = 'best_match',
+    sortBy,
+    mediaTypeFilter = 'all',
+    genreFilter = '',
+    enableDiversity = true,
+    maxPerGenre = 3,
+    limit,
+    now = Date.now(),
+  } = options;
+
+  if (!Array.isArray(favoriteActors) || favoriteActors.length === 0) {
+    return [];
+  }
+
+  // 1. Kullanıcının sevdiği türleri analiz et
+  const userGenreWeightMap: Record<number, number> = {};
+  for (const item of savedItems) {
+    if (!item) continue;
+    let weight = 1;
+    const rating = Number(item.personal_rating);
+    if (Number.isFinite(rating) && rating >= 7) weight = 2.5;
+    else if (item.status === 'completed') weight = 1.8;
+    else if (item.status === 'watching') weight = 1.2;
+    else if (item.status === 'disliked' || item.isDisliked) weight = -2;
+
+    const gids: number[] = Array.isArray(item.genre_ids)
+      ? item.genre_ids
+      : Array.isArray(item.genres)
+      ? item.genres.map((g: any) => g?.id).filter(Boolean)
+      : [];
+    for (const gid of gids) {
+      userGenreWeightMap[gid] = (userGenreWeightMap[gid] || 0) + weight;
+    }
+  }
+
+  const topGenreIds = Object.entries(userGenreWeightMap)
+    .filter(([, val]) => val > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => Number(id));
+
+  // 2. Kullanıcının gerçek puan sinyallerini topla (1-10)
+  const userRatings = savedItems
+    .map((it) => {
+      const rating = Number(it.personal_rating);
+      if (!Number.isFinite(rating) || rating < 1 || rating > 10) return null;
+      const gids: number[] = Array.isArray(it.genre_ids)
+        ? it.genre_ids
+        : Array.isArray(it.genres)
+        ? it.genres.map((g: any) => g?.id).filter(Boolean)
+        : [];
+      const actors: number[] = Array.isArray(it.cast)
+        ? it.cast.map((c: any) => c?.id).filter(Boolean)
+        : [];
+      return { rating, genres: gids, actors, status: it.status };
+    })
+    .filter(Boolean) as Array<{ rating: number; genres: number[]; actors: number[]; status: string }>;
+
+  // Disliked set
+  const dislikedSet = new Set<string>();
+  for (const k of dislikedKeys || []) {
+    dislikedSet.add(k);
+    const parsed = parseMediaKey(k);
+    if (parsed) {
+      dislikedSet.add(makeMediaKey(parsed.type, parsed.id));
+      dislikedSet.add(`${parsed.type}-${parsed.id}`);
+    }
+  }
+
+  // 3. Havuz oluştur: her oyuncunun combined_credits listesini birleştir
+  const candidatesMap = new Map<string, any>();
+
+  for (const actor of favoriteActors) {
+    if (!actor || !actor.id) continue;
+    const credits = actorCreditsMap[actor.id] || [];
+    if (!Array.isArray(credits)) continue;
+
+    for (const credit of credits) {
+      if (!credit || !credit.id) continue;
+      const mediaType: 'movie' | 'tv' = credit.media_type === 'tv' ? 'tv' : 'movie';
+      if (
+        (mediaTypeFilter === 'movie' || mediaTypeFilter === 'tv') &&
+        mediaType !== mediaTypeFilter
+      ) {
+        continue;
+      }
+      if (genreFilter && !matchesSelectedGenre({ ...credit, media_type: mediaType }, genreFilter)) {
+        continue;
+      }
+      const key = makeMediaKey(mediaType, credit.id);
+
+      const title = String(credit.title || credit.name || '').trim();
+      if (!title) continue;
+
+      // Kullanıcının kayıtlı listesinde var mı?
+      if (findSavedItem(savedItems, credit)) {
+        continue;
+      }
+
+      // İlgilenilmeyenlerde var mı?
+      if (dislikedSet.has(key) || dislikedSet.has(`${mediaType}-${credit.id}`)) {
+        continue;
+      }
+
+      const actorEntry = {
+        id: actor.id,
+        name: actor.name,
+        character: credit.character || '',
+        order: typeof credit.order === 'number' ? credit.order : undefined,
+      };
+
+      if (candidatesMap.has(key)) {
+        const existing = candidatesMap.get(key);
+        if (!existing.matchedActors.some((a: any) => a.id === actor.id)) {
+          existing.matchedActors.push(actorEntry);
+        }
+      } else {
+        candidatesMap.set(key, {
+          ...credit,
+          id: credit.id,
+          media_type: mediaType,
+          title,
+          matchedActors: [actorEntry],
+        });
+      }
+    }
+  }
+
+  const currentYear = new Date(now).getFullYear();
+
+  // 4. Her adayı sinyallere göre puanla
+  const results: ActorRecommendationItem[] = [];
+
+  for (const candidate of candidatesMap.values()) {
+    const matchedCount = candidate.matchedActors.length;
+
+    // Sinyal 1: Favori oyuncu varlığı ve TMDB kadro sırası / rol verisi (30 puan)
+    // En iyi role sahip favori oyuncunun kadro sırasını baz al
+    let bestRole = { bonus: 3, label: 'Kadroda' };
+    for (const actor of candidate.matchedActors) {
+      const r = calculateActorRoleBonus(actor.order);
+      if (r.bonus > bestRole.bonus) {
+        bestRole = r;
+      }
+    }
+    const actorPresenceScore = 18 + bestRole.bonus; // 19 ile 30 puan arası
+    const actorRoleText = bestRole.label;
+
+    // Sinyal 2: Birden fazla favori oyuncu (+10 bonus)
+    const multiActorBonus = matchedCount > 1 ? 10 : 0;
+
+    // Sinyal 3: Kullanıcının sevdiği türlere uyum (20 puan)
+    const cGenres: number[] = Array.isArray(candidate.genre_ids)
+      ? candidate.genre_ids
+      : Array.isArray(candidate.genres)
+      ? candidate.genres.map((g: any) => g?.id).filter(Boolean)
+      : [];
+
+    let genreScore = 10;
+    let matchedGenreName = '';
+    if (topGenreIds.length > 0 && cGenres.length > 0) {
+      const matchCount = cGenres.filter((gid) => topGenreIds.includes(gid)).length;
+      if (matchCount > 0) {
+        genreScore = Math.min(20, 12 + matchCount * 4);
+        const topGid = cGenres.find((gid) => topGenreIds.includes(gid));
+        if (topGid && genresMap[topGid]) {
+          matchedGenreName = genresMap[topGid];
+        }
+      } else {
+        genreScore = 6;
+      }
+    } else if (cGenres.length > 0 && genresMap[cGenres[0]]) {
+      matchedGenreName = genresMap[cGenres[0]];
+    }
+
+    // Sinyal 4: tasteScore — Gerçek kullanıcı puanlarına (1-10) ve tür/oyuncu benzerliğine bağlı (15 puan)
+    let tasteScore = 7.5;
+    let tasteExplanation = 'Kullanıcı puan geçmişi dengeli kabul edildi';
+
+    const matchingGenreRatings = userRatings
+      .filter((r) => r.genres.some((gid) => cGenres.includes(gid)))
+      .map((r) => r.rating);
+
+    const matchedActorIds = new Set(candidate.matchedActors.map((a: any) => a.id));
+    const matchingActorRatings = userRatings
+      .filter((r) => r.actors.some((aid) => matchedActorIds.has(aid)))
+      .map((r) => r.rating);
+
+    if (matchingActorRatings.length > 0 || matchingGenreRatings.length > 0) {
+      let avgRating = 7;
+      if (matchingActorRatings.length > 0 && matchingGenreRatings.length > 0) {
+        const actorAvg = matchingActorRatings.reduce((a, b) => a + b, 0) / matchingActorRatings.length;
+        const genreAvg = matchingGenreRatings.reduce((a, b) => a + b, 0) / matchingGenreRatings.length;
+        avgRating = actorAvg * 0.6 + genreAvg * 0.4;
+        tasteExplanation = `Oyuncunun yer aldığı filmlere verdiğin puanlar (${actorAvg.toFixed(1)}/10) ve ${matchedGenreName || 'tür'} puanlarınla (${genreAvg.toFixed(1)}/10) hesaplandı`;
+      } else if (matchingActorRatings.length > 0) {
+        avgRating = matchingActorRatings.reduce((a, b) => a + b, 0) / matchingActorRatings.length;
+        tasteExplanation = `Favori oyuncunun diğer yapımlarına verdiğin ortalama ${avgRating.toFixed(1)}/10 puanla hesaplandı`;
+      } else {
+        avgRating = matchingGenreRatings.reduce((a, b) => a + b, 0) / matchingGenreRatings.length;
+        tasteExplanation = `${matchedGenreName || 'Bu tür'} yapımlara verdiğin ortalama ${avgRating.toFixed(1)}/10 kullanıcı puanıyla hesaplandı`;
+      }
+
+      const normalized = Math.max(0, Math.min(1, (avgRating - 1) / 9));
+      tasteScore = Math.round(normalized * 15 * 10) / 10;
+    } else if (userRatings.length > 0) {
+      const globalAvg = userRatings.reduce((a, b) => a + b.rating, 0) / userRatings.length;
+      const normalized = Math.max(0, Math.min(1, (globalAvg - 1) / 9));
+      tasteScore = Math.round(normalized * 15 * 10) / 10;
+      tasteExplanation = `Genel kullanıcı puan ortalaman (${globalAvg.toFixed(1)}/10) baz alındı`;
+    } else if (savedItems.length > 0) {
+      if (genreScore >= 16) {
+        tasteScore = 13;
+        tasteExplanation = 'İzleme listendeki tür yoğunluğuna göre yüksek ilgi tahmin edildi';
+      } else if (genreScore <= 6) {
+        tasteScore = 6;
+        tasteExplanation = 'İzleme listendeki tür yoğunluğuyla kısmi eşleşme';
+      } else {
+        tasteScore = 9;
+        tasteExplanation = 'İzleme listendeki yapımlara göre ortalama ilgi tahmin edildi';
+      }
+    }
+
+    // Sinyal 5: Genel içerik kalitesi ve oy sayısı (10 puan)
+    const vAvg = Number(candidate.vote_average) || 0;
+    const vCnt = Number(candidate.vote_count) || 0;
+    const bayes = bayesianRating(vAvg, vCnt, { prior: 6.5, minVotes: 200 });
+    const qualityScore = Math.round(clamp01((bayes - 4.5) / 4.0) * 10 * 10) / 10;
+
+    // Sinyal 6: Yenilik / güncellik (5 puan)
+    const releaseDate = candidate.release_date || candidate.first_air_date || '';
+    let recencyScore = 2;
+    if (releaseDate) {
+      const relYear = parseInt(releaseDate.substring(0, 4), 10);
+      if (Number.isFinite(relYear)) {
+        if (relYear >= currentYear) recencyScore = 5;
+        else if (relYear >= currentYear - 2) recencyScore = 4;
+        else if (relYear >= currentYear - 5) recencyScore = 3;
+        else if (relYear >= currentYear - 10) recencyScore = 2;
+        else recencyScore = 1;
+      }
+    }
+
+    // Sinyal 7: İzleme platformu — Doğrulanmışsa puan ver, bilinmiyorsa nötr bırak (10 puan)
+    const key = makeMediaKey(candidate);
+    const rawProviders = candidate.watch_providers || candidate.providers || providerIndex?.[key] || null;
+
+    let platformScore = 5; // Nötr başlangıç
+    let platformVerified = false;
+
+    if (rawProviders && Array.isArray(rawProviders) && rawProviders.length > 0) {
+      platformVerified = true;
+      const userPreferredSet = new Set((preferredProviders || []).map(String));
+      const candidateProviderIds = rawProviders.map((p: any) => String(p?.id || p?.provider_id));
+
+      if (userPreferredSet.size > 0) {
+        const hasPreferred = candidateProviderIds.some((id) => userPreferredSet.has(id));
+        if (hasPreferred) {
+          platformScore = 10; // Tercih edilen platformda mevcut
+        } else {
+          platformScore = 6; // Başka bir platformda izlenebilir
+        }
+      } else {
+        platformScore = 8; // Platform tercihi belirtilmemiş ama akışta doğrulandı
+      }
+    } else if (rawProviders && Array.isArray(rawProviders) && rawProviders.length === 0) {
+      platformVerified = true;
+      platformScore = 3; // Doğrulandı fakat akışta yok (satın al / kirala)
+    } else {
+      // Platform verisi bilinmiyor/doğrulanmamış -> NÖTR bırak
+      platformVerified = false;
+      platformScore = 5;
+    }
+
+    // Gerçek toplam ham puan (0-100)
+    const rawTotal = Math.round(
+      (actorPresenceScore +
+        multiActorBonus +
+        genreScore +
+        tasteScore +
+        qualityScore +
+        recencyScore +
+        platformScore) * 10
+    ) / 10;
+
+    const matchScore = Math.min(99, Math.max(1, Math.round(rawTotal)));
+
+    // Güven Düzeyi hesaplaması (0-100)
+    const ratingsCount = userRatings.length;
+    const ratingsConfidence = ratingsCount >= 5 ? 1.0 : ratingsCount >= 1 ? 0.65 : 0.3;
+    const voteCountConfidence = vCnt >= 1000 ? 1.0 : vCnt >= 200 ? 0.8 : vCnt >= 30 ? 0.55 : 0.3;
+    const roleConfidence =
+      typeof candidate.order === 'number' && candidate.order <= 5
+        ? 1.0
+        : typeof candidate.order === 'number'
+        ? 0.75
+        : 0.45;
+    const platformConfidence = platformVerified ? 1.0 : 0.5;
+
+    const confidenceScore = Math.round(
+      (ratingsConfidence * 0.35 +
+        voteCountConfidence * 0.30 +
+        roleConfidence * 0.20 +
+        platformConfidence * 0.15) * 100
+    );
+
+    let confidenceLevel: 'high' | 'medium' | 'low' = 'low';
+    if (confidenceScore >= 70) confidenceLevel = 'high';
+    else if (confidenceScore >= 45) confidenceLevel = 'medium';
+
+    // Gerekçe metni
+    let reason = '';
+    if (matchedCount > 1) {
+      const names = candidate.matchedActors.map((a: any) => a.name).join(' ve ');
+      if (matchedGenreName) {
+        reason = `Favori oyuncuların ${names} kadroda ve sevdiğin ${matchedGenreName} türüyle uyuşuyor.`;
+      } else {
+        reason = `Birden fazla favori oyuncun (${names}) bu yapımda bir araya geliyor.`;
+      }
+    } else {
+      const singleActor = candidate.matchedActors[0];
+      const isLead = typeof singleActor.order === 'number' && singleActor.order <= 2;
+      const roleText = isLead ? 'başrolde' : 'kadroda';
+      if (matchedGenreName) {
+        reason = `Favori oyuncun ${singleActor.name} ${roleText} ve ${matchedGenreName} tür tercihlerinle eşleşiyor.`;
+      } else if (vAvg >= 7.5) {
+        reason = `Favori oyuncun ${singleActor.name} ${roleText} ve yapım yüksek izleyici puanına (%${Math.round(vAvg * 10)}) sahip.`;
+      } else {
+        reason = `Favori oyuncun ${singleActor.name} ${roleText} yer alıyor.`;
+      }
+    }
+
+    const signalBreakdown: ActorRecommendationSignalBreakdown = {
+      actorPresence: actorPresenceScore,
+      actorRoleText,
+      multiActorBonus,
+      genreScore,
+      tasteScore,
+      tasteExplanation,
+      qualityScore,
+      recencyScore,
+      platformScore,
+      platformVerified,
+      confidenceScore,
+      confidenceLevel,
+      rawTotal,
+    };
+
+    results.push({
+      ...candidate,
+      matchScore,
+      confidenceScore,
+      confidenceLevel,
+      reason,
+      signalBreakdown,
+    });
+  }
+
+  // 5. Sıralama Modları
+  const effectiveSort = sortBy || sortMode;
+  if (effectiveSort === 'rating') {
+    results.sort((a, b) => {
+      const diff = (Number(b.vote_average) || 0) - (Number(a.vote_average) || 0);
+      return diff !== 0 ? diff : b.matchScore - a.matchScore;
+    });
+  } else if (effectiveSort === 'title') {
+    results.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'tr'));
+  } else if (effectiveSort === 'recent' || effectiveSort === 'newest') {
+    results.sort((a, b) => {
+      const dateA = a.release_date || a.first_air_date || '';
+      const dateB = b.release_date || b.first_air_date || '';
+      if (!dateA && !dateB) return b.matchScore - a.matchScore;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      const cmp = dateB.localeCompare(dateA);
+      return cmp !== 0 ? cmp : b.matchScore - a.matchScore;
+    });
+  } else if (effectiveSort === 'gems' || effectiveSort === 'hidden_gems') {
+    // Gizli Cevherler: Yüksek izleyici puanına (vote_average >= 7) sahip fakat ana akım aşırı popüler olmayan yapımlar
+    results.sort((a, b) => {
+      const bayesA = bayesianRating(a.vote_average, a.vote_count, { prior: 6.5, minVotes: 50 });
+      const bayesB = bayesianRating(b.vote_average, b.vote_count, { prior: 6.5, minVotes: 50 });
+      if (Math.abs(bayesB - bayesA) > 0.4) {
+        return bayesB - bayesA;
+      }
+      return b.matchScore - a.matchScore;
+    });
+  } else {
+    // 'best_match' / 'popular' (en güçlü eşleşmeler)
+    results.sort((a, b) => {
+      if (b.matchScore !== a.matchScore) {
+        return b.matchScore - a.matchScore;
+      }
+      return (b.popularity || 0) - (a.popularity || 0);
+    });
+
+    // Tür çeşitliliği uygula (belirli bir tür filtresi seçilmediğinde)
+    if (enableDiversity && !genreFilter) {
+      const effectiveLimit = limit ?? Math.max(50, favoriteActors.length * 10);
+      return diversifyActorRecommendations(results, { maxPerGenre, limit: effectiveLimit });
+    }
+  }
+
+  return typeof limit === 'number' && limit > 0 ? results.slice(0, limit) : results;
+}
 
 /* ============================================================================
  * Aşama 2: 500 + 500 Yenilenebilir Aday Havuzu (Film ve Dizi için İki Bağımsız Havuz)
  * ============================================================================ */
+
+export type PoolSourceType =
+  | 'popular'
+  | 'top_rated'
+  | 'recent'
+  | 'genre_discover'
+  | 'similar'
+  | 'person_credits'
+  | 'exploration'
+  | string;
+
+export interface PoolCandidateItem {
+  id: number;
+  media_type: 'movie' | 'tv';
+  title: string;
+  name?: string;
+  overview: string;
+  release_date?: string;
+  first_air_date?: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  genre_ids: number[];
+
+  // Algoritma sinyalleri
+  poolSource: PoolSourceType;
+  poolReason?: string;
+  poolSources: number;
+  seedSourceType?: 'completed' | 'watching' | 'watchlist' | '';
+  addedToPoolAt?: string;
+  era: 'classic' | 'retro' | 'modern' | 'new';
+  popularityTier: 'high' | 'medium' | 'low' | 'indie';
+  cast?: { id: number; name: string; popularity?: number; profile_path?: string; character?: string }[];
+  crew?: { id: number; name: string; job: string; department?: string }[];
+  belongs_to_collection?: any;
+  production_companies?: any[];
+
+  // Sorun D: Kullanıcıya özel kalıcı öneri ve Zevk Haritası alanları
+  matchScore?: number;
+  rawScore?: number;
+  ring?: TasteRing;
+  initialRing?: TasteRing;
+  signalBreakdown?: Record<string, number>;
+  tags?: string[];
+  lastShownAt?: string | null;
+  lastScoredAt?: string | null;
+  shownCount?: number;
+  skippedCount?: number;
+  ringDemotions?: number;
+  demotionPenalty?: number;
+}
+
+export interface CandidatePoolCursors {
+  popular: number;
+  top_rated: number;
+  recent: number;
+  exploration: number;
+  genre_discover: Record<string, number>; // genreId -> page
+  similar: Record<string, number>;        // mediaKey -> page
+  person_credits: Record<string, number>; // personId -> page
+}
+
+export interface PersistentCandidatePoolData {
+  mediaType: 'movie' | 'tv';
+  updatedAt: string;
+  items: PoolCandidateItem[];
+  cursors: CandidatePoolCursors;
+}
 
 export const POOL_TARGET_CAPACITY = 500;
 export const POOL_LOW_WATERMARK = 250;
@@ -3190,11 +4395,6 @@ export interface UserRegisteredFilterContext {
   savedItems?: SavedItem[] | null;
   preferences?: Preferences | null;
   tasteMap?: PersistentTasteMapData | null;
-  /** Yüzlerce kartı filtrelerken tekrar tekrar kurulmasın diye hazır arama yapıları. */
-  savedIndex?: SavedIndex;
-  savedKeys?: ReadonlySet<string>;
-  dislikedKeySet?: ReadonlySet<string>;
-  hiddenKeySet?: ReadonlySet<string>;
 }
 
 /**
@@ -3205,7 +4405,7 @@ export interface UserRegisteredFilterContext {
  */
 export function isMediaRegisteredInUserProfile(
   item: any,
-  { savedItems, preferences, tasteMap, savedIndex, savedKeys, dislikedKeySet, hiddenKeySet }: UserRegisteredFilterContext
+  { savedItems, preferences, tasteMap }: UserRegisteredFilterContext
 ): boolean {
   const cand = item?.candidate && typeof item.candidate === 'object' ? item.candidate : item;
   if (!cand || cand.id == null) return false;
@@ -3222,20 +4422,15 @@ export function isMediaRegisteredInUserProfile(
   const legacyKey = `${mediaType}-${cand.id}`;
 
   // 1, 2, 3: İzlendi (completed), İzlenecek (watchlist), İzliyorum (watching)
-  if (savedKeys?.has(key)) return true;
   if (Array.isArray(savedItems) && savedItems.length > 0) {
-    if (savedIndex) {
-      if (findSavedIndexed(savedIndex, cand, savedItems)) return true;
-    } else if (isItemSaved(savedItems, cand, mediaType)) {
+    if (isItemSaved(savedItems, cand, mediaType)) {
       return true;
     }
   }
 
   // 4: İlgilenmiyorum (disliked)
   if (Array.isArray(preferences?.disliked) && preferences.disliked.length > 0) {
-    if (dislikedKeySet) {
-      if (dislikedKeySet.has(key) || dislikedKeySet.has(legacyKey)) return true;
-    } else if (
+    if (
       preferences.disliked.some(
         (d) => d === key || d === legacyKey || canonicalizeMediaKey(d) === key
       )
@@ -3246,9 +4441,7 @@ export function isMediaRegisteredInUserProfile(
 
   // 5: Gizle (hidden)
   if (Array.isArray(preferences?.hidden) && preferences.hidden.length > 0) {
-    if (hiddenKeySet) {
-      if (hiddenKeySet.has(key) || hiddenKeySet.has(legacyKey)) return true;
-    } else if (
+    if (
       preferences.hidden.some(
         (h) => h === key || h === legacyKey || canonicalizeMediaKey(h) === key
       )
@@ -3279,39 +4472,7 @@ export function filterHiddenUserRegisteredItems<T>(
 ): T[] {
   if (!Array.isArray(items)) return [];
   if (!context.hideListedItems) return items;
-  const savedList = Array.isArray(context.savedItems) ? context.savedItems : [];
-  const indexedContext: UserRegisteredFilterContext = {
-    ...context,
-    ...(savedList.length > 0
-      ? {
-          savedIndex: context.savedIndex ?? buildSavedItemsIndex(savedList),
-          savedKeys: context.savedKeys ?? buildCanonicalSavedKeySet(savedList),
-        }
-      : {}),
-    dislikedKeySet:
-      context.dislikedKeySet ?? buildCanonicalKeySet(context.preferences?.disliked),
-    hiddenKeySet: context.hiddenKeySet ?? buildCanonicalKeySet(context.preferences?.hidden),
-  };
-  return items.filter((item) => !isMediaRegisteredInUserProfile(item, indexedContext));
-}
-
-function buildCanonicalKeySet(entries: ReadonlyArray<string> | null | undefined): ReadonlySet<string> {
-  const set = new Set<string>();
-  for (const entry of entries || []) {
-    if (!entry) continue;
-    set.add(entry);
-    set.add(canonicalizeMediaKey(entry));
-  }
-  return set;
-}
-
-function buildCanonicalSavedKeySet(items: ReadonlyArray<SavedItem>): ReadonlySet<string> {
-  const set = new Set<string>();
-  for (const item of items) {
-    if (!item || item.id == null) continue;
-    set.add(canonicalizeMediaKey(makeMediaKey(item)));
-  }
-  return set;
+  return items.filter((item) => !isMediaRegisteredInUserProfile(item, context));
 }
 
 /**
@@ -3865,9 +5026,84 @@ export class PoolReplenishmentLock {
 
 export const poolReplenishmentLock = new PoolReplenishmentLock();
 
-import { matchesSelectedGenre, resolveDiscoverGenreParam } from './genre-matching.ts';
+const inMemoryPoolFallback = new Map<string, { storageRef: unknown; raw: string }>();
 
-export { matchesSelectedGenre, resolveDiscoverGenreParam };
+/**
+ * TMDB film ve dizi tür kimlikleri arasındaki çapraz eşdeğerliği denetler.
+ * Örn: Film Fantastik (14) / Bilim Kurgu (878) <-> Dizi Bilim Kurgu & Fantazi (10765),
+ * Film Aksiyon (28) / Macera (12) <-> Dizi Aksiyon & Macera (10759),
+ * Film Savaş (10752) <-> Dizi Savaş & Politik (10768).
+ */
+export function matchesSelectedGenre(
+  item: any,
+  selectedGenre?: string | number | null
+): boolean {
+  if (selectedGenre === undefined || selectedGenre === null || selectedGenre === '') {
+    return true;
+  }
+  const gId = Number(selectedGenre);
+  if (!Number.isFinite(gId) || gId <= 0) return true;
+
+  const cand = item?.candidate && typeof item.candidate === 'object' ? item.candidate : item;
+  if (!cand || typeof cand !== 'object') return false;
+
+  const rawGenres: number[] = Array.isArray(cand.genre_ids)
+    ? cand.genre_ids.map(Number).filter((n: number) => Number.isFinite(n))
+    : Array.isArray(cand.genres)
+    ? cand.genres
+        .map((g: any) => Number(typeof g === 'object' ? g?.id : g))
+        .filter((n: number) => Number.isFinite(n))
+    : [];
+
+  if (rawGenres.includes(gId)) return true;
+
+  const mediaType =
+    cand.media_type === 'tv' || cand.mediaType === 'tv'
+      ? 'tv'
+      : cand.media_type === 'movie' || cand.mediaType === 'movie'
+      ? 'movie'
+      : cand.title && !cand.first_air_date
+      ? 'movie'
+      : 'tv';
+
+  if (mediaType === 'tv') {
+    if ((gId === 14 || gId === 878) && rawGenres.includes(10765)) return true;
+    if ((gId === 28 || gId === 12) && rawGenres.includes(10759)) return true;
+    if (gId === 10752 && rawGenres.includes(10768)) return true;
+  } else {
+    if (gId === 10765 && (rawGenres.includes(14) || rawGenres.includes(878))) return true;
+    if (gId === 10759 && (rawGenres.includes(28) || rawGenres.includes(12))) return true;
+    if (gId === 10768 && rawGenres.includes(10752)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * TMDB /discover/{movie|tv} uç noktası için çapraz tür parametresini çözümler.
+ */
+export function resolveDiscoverGenreParam(
+  selectedGenre: string | number | undefined | null,
+  mediaType: 'movie' | 'tv'
+): string {
+  if (selectedGenre === undefined || selectedGenre === null || selectedGenre === '') {
+    return '';
+  }
+  const gId = Number(selectedGenre);
+  if (!Number.isFinite(gId) || gId <= 0) return '';
+
+  if (mediaType === 'tv') {
+    if (gId === 14 || gId === 878) return '10765';
+    if (gId === 28 || gId === 12) return '10759';
+    if (gId === 10752) return '10768';
+    return String(gId);
+  }
+
+  if (gId === 10765) return '878|14';
+  if (gId === 10759) return '28|12';
+  if (gId === 10768) return '10752';
+  return String(gId);
+}
 
 /**
  * Sunucudaki kalıcı katalog (data/catalog/movies.json & data/catalog/tv.json)
@@ -3989,8 +5225,7 @@ export async function topUpFilteredCandidates({
     return { filteredCandidates: matching, newlyDiscovered: [] };
   }
 
-  const poolStore = getCandidatePoolStorePort();
-  const poolData = poolStore?.loadPool(profileId, mediaType) ?? createDefaultPoolData(mediaType);
+  const poolData = loadPersistentPoolData(profileId, mediaType);
   const cursors = poolData.cursors || (poolData.cursors = createDefaultPoolCursors());
   cursors.genre_discover = cursors.genre_discover || {};
 
@@ -4097,13 +5332,157 @@ export async function topUpFilteredCandidates({
       POOL_TARGET_CAPACITY
     );
     poolData.updatedAt = new Date().toISOString();
-    poolStore?.savePool(profileId, poolData);
+    savePersistentPoolData(profileId, poolData);
   }
 
   return { filteredCandidates: matching, newlyDiscovered };
 }
 
+export async function hydrateCandidatePoolsIdb(
+  profileId: string
+): Promise<{ movie: PersistentCandidatePoolData; tv: PersistentCandidatePoolData }> {
+  const store = getCandidatePoolIdbStore();
+  if (store) {
+    for (const mediaType of ['movie', 'tv'] as const) {
+      const key = `cinetrack_pool_${mediaType}_${profileId}`;
+      try {
+        const idbVal = await idbGet<PersistentCandidatePoolData>(key, store);
+        if (idbVal && idbVal.mediaType === mediaType && Array.isArray(idbVal.items)) {
+          idbHydratedPools.set(key, {
+            mediaType,
+            updatedAt: idbVal.updatedAt || new Date().toISOString(),
+            items: idbVal.items,
+            cursors: {
+              ...createDefaultPoolCursors(),
+              ...(idbVal.cursors || {}),
+            },
+          });
+          try {
+            if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+          } catch {}
+        }
+      } catch {}
+    }
+  }
+  return {
+    movie: loadPersistentPoolData(profileId, 'movie'),
+    tv: loadPersistentPoolData(profileId, 'tv'),
+  };
+}
 
+export function loadPersistentPoolData(
+  profileId: string,
+  mediaType: 'movie' | 'tv'
+): PersistentCandidatePoolData {
+  const key = `cinetrack_pool_${mediaType}_${profileId}`;
+  const store = getCandidatePoolIdbStore();
+  if (store && idbHydratedPools.has(key)) {
+    const cached = idbHydratedPools.get(key) as PersistentCandidatePoolData;
+    const tasteMap = loadPersistentTasteMap(profileId);
+    const syncedItems = syncPoolCandidatesWithTasteMap(cached.items || [], tasteMap);
+    return {
+      mediaType,
+      updatedAt: cached.updatedAt || new Date().toISOString(),
+      items: syncedItems,
+      cursors: {
+        ...createDefaultPoolCursors(),
+        ...(cached.cursors || {}),
+      },
+    };
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const fallback = inMemoryPoolFallback.get(key);
+      let raw = localStorage.getItem(key);
+      if (fallback && fallback.storageRef === localStorage) {
+        raw = fallback.raw;
+      } else if (fallback && fallback.storageRef !== localStorage) {
+        inMemoryPoolFallback.delete(key);
+      }
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.mediaType === mediaType && Array.isArray(parsed.items)) {
+          const tasteMap = loadPersistentTasteMap(profileId);
+          const syncedItems = syncPoolCandidatesWithTasteMap(parsed.items, tasteMap);
+          const loadedPool: PersistentCandidatePoolData = {
+            mediaType,
+            updatedAt: parsed.updatedAt || new Date().toISOString(),
+            items: syncedItems,
+            cursors: {
+              ...createDefaultPoolCursors(),
+              ...(parsed.cursors || {}),
+            },
+          };
+          if (store) {
+            savePersistentPoolData(profileId, loadedPool);
+          }
+          return loadedPool;
+        }
+      }
+    }
+  } catch {}
+  return createDefaultPoolData(mediaType);
+}
+
+export function savePersistentPoolData(
+  profileId: string,
+  data: PersistentCandidatePoolData
+): void {
+  const key = `cinetrack_pool_${data.mediaType}_${profileId}`;
+  const updatedAt = new Date().toISOString();
+  const sliced = data.items.slice(0, POOL_TARGET_CAPACITY);
+  const poolRecord: PersistentCandidatePoolData = {
+    mediaType: data.mediaType,
+    updatedAt,
+    items: sliced,
+    cursors: data.cursors,
+  };
+
+  // Primary browser storage: IndexedDB via idb-keyval (BUG-02 — zero localStorage bloat)
+  const store = getCandidatePoolIdbStore();
+  if (store) {
+    idbHydratedPools.set(key, poolRecord);
+    inMemoryPoolFallback.delete(key);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(key);
+      }
+    } catch {}
+    trackCoreIdbWrite(
+      idbSet(key, poolRecord, store).catch((err) => {
+        console.warn('[Cinethos] Candidate pool IDB write failed:', err);
+      })
+    );
+    return;
+  }
+
+  if (typeof localStorage === 'undefined') return;
+  const fullPayload = JSON.stringify(poolRecord);
+  try {
+    localStorage.setItem(key, fullPayload);
+    inMemoryPoolFallback.delete(key);
+  } catch {
+    const compactPayload = JSON.stringify({
+      mediaType: data.mediaType,
+      updatedAt,
+      items: sliced.map((it) => ({
+        ...it,
+        overview: (it.overview || '').slice(0, 140),
+      })),
+      cursors: data.cursors,
+    });
+    try {
+      localStorage.setItem(key, compactPayload);
+      inMemoryPoolFallback.delete(key);
+    } catch {
+      inMemoryPoolFallback.set(key, {
+        storageRef: localStorage,
+        raw: compactPayload,
+      });
+    }
+  }
+}
 
 export interface ReplenishCandidatePoolParams {
   profileId: string;
@@ -4162,17 +5541,18 @@ export async function replenishCandidatePool({
     lockKey,
     async () => {
       onProgress?.(`${labelPrefix} aday havuzu doğrulanıyor…`);
-      const poolStore = getCandidatePoolStorePort();
-      await poolStore?.hydrateDiscoveryHistory(profileId);
-      await poolStore?.hydrateCandidatePools(profileId);
-      const poolData = poolStore?.loadPool(profileId, mediaType) ?? createDefaultPoolData(mediaType);
+      if (typeof indexedDB !== 'undefined') {
+        await hydrateDiscoveryHistoryIdb(profileId);
+        await hydrateCandidatePoolsIdb(profileId);
+      }
+      const poolData = loadPersistentPoolData(profileId, mediaType);
 
       // 1. Beş durum kontrolü ile mevcut havuzu temizle
       poolData.items = filterEligiblePoolItems(poolData.items, savedItems, preferences);
 
       // 2. Havuz 250 uygun adaya düşünce yenileyip 500'e tamamlama kontrolü (Sorun A düzeltmesi)
       if (!force && poolData.items.length > POOL_LOW_WATERMARK) {
-        poolStore?.savePool(profileId, poolData);
+        savePersistentPoolData(profileId, poolData);
         return poolData;
       }
 
@@ -4468,7 +5848,7 @@ export async function replenishCandidatePool({
       poolData.updatedAt = new Date().toISOString();
 
       // 6. Güncellenmiş imleçler ve havuzu kalıcı kaydet
-      poolStore?.savePool(profileId, poolData);
+      savePersistentPoolData(profileId, poolData);
 
       return poolData;
     },

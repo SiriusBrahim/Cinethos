@@ -74,13 +74,8 @@ export function migrateExistingData(input: MigrationInput): {
     };
   }
 
-  // 1. Puanlı kayıtlar → rating_changed; puansız tamamlananlar → status_changed
+  // 1. Puanlı kayıtlar → rating_changed olayları
   const items = Array.isArray(activeProfile.items) ? activeProfile.items : [];
-  const dislikedSet = new Set(
-    Array.isArray(activeProfile.preferences?.disliked)
-      ? activeProfile.preferences.disliked.filter((v): v is string => typeof v === "string")
-      : []
-  );
   for (const item of items) {
     if (!item || typeof item !== "object") {
       eventsSkipped++;
@@ -110,36 +105,7 @@ export function migrateExistingData(input: MigrationInput): {
       Number(rawRating) <= 10;
 
     if (!hasRating) {
-      // Puan yok ama içerik tamamlanmışsa zayıf pozitif izleme kanıtı üret.
-      // Beğenmeme (disliked) daha güçlü negatif sinyaldir; onu gölgelememek için atlanır.
-      const isCompleted = item.status === "completed";
-      if (!isCompleted || dislikedSet.has(contentId)) {
-        eventsSkipped++;
-        continue;
-      }
-
-      const validCompletedAt = validOptionalTimestamp(item.completedAt);
-      const fallbackRecordedAt =
-        validCompletedAt ||
-        validOptionalTimestamp(item.updatedAt) ||
-        validOptionalTimestamp(item.addedAt) ||
-        asOf;
-
-      events.push({
-        eventId: newUUID(),
-        contentId,
-        eventType: "status_changed",
-        payload: {
-          previousValue: null,
-          newValue: "completed",
-        },
-        recordedAt: fallbackRecordedAt,
-        experiencedAt: fallbackRecordedAt,
-        timeSource: validCompletedAt ? "actual" : "imported",
-        timePrecision: validCompletedAt ? "exact" : "unknown",
-      });
-      processedContentIds.add(contentId);
-      eventsCreated++;
+      eventsSkipped++;
       continue;
     }
 

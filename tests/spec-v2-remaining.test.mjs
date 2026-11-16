@@ -68,7 +68,7 @@ import {
 import {
   loadPersistentPoolData,
   resetCoreIdbMirrorsForTests,
-} from '../src/services/discovery-storage.ts';
+} from '../src/core/cinetrack-core.ts';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
 import { createCineTrackApp } from '../src/server/app.ts';
 

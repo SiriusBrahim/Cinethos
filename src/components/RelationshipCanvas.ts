@@ -1,12 +1,6 @@
 import type { RelationshipGraphNode } from '../core/relationship-explorer.ts';
 import { getRelationshipNodeColor } from '../core/relationship-wordlists.ts';
 
-function cssToken(name: string, fallback: string): string {
-  if (typeof document === 'undefined') return fallback;
-  const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return val || fallback;
-}
-
 export function renderRelationshipCanvasNode(
   rawNode: unknown,
   ctx: CanvasRenderingContext2D,
@@ -28,15 +22,10 @@ export function renderRelationshipCanvasNode(
     statusWeight * 1.5;
   const radius = Number.isFinite(computedRadius) && computedRadius > 0 ? computedRadius : 6;
 
-  const inkColor = cssToken('--text-1', '#0F172A');
-  const accentColor = cssToken('--accent', '#C83724');
-  const successColor = cssToken('--success', '#15803D');
-  const sansFont = cssToken('--font-sans', "'Plus Jakarta Sans', sans-serif");
-
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, 2 * Math.PI, false);
   ctx.fillStyle = getRelationshipNodeColor(node);
-  ctx.globalAlpha = node.id === selectedNodeId ? 1 : 0.9;
+  ctx.globalAlpha = node.id === selectedNodeId ? 1 : 0.88;
   ctx.fill();
   ctx.globalAlpha = 1;
 
@@ -45,12 +34,12 @@ export function renderRelationshipCanvasNode(
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, radius + 2.2, 0, 2 * Math.PI, false);
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.25;
     if (node.statusSignal === 'interest') {
       ctx.setLineDash([2.5, 2]);
-      ctx.strokeStyle = accentColor;
+      ctx.strokeStyle = '#d3b579';
     } else {
-      ctx.strokeStyle = successColor;
+      ctx.strokeStyle = '#63b8ab';
     }
     ctx.stroke();
     ctx.restore();
@@ -60,18 +49,18 @@ export function renderRelationshipCanvasNode(
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, radius + 4, 0, 2 * Math.PI, false);
-    ctx.lineWidth = 1.6;
-    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = '#f8fafc';
     ctx.stroke();
     ctx.restore();
   }
 
   if (globalScale > 0.7 || node.id === selectedNodeId) {
     const fontSize = Math.max(4, Math.min(12, 10 / globalScale));
-    ctx.font = `${node.id === selectedNodeId ? '700 ' : '500 '}${fontSize}px ${sansFont}`;
+    ctx.font = `${node.id === selectedNodeId ? '600 ' : ''}${fontSize}px Inter, Arial, sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = inkColor;
+    ctx.fillStyle = '#dbeafe';
     ctx.fillText(node.label, x + radius + 4, y);
   }
 }

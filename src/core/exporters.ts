@@ -1,6 +1,5 @@
 import {
   makeMediaKey,
-  safeHttpsUrl,
   type Profile,
   type SavedItem,
 } from './cinetrack-core.ts';
@@ -21,7 +20,6 @@ import {
   type CinemaKunyeDocument,
   type CinemaKunyeEntry,
 } from './cinema-kunye.ts';
-import { BRAND_CALENDAR_NAME, BRAND_NAME } from '../shared/brand.ts';
 
 export interface TasteDnaTrait {
   label: string;
@@ -292,8 +290,6 @@ const CSV_USER_DATA_HEADERS = [
   'ContentId',
   'Genres',
   'Actors',
-  'PosterPath',
-  'BackdropPath',
 ];
 
 function toCsvDate(value: string | undefined): string {
@@ -307,8 +303,8 @@ function toCsvNumber(value: number | undefined): string {
 /**
  * Exports profile items into Letterboxd / Cinethos compatible CSV format.
  * İlk 7 sütun Letterboxd/Cinethos uyumluluğu için sabittir; ardından kullanıcıya ait
- * tüm izleme verileri (tarihler, ilerleme, süre, içerik ID'si, türler, oyuncular,
- * poster/backdrop yolları) ve dosya sonunda profil + Sinema Künyesi verileri gelir.
+ * tüm izleme verileri (tarihler, ilerleme, süre, içerik ID'si, türler, oyuncular) ve
+ * dosya sonunda profil + Sinema Künyesi verileri gelir.
  */
 export function exportItemsToCsv(
   items: SavedItem[],
@@ -367,8 +363,6 @@ export function exportItemsToCsv(
         escapeCsvCell(contentId),
         escapeCsvCell(genresCell),
         escapeCsvCell(actorsCell),
-        escapeCsvCell(item.poster_path || item.poster_url || ''),
-        escapeCsvCell(item.backdrop_path || ''),
       ].join(',')
     );
   }
@@ -414,7 +408,6 @@ export function exportItemsToCsv(
 export interface CsvImportResult {
   importedItems: SavedItem[];
   cinemaKunye: CinemaKunyeDocument;
-  profileBlock: CsvProfileBlock | null;
   skippedCount: number;
   detectedFormat: 'letterboxd' | 'imdb' | 'cinetrack' | 'generic';
 }
@@ -426,117 +419,6 @@ function stableCustomIdFromTitle(title: string, year: string, mediaType: 'movie'
 }
 
 /**
- * exportItemsToCsv'nin dosya sonuna yazdığı profil/künye satır başlıkları.
- * Yalnızca bunlar veri satırı sayılmaz; "#Alive" gibi başlayan bir film başlığı
- * normal satır olarak okunur.
- */
-const CSV_PROFILE_DIRECTIVES = new Set([
-  '#CINETRACK-PROFILE',
-  '#ProfileId',
-  '#ProfileName',
-  '#ProfileCreatedAt',
-  '#ActiveProfileId',
-  '#ExportDate',
-  '#Mood',
-  '#Providers',
-  '#Disliked',
-  '#Hidden',
-  '#Reminders',
-  '#Notified',
-  '#FavoriteActor',
-  '#SinemaKunyesi',
-  '#END',
-]);
-
-function isCsvProfileDirectiveRow(row: string[]): boolean {
-  return row.length > 0 && CSV_PROFILE_DIRECTIVES.has(String(row[0] || '').trim());
-}
-
-/** exportItemsToCsv'nin #CINETRACK-PROFILE bölümünde yazdığı profil verileri. */
-export interface CsvProfileBlock {
-  profileId?: string;
-  profileName?: string;
-  activeProfileId?: string;
-  mood?: string;
-  providers?: string[];
-  disliked?: string[];
-  hidden?: string[];
-  notified?: string[];
-  reminders?: boolean;
-  favoriteActors?: { id: number; name: string; character?: string; profile_path?: string }[];
-}
-
-function pipeList(value: string): string[] {
-  return value
-    .split('|')
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-/**
- * #CINETRACK-PROFILE bölümünü geri okur. Yazıldığında boş dizi "" olarak çıkıyor,
- * bu yüzden alan var ama değer boşsa [] döner (bilerek temizlenmiş tercih).
- */
-export function parseCsvProfileBlock(rows: string[][]): CsvProfileBlock | null {
-  const block: CsvProfileBlock = {};
-  let found = false;
-
-  for (const row of rows) {
-    if (!isCsvProfileDirectiveRow(row)) continue;
-    const directive = String(row[0] || '').trim();
-    if (directive === '#SinemaKunyesi' || directive === '#CINETRACK-PROFILE' || directive === '#END') {
-      continue;
-    }
-    found = true;
-    const value = row[1] === undefined ? '' : String(row[1]).trim();
-    switch (directive) {
-      case '#ProfileId':
-        block.profileId = value;
-        break;
-      case '#ProfileName':
-        block.profileName = value;
-        break;
-      case '#ActiveProfileId':
-        block.activeProfileId = value;
-        break;
-      case '#Mood':
-        block.mood = value;
-        break;
-      case '#Providers':
-      case '#Disliked':
-      case '#Hidden':
-      case '#Notified': {
-        const list = pipeList(value);
-        if (directive === '#Providers') block.providers = list;
-        else if (directive === '#Disliked') block.disliked = list;
-        else if (directive === '#Hidden') block.hidden = list;
-        else block.notified = list;
-        break;
-      }
-      case '#Reminders':
-        block.reminders = value !== '0';
-        break;
-      case '#FavoriteActor': {
-        // Konuma göre ayrılmış kayıt: id|name|character|profile_path (boşlar korunur)
-        const fields = value.split('|').map((part) => part.trim());
-        block.favoriteActors = block.favoriteActors || [];
-        block.favoriteActors.push({
-          id: Number(fields[0]) || 0,
-          name: fields[1] || '',
-          ...(fields[2] ? { character: fields[2] } : {}),
-          ...(fields[3] ? { profile_path: fields[3] } : {}),
-        });
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  return found ? block : null;
-}
-
-/**
  * Parses Letterboxd, IMDb, or Cinethos CSV exports into valid SavedItem records + Sinema Künyesi metadata.
  */
 export function importItemsFromCsv(csvText: string): CsvImportResult {
@@ -545,7 +427,6 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
     return {
       importedItems: [],
       cinemaKunye: createEmptyCinemaKunyeDocument(''),
-      profileBlock: null,
       skippedCount: 0,
       detectedFormat: 'generic',
     };
@@ -577,8 +458,6 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
   const idxContentId = findCol('contentid', 'content_id', 'icerik_id');
   const idxGenres = findCol('genres', 'türler', 'turler');
   const idxActors = findCol('actors', 'cast', 'oyuncular');
-  const idxPosterPath = findCol('posterpath', 'poster_path', 'poster_url');
-  const idxBackdropPath = findCol('backdroppath', 'backdrop_path');
 
   let detectedFormat: CsvImportResult['detectedFormat'] = 'generic';
   if (header.includes('tmdbid') && header.includes('rating10')) {
@@ -609,7 +488,6 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
     return {
       importedItems: [],
       cinemaKunye: normalizeCinemaKunyeDocument({ entries: trailerKunyeEntries }),
-      profileBlock: parseCsvProfileBlock(rows),
       skippedCount: rows.length - 1,
       detectedFormat,
     };
@@ -622,7 +500,7 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
 
   for (let r = 1; r < rows.length; r += 1) {
     const row = rows[r];
-    if (isCsvProfileDirectiveRow(row)) {
+    if (row.length > 0 && String(row[0] || '').startsWith('#')) {
       continue; // Profil verisi bölümü (#CINETRACK-PROFILE … #END) üstte ayrıca ayrıştırıldı
     }
     const rawTitle = (row[idxTitle] || '').trim();
@@ -713,10 +591,6 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
     const nextEpisode = readCsvInt(idxNextEpisode);
     const watchMinutes = readCsvFloat(idxWatchMinutes);
     const customFlag = idxCustom >= 0 && (row[idxCustom] || '').trim() === '1' ? true : undefined;
-    const posterRef = idxPosterPath >= 0 ? (row[idxPosterPath] || '').trim() : '';
-    const backdropRef = idxBackdropPath >= 0 ? (row[idxBackdropPath] || '').trim() : '';
-    const posterPath = posterRef.startsWith('/') ? posterRef : '';
-    const posterUrl = posterRef.startsWith('/') ? '' : safeHttpsUrl(posterRef);
 
     let seasonProgress: Record<number, number> | undefined;
     if (idxSeasonProgress >= 0 && (row[idxSeasonProgress] || '').trim()) {
@@ -764,9 +638,6 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
       ...(nextEpisode !== undefined ? { next_episode: nextEpisode } : {}),
       ...(seasonProgress ? { season_progress: seasonProgress } : {}),
       ...(watchMinutes !== undefined ? { totalWatchTimeMinutes: watchMinutes } : {}),
-      ...(posterPath ? { poster_path: posterPath } : {}),
-      ...(posterUrl ? { poster_url: posterUrl } : {}),
-      ...(backdropRef.startsWith('/') ? { backdrop_path: backdropRef } : {}),
       custom: customFlag ?? numericTmdbId === null,
     };
 
@@ -805,7 +676,6 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
   return {
     importedItems: enrichedImportedItems,
     cinemaKunye: mergedCinemaKunye,
-    profileBlock: parseCsvProfileBlock(rows),
     skippedCount,
     detectedFormat,
   };
@@ -875,12 +745,12 @@ function addDaysCompact(yyyyMmDd: string, days: number): string {
 /**
  * Generates an RFC 5545 compliant .ics iCalendar feed for upcoming episodes and movies.
  */
-export function generateIcsCalendar(events: CalendarReleaseEvent[], calendarName = BRAND_CALENDAR_NAME): string {
+export function generateIcsCalendar(events: CalendarReleaseEvent[], calendarName = 'Cinethos Yayın Takvimi'): string {
   const dtStamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    `PRODID:-//${BRAND_NAME}//Release Calendar TR//TR`,
+    'PRODID:-//Cinethos//Release Calendar TR//TR',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(calendarName)}`,

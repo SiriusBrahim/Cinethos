@@ -17,7 +17,6 @@ export const ImportChoiceModal: React.FC<ImportChoiceModalProps> = ({ isOpen, on
     <div
       id="importChoiceModal"
       className="modal-wrap open"
-      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -57,7 +56,6 @@ export const ImportChoiceModal: React.FC<ImportChoiceModalProps> = ({ isOpen, on
               type="radio"
               name="importMode"
               value="overwrite"
-              aria-label="Mevcut listenin üzerine yaz"
               checked={mode === 'overwrite'}
               onChange={() => setMode('overwrite')}
             />{' '}
@@ -69,7 +67,6 @@ export const ImportChoiceModal: React.FC<ImportChoiceModalProps> = ({ isOpen, on
               type="radio"
               name="importMode"
               value="merge"
-              aria-label="Mevcut listeyle birleştir"
               checked={mode === 'merge'}
               onChange={() => setMode('merge')}
             />{' '}

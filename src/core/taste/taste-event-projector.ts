@@ -1,15 +1,6 @@
 // ===========================================================================
-// Cinethos Taste Engine — Taste Event Projector (v1.1)
+// Cinethos Taste Engine — Taste Event Projector (v1.0)
 // Olay → geçerli öğrenme durumu (TP-005)
-//
-// SINIR KURALI (TasteEventProjector ↔ TasteRebuildCoordinator — Faz 1B):
-// - TasteEventProjector (core/taste): SAF, deterministik, yan-etkisiz alan
-//   indirgeyicisidir. Yalnızca `TasteEvent[]` girdisini alır; içerik başına
-//   son `LearningState` haritasını ve `eventWatermark`'ı üretir. Dosya G/Ç,
-//   TMDB hidrasyonu, worker thread veya store yazımı ASLA YAPMAZ.
-// - TasteRebuildCoordinator (server): Orkestratördür; store okumaları,
-//   arka plan TMDB hidrasyonu, worker dispatch ve manifest/profil yazımı
-//   yalnızca ona aittir.
 // ===========================================================================
 
 import type { TasteEvent } from "./types.ts";
@@ -24,29 +15,20 @@ export interface LearningState {
   lastUpdatedAt: string;
 }
 
-export interface TasteProjectionSnapshot {
-  states: Map<string, LearningState>;
-  eventWatermark: string;
-  eventCount: number;
-}
-
-function sortEventsChronologically(events: TasteEvent[]): TasteEvent[] {
-  return [...events].sort((a, b) => {
-    const ta = new Date(a.recordedAt).getTime();
-    const tb = new Date(b.recordedAt).getTime();
-    const safeA = Number.isFinite(ta) ? ta : 0;
-    const safeB = Number.isFinite(tb) ? tb : 0;
-    return safeA - safeB;
-  });
-}
-
 /**
- * Olayları içerik başına geçerli öğrenme durumuna indirge (TP-005) + watermark üret.
+ * Olayları içerik başına geçerli öğrenme durumuna indirge (TP-005)
+ *
+ * KRİTİK: Olay ≠ kanıt. Aynı içeriğin beş işlemi beş bağımsız kanıt değil.
+ * Bu fonksiyon yalnızca her içerik için SON geçerli durumu döndürür;
+ * kanıt ağırlıkları EvidenceLedger tarafından hesaplanır.
  */
-export function projectLearningSnapshot(events: TasteEvent[]): TasteProjectionSnapshot {
+export function projectEventsToLearningState(events: TasteEvent[]): Map<string, LearningState> {
   const stateMap = new Map<string, LearningState>();
-  const sortedEvents = sortEventsChronologically(events);
-  let lastEventId = "";
+
+  // Olayları zamana göre sırala (en eski önce)
+  const sortedEvents = [...events].sort(
+    (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+  );
 
   for (const event of sortedEvents) {
     const contentId = event.contentId;
@@ -64,6 +46,7 @@ export function projectLearningSnapshot(events: TasteEvent[]): TasteProjectionSn
       stateMap.set(contentId, state);
     }
 
+    // Olay tipine göre durumu güncelle
     if (event.eventType === "rating_changed") {
       state.currentRating = event.payload.newValue as number;
     } else if (event.eventType === "status_changed") {
@@ -76,23 +59,7 @@ export function projectLearningSnapshot(events: TasteEvent[]): TasteProjectionSn
 
     state.lastEventId = event.eventId;
     state.lastUpdatedAt = event.recordedAt;
-    lastEventId = event.eventId;
   }
 
-  return {
-    states: stateMap,
-    eventWatermark: lastEventId,
-    eventCount: sortedEvents.length,
-  };
-}
-
-/**
- * Olayları içerik başına geçerli öğrenme durumuna indirge (TP-005)
- *
- * KRİTİK: Olay ≠ kanıt. Aynı içeriğin beş işlemi beş bağımsız kanıt değil.
- * Bu fonksiyon yalnızca her içerik için SON geçerli durumu döndürür;
- * kanıt ağırlıkları EvidenceLedger tarafından hesaplanır.
- */
-export function projectEventsToLearningState(events: TasteEvent[]): Map<string, LearningState> {
-  return projectLearningSnapshot(events).states;
+  return stateMap;
 }

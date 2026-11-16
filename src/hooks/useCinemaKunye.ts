@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SavedItem } from '../core/cinetrack-core.ts';
 import {
   buildCinemaKunyeCanonicalPayload,
-  buildKunyeSourceSignature,
   createEmptyCinemaKunyeDocument,
   extractCinemaKunyeEntryFromSavedItem,
   extractCinemaKunyeFromItems,
@@ -17,8 +16,6 @@ import {
   fetchServerCinemaKunye,
   fetchTmdbCached,
   saveServerCinemaKunye,
-  type CinemaKunyeServerSyncResult,
-  type CinemaKunyeServerSyncStatus,
   type TmdbDataSource,
 } from '../services/api.ts';
 import { mapLimit } from '../utils/helpers.ts';
@@ -45,16 +42,8 @@ function persistCachedCinemaKunye(doc: CinemaKunyeDocument): void {
   }
 }
 
-// Belge nesnesi her değişimde üretilir (merge/normalize taze nesne döndürür), bu yüzden imza
-// referansla önbelleğe alınabilir: aynı belge için 2 MB'lık stringify bir kez yapılır.
-const canonicalSignatureCache = new WeakMap<object, string>();
-
 function computeCanonicalSignature(doc: CinemaKunyeDocument): string {
-  const cached = canonicalSignatureCache.get(doc);
-  if (typeof cached === 'string') return cached;
-  const signature = JSON.stringify(buildCinemaKunyeCanonicalPayload(doc));
-  canonicalSignatureCache.set(doc, signature);
-  return signature;
+  return JSON.stringify(buildCinemaKunyeCanonicalPayload(doc));
 }
 
 function parseNumericTmdbId(id: SavedItem['id']): number | null {
@@ -79,12 +68,6 @@ export interface UseCinemaKunyeResult {
   replaceCinemaKunye: (incoming?: CinemaKunyeDocument | null) => CinemaKunyeDocument;
   flushCinemaKunyeToServer: () => Promise<void>;
   refreshCinemaKunyeFromServer: (mode?: 'merge' | 'overwrite') => Promise<void>;
-  /** P1-01: yalnızca gerçek sunucu arızasında dolar; çevrimdışı durum bunu tetiklemez. */
-  serverSyncIssue: {
-    status: CinemaKunyeServerSyncStatus;
-    message: string;
-    code?: string;
-  } | null;
 }
 
 export function useCinemaKunye({
@@ -94,12 +77,6 @@ export function useCinemaKunye({
   tmdbSource = 'unknown',
 }: UseCinemaKunyeParams): UseCinemaKunyeResult {
   const [cinemaKunye, setCinemaKunye] = useState<CinemaKunyeDocument>(loadCachedCinemaKunye);
-  // P1-01: çevrimdışı (beklenen) ile gerçek sunucu arızası ayrı raporlanır.
-  const [serverSyncIssue, setServerSyncIssue] = useState<{
-    status: CinemaKunyeServerSyncStatus;
-    message: string;
-    code?: string;
-  } | null>(null);
 
   const cinemaKunyeRef = useRef<CinemaKunyeDocument>(cinemaKunye);
   cinemaKunyeRef.current = cinemaKunye;
@@ -115,7 +92,6 @@ export function useCinemaKunye({
 
   const serverHydratedRef = useRef<boolean>(false);
   const lastServerCanonicalRef = useRef<string>('');
-  const kunyeSourceSignatureRef = useRef<string>('');
   const attemptedTmdbKeysRef = useRef<Set<string>>(new Set());
   const enrichInFlightRef = useRef<boolean>(false);
   const [enrichTick, setEnrichTick] = useState<number>(0);
@@ -132,38 +108,13 @@ export function useCinemaKunye({
     return nextDoc;
   }, []);
 
-  const reportServerSync = useCallback((result: CinemaKunyeServerSyncResult) => {
-    if (result.status === 'ok') {
-      setServerSyncIssue(null);
-      return;
-    }
-    if (result.status === 'offline') {
-      // Beklenen çevrimdışı durum: yerel kopyayla devam edilir, arıza sayılmaz.
-      return;
-    }
-    setServerSyncIssue({
-      status: result.status,
-      message: result.message || 'Sinema künYESİ sunucuyla eşitlenemedi.',
-      ...(result.code ? { code: result.code } : {}),
-    });
-    // Kişisel içerik ve anahtar loglanmaz; yalnızca durum/kod.
-    console.warn('[cinema-kunye] sunucu senkronu başarısız', {
-      status: result.status,
-      code: result.code,
-    });
-  }, []);
-
   // 1. Initial hydration from server (data/sinema-kunyesi.json)
   useEffect(() => {
     let active = true;
     fetchServerCinemaKunye()
-      .then((result) => {
+      .then((serverDoc) => {
         if (!active) return;
-        reportServerSync(result);
-        const baseServer =
-          result.status === 'ok' && result.document
-            ? result.document
-            : createEmptyCinemaKunyeDocument();
+        const baseServer = serverDoc || createEmptyCinemaKunyeDocument();
         lastServerCanonicalRef.current = computeCanonicalSignature(baseServer);
 
         const localWatched = isDemoRef.current
@@ -185,17 +136,11 @@ export function useCinemaKunye({
     return () => {
       active = false;
     };
-  }, [applyNextDocument, reportServerSync]);
+  }, [applyNextDocument]);
 
   // 2. Extract watched items metadata (genre / year / cast) whenever savedItems or genresMap updates
   useEffect(() => {
     if (isDemo) return;
-    // Künye çıktısı yalnızca aşağıdaki imzanın okuduğu alanlardan türer; damga gibi diğer
-    // alanlar değiştiğinde extract + merge + kanonik imza zinciri baştan kurulmaz.
-    const sourceSignature = buildKunyeSourceSignature(savedItems, genresMap);
-    if (sourceSignature === kunyeSourceSignatureRef.current) return;
-    kunyeSourceSignatureRef.current = sourceSignature;
-
     const extracted = extractCinemaKunyeFromItems(savedItems, genresMap);
     if (Object.keys(extracted.entries).length === 0) return;
     const merged = mergeCinemaKunyeDocumentsLossless(cinemaKunyeRef.current, extracted);
@@ -319,17 +264,16 @@ export function useCinemaKunye({
 
     const timer = setTimeout(() => {
       const snapshot = cinemaKunyeRef.current;
-      void saveServerCinemaKunye(snapshot, 'merge').then((saved) => {
-        reportServerSync(saved);
-        if (saved.status !== 'ok' || !saved.document) return;
-        lastServerCanonicalRef.current = computeCanonicalSignature(saved.document);
-        const merged = mergeCinemaKunyeDocumentsLossless(cinemaKunyeRef.current, saved.document);
+      void saveServerCinemaKunye(snapshot, 'merge').then((savedOnServer) => {
+        if (!savedOnServer) return;
+        lastServerCanonicalRef.current = computeCanonicalSignature(savedOnServer);
+        const merged = mergeCinemaKunyeDocumentsLossless(cinemaKunyeRef.current, savedOnServer);
         applyNextDocument(merged);
       });
     }, 650);
 
     return () => clearTimeout(timer);
-  }, [cinemaKunye, isDemo, applyNextDocument, reportServerSync]);
+  }, [cinemaKunye, isDemo, applyNextDocument]);
 
   const mergeIncomingCinemaKunye = useCallback(
     (incoming?: CinemaKunyeDocument | null): CinemaKunyeDocument => {
@@ -341,15 +285,14 @@ export function useCinemaKunye({
       applyNextDocument(merged);
       if (!isDemoRef.current && Object.keys(merged.entries).length > 0) {
         void saveServerCinemaKunye(merged, 'merge').then((saved) => {
-          reportServerSync(saved);
-          if (saved.status === 'ok' && saved.document) {
-            lastServerCanonicalRef.current = computeCanonicalSignature(saved.document);
+          if (saved) {
+            lastServerCanonicalRef.current = computeCanonicalSignature(saved);
           }
         });
       }
       return merged;
     },
-    [applyNextDocument, reportServerSync]
+    [applyNextDocument]
   );
 
   const replaceCinemaKunye = useCallback(
@@ -362,15 +305,14 @@ export function useCinemaKunye({
       setCinemaKunye(normalized);
       if (!isDemoRef.current) {
         void saveServerCinemaKunye(normalized, 'overwrite').then((saved) => {
-          reportServerSync(saved);
-          if (saved.status === 'ok' && saved.document) {
-            lastServerCanonicalRef.current = computeCanonicalSignature(saved.document);
+          if (saved) {
+            lastServerCanonicalRef.current = computeCanonicalSignature(saved);
           }
         });
       }
       return normalized;
     },
-    [reportServerSync]
+    []
   );
 
   const flushCinemaKunyeToServer = useCallback(async (): Promise<void> => {
@@ -384,19 +326,16 @@ export function useCinemaKunye({
     if (sig === lastServerCanonicalRef.current) return;
 
     const saved = await saveServerCinemaKunye(merged, 'merge');
-    reportServerSync(saved);
-    if (saved.status === 'ok' && saved.document) {
-      lastServerCanonicalRef.current = computeCanonicalSignature(saved.document);
-      const reconciled = mergeCinemaKunyeDocumentsLossless(cinemaKunyeRef.current, saved.document);
+    if (saved) {
+      lastServerCanonicalRef.current = computeCanonicalSignature(saved);
+      const reconciled = mergeCinemaKunyeDocumentsLossless(cinemaKunyeRef.current, saved);
       applyNextDocument(reconciled);
     }
-  }, [applyNextDocument, reportServerSync]);
+  }, [applyNextDocument]);
 
   const refreshCinemaKunyeFromServer = useCallback(
     async (mode: 'merge' | 'overwrite' = 'merge'): Promise<void> => {
-      const result = await fetchServerCinemaKunye();
-      reportServerSync(result);
-      const serverDoc = result.status === 'ok' ? result.document : undefined;
+      const serverDoc = await fetchServerCinemaKunye();
       if (!serverDoc) return;
       lastServerCanonicalRef.current = computeCanonicalSignature(serverDoc);
       if (mode === 'overwrite') {
@@ -408,12 +347,11 @@ export function useCinemaKunye({
       const merged = mergeCinemaKunyeDocumentsLossless(cinemaKunyeRef.current, serverDoc);
       applyNextDocument(merged);
     },
-    [applyNextDocument, reportServerSync]
+    [applyNextDocument]
   );
 
   return {
     cinemaKunye,
-    serverSyncIssue,
     mergeIncomingCinemaKunye,
     replaceCinemaKunye,
     flushCinemaKunyeToServer,

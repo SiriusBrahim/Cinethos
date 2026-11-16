@@ -135,42 +135,35 @@ export const TasteMapView: React.FC<TasteMapViewProps> = ({
         </div>
       </div>
 
-      {/* Sticky Özet Şerit */}
+      {/* Sticky Özet Şerit (Section 6.3) */}
       <div className="taste-summary-strip" role="region" aria-label="Zevk Haritası Özeti">
         <div className="taste-summary-counts">
-          <div className="taste-summary-item ring-pill--0" title={getTasteRingLabel('ring0')}>
+          <div className="taste-summary-pill ring-pill--0" title={getTasteRingLabel('ring0')}>
             <span className="ring-chip-dot" aria-hidden="true" />
-            <strong className="tabular-nums">{ringCounts.ring0 || 0}</strong>
+            <strong className="tabular-nums">{ringCounts.ring0 || 0}</strong>{' '}
             <span>yeni</span>
           </div>
-          <span className="taste-summary-sep" aria-hidden="true">·</span>
-          <div className="taste-summary-item ring-pill--1" title={getTasteRingLabel('ring1')}>
+          <div className="taste-summary-pill ring-pill--1" title={getTasteRingLabel('ring1')}>
             <span className="ring-chip-dot" aria-hidden="true" />
-            <strong className="tabular-nums">{ringCounts.ring1 || 0}</strong>
+            <strong className="tabular-nums">{ringCounts.ring1 || 0}</strong>{' '}
             <span>son öneri</span>
           </div>
-          <span className="taste-summary-sep" aria-hidden="true">·</span>
-          <div className="taste-summary-item ring-pill--2" title={getTasteRingLabel('ring2')}>
+          <div className="taste-summary-pill ring-pill--2" title={getTasteRingLabel('ring2')}>
             <span className="ring-chip-dot" aria-hidden="true" />
-            <strong className="tabular-nums">{ringCounts.ring2 || 0}</strong>
+            <strong className="tabular-nums">{ringCounts.ring2 || 0}</strong>{' '}
             <span>yedek</span>
           </div>
-          <span className="taste-summary-sep" aria-hidden="true">·</span>
-          <div className="taste-summary-item taste-top-genre" title={strongestGenre === '—' ? 'Henüz yeterli izleme verisi toplanmadı' : 'En güçlü tür sinyali'}>
-            <span>En güçlü tür:</span>
+          <div className="taste-summary-pill taste-top-genre" title={strongestGenre === '—' ? 'Henüz yeterli izleme verisi toplanmadı' : 'En güçlü tür sinyali'}>
+            <span>En güçlü tür:</span>{' '}
             <strong>{strongestGenre}</strong>
           </div>
           {isDemo && (
-            <>
-              <span className="taste-summary-sep" aria-hidden="true">·</span>
-              <div className="taste-summary-item" title="Demo Modu Aktif">
-                <span className="ring-chip-dot dot-demo" aria-hidden="true" />
-                <span>Demo</span>
-              </div>
-            </>
+            <div className="taste-summary-pill" title="Demo Modu Aktif">
+              <span className="ring-chip-dot dot-demo" aria-hidden="true" />
+              <span>Demo</span>
+            </div>
           )}
-          <span className="taste-summary-sep" aria-hidden="true">·</span>
-          <div className="taste-summary-item taste-sync-pill" title="Kalıcı veri deposu ve profiller her 5 dakikada bir arka planda otomatik senkronize edilir">
+          <div className="taste-summary-pill taste-sync-pill" title="Kalıcı veri deposu ve profiller her 5 dakikada bir arka planda otomatik senkronize edilir">
             <span className="ring-chip-dot dot-sync" aria-hidden="true" />
             <span>Oto-Sync (5 dk)</span>
           </div>
@@ -194,9 +187,7 @@ export const TasteMapView: React.FC<TasteMapViewProps> = ({
       {/* TMDB Kaynak Durum Banner */}
       {tmdbSource === 'stale-cache' && (
         <div className="catalog-source-banner banner-stale" role="alert">
-          <svg className="icon catalog-source-banner-icon" aria-hidden="true">
-            <use href="#icon-sparkles" />
-          </svg>
+          <span className="catalog-source-banner-icon" aria-hidden="true">⚠️</span>
           <div>
             <strong>Çevrimdışı / Eski Önbellek Modu</strong>: Canlı TMDB yanıt vermediği için puanlar son kayıtlı önbellekten hesaplandı.
             {tmdbStaleReason ? ` (${tmdbStaleReason})` : ''}
@@ -206,9 +197,7 @@ export const TasteMapView: React.FC<TasteMapViewProps> = ({
 
       {tmdbSource === 'demo' && (
         <div className="catalog-source-banner banner-demo" role="alert">
-          <svg className="icon catalog-source-banner-icon" aria-hidden="true">
-            <use href="#icon-film" />
-          </svg>
+          <span className="catalog-source-banner-icon" aria-hidden="true">🟡</span>
           <div>
             <strong>Örnek Katalog Modu</strong>: API anahtarı girilmediğinden dahili örnek katalog kullanılmaktadır.
           </div>
@@ -328,9 +317,7 @@ export const TasteMapView: React.FC<TasteMapViewProps> = ({
 
       {/* Halka Açıklama ve Bilgilendirme Kutusu */}
       <div className="taste-filter-hint-box" role="status">
-        <svg className="icon hint-icon" aria-hidden="true">
-          <use href="#icon-sparkles" />
-        </svg>
+        <span className="hint-icon" aria-hidden="true">💡</span>
         <div className="hint-text">
           <strong>
             {activeViewTab === 'archived'

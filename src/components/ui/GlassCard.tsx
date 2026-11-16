@@ -17,9 +17,9 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   ariaLabel,
 }) => {
   const glowStyles = {
-    gold: "hover:border-cinema-gold/40",
-    cyan: "hover:border-cinema-cyan/40",
-    none: "hover:border-cinema-borderStrong",
+    gold: "hover:shadow-glowGold hover:border-cinema-gold/40",
+    cyan: "hover:shadow-glowCyan hover:border-cinema-cyan/40",
+    none: "hover:border-white/15",
   };
 
   if (onClick) {
@@ -28,9 +28,8 @@ export const GlassCard: React.FC<GlassCardProps> = ({
         role="button"
         tabIndex={0}
         aria-label={ariaLabel}
-        whileHover={{ y: -2 }}
-        whileTap={{ scale: 0.99 }}
-        transition={{ duration: 0.16 }}
+        whileHover={{ scale: 1.015, y: -2 }}
+        whileTap={{ scale: 0.985 }}
         onClick={onClick}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {

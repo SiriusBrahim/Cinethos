@@ -1,49 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
+import { Hero } from './components/Hero.tsx';
+import { Stats } from './components/Stats.tsx';
 import { Controls } from './components/Controls.tsx';
-import { type ToastEntry, type ToastKind } from './components/Toast.tsx';
+import { MediaGrid } from './components/MediaGrid.tsx';
+import { DetailModal } from './components/DetailModal.tsx';
+import { QuickSaveModal } from './components/QuickSaveModal.tsx';
+import { PersonDrawer } from './components/PersonDrawer.tsx';
+import { AddCustomModal } from './components/AddCustomModal.tsx';
+import { ProfileModal } from './components/ProfileModal.tsx';
+import { ImportChoiceModal } from './components/ImportChoiceModal.tsx';
+import { TvdbStockModal } from './components/TvdbStockModal.tsx';
+import { Toast } from './components/Toast.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
-import { AppFooter } from './app/AppFooter.tsx';
-import { AppSidebar } from './app/AppSidebar.tsx';
-import type { ModuleId } from './app/module-registry.ts';
-import { getModule } from './app/module-registry.ts';
-import { useHashNavigation } from './app/useHashNavigation.ts';
-import { lazyWithRetry } from './app/lazy-with-retry.ts';
-import { ShellProvider, type ShellActions } from './app/shell-context.tsx';
-import { emitShellEvent } from './app/shell-events.ts';
-import { createProfileContext } from './app/ProfileContext.ts';
-import {
-  bridgeAppEventsToShellEvents,
-  createAppEvent,
-  createAppEventBus,
-} from './app/app-event-bus.ts';
-import { createModuleRegistry } from './app/runtime-module-registry.ts';
-import type {
-  EventSubscription,
-  IApplicationModule,
-  ModuleContext,
-  ModuleHealth,
-} from './contracts/index.ts';
-import {
-  extractTasteMetadataFromItem,
-  subscribeClientTasteSyncToEventBus,
-} from './services/taste-api.ts';
-import { MobileDock } from './app/mobile/MobileDock.tsx';
-import { MobileTopBar } from './app/mobile/MobileTopBar.tsx';
-import { AppModals } from './app/AppModals.tsx';
-import { BRAND_NAME } from './shared/brand.ts';
-import { useAppModals } from './hooks/useAppModals.ts';
 
-// M1: lazyWithRetry ortak yardımcıya taşındı (src/app/lazy-with-retry.ts)
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  importer: () => Promise<{ default: T }>
+): React.LazyExoticComponent<T> {
+  return lazy(async () => {
+    try {
+      return await importer();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return importer();
+    }
+  });
+}
 
-const MobileDashboard = lazyWithRetry(() => import('./app/mobile/MobileDashboard.tsx'));
-// M1: modül bölümleri kayıt defterinden yüklenir
-// (taste-map/relationships tembel; discover/list statik — varsayılan sekme flaşı olmasın)
-const TasteMapSection = getModule('taste-map')?.Section;
-const RelationshipsSection = getModule('relationships')?.Section;
-const DiscoverSection = getModule('discover')?.Section;
-const ListSection = getModule('list')?.Section;
+const TasteMapView = lazyWithRetry(() => import('./components/TasteMapView.tsx'));
+const RelationshipExplorer = lazyWithRetry(() => import('./components/RelationshipExplorer.tsx'));
+const TasteProfileDashboard = lazyWithRetry(() => import('./components/taste/TasteProfileDashboard.tsx'));
 
 import {
   SavedItem,
@@ -75,6 +63,8 @@ import {
   selectBalancedRecommendations,
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
+  loadPersistentTasteMap,
+  savePersistentTasteMap,
   updateTasteMapWithBatch,
   markTasteMapItemStatus,
   PersistentTasteMapData,
@@ -84,6 +74,8 @@ import {
   isTasteMapCacheValid,
   recordDisplayedRecommendations,
   filterOutLastRecommendedCandidates,
+  loadPersistentPoolData,
+  savePersistentPoolData,
   hydratePoolFromCatalog,
   topUpFilteredCandidates,
   matchesSelectedGenre,
@@ -93,19 +85,9 @@ import {
   HIDE_LISTED_CATEGORIES,
   filterHiddenUserRegisteredItems,
   normalizeDeletedKeys,
-} from './core/cinetrack-core.ts';
-import {
-  deletePersistentTasteMap,
-  flushCoreIdbWrites,
-  hydrateCandidatePoolsIdb,
   hydrateDiscoveryHistoryIdb,
-  listPersistentTasteMapProfileIdsAsync,
-  loadPersistentPoolData,
-  loadPersistentTasteMap,
-  savePersistentPoolData,
-  savePersistentTasteMap,
-  verifyPersistentTasteMap,
-} from './services/discovery-storage.ts';
+  hydrateCandidatePoolsIdb,
+} from './core/cinetrack-core.ts';
 import {
   fetchTmdb,
   fetchTmdbCached,
@@ -117,13 +99,6 @@ import {
   fetchDerivedProfileData,
   pushCatalogItems,
   pushDerivedProfileData,
-  downloadSqliteArchive,
-  finalizeSqliteArchiveRestore,
-  prepareSqliteArchiveRestore,
-  restorePreparedSqliteArchive,
-  rollbackSqliteArchiveRestore,
-  SqliteArchiveInspect,
-  SqliteArchivePrepareResult,
   TmdbSourceMeta,
   ServerConflictDetail,
 } from './services/api.ts';
@@ -138,7 +113,6 @@ import {
   mergeCinemaKunyeDocumentsLossless,
 } from './core/cinema-kunye.ts';
 import { computeSourceCatalogSignature } from './core/derived-profile-cache.ts';
-import type { CsvProfileBlock } from './core/exporters.ts';
 import {
   buildDerivedProfilePayloadFromTasteMap,
   enforceStrictMediaTypePool,
@@ -150,13 +124,8 @@ import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
-import {
-  mapWatchStatusToLibraryList,
-  useItemActions,
-} from './hooks/useItemActions.ts';
-import { useMediaQuery } from './hooks/useMediaQuery.ts';
+import { useItemActions } from './hooks/useItemActions.ts';
 import { hasPendingOfflineSync } from './services/offline-queue.ts';
-import { AUTH_REQUIRED_EVENT } from './services/api-client.ts';
 import {
   saveIsolatedProfileIdb,
   loadUserListsIdb,
@@ -168,7 +137,6 @@ import {
   recordSkippedKeysIdb,
   removeSkippedKeyIdb,
   loadStockIdb,
-  saveStockIdb,
 } from './services/storage-idb.ts';
 import {
   indexItemForSeries,
@@ -176,11 +144,9 @@ import {
   computeUserSeriesUniverses,
 } from './services/series-service.ts';
 import {
-  buildStockExclusionSets,
   consumeStockItem,
   enrichStockItemsTopCast,
   executeStockReplenishment,
-  getCurrentStock,
   getStockMovies,
   getStockSeries,
   isCandidateEligibleForStock,
@@ -189,7 +155,6 @@ import {
   seedCandidatePoolFromStock,
   subscribeStockState,
   syncStockWithUserExclusions,
-  updateStockItemsMetadata,
 } from './services/stock-engine.ts';
 import {
   enforcePosterCacheQuota,
@@ -197,13 +162,7 @@ import {
 } from './services/poster-cache-manager.ts';
 import { getItemEncodingSync, maintainEncodingsDepot } from './services/encoding-service.ts';
 import { runIdbSchemaMigrationsOnce } from './services/idb-schema-version.ts';
-import {
-  buildProfileCentroid,
-  profileScoreKey,
-  profileSimilarityScores,
-  sortByProfileSimilarity,
-  stampSavedItemsWithTaste,
-} from './core/scoring.ts';
+import { computeProfileCentroid, cosineSimilarity } from './core/encoding.ts';
 import { advanceTvEpisodeProgress } from './core/tv-progress.ts';
 import { mergeDuplicateSavedPair } from './core/duplicate-detector.ts';
 import {
@@ -211,47 +170,139 @@ import {
   recordProfileChangeAndMaybeBackup,
 } from './services/auto-backup-service.ts';
 import { startIdleStockEnrichment } from './services/idle-enrichment-service.ts';
-import {
-  applyPosterPatchesToSavedItems,
-  startSavedPosterHydration,
-} from './services/poster-hydration-service.ts';
-import {
-  startStockPosterHydration,
-} from './services/stock-poster-hydration-service.ts';
-import { applyStockPosterPatchesToItems } from './services/stock-poster-utils.ts';
-import { archivePosterUrl, computeActivityStreak, dateYearsAgo, displayTitle, mapLimit, MOOD_GENRES } from './utils/helpers.ts';
+import { dateYearsAgo, displayTitle, mapLimit, MOOD_GENRES } from './utils/helpers.ts';
 import {
   compareMediaDatesAscending,
   compareMediaDatesDescending,
   isWithinReleaseWindow,
 } from './utils/release-window.ts';
 
-import {
-  PROFILES_STORAGE,
-  ACTIVE_PROFILE_STORAGE,
-  PROFILE_STORAGE,
-  DIRTY_KEY,
-  HIDE_LISTED_STORAGE_KEY,
-  listStorageKey,
-  preferencesStorageKey,
-  favActorsStorageKey,
-  deletedKeysStorageKey,
-  hasPersistedProfilesInStorage,
-  loadProfilePreferences,
-  loadProfileItems,
-  loadFavoriteActors,
-  loadDeletedKeys,
-  loadInitialProfiles,
-  loadActiveProfileId,
-} from './features/profile/profile-storage.ts';
-
+const PROFILES_STORAGE = 'cinetrack.profiles.v1';
+const ACTIVE_PROFILE_STORAGE = 'cinetrack.activeProfile.v1';
+const PROFILE_STORAGE = 'cinetrack.profile.v1';
+const DIRTY_KEY = 'cinetrack.dirty.v2';
+const HIDE_LISTED_STORAGE_KEY = 'cinetrack_hide_listed_items';
 const EMPTY_REASONS_MAP = new Map<string, string>();
 
-/** Arka plan zenginleştirmesi: tek seferde çekilecek kayıt ve eşzamanlılık sınırları. */
-const DISLIKED_HYDRATION_PAGE = 40;
-const DISLIKED_HYDRATION_CONCURRENCY = 4;
-const TV_HYDRATION_PAGE = 12;
-const TV_HYDRATION_CONCURRENCY = 4;
+function listStorageKey(profileId: string) {
+  return `cinetrack.profile.${profileId}.watchlist.v1`;
+}
+function preferencesStorageKey(profileId: string) {
+  return `cinetrack.profile.${profileId}.preferences.v1`;
+}
+
+function hasPersistedProfilesInStorage(): boolean {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PROFILES_STORAGE) || 'null');
+    return Array.isArray(stored) && stored.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function loadInitialProfiles(): Profile[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PROFILES_STORAGE) || 'null');
+    const profiles = Array.isArray(stored)
+      ? stored
+          .filter((p) => p && /^profile-[A-Za-z0-9_-]{1,60}$/.test(p.id) && typeof p.name === 'string')
+          .map((p) => {
+            const delKeys = loadDeletedKeys(p.id);
+            return {
+              id: p.id,
+              name: p.name.slice(0, 40),
+              createdAt: p.createdAt || '',
+              isDemo: Boolean(p.isDemo),
+              preferences: loadProfilePreferences(p.id),
+              items: loadProfileItems(p.id),
+              favoriteActors: loadFavoriteActors(p.id),
+              ...(Object.keys(delKeys).length > 0 ? { deleted_keys: delKeys } : {}),
+            };
+          })
+      : [];
+    if (profiles.length) return profiles;
+    const legacyName = localStorage.getItem(PROFILE_STORAGE) || '';
+    const defaultProfile: Profile = {
+      id: 'profile-default',
+      name: legacyName || 'Profilim',
+      createdAt: new Date().toISOString(),
+      preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
+      items: [],
+    };
+    return [defaultProfile];
+  } catch {
+    return [
+      {
+        id: 'profile-default',
+        name: 'Profilim',
+        createdAt: '',
+        preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
+        items: [],
+      },
+    ];
+  }
+}
+
+function loadActiveProfileId(profiles: Profile[]): string {
+  try {
+    const active = localStorage.getItem(ACTIVE_PROFILE_STORAGE);
+    return profiles.some((p) => p.id === active) ? active! : profiles[0].id;
+  } catch {
+    return profiles[0].id;
+  }
+}
+
+function loadProfilePreferences(profileId: string): Preferences {
+  try {
+    return normalizePreferences(
+      JSON.parse(localStorage.getItem(preferencesStorageKey(profileId)) || '{}'),
+      { knownMoods: Object.keys(MOOD_GENRES) }
+    );
+  } catch {
+    return { disliked: [], providers: [], mood: '', reminders: false, notified: [] };
+  }
+}
+
+function loadProfileItems(profileId: string): SavedItem[] {
+  try {
+    const stored = localStorage.getItem(listStorageKey(profileId)) || '[]';
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed)
+      ? (parsed
+          .filter((item) => item && (item.media_type === 'movie' || item.media_type === 'tv') && item.id != null)
+          .map(normalizeSavedItem)
+          .filter(Boolean) as SavedItem[])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function favActorsStorageKey(profileId: string): string {
+  return `cinetrack_fav_actors_${profileId}`;
+}
+
+function loadFavoriteActors(profileId: string): FavoriteActorInfo[] {
+  try {
+    const stored = localStorage.getItem(favActorsStorageKey(profileId));
+    return stored ? normalizeFavoriteActors(JSON.parse(stored)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function deletedKeysStorageKey(profileId: string): string {
+  return `cinetrack_deleted_keys_${profileId}`;
+}
+
+function loadDeletedKeys(profileId: string): Record<string, string> {
+  try {
+    const stored = localStorage.getItem(deletedKeysStorageKey(profileId));
+    return stored ? normalizeDeletedKeys(JSON.parse(stored)) : {};
+  } catch {
+    return {};
+  }
+}
 
 export function App() {
   // Profiles and Watchlist State
@@ -274,13 +325,8 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<string>('Kayıt yeri: data/cinetrack-data.json');
 
   // Discover & Grid State
-  const [tab, setTab] = useState<ModuleId>('discover');
-  /** Mobil "Ana" dashboard görünümü açık mı. */
-  const [mobileHomeOpen, setMobileHomeOpen] = useState(true);
-  const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'identity'>('identity');
-  // M1: hash derin bağlantısı (`#/discover`, `#/list`, …) sekme durumuyla eşitlenir
-  useHashNavigation(tab, setTab);
-  const isMobileViewport = useMediaQuery('(max-width: 768px)');
+  const [tab, setTab] = useState<'discover' | 'list' | 'taste-map' | 'relationships'>('discover');
+  const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'graph' | 'identity'>('identity');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
   const [category, setCategory] = useState<string>('trending');
   const [forYouSubTab, setForYouSubTab] = useState<'recommendations' | 'series'>('recommendations');
@@ -318,42 +364,19 @@ export function App() {
     timestamp: Date.now(),
   });
 
-  const {
-    detailItem,
-    setDetailItem,
-    quickSaveItem,
-    setQuickSaveItem,
-    personId,
-    setPersonId,
-    personName,
-    setPersonName,
-    relationshipInitialSourceKey,
-    setRelationshipInitialSourceKey,
-    addCustomOpen,
-    setAddCustomOpen,
-    profileOpen,
-    setProfileOpen,
-    commandPaletteOpen,
-    setCommandPaletteOpen,
-    pendingBackup,
-    setPendingBackup,
-  } = useAppModals();
-  const [toasts, setToasts] = useState<ToastEntry[]>([]);
-  const toastSeqRef = useRef(0);
+  const [detailItem, setDetailItem] = useState<any | null>(null);
+  const [quickSaveItem, setQuickSaveItem] = useState<any | null>(null);
+  const [personId, setPersonId] = useState<number | null>(null);
+  const [personName, setPersonName] = useState<string>('');
+  const [relationshipInitialSourceKey, setRelationshipInitialSourceKey] = useState<string>('');
+  const [addCustomOpen, setAddCustomOpen] = useState<boolean>(false);
+  const [profileOpen, setProfileOpen] = useState<boolean>(false);
+  const [tvdbModalOpen, setTvdbModalOpen] = useState<boolean>(false);
+  const [pendingBackup, setPendingBackup] = useState<any | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const requestGateRef = useRef(createRequestGate());
-  const appEventBusRef = useRef(createAppEventBus());
-  const profileContextRef = useRef<ReturnType<typeof createProfileContext> | null>(null);
-  if (profileContextRef.current === null) {
-    const rev = getLastKnownServerRevision();
-    profileContextRef.current = createProfileContext({
-      initialProfileId: activeProfileId || 'default',
-      initialRevision: typeof rev === 'number' && rev >= 0 ? rev : 0,
-      eventPublisher: appEventBusRef.current,
-      onInvalidateInFlight: () => requestGateRef.current.invalidate(),
-    });
-  }
-  const clientModuleRegistryRef = useRef<ReturnType<typeof createModuleRegistry> | null>(null);
+  const toastTimerRef = useRef<any>(null);
   const lastForYouQueryKeyRef = useRef<string>('');
   const confirmNextBulkSyncRef = useRef<boolean>(false);
   const selectedTypeRef = useRef<string>(selectedType);
@@ -407,31 +430,29 @@ export function App() {
 
   const uiPrefsHydratedProfileRef = useRef<string>('');
   const [stockStats, setStockStats] = useState({ movieCount: 0, tvCount: 0 });
+  const [tvdbCount, setTvdbCount] = useState<number>(0);
 
   const refreshStockStats = useCallback(() => {
     void loadStockIdb().then((stock) => {
       const allM = stock.movies || [];
       const allT = stock.tv || [];
-      // Setler bir kez kurulur; aksi halde 867 kayıt × 248 liste elemanı taranır.
-      const stockSets = buildStockExclusionSets(savedItemsRef.current, preferencesRef.current);
       const cleanMovies = allM.filter((m) =>
         isCandidateEligibleForStock(
           { ...m, media_type: 'movie' },
           savedItemsRef.current,
-          preferencesRef.current,
-          undefined,
-          stockSets
+          preferencesRef.current
         )
       );
       const cleanTv = allT.filter((t) =>
         isCandidateEligibleForStock(
           { ...t, media_type: 'tv' },
           savedItemsRef.current,
-          preferencesRef.current,
-          undefined,
-          stockSets
+          preferencesRef.current
         )
       );
+      const tvdbM = allM.filter((m) => m.source === 'tvdb').length;
+      const tvdbT = allT.filter((t) => t.source === 'tvdb').length;
+      setTvdbCount(tvdbM + tvdbT);
       setStockStats({
         movieCount: cleanMovies.length,
         tvCount: cleanTv.length,
@@ -444,6 +465,9 @@ export function App() {
     const unsubscribeStock = subscribeStockState(() => {
       const cleanMovies = getStockMovies(savedItemsRef.current, preferencesRef.current);
       const cleanTv = getStockSeries(savedItemsRef.current, preferencesRef.current);
+      const tvdbM = cleanMovies.filter((m) => m.source === 'tvdb').length;
+      const tvdbT = cleanTv.filter((t) => t.source === 'tvdb').length;
+      setTvdbCount(tvdbM + tvdbT);
       setStockStats({
         movieCount: cleanMovies.length,
         tvCount: cleanTv.length,
@@ -456,9 +480,7 @@ export function App() {
 
   // Sorun 1: Kullanıcı listeleri, disliked veya hidden güncellendiğinde ct:stock deposunu arındır ve gerçek .length değerlerini yansıt
   useEffect(() => {
-    const profileId = activeProfileId;
-    void syncStockWithUserExclusions(profileId, savedItems, preferences).then((res) => {
-      if (profileId !== activeProfileIdRef.current) return;
+    void syncStockWithUserExclusions(activeProfileId, savedItems, preferences).then((res) => {
       setStockStats({
         movieCount: res.moviesCount,
         tvCount: res.tvCount,
@@ -490,43 +512,10 @@ export function App() {
     };
   }, []);
 
-  // CSV'den gelen kayıtlar poster_path boş geliyor; kartlar yalnızca yedek ikon basıyor.
-  // Arka planda kayıt bazlı TMDB detay sorgularıyla posterler bulunur; yamalar
-  // biriktirilip seyrek olarak listeye yazılır (her yazımda profil hesapları tazelenir).
-  useEffect(
-    () =>
-      startSavedPosterHydration({
-        getItems: () => savedItemsRef.current,
-        onPatches: (patches) => {
-          setSavedItems((current) => {
-            const { items, changedCount } = applyPosterPatchesToSavedItems(current, patches);
-            if (changedCount === 0) return current;
-            savedItemsRef.current = items;
-            return items;
-          });
-        },
-      }),
-    []
-  );
-
-  // Aynı yöntem stok havuzu için: postersiz kayıtlar TMDB'den çözülür,
-  // yamalar ct:stock'a (ve stok yedeğine) yazılır.
-  useEffect(
-    () =>
-      startStockPosterHydration({
-        getStock: () => getCurrentStock(),
-        onPatches: (patches) => {
-          setCatalogItems((current) => applyStockPosterPatchesToItems(current, patches));
-          void updateStockItemsMetadata(patches);
-        },
-      }),
-    []
-  );
-
   useEffect(() => {
     try {
       localStorage.setItem(HIDE_LISTED_STORAGE_KEY, hideListedItems ? '1' : '0');
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }, [hideListedItems]);
 
   // Hydrate & persist UI filter/sort preferences in Depo 10 (`ct:ui-prefs`)
@@ -575,27 +564,16 @@ export function App() {
     });
   }, [activeProfileId, selectedType, selectedSort, selectedGenre, hideListedItems, forYouSubTab]);
 
-  const dismissToast = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(null), 7000);
   }, []);
-
-  // UX-01: kuyruklu bildirim. Hata mesajları 12 sn kalır ve elle kapatılabilir;
-  // başarı bilgisi 7 sn sonra kendiliğinden gider.
-  const showToast = useCallback(
-    (msg: string, kind: ToastKind = 'success') => {
-      const id = (toastSeqRef.current += 1);
-      setToasts((prev) => [...prev.slice(-3), { id, message: msg, kind }]);
-      if (typeof window !== 'undefined') {
-        window.setTimeout(() => dismissToast(id), kind === 'error' ? 12_000 : 7_000);
-      }
-    },
-    [dismissToast]
-  );
 
   // Global Keyboard Shortcuts (IMP-08 & Section 6.5)
   useKeyboardShortcuts({
     onFocusSearch: () => {
-      const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
+      const searchInput = document.querySelector<HTMLInputElement>('.search-input');
       if (searchInput) {
         searchInput.focus();
         searchInput.select();
@@ -611,19 +589,12 @@ export function App() {
     onOpenAddCustom: () => {
       setAddCustomOpen(true);
     },
-    onOpenCommandPalette: () => {
-      setCommandPaletteOpen(true);
-    },
-    onOpenSettings: () => {
-      setProfileOpen(true);
-    },
     onEscape: () => {
       setDetailItem(null);
       setQuickSaveItem(null);
       setPersonId(null);
       setAddCustomOpen(false);
       setProfileOpen(false);
-      setCommandPaletteOpen(false);
       setPendingBackup(null);
     },
   });
@@ -675,7 +646,7 @@ export function App() {
     if (serverSyncReady) {
       try {
         localStorage.setItem(DIRTY_KEY, '1');
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
     } else {
       localEditedDuringStartupRef.current = true;
     }
@@ -700,7 +671,7 @@ export function App() {
           deletedKeysStorageKey(p.id),
           JSON.stringify(normalizeDeletedKeys(p.deleted_keys))
         );
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
       try {
         localStorage.setItem(listStorageKey(p.id), JSON.stringify(p.items || []));
       } catch {
@@ -710,7 +681,7 @@ export function App() {
             overview: typeof it.overview === 'string' ? it.overview.slice(0, 120) : '',
           }));
           localStorage.setItem(listStorageKey(p.id), JSON.stringify(compactSaved));
-        } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+        } catch {}
       }
       void saveUserListsIdb(p.id, p.items || []);
     }
@@ -854,17 +825,6 @@ export function App() {
 
       profilesRef.current = mergedDoc.profiles;
       activeProfileIdRef.current = mergedDoc.activeProfileId;
-      {
-        const targetRev =
-          typeof mergedDoc.revision === 'number' && mergedDoc.revision >= 0
-            ? mergedDoc.revision
-            : (getLastKnownServerRevision() ?? 0);
-        if (profileContextRef.current?.getCurrent().profileId === mergedDoc.activeProfileId) {
-          profileContextRef.current.commitRevision(targetRev, mergedDoc.activeProfileId);
-        } else {
-          void profileContextRef.current?.switchProfile(mergedDoc.activeProfileId, targetRev);
-        }
-      }
       profileNameRef.current = active.name;
       preferencesRef.current = active.preferences;
       savedItemsRef.current = active.items;
@@ -899,19 +859,11 @@ export function App() {
         } else {
           localStorage.removeItem(DIRTY_KEY);
         }
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
 
       if (!shouldStayDirty) {
         setServerConflict(null);
       }
-
-      // M1: senkron tamamlandığını modüllere bildir
-      // (kesin yükleme/indirme sayaçları Y2 delta yazma yoluyla netleşecek)
-      emitShellEvent('sync:completed', {
-        uploaded: localHasUnpushedAdditions ? 1 : 0,
-        downloaded: remoteDoc.profiles.reduce((n, p) => n + (p.items?.length || 0), 0),
-        merged: mergedDoc.profiles.reduce((n, p) => n + (p.items?.length || 0), 0),
-      });
 
       return mergedDoc;
     },
@@ -932,148 +884,9 @@ export function App() {
     isOnline,
     pendingSync,
     unpersistedWarning,
-    queueFailure,
-    maxQueueAttempts,
     syncDocument,
-    flushQueue,
     resolveQueuedConflict,
-  } = useOfflineSync(
-    handleServerConflict,
-    handleMergedServerDocument,
-    profileContextRef.current ?? undefined
-  );
-
-  // MIA Faz 1 Son Kabul — Adım 2 & 5: İstemci ModuleRegistry (shell-event-bridge + taste-event-sync)
-  useEffect(() => {
-    const profileCtx = profileContextRef.current;
-    if (!profileCtx) return;
-
-    const registry = createModuleRegistry();
-    clientModuleRegistryRef.current = registry;
-
-    let shellBridgeSub: EventSubscription | null = null;
-    let tasteSyncSub: EventSubscription | null = null;
-    let lastSyncError: string | null = null;
-
-    const shellBridgeModule: IApplicationModule = {
-      id: 'shell-event-bridge',
-      version: '1.0.0',
-      layer: 'foreground',
-      async initialize() {},
-      async start() {
-        if (!shellBridgeSub) {
-          shellBridgeSub = bridgeAppEventsToShellEvents(appEventBusRef.current);
-        }
-      },
-      async stop() {
-        shellBridgeSub?.unsubscribe();
-        shellBridgeSub = null;
-      },
-      async healthCheck(): Promise<ModuleHealth> {
-        return {
-          moduleId: 'shell-event-bridge',
-          status: shellBridgeSub ? 'healthy' : 'degraded',
-          detail: shellBridgeSub ? 'bridged' : 'stopped',
-        };
-      },
-    };
-
-    const tasteSyncModule: IApplicationModule = {
-      id: 'taste-event-sync',
-      version: '1.0.0',
-      layer: 'background',
-      async initialize() {},
-      async start() {
-        if (!tasteSyncSub) {
-          tasteSyncSub = subscribeClientTasteSyncToEventBus(appEventBusRef.current, {
-            resolveMetadata: (mediaKey) => {
-              const found = savedItemsRef.current.find((entry) => makeMediaKey(entry) === mediaKey);
-              return found
-                ? extractTasteMetadataFromItem(found as unknown as Record<string, unknown>)
-                : undefined;
-            },
-            resolveRawMetadata: (mediaKey) => {
-              const found = savedItemsRef.current.find((entry) => makeMediaKey(entry) === mediaKey);
-              return found ? (found as unknown as Record<string, unknown>) : undefined;
-            },
-            onError: (error) => {
-              const msg = error instanceof Error ? error.message : String(error);
-              lastSyncError = msg;
-              showToast(`Zevk olayı sunucuya kaydedilemedi: ${msg}`, 'error');
-            },
-          });
-        }
-      },
-      async stop() {
-        tasteSyncSub?.unsubscribe();
-        tasteSyncSub = null;
-      },
-      async healthCheck(): Promise<ModuleHealth> {
-        return {
-          moduleId: 'taste-event-sync',
-          status: lastSyncError ? 'degraded' : tasteSyncSub ? 'healthy' : 'degraded',
-          detail: lastSyncError || (typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online'),
-        };
-      },
-    };
-
-    registry.register(shellBridgeModule);
-    registry.register(tasteSyncModule);
-
-    const moduleCtx: ModuleContext = {
-      profile: profileCtx,
-      events: appEventBusRef.current,
-      subscribe: appEventBusRef.current,
-      logger: {
-        info() {},
-        warn(moduleId, message, data) {
-          console.warn(`[ClientModule:${moduleId}] ${message}`, data || '');
-        },
-        error(moduleId, message, data) {
-          console.error(`[ClientModule:${moduleId}] ${message}`, data || '');
-        },
-      },
-    };
-
-    void registry.startAll(moduleCtx).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      showToast(`İstemci modülleri başlatılamadı: ${msg}`, 'error');
-    });
-
-    return () => {
-      void registry.stopAll().catch(() => undefined);
-    };
-  }, [showToast]);
-
-  // SEC-02: yakalanmamış async hatalar sessizce kaybolmasın.
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const message = String((event as CustomEvent).detail?.message || 'Beklenmeyen bir hata oluştu.');
-      showToast(message, 'error');
-    };
-    window.addEventListener('cinetrack:unhandled-error', handler);
-    return () => window.removeEventListener('cinetrack:unhandled-error', handler);
-  }, [showToast]);
-
-  // SEC-03: sunucu 401/503 döndürdüğünde erişim anahtarı istemini göster.
-  const [authPrompt, setAuthPrompt] = useState<{ status: number } | null>(null);
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const status = Number((event as CustomEvent).detail?.status) || 401;
-      setAuthPrompt({ status });
-    };
-    window.addEventListener(AUTH_REQUIRED_EVENT, handler);
-    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handler);
-  }, []);
-
-  // SEC-04: OfflineIndicator'daki "Yeniden dene" düğmesi kuyruğu hemen dener.
-  useEffect(() => {
-    const handler = () => {
-      void flushQueue();
-    };
-    window.addEventListener('cinetrack:force-flush-queue', handler);
-    return () => window.removeEventListener('cinetrack:force-flush-queue', handler);
-  }, [flushQueue]);
+  } = useOfflineSync(handleServerConflict, handleMergedServerDocument);
 
   // Autonomous 500-movie + 500-TV IndexedDB stock engine & <250 background replenisher (Aşama 2 & 4)
   const stockEngineState = useStockEngine(activeProfileId);
@@ -1085,31 +898,12 @@ export function App() {
     replaceCinemaKunye,
     flushCinemaKunyeToServer,
     refreshCinemaKunyeFromServer,
-    serverSyncIssue: cinemaKunyeServerSyncIssue,
   } = useCinemaKunye({
     savedItems,
     genresMap,
     isDemo: Boolean(activeProfile?.isDemo),
     tmdbSource: tmdbSourceMeta.source,
   });
-
-  // P1-01: Sinema künYESİ sunucu senkronu başarısızsa sessizce yutma; aynı sorunu bir kez bildir.
-  const cinemaKunyeSyncIssueRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!cinemaKunyeServerSyncIssue) {
-      cinemaKunyeSyncIssueRef.current = null;
-      return;
-    }
-    const key = `${cinemaKunyeServerSyncIssue.status}:${cinemaKunyeServerSyncIssue.code || ''}:${
-      cinemaKunyeServerSyncIssue.message
-    }`;
-    if (cinemaKunyeSyncIssueRef.current === key) return;
-    cinemaKunyeSyncIssueRef.current = key;
-    showToast(
-      `Sinema künYESİ sunucuyla eşitlenemedi (${cinemaKunyeServerSyncIssue.status}): ${cinemaKunyeServerSyncIssue.message}`,
-      'error'
-    );
-  }, [cinemaKunyeServerSyncIssue, showToast]);
 
   // Hydrate discovery-history & candidate-pool from IndexedDB on startup/profile switch (BUG-02)
   useEffect(() => {
@@ -1165,17 +959,6 @@ export function App() {
       setProfiles(doc.profiles);
       setActiveProfileId(doc.activeProfileId);
       activeProfileIdRef.current = doc.activeProfileId;
-      {
-        const targetRev =
-          typeof doc.revision === 'number' && doc.revision >= 0
-            ? doc.revision
-            : (getLastKnownServerRevision() ?? 0);
-        if (profileContextRef.current?.getCurrent().profileId === doc.activeProfileId) {
-          profileContextRef.current.commitRevision(targetRev, doc.activeProfileId);
-        } else {
-          void profileContextRef.current?.switchProfile(doc.activeProfileId, targetRev);
-        }
-      }
       const active = doc.profiles.find((p) => p.id === doc.activeProfileId) || doc.profiles[0];
       profileNameRef.current = active.name;
       setProfileName(active.name);
@@ -1196,7 +979,7 @@ export function App() {
       isDirtyRef.current = false;
       try {
         localStorage.removeItem(DIRTY_KEY);
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
       resolveQueuedConflict();
       setServerConflict(null);
     },
@@ -1220,15 +1003,12 @@ export function App() {
         confirmNextBulkSyncRef.current = false;
         hadStoredProfilesOnBootRef.current = true;
         const authoritativeServerDoc = res.document || payload;
-        if (typeof res.document?.revision === 'number' && res.document.revision >= 0) {
-          profileContextRef.current?.commitRevision(res.document.revision, activeProfileIdRef.current);
-        }
         const liveNow = buildCurrentLivePayloadFromRefs();
         if (areUserDataDocumentsSemanticallyEqual(liveNow, authoritativeServerDoc)) {
           isDirtyRef.current = false;
           try {
             localStorage.removeItem(DIRTY_KEY);
-          } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+          } catch {}
         }
         setServerConflict(null);
         setSyncStatus('Kayıt yeri: data/cinetrack-data.json (bu bilgisayarda, tüm profiller).');
@@ -1265,7 +1045,7 @@ export function App() {
       isDirtyRef.current = false;
       try {
         localStorage.removeItem(DIRTY_KEY);
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
       resolveQueuedConflict();
       setServerConflict(null);
       setSyncStatus('Yerel değişiklikler sunucuya kaydedildi.');
@@ -1310,7 +1090,7 @@ export function App() {
     let lsDirty = false;
     try {
       lsDirty = localStorage.getItem(DIRTY_KEY) === '1';
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
     if (!isDirtyRef.current && !lsDirty && !confirmNextBulkSyncRef.current && !hasPendingOfflineSync()) {
       return;
     }
@@ -1350,7 +1130,7 @@ export function App() {
       let lsDirty = false;
       try {
         lsDirty = localStorage.getItem(DIRTY_KEY) === '1';
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
       if (isDirtyRef.current || lsDirty || hasPendingOfflineSync()) {
         void pushToServer();
       } else {
@@ -1410,33 +1190,25 @@ export function App() {
 
         // Sunucuya ulaşılamadıysa ve localStorage kotadan dolayı boş kaldıysa IndexedDB yedeğinden kurtar
         if (savedItemsRef.current.length === 0) {
-          const requestedProfileId = activeProfileIdRef.current;
-          const idbCompact = await loadUserListsIdb(requestedProfileId);
-          if (
-            requestedProfileId !== activeProfileIdRef.current ||
-            savedItemsRef.current.length > 0 ||
-            idbCompact.length === 0
-          ) {
-            return;
-          }
-          const recovered = idbCompact
-            .map((it) =>
-              normalizeSavedItem({
-                ...it,
-                title:
-                  it.title ||
-                  `${it.media_type === 'tv' ? 'Dizi' : 'Film'} #${it.id}`,
-              })
-            )
-            .filter(Boolean) as SavedItem[];
-          if (recovered.length > 0) {
-            applyingRemoteSnapshotRef.current = true;
-            savedItemsRef.current = recovered;
-            setSavedItems(recovered);
+          const idbCompact = await loadUserListsIdb(activeProfileIdRef.current);
+          if (idbCompact.length > 0 && savedItemsRef.current.length === 0) {
+            const recovered = idbCompact
+              .map((it) =>
+                normalizeSavedItem({
+                  ...it,
+                  title: `${it.media_type === 'tv' ? 'Dizi' : 'Film'} #${it.id}`,
+                })
+              )
+              .filter(Boolean) as SavedItem[];
+            if (recovered.length > 0) {
+              applyingRemoteSnapshotRef.current = true;
+              savedItemsRef.current = recovered;
+              setSavedItems(recovered);
+            }
           }
         }
       })
-      .catch((error) => console.error(`${BRAND_NAME}: başlangıç verisi eşitlenemedi.`, error))
+      .catch((error) => console.error('Cinethos: başlangıç verisi eşitlenemedi.', error))
       .finally(() => setServerSyncReady(true));
 
     // Load genres
@@ -1485,7 +1257,7 @@ export function App() {
           : '';
       const when = days === 0 ? 'bugün' : `${days} gün içinde`;
 
-      const notification = new Notification(`${BRAND_NAME} yayın hatırlatıcısı`, {
+      const notification = new Notification('Cinethos yayın hatırlatıcısı', {
         body: `${displayTitle(item)} ${when} yayınlanıyor${episodeTag}.`,
       });
       notification.onclick = () => {
@@ -1503,7 +1275,7 @@ export function App() {
         notified: [...prev.notified, ...newlyNotified].slice(-200),
       }));
     }
-  }, [setDetailItem]);
+  }, []);
 
   useEffect(() => {
     checkReleaseReminders();
@@ -1610,31 +1382,15 @@ export function App() {
         const fetchDiscoverPageByCategory = async (pageNum: number): Promise<{ rawItems: any[]; totalPages: number }> => {
           if (cat === 'stock') {
             const stock = await loadStockIdb();
-            const stockSets = buildStockExclusionSets(
-              savedItemsRef.current,
-              preferencesRef.current
-            );
             const stockMovies = (stock.movies || [])
               .map((m: any) => ({ ...m, media_type: 'movie' }))
               .filter((m: any) =>
-                isCandidateEligibleForStock(
-                  m,
-                  savedItemsRef.current,
-                  preferencesRef.current,
-                  undefined,
-                  stockSets
-                )
+                isCandidateEligibleForStock(m, savedItemsRef.current, preferencesRef.current)
               );
             const stockSeries = (stock.tv || [])
               .map((t: any) => ({ ...t, media_type: 'tv' }))
               .filter((t: any) =>
-                isCandidateEligibleForStock(
-                  t,
-                  savedItemsRef.current,
-                  preferencesRef.current,
-                  undefined,
-                  stockSets
-                )
+                isCandidateEligibleForStock(t, savedItemsRef.current, preferencesRef.current)
               );
 
             setStockStats({
@@ -1642,7 +1398,7 @@ export function App() {
               tvCount: stockSeries.length,
             });
 
-            console.info(`[${BRAND_NAME} Stock] loadStockIdb (arındırılmış):`, {
+            console.info('[Cinethos Stock] loadStockIdb (arındırılmış):', {
               movies: stockMovies.length,
               tv: stockSeries.length,
               updatedAt: stock.updatedAt || null,
@@ -1697,12 +1453,22 @@ export function App() {
 
             const activeSort = selectedSortRef.current;
             if (activeSort === 'similarity') {
-              filtered = sortByProfileSimilarity(
-                filtered,
-                savedItemsRef.current,
-                getItemEncodingSync,
-                { fallback: 'popularity' }
-              ).items;
+              const savedEncodings = savedItemsRef.current.map((it) => ({
+                encoding: getItemEncodingSync(it),
+                personal_rating: it.personal_rating,
+              }));
+              const profileCentroid = computeProfileCentroid(savedEncodings);
+              if (profileCentroid.length > 0) {
+                const simMap = new Map<string, number>();
+                for (const it of filtered) {
+                  const enc = getItemEncodingSync(it);
+                  const sim = cosineSimilarity(profileCentroid, enc.denseVector);
+                  simMap.set(`${it.media_type}:${it.id}`, sim);
+                }
+                filtered.sort((a, b) => (simMap.get(`${b.media_type}:${b.id}`) ?? 0) - (simMap.get(`${a.media_type}:${a.id}`) ?? 0));
+              } else {
+                filtered.sort((a, b) => (Number(b.popularity) || 0) - (Number(a.popularity) || 0));
+              }
             } else if (activeSort === 'rating' || activeSort === 'rating.desc' || activeSort === 'vote_average.desc') {
               filtered.sort((a, b) => (Number(b.vote_average) || 0) - (Number(a.vote_average) || 0));
             } else if (activeSort === 'recent' || activeSort === 'date.desc' || activeSort === 'primary_release_date.desc') {
@@ -2495,7 +2261,7 @@ export function App() {
                   (m: any) => m.job === 'Director' || m.job === 'Creator'
                 ),
               });
-            } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+            } catch {}
           });
           if (Object.keys(shortlistTopCast).length > 0) {
             void enrichStockItemsTopCast(shortlistTopCast);
@@ -2881,18 +2647,7 @@ export function App() {
       }
       loadCategoryResults(category, 1, false, query, selectedProvider, false, selectedType, selectedGenre);
     }
-  }, [
-    tab,
-    category,
-    forYouSubTab,
-    query,
-    selectedProvider,
-    selectedType,
-    selectedGenre,
-    hideListedItems,
-    activeProfileId,
-    loadCategoryResults,
-  ]);
+  }, [tab, category, forYouSubTab, query, selectedProvider, selectedType, selectedGenre, hideListedItems, loadCategoryResults]);
 
   useEffect(() => {
     if (tab === 'discover' && category === 'stock' && !query.trim()) {
@@ -2982,7 +2737,7 @@ export function App() {
       const nextMap = { ...currentTasteMap };
       tasteMapRef.current = nextMap;
       setTasteMap(nextMap);
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
 
     // Aşama 3 & 4: Stoktan düş, ct:surfaced & ct:skip-log geçmişinden çıkar ve seri indeksini güncelle
     void consumeStockItem(normalized, activeProfileIdRef.current);
@@ -3003,31 +2758,24 @@ export function App() {
     // Auto-enrich TV show metadata if episode count or runtime is missing
     if (normalized.media_type === 'tv' && !normalized.custom && !normalized.number_of_episodes) {
       const tvId = normalized.id;
-      const capturedProfileId =
-        profileContextRef.current?.getCurrent().profileId ?? activeProfileIdRef.current;
       fetchTmdb(`/tv/${tvId}`)
         .then((tvDetails) => {
-          if (!tvDetails) return;
-          try {
-            profileContextRef.current?.assertCurrent({ profileId: capturedProfileId });
-          } catch {
-            return;
+          if (tvDetails) {
+            setSavedItems((currentList) =>
+              currentList.map((entry) => {
+                if (entry.id === tvId && entry.media_type === 'tv') {
+                  return {
+                    ...entry,
+                    number_of_episodes: Number(tvDetails.number_of_episodes) || 10,
+                    number_of_seasons: Number(tvDetails.number_of_seasons) || 1,
+                    episode_run_time: tvDetails.episode_run_time || [45],
+                    runtime: tvDetails.episode_run_time?.[0] || 45,
+                  };
+                }
+                return entry;
+              })
+            );
           }
-          if (activeProfileIdRef.current !== capturedProfileId) return;
-          setSavedItems((currentList) =>
-            currentList.map((entry) => {
-              if (entry.id === tvId && entry.media_type === 'tv') {
-                return {
-                  ...entry,
-                  number_of_episodes: Number(tvDetails.number_of_episodes) || 10,
-                  number_of_seasons: Number(tvDetails.number_of_seasons) || 1,
-                  episode_run_time: tvDetails.episode_run_time || [45],
-                  runtime: tvDetails.episode_run_time?.[0] || 45,
-                };
-              }
-              return entry;
-            })
-          );
         })
         .catch(() => {});
     }
@@ -3036,12 +2784,6 @@ export function App() {
   const { saveItem, setItemStatus, markCompleted, dislikeItem, hideItem } = useItemActions({
     getSavedItems: () => savedItemsRef.current,
     onCommitSavedItem: commitSavedItem,
-    profileContext: profileContextRef.current,
-    eventPublisher: appEventBusRef.current,
-    onEventPersistError: (error) => {
-      const msg = error instanceof Error ? error.message : String(error);
-      showToast(`Olay kalıcılığı hatası: ${msg}`, 'error');
-    },
   });
 
   const handleSaveItem = (
@@ -3078,9 +2820,6 @@ export function App() {
   const handleToggleFavoriteActor = (actor: any) => {
     const actorId = Number(actor?.id);
     if (!Number.isInteger(actorId) || actorId <= 0) return;
-    const existed = normalizeFavoriteActors(favoriteActorsRef.current || []).some(
-      (a) => a.id === actorId
-    );
     setFavoriteActors((prev) => {
       const normalizedPrev = normalizeFavoriteActors(prev);
       const exists = normalizedPrev.some((a) => a.id === actorId);
@@ -3100,27 +2839,6 @@ export function App() {
         ]);
       }
     });
-    const profRef = profileContextRef.current?.getCurrent();
-    if (profRef) {
-      void appEventBusRef.current
-        .publish(
-          createAppEvent({
-            eventType: 'FavoriteActorChanged',
-            ref: profRef,
-            entityId: String(actorId),
-            payload: {
-              change: existed ? 'removed' : 'added',
-              actorId,
-            },
-          })
-        )
-        .catch((err) => {
-          showToast(
-            `Favori oyuncu olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
-            'error'
-          );
-        });
-    }
     void recordProfileChangeAndMaybeBackup();
   };
 
@@ -3139,57 +2857,6 @@ export function App() {
       savedItemsRef.current = next;
       return next;
     });
-    const profRef = profileContextRef.current?.getCurrent();
-    const mediaKey = makeMediaKey(targetItem);
-    if (profRef && (mediaKey.startsWith('movie:') || mediaKey.startsWith('tv:'))) {
-      void appEventBusRef.current
-        .publish(
-          createAppEvent({
-            eventType: 'LibraryItemUpdated',
-            ref: profRef,
-            entityId: mediaKey,
-            occurredAt: nowIso,
-            payload: {
-              mediaKey,
-              mediaType: 'tv',
-              changedFields: [
-                'current_season',
-                'season_progress',
-                ...(transitionedToCompleted ? ['status', 'completedAt'] : []),
-              ],
-            },
-          })
-        )
-        .catch((err) => {
-          showToast(
-            `Bölüm ilerlemesi olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
-            'error'
-          );
-        });
-      if (transitionedToCompleted) {
-        void appEventBusRef.current
-          .publish(
-            createAppEvent({
-              eventType: 'LibraryStatusChanged',
-              ref: profRef,
-              entityId: mediaKey,
-              occurredAt: nowIso,
-              payload: {
-                mediaKey,
-                mediaType: 'tv',
-                from: mapWatchStatusToLibraryList(targetItem.status),
-                to: 'watched',
-              },
-            })
-          )
-          .catch((err) => {
-            showToast(
-              `Durum değişimi olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
-              'error'
-            );
-          });
-      }
-    }
     void recordProfileChangeAndMaybeBackup();
     const seriesTitle = displayTitle(updatedItem);
     if (transitionedToCompleted) {
@@ -3235,11 +2902,10 @@ export function App() {
 
   const handleRemoveItem = (item: any) => {
     const itemKey = makeMediaKey(item);
-    const mediaType: 'movie' | 'tv' =
-      (item.media_type || (item.title ? 'movie' : 'tv')) === 'tv' ? 'tv' : 'movie';
+    const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
     const targetTitle = (item.title || item.name || '').trim().toLowerCase();
-    const deletedAtIso = new Date().toISOString();
     if (itemKey.startsWith('movie:') || itemKey.startsWith('tv:')) {
+      const deletedAtIso = new Date().toISOString();
       setDeletedKeys((prev) => {
         const nextDeleted = normalizeDeletedKeys({ ...prev, [itemKey]: deletedAtIso });
         deletedKeysRef.current = nextDeleted;
@@ -3258,30 +2924,6 @@ export function App() {
       return next;
     });
 
-    const profRef = profileContextRef.current?.getCurrent();
-    if (profRef && (itemKey.startsWith('movie:') || itemKey.startsWith('tv:'))) {
-      void appEventBusRef.current
-        .publish(
-          createAppEvent({
-            eventType: 'LibraryItemRemoved',
-            ref: profRef,
-            entityId: itemKey,
-            occurredAt: deletedAtIso,
-            payload: {
-              mediaKey: itemKey,
-              mediaType,
-              previousList: mapWatchStatusToLibraryList(item.status),
-            },
-          })
-        )
-        .catch((err) => {
-          showToast(
-            `Silme olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
-            'error'
-          );
-        });
-    }
-
     try {
       const currentTasteMap = loadPersistentTasteMap(activeProfileIdRef.current);
       markTasteMapItemStatus(currentTasteMap, itemKey, 'active');
@@ -3289,18 +2931,13 @@ export function App() {
       const nextMap = { ...currentTasteMap };
       tasteMapRef.current = nextMap;
       setTasteMap(nextMap);
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
 
     void recordProfileChangeAndMaybeBackup();
     showToast(`"${displayTitle(item)}" listeden kaldırıldı.`);
   };
 
   const handleToggleDislike = (key: string) => {
-    // M1: beğenmeme değişimini modüllere bildir (updater çalışmadan önceki durum)
-    emitShellEvent('item:disliked', {
-      key,
-      disliked: !preferencesRef.current?.disliked?.includes(key),
-    });
     setPreferences((prev) => {
       const isCurrentlyDisliked = prev.disliked.includes(key);
       const disliked = isCurrentlyDisliked
@@ -3323,7 +2960,7 @@ export function App() {
                 cache[`${item.media_type}:${item.id}`] = item;
               });
               localStorage.setItem('cinetrack_disliked_cache', JSON.stringify(cache));
-            } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+            } catch {}
             return updated;
           });
         }
@@ -3343,7 +2980,7 @@ export function App() {
         const nextMap = { ...currentTasteMap };
         tasteMapRef.current = nextMap;
         setTasteMap(nextMap);
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+      } catch {}
 
       if (!isCurrentlyDisliked) {
         const [mType, rawId] = key.split(':');
@@ -3393,347 +3030,73 @@ export function App() {
     void recordProfileChangeAndMaybeBackup();
   };
 
-  /** SQLite arşivi: tüm profillerin tam kaydı + stok + stok posterleri tek dosyada. */
-  const handleCreateSqliteArchive = useCallback(async () => {
-    const dataDocument = buildCurrentLivePayloadFromRefs();
-    const tasteMaps: Record<string, unknown> = {};
-    for (const profile of dataDocument.profiles) {
-      try {
-        tasteMaps[profile.id] = loadPersistentTasteMap(profile.id) as unknown;
-      } catch {
-        // Zevk haritası okunamazsa arşiv yine de diğer verilerle üretilir.
-      }
-    }
-
-    const stock = await loadStockIdb();
-    const posterUrls: string[] = [];
-    const seenPosterUrls = new Set<string>();
-    for (const item of [...(stock.movies || []), ...(stock.tv || [])]) {
-      const url = archivePosterUrl(item as { poster_path?: string | null; poster_url?: string | null });
-      if (!url || seenPosterUrls.has(url)) continue;
-      seenPosterUrls.add(url);
-      posterUrls.push(url);
-    }
-
-    const result = await downloadSqliteArchive({
-      dataDocument,
-      tasteMaps,
-      stock: {
-        movies: stock.movies || [],
-        tv: stock.tv || [],
-        updatedAt: stock.updatedAt || '',
-        cursors: stock.cursors || {},
-      },
-      posterUrls,
-      appVersion: ENGINE_VERSION,
-    });
-
-    if (!result.ok || !result.blob) {
-      const message = result.message || 'SQLite arşivi oluşturulamadı.';
-      showToast(message, 'error');
-      throw new Error(message);
-    }
-
-    const objectUrl = URL.createObjectURL(result.blob);
-    try {
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = result.fileName || 'cinetrack-archive.sqlite';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } finally {
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
-    }
-
-    const stats = result.stats;
-    showToast(
-      stats
-        ? `SQLite arşivi indirildi: ${stats.profiles ?? 0} profil, ${stats.items ?? 0} kayıt, ${stats.stockMovies ?? 0}+${stats.stockTv ?? 0} stok, ${stats.postersStored ?? 0} poster.`
-        : 'SQLite arşivi indirildi.'
-    );
-  }, [buildCurrentLivePayloadFromRefs, showToast]);
-
-  /** SQLite arşivinden profilleri, stok görsellerini ve tüm yan verileri geri yükler. */
-  // P1-04: Dosya seçimi yalnızca ön izleme üretir; veri onaydan sonra yazılır.
-  const [archivePreview, setArchivePreview] = useState<{
-    fileName: string;
-    restoreId: string;
-    inspect: SqliteArchiveInspect;
-    current?: SqliteArchivePrepareResult['current'];
-  } | null>(null);
-  const [archiveRestoreBusy, setArchiveRestoreBusy] = useState(false);
-
-  const handleRestoreSqliteArchive = useCallback(
-    async (file: File) => {
-      const prepared = await prepareSqliteArchiveRestore(file);
-      if (!prepared.ok || !prepared.restoreId || !prepared.inspect) {
-        const message = prepared.message || 'SQLite arşivi incelenemedi.';
-        showToast(message, 'error');
-        throw new Error(message);
-      }
-      setArchivePreview({
-        fileName: file.name,
-        restoreId: prepared.restoreId,
-        inspect: prepared.inspect,
-        current: prepared.current,
-      });
-    },
-    [showToast]
-  );
-
-  const confirmRestoreSqliteArchive = useCallback(async () => {
-    if (!archivePreview || archiveRestoreBusy) return;
-    setArchiveRestoreBusy(true);
-    const restoreId = archivePreview.restoreId;
-    try {
-      // P0-01-B: Yerel depolar okunamıyorsa sunucu commit'i hiç başlamaz.
-      let previousStock: Awaited<ReturnType<typeof loadStockIdb>>;
-      try {
-        previousStock = await loadStockIdb();
-      } catch (error) {
-        console.warn('[SQLiteRestore] Mevcut stok okunamadı:', error);
-        showToast(
-          'Mevcut stok deposu okunamadı; veri kaybını önlemek için geri yükleme başlatılmadı.',
-          'error'
-        );
-        throw Object.assign(new Error('stok deposu okunamadı'), { __reported: true });
-      }
-
-      // Yetim (arşiv dışı) zevk haritalarını sonradan temizleyebilmek için tam envanter.
-      const previousTasteProfileIds = await listPersistentTasteMapProfileIdsAsync();
-      const previousTasteMaps = new Map<string, PersistentTasteMapData>();
-      for (const profileId of previousTasteProfileIds) {
-        previousTasteMaps.set(profileId, loadPersistentTasteMap(profileId));
-      }
-
-      const result = await restorePreparedSqliteArchive(restoreId);
-      if (!result.ok || !result.dataDocument) {
-        const isConflict = result.code === 'archive_source_changed';
-        const message = isConflict
-          ? 'Önizlemeden sonra sunucu verisi değişti. Arşivi yeniden seçip onaylayın.'
-          : result.message || 'SQLite arşivi geri yüklenemedi.';
-        showToast(message, 'error');
-        setArchivePreview(null);
-        throw Object.assign(new Error(message), { __reported: true });
-      }
-
-      const failures: string[] = [];
-
-      // 1) Zevk haritaları: yaz → kalıcı yazmaları bekle → geri okuyarak doğrula.
-      for (const [profileId, payload] of Object.entries(result.tasteMaps || {})) {
-        try {
-          savePersistentTasteMap(profileId, payload as PersistentTasteMapData);
-        } catch (error) {
-          console.warn('[SQLiteRestore] Zevk haritası yazılamadı:', profileId, error);
-        }
-      }
-      await flushCoreIdbWrites();
-      for (const [profileId, payload] of Object.entries(result.tasteMaps || {})) {
-        const expected = payload as PersistentTasteMapData;
-        if (!(await verifyPersistentTasteMap(profileId, expected))) {
-          failures.push(`zevk haritası (${profileId})`);
-        }
-      }
-
-      // 2) Orphan politikası: arşivde olmayan profillerin eski haritaları silinir.
-      const archiveProfileIds = new Set(
-        result.dataDocument.profiles.map((profile) => profile.id)
-      );
-      for (const profileId of previousTasteProfileIds) {
-        if (archiveProfileIds.has(profileId)) continue;
-        if (!(await deletePersistentTasteMap(profileId))) {
-          failures.push(`eski zevk haritası temizliği (${profileId})`);
-        }
-      }
-
-      // 3) Stok: yaz → geri oku → sayı doğrula.
-      if (result.stock) {
-        const expectedMovies = Array.isArray(result.stock.movies) ? result.stock.movies.length : 0;
-        const expectedTv = Array.isArray(result.stock.tv) ? result.stock.tv.length : 0;
-        const stockWrite = await saveStockIdb({
-          movies: (result.stock.movies || []) as any[],
-          tv: (result.stock.tv || []) as any[],
-          updatedAt: result.stock.updatedAt || new Date().toISOString(),
-          cursors: (result.stock.cursors as Record<string, number>) || {},
-        });
-        let stockVerified = false;
-        if (stockWrite.persisted) {
-          try {
-            const readBack = await loadStockIdb();
-            stockVerified =
-              (readBack.movies?.length ?? 0) === expectedMovies &&
-              (readBack.tv?.length ?? 0) === expectedTv;
-          } catch (error) {
-            console.warn('[SQLiteRestore] Stok geri okunamadı:', error);
-          }
-        }
-        if (!stockVerified) failures.push('stok deposu (IndexedDB)');
-      }
-
-      if (failures.length > 0) {
-        // Telafi: her depo için sonucu ayrı topla; başarısız olanı gizleme.
-        const compensationFailures: string[] = [];
-        try {
-          const stockRestore = await saveStockIdb(previousStock);
-          if (!stockRestore.persisted) compensationFailures.push('stok deposu');
-        } catch (error) {
-          console.warn('[SQLiteRestore] Stok geri alınamadı:', error);
-          compensationFailures.push('stok deposu');
-        }
-        for (const [profileId, previous] of previousTasteMaps) {
-          try {
-            savePersistentTasteMap(profileId, previous);
-          } catch (error) {
-            console.warn('[SQLiteRestore] Zevk haritası geri alınamadı:', profileId, error);
-          }
-        }
-        await flushCoreIdbWrites();
-        for (const [profileId, previous] of previousTasteMaps) {
-          if (!(await verifyPersistentTasteMap(profileId, previous))) {
-            compensationFailures.push(`zevk haritası (${profileId})`);
-          }
-        }
-
-        const rollback = await rollbackSqliteArchiveRestore(restoreId);
-        const detail = failures.join(', ');
-        showToast(
-          rollback.ok && compensationFailures.length === 0
-            ? `Geri yükleme tamamlanamadı (${detail}); tüm veriler önceki hâline döndürüldü.`
-            : `Geri yükleme kısmen uygulandı. Başarısız: ${detail}. Kurtarılamayan depolar: ${
-                compensationFailures.join(', ') || 'yok'
-              }. Sunucu geri alma: ${rollback.ok ? 'başarılı' : rollback.message || 'başarısız'}. Arşivi yeniden yüklemeyi deneyin.`,
-          'error'
-        );
-        throw new Error(`Kısmi geri yükleme: ${detail}`);
-      }
-
-      // 4) Tüm depolar doğrulandı → journal kaydını kapat.
-      const finalized = await finalizeSqliteArchiveRestore(restoreId);
-      applyDataDocumentToState(result.dataDocument);
-      setTasteMap(loadPersistentTasteMap(result.dataDocument.activeProfileId));
-
-      const counts = result.counts;
-      const posterNote =
-        result.postersSkipped && result.postersSkipped > 0
-          ? ` ${result.postersWritten ?? 0} poster yazıldı, ${result.postersSkipped} poster atlandı.`
-          : '';
-      if (!finalized.ok) {
-        showToast(
-          `Arşiv geri yüklendi ancak sunucu journal kaydı kapatılamadı (${finalized.message || 'bilinmeyen hata'}). Sunucu yeniden başlarsa önceki veriye dönebilir.`,
-          'error'
-        );
-      } else {
-        showToast(
-          counts
-            ? `SQLite arşivi geri yüklendi ve doğrulandı: ${counts.profiles} profil, ${counts.items} kayıt, ${counts.stockMovies}+${counts.stockTv} stok.${posterNote}`
-            : `SQLite arşivi geri yüklendi ve doğrulandı.${posterNote}`,
-          posterNote ? 'info' : 'success'
-        );
-      }
-      setArchivePreview(null);
-    } catch (error: any) {
-      if (!error?.__reported) {
-        setArchivePreview(null);
-      }
-      throw error;
-    } finally {
-      setArchiveRestoreBusy(false);
-    }
-  }, [archivePreview, archiveRestoreBusy, applyDataDocumentToState, showToast]);
-
   // Background fetch for any missing disliked items when entering disliked tab
-  const dislikedHydrationTried = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (tab !== 'list' || listStatus !== 'disliked') return;
-    const known = new Set(dislikedItems.map((item) => `${item.media_type}:${item.id}`));
-    const missingKeys = preferences.disliked.filter(
-      (key) => !known.has(key) && !dislikedHydrationTried.current.has(key)
-    );
-    if (missingKeys.length === 0) return;
-    // Sayfa sayfa: 500 anahtar birden TMDB'ye fırlatılmaz, başarısız anahtar tekrar denenmez.
-    const page = missingKeys.slice(0, DISLIKED_HYDRATION_PAGE);
-    page.forEach((key) => dislikedHydrationTried.current.add(key));
-    void mapLimit(page, DISLIKED_HYDRATION_CONCURRENCY, async (key) => {
-      const [type, id] = key.split(':');
-      try {
-        const res = await fetchTmdb(`/${type}/${id}`);
-        return res ? { ...res, media_type: type } : null;
-      } catch {
-        return null;
+    if (tab === 'list' && listStatus === 'disliked') {
+      const missingKeys = preferences.disliked.filter(
+        (key) => !dislikedItems.some((item) => `${item.media_type}:${item.id}` === key)
+      );
+      if (missingKeys.length > 0) {
+        Promise.allSettled(
+          missingKeys.map((key) => {
+            const [type, id] = key.split(':');
+            return fetchTmdb(`/${type}/${id}`).then((res) => ({ ...res, media_type: type }));
+          })
+        ).then((results) => {
+          const newItems = results
+            .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && Boolean(r.value))
+            .map((r) => r.value);
+          if (newItems.length > 0) {
+            setDislikedItems((prev) => {
+              const combined = [...prev, ...newItems].filter(
+                (item, idx, arr) =>
+                  arr.findIndex((x) => `${x.media_type}:${x.id}` === `${item.media_type}:${item.id}`) === idx
+              );
+              try {
+                const cache: Record<string, any> = {};
+                combined.forEach((item) => {
+                  cache[`${item.media_type}:${item.id}`] = item;
+                });
+                localStorage.setItem('cinetrack_disliked_cache', JSON.stringify(cache));
+              } catch {}
+              return combined;
+            });
+          }
+        });
       }
-    }).then((fetched) => {
-      const newItems = fetched.filter(Boolean) as any[];
-      if (newItems.length === 0) return;
-      setDislikedItems((prev) => {
-        const seen = new Set(prev.map((item) => `${item.media_type}:${item.id}`));
-        const combined = [...prev];
-        for (const item of newItems) {
-          const key = `${item.media_type}:${item.id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          combined.push(item);
-        }
-        try {
-          const cache: Record<string, any> = {};
-          combined.forEach((item) => {
-            cache[`${item.media_type}:${item.id}`] = item;
-          });
-          localStorage.setItem('cinetrack_disliked_cache', JSON.stringify(cache));
-        } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-        return combined;
-      });
-    });
+    }
   }, [tab, listStatus, preferences.disliked, dislikedItems]);
 
   // Background enrich TV shows with missing episode count
-  const tvHydrationTried = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const pendingTv = savedItems.filter(
-      (i) =>
-        i.media_type === 'tv' &&
-        !i.custom &&
-        !i.number_of_episodes &&
-        !tvHydrationTried.current.has(String(i.id))
+    const unhydratedTvShows = savedItems.filter(
+      (i) => i.media_type === 'tv' && !i.custom && !i.number_of_episodes
     );
-    if (pendingTv.length === 0) return;
-    const page = pendingTv.slice(0, TV_HYDRATION_PAGE);
-    page.forEach((tv) => tvHydrationTried.current.add(String(tv.id)));
-    const detailsByKey = new Map<string, any>();
-    void mapLimit(page, TV_HYDRATION_CONCURRENCY, async (tv) => {
-      try {
-        const details = await fetchTmdb(`/tv/${tv.id}`);
-        if (details) detailsByKey.set(`tv:${tv.id}`, details);
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-      return null;
-    }).then(() => {
-      if (detailsByKey.size === 0) return;
-      // Tek state yazması: her kayıt için ayrı setSavedItems, 2.000+ kaydı defalarca diske yazdırıyordu.
-      setSavedItems((currentList) => {
-        const next = currentList.map((entry) => {
-          if (entry.media_type !== 'tv') return entry;
-          const details = detailsByKey.get(`tv:${entry.id}`);
-          if (!details) return entry;
-          return {
-            ...entry,
-            number_of_episodes: Number(details.number_of_episodes) || 10,
-            number_of_seasons: Number(details.number_of_seasons) || 1,
-            episode_run_time: details.episode_run_time || [45],
-            runtime: details.episode_run_time?.[0] || 45,
-          };
-        });
-        savedItemsRef.current = next;
-        return next;
+    if (unhydratedTvShows.length > 0) {
+      unhydratedTvShows.slice(0, 5).forEach((tv) => {
+        fetchTmdb(`/tv/${tv.id}`)
+          .then((details) => {
+            if (details) {
+              setSavedItems((currentList) =>
+                currentList.map((entry) => {
+                  if (entry.id === tv.id && entry.media_type === 'tv') {
+                    return {
+                      ...entry,
+                      number_of_episodes: Number(details.number_of_episodes) || 10,
+                      number_of_seasons: Number(details.number_of_seasons) || 1,
+                      episode_run_time: details.episode_run_time || [45],
+                      runtime: details.episode_run_time?.[0] || 45,
+                    };
+                  }
+                  return entry;
+                })
+              );
+            }
+          })
+          .catch(() => {});
       });
-    });
-  }, [savedItems]);
-
-  // Zevk merkezi liste her değiştiğinde bir kez üretilir; eskiden her render'da
-  // 2.000+ içerik yeniden kodlanıyordu (Listem sekmesindeki donmanın ana nedeni).
-  const tasteCentroid = React.useMemo(
-    () => buildProfileCentroid(savedItems, getItemEncodingSync),
-    [savedItems]
-  );
+    }
+  }, [savedItems.length]);
 
   // Filter & sort displayed items
   const filterAndSortItems = (items: any[]) => {
@@ -3749,14 +3112,22 @@ export function App() {
     }
 
     if (selectedSort === 'similarity') {
-      // Listem'de puan artık kaydın üstünde durur: damga varsa render'da hiç skorlanmaz.
-      if (tab === 'list' && filtered.every((item) => typeof item.tasteFit === 'number')) {
-        filtered = [...filtered].sort((a, b) => (b.tasteFit || 0) - (a.tasteFit || 0));
-      } else if (tasteCentroid.length > 0) {
-        const simMap = profileSimilarityScores(filtered, tasteCentroid, getItemEncodingSync);
+      const savedEncodings = savedItemsRef.current.map((it) => ({
+        encoding: getItemEncodingSync(it),
+        personal_rating: it.personal_rating,
+      }));
+      const profileCentroid = computeProfileCentroid(savedEncodings);
+      if (profileCentroid.length > 0) {
+        const simMap = new Map<string, number>();
+        for (const it of filtered) {
+          const enc = getItemEncodingSync(it);
+          const sim = cosineSimilarity(profileCentroid, enc.denseVector);
+          simMap.set(`${it.media_type}:${it.id}`, sim);
+        }
         filtered = [...filtered].sort(
           (a, b) =>
-            (simMap.get(profileScoreKey(b)) ?? 0) - (simMap.get(profileScoreKey(a)) ?? 0)
+            (simMap.get(`${b.media_type}:${b.id}`) ?? 0) -
+            (simMap.get(`${a.media_type}:${a.id}`) ?? 0)
         );
       }
     } else if (selectedSort === 'rating') {
@@ -3820,7 +3191,7 @@ export function App() {
     return { items, reasonsMap, universesCount: universes.length };
   }, [savedItems, preferences.disliked, preferences.hidden, seriesIndexVersion, activeProfile?.isDemo, tmdbSourceMeta.source]);
 
-  const getDisplayedItems = () => {
+  const displayedItems = React.useMemo(() => {
     if (tab === 'discover') {
       if (category === 'for-you' && forYouSubTab === 'series' && !query.trim()) {
         return filterAndSortItems(seriesUniverseData.items);
@@ -3845,8 +3216,7 @@ export function App() {
         const itemType = item.media_type || (item.title ? 'movie' : 'tv');
         const key = makeMediaKey(itemType, item.id);
         if (preferences.disliked.includes(key)) return false;
-        // Aramada gizlenmiş içerikler görünür kalır; aksi hâlde gizleme geri alınamıyordu.
-        if (!query.trim() && preferences.hidden?.includes(key)) return false;
+        if (preferences.hidden?.includes(key)) return false;
 
         // In Sana Özel (recommendations), strictly filter out items already in the user's list
         if (category === 'for-you') {
@@ -3878,9 +3248,25 @@ export function App() {
       list = savedItems.filter((item) => item.status === listStatus);
     }
     return filterAndSortItems(list);
-  };
-
-  const displayedItems = getDisplayedItems();
+  }, [
+    tab,
+    category,
+    forYouSubTab,
+    query,
+    seriesUniverseData.items,
+    forYouItems,
+    catalogItems,
+    hideListedItems,
+    savedItems,
+    preferences.disliked,
+    preferences.hidden,
+    tasteMap,
+    dislikedItems,
+    listStatus,
+    selectedType,
+    selectedGenre,
+    selectedSort,
+  ]);
 
   // FEAT-02 #6: Record unsaved items displayed on the Discover tab into ct:surfaced FIFO ring history
   // REG-01: Never mark local ct:stock browsing as surfaced so stock items do not self-poison cooldowns
@@ -3942,7 +3328,6 @@ export function App() {
   const allListCount = savedItems.filter(
     (item) => selectedType === 'all' || item.media_type === selectedType
   ).length;
-  const streakDays = React.useMemo(() => computeActivityStreak(savedItems), [savedItems]);
 
   const tasteSummary = React.useMemo<TasteProfileSummary>(() => {
     if (tasteMap.summary && tasteMap.summary.topGenres && tasteMap.summary.topGenres.length > 0) {
@@ -3952,24 +3337,6 @@ export function App() {
     const profile = buildTasteProfileV3(currentSaved, { dislikedKeys: preferences.disliked });
     return buildTasteProfileSummary(profile, tasteMap, genresMap);
   }, [tasteMap, savedItems, preferences.disliked, genresMap]);
-
-  // "Sana Özel" hesabı artık liste kaydının üstünde durur: zevk haritası her yenilendiğinde
-  // damgalar yazılır, böylece kartlar açılışta yeniden skorlanmaz ve puanlar yedeğe de girer.
-  useEffect(() => {
-    if (savedItems.length === 0) return;
-    const { items, changedCount } = stampSavedItemsWithTaste(savedItems, {
-      tasteEntries: tasteMap.entries,
-      centroid: tasteCentroid,
-      resolveEncoding: getItemEncodingSync,
-      topGenres: tasteSummary.topGenres,
-      computedAt: tasteMap.updatedAt,
-    });
-    if (changedCount === 0) return;
-    setSavedItems(() => {
-      savedItemsRef.current = items;
-      return items;
-    });
-  }, [savedItems, tasteMap, tasteCentroid, tasteSummary]);
 
   // FEAT-02 #4: Persist isolated ct:profile (Theme, DNA, Preferences) and compact ct:user-lists (IDs & statuses only)
   useEffect(() => {
@@ -4053,9 +3420,12 @@ export function App() {
       'popular-tv': { title: 'Popüler diziler', description: 'TMDB\'de en çok ilgi gören diziler' },
       'top-rated': { title: 'Yüksek puanlı filmler', description: 'TMDB puanına göre sıralanır' },
       stock: {
-        title: `Keşfet — ${stockStats.movieCount} Film · ${stockStats.tvCount} Dizi`,
-        description:
-          'Listenizde olmayan, çevrimdışı erişime hazır kişisel aday havuzu (TMDB kaynaklı) ve zevk vektörü sıralaması',
+        title: `Keşfet — ${stockStats.movieCount} Film · ${stockStats.tvCount} Dizi${
+          tvdbCount > 0 ? ` (TVDB: ${tvdbCount})` : ''
+        }`,
+        description: `Listenizde olmayan, çevrimdışı erişime hazır kişisel aday havuzu (${
+          tvdbCount > 0 ? `${tvdbCount} TVDB yapımı dahil` : 'TMDB ve TVDB kaynaklı'
+        }) ve zevk vektörü sıralaması`,
       },
     };
     return catMap[category] || catMap.trending;
@@ -4074,14 +3444,6 @@ export function App() {
 
   const handleSwitchProfile = (newId: string) => {
     if (newId === activeProfileId) return;
-
-    // Profil değişiminde uçuş hâlindeki tüm istekleri geçersizleştir: aksi hâlde
-    // eski profilin öneri/zevk haritası yanıtları yeni profilin state'ine yazılabiliyordu.
-    requestGateRef.current.invalidate();
-    setIsLoading(false);
-    setLoadingMore(false);
-    setForYouProgressStep('');
-
     const outgoingId = activeProfileId;
     const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
     const updatedProfiles = profiles.map((p) =>
@@ -4102,7 +3464,6 @@ export function App() {
 
     setActiveProfileId(newId);
     activeProfileIdRef.current = newId;
-    void profileContextRef.current?.switchProfile(newId, getLastKnownServerRevision() ?? 0);
     const target = updatedProfiles.find((p) => p.id === newId);
     const nextName = target?.name || 'Profilim';
     profileNameRef.current = nextName;
@@ -4138,10 +3499,6 @@ export function App() {
   };
 
   const handleCreateProfile = (name: string, isDemo = false) => {
-    requestGateRef.current.invalidate();
-    setIsLoading(false);
-    setLoadingMore(false);
-    setForYouProgressStep('');
     const outgoingId = activeProfileId;
     const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
     const newId = `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -4175,7 +3532,6 @@ export function App() {
 
     setActiveProfileId(newId);
     activeProfileIdRef.current = newId;
-    void profileContextRef.current?.switchProfile(newId, getLastKnownServerRevision() ?? 0);
     profileNameRef.current = name;
     setProfileName(name);
     savedItemsRef.current = [];
@@ -4331,7 +3687,7 @@ export function App() {
     setFavoriteActors(importedActors);
     try {
       localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(importedActors));
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
 
     if (pendingBackup.isDemo !== undefined) {
       setProfiles((prev) =>
@@ -4342,29 +3698,6 @@ export function App() {
     setPendingBackup(null);
     setProfileOpen(false);
     showToast(`Yedek başarıyla içe aktarıldı (${importedItems.length} içerik)!`);
-  };
-
-  /** CSV'deki #CINETRACK-PROFILE bölümünü mevcut verilerin üzerine birleştirir. */
-  const applyCsvProfileBlock = (block: CsvProfileBlock) => {
-    const union = (current: string[] | undefined, incoming: string[]) =>
-      Array.from(new Set([...(current || []), ...incoming]));
-    setPreferences((prev) => ({
-      ...prev,
-      ...(block.mood ? { mood: block.mood } : {}),
-      ...(block.providers ? { providers: union(prev.providers, block.providers) } : {}),
-      ...(block.disliked ? { disliked: union(prev.disliked, block.disliked) } : {}),
-      ...(block.hidden ? { hidden: union(prev.hidden, block.hidden) } : {}),
-      ...(block.notified ? { notified: union(prev.notified, block.notified) } : {}),
-      ...(block.reminders !== undefined ? { reminders: block.reminders } : {}),
-    }));
-    if (block.favoriteActors && block.favoriteActors.length > 0) {
-      const restored = normalizeFavoriteActors([...favoriteActors, ...block.favoriteActors]);
-      setFavoriteActors(restored);
-      try {
-        localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(restored));
-      } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-    }
-    if (block.profileName) handleSaveProfileName(block.profileName);
   };
 
   const handleEmptyAction = (act: string) => {
@@ -4390,251 +3723,99 @@ export function App() {
     }
   };
 
-  // M1: Katalog modüllerinin ortak parçaları — tek kez oluşturulur
-  const controlsNode = (
-    <Controls
-      tab={tab}
-      onTabChange={setTab}
-      myListCount={allListCount}
-      upcomingCount={upcomingCount}
-      dislikedCount={preferences.disliked.length}
-      favoriteActorsCount={favoriteActors.length}
-      watchingCount={watchingCount}
-      watchlistCount={watchlistCount}
-      completedCount={completedCount}
-      genres={genresMap}
-      selectedGenre={selectedGenre}
-      onGenreChange={handleSelectGenre}
-      selectedType={selectedType}
-      onTypeChange={handleSelectType}
-      selectedCategory={category}
-      onCategoryChange={setCategory}
-      isSearchActive={Boolean(query.trim())}
-      selectedSort={selectedSort}
-      onSortChange={setSelectedSort}
-      selectedProvider={selectedProvider}
-      onProviderChange={setSelectedProvider}
-      listStatus={listStatus}
-      onListStatusChange={setListStatus}
-      hideListedItems={hideListedItems}
-      onHideListedItemsChange={setHideListedItems}
-      stockStats={stockStats}
-      onReplenishStock={handleManualStockReplenish}
-      isStockReplenishing={stockEngineState.isReplenishing}
-    />
-  );
-  const catalogGrid = {
-    title: catalogTitle,
-    description: catalogDescription,
-    isLoading:
-      category === 'for-you' && forYouSubTab === 'series' && !query.trim() ? false : isLoading,
-    loadingMore,
-    items: displayedItems,
-    savedItems,
-    genres: genresMap,
-    recommendationReasons:
-      category === 'for-you'
-        ? forYouSubTab === 'series' && !query.trim()
-          ? seriesUniverseData.reasonsMap
-          : forYouReasons
-        : EMPTY_REASONS_MAP,
-    dislikedKeys: preferences.disliked,
-    preferredProviders: preferences.providers,
-    tab,
-    query,
-    listStatus,
-    category,
-    page: catalogPage,
-    totalPages: catalogTotalPages,
-    hasMore: tab === 'discover' && category !== 'for-you' && catalogPage < catalogTotalPages,
-    favoriteActors,
-    onLoadMore: handleLoadMore,
-    onOpenDetails: (item: any) => setDetailItem(item),
-    onQuickAdd: handleQuickAdd,
-    onSetStatus: handleSetStatus,
-    onQuickSave: (item: any) => setQuickSaveItem(item),
-    onToggleDislike: handleToggleDislike,
-    onEmptyAction: handleEmptyAction,
-    onOpenPerson: (id: number, name: string) => {
-      setPersonId(id);
-      setPersonName(name);
-    },
-    onToggleFavoriteActor: handleToggleFavoriteActor,
-    onRefreshForYou: handleRefreshForYou,
-    forYouProgressStep,
-    tmdbSource: tmdbSourceMeta.source,
-    tmdbStaleReason: tmdbSourceMeta.staleReason,
-    selectedType,
-    onTypeChange: handleSelectType,
-    selectedGenre,
-    onGenreChange: handleSelectGenre,
-    selectedSort,
-    onSortChange: setSelectedSort,
-    forYouSubTab,
-    onForYouSubTabChange: setForYouSubTab,
-    seriesCount: seriesUniverseData.universesCount,
-    hiddenKeys: preferences.hidden,
-    mood: preferences.mood,
-    isDemo: Boolean(activeProfile?.isDemo),
-    onIncrementEpisode: handleIncrementTvEpisode,
-    stockStats,
-    isStockReplenishing: stockEngineState.isReplenishing,
-    stockReplenishError: stockEngineState.lastError,
-    onReplenishStock: handleManualStockReplenish,
-    onOpenAddCustom: () => setAddCustomOpen(true),
-  };
-
-  // M1: kabuk eylemleri — modüller ortak servisere useShell() ile ulaşır
-  const shellActions: ShellActions = {
-    openDetails: (item) => setDetailItem(item),
-    openQuickSave: (item) => setQuickSaveItem(item),
-    setStatus: (item, status) => handleSetStatus(item, status),
-    toggleDislike: (key) => handleToggleDislike(key),
-    refreshTasteMap: () => handleRefreshTasteMap(),
-    openCommandPalette: () => setCommandPaletteOpen(true),
-    openAddCustom: () => setAddCustomOpen(true),
-    openProfile: () => setProfileOpen(true),
-  };
-
   return (
-    <ShellProvider value={shellActions}>
+    <>
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
         unpersistedWarning={unpersistedWarning}
-        queueFailure={queueFailure}
-        maxQueueAttempts={maxQueueAttempts}
       />
-      <div className={isMobileViewport ? 'app-workspace-frame mobile-frame' : 'app-workspace-frame'}>
-        <AppSidebar
+      <Header
+        profileName={profileName}
+        query={query}
+        tab={tab}
+        onTabChange={setTab}
+        myListCount={allListCount}
+        onSearchChange={setQuery}
+        onSearchSubmit={handleSearchSubmit}
+        onSearchClear={handleSearchClear}
+        onOpenProfile={() => setProfileOpen(true)}
+        onOpenAdd={() => setAddCustomOpen(true)}
+        onSelectItem={(item) => setDetailItem(item)}
+        getSaved={(item) => findSavedItem(savedItems, item)}
+        tmdbSource={tmdbSourceMeta.source}
+        tmdbStaleReason={tmdbSourceMeta.staleReason}
+        onOpenTvdbStock={() => setTvdbModalOpen(true)}
+        tvdbCount={tvdbCount}
+      />
+      <ConflictBanner
+        conflict={serverConflict}
+        onMergeBoth={handleMergeBothOnConflict}
+        onKeepLocal={handleKeepLocalOnConflict}
+        onUseServer={handleUseServerOnConflict}
+        onDismiss={() => setServerConflict(null)}
+      />
+
+      <main className="shell">
+        {tab === 'discover' && !query && (
+          <Hero
+            heroItem={currentHeroItem}
+            featuredItems={featuredHeroItems}
+            isWatching={Boolean(watchingItem)}
+            onOpenDetails={(item) => setDetailItem(item)}
+          />
+        )}
+
+        {tab === 'list' && (
+          <Stats
+            items={savedItems}
+            profileName={profileName}
+            favoriteActors={favoriteActors}
+            genresMap={genresMap}
+            cinemaKunye={cinemaKunye}
+            onSelectItem={(id, mediaType) => {
+              const found = findSavedItem(savedItems, { id, media_type: mediaType });
+              setDetailItem(found || { id, media_type: mediaType });
+            }}
+            onMergeDuplicates={handleMergeDuplicates}
+          />
+        )}
+
+        <Controls
           tab={tab}
           onTabChange={setTab}
           myListCount={allListCount}
-          profileName={profileName}
-          streakDays={streakDays}
-          tmdbSource={tmdbSourceMeta.source}
-          tmdbStaleReason={tmdbSourceMeta.staleReason}
-          onOpenProfile={() => setProfileOpen(true)}
-          onOpenAdd={() => setAddCustomOpen(true)}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          upcomingCount={upcomingCount}
+          dislikedCount={preferences.disliked.length}
+          favoriteActorsCount={favoriteActors.length}
+          watchingCount={watchingCount}
+          watchlistCount={watchlistCount}
+          completedCount={completedCount}
+          genres={genresMap}
+          selectedGenre={selectedGenre}
+          onGenreChange={handleSelectGenre}
+          selectedType={selectedType}
+          onTypeChange={handleSelectType}
+          selectedCategory={category}
+          onCategoryChange={setCategory}
+          isSearchActive={Boolean(query.trim())}
+          selectedSort={selectedSort}
+          onSortChange={setSelectedSort}
+          selectedProvider={selectedProvider}
+          onProviderChange={setSelectedProvider}
+          listStatus={listStatus}
+          onListStatusChange={setListStatus}
+          hideListedItems={hideListedItems}
+          onHideListedItemsChange={setHideListedItems}
+          stockStats={stockStats}
+          onReplenishStock={handleManualStockReplenish}
+          isStockReplenishing={stockEngineState.isReplenishing}
+          onOpenTvdbStock={() => setTvdbModalOpen(true)}
+          tvdbCount={tvdbCount}
         />
-        <div
-          className={isMobileViewport ? 'app-main-stage mobile-shell' : 'app-main-stage'}
-          data-theme={isMobileViewport ? 'dark' : undefined}
-        >
-          {isMobileViewport && (
-            <MobileTopBar
-              profileName={profileName}
-              streakDays={streakDays}
-              query={query}
-              onSearchChange={setQuery}
-              onSearchSubmit={() => handleSearchSubmit(query)}
-              onOpenProfile={() => setProfileOpen(true)}
-            />
-          )}
-          <Header
-            profileName={profileName}
-            query={query}
-            tab={tab}
-            onTabChange={setTab}
-            myListCount={allListCount}
-            streakDays={streakDays}
-            onSearchChange={setQuery}
-            onSearchSubmit={handleSearchSubmit}
-            onSearchClear={handleSearchClear}
-            onOpenProfile={() => setProfileOpen(true)}
-            onOpenAdd={() => setAddCustomOpen(true)}
-            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-            onSelectItem={(item) => setDetailItem(item)}
-            getSaved={(item) => findSavedItem(savedItems, item)}
-            tmdbSource={tmdbSourceMeta.source}
-            tmdbStaleReason={tmdbSourceMeta.staleReason}
-          />
-          <ConflictBanner
-            conflict={serverConflict}
-            onMergeBoth={handleMergeBothOnConflict}
-            onKeepLocal={handleKeepLocalOnConflict}
-            onUseServer={handleUseServerOnConflict}
-            onDismiss={() => setServerConflict(null)}
-          />
-
-          <main className="shell">
-        {isMobileViewport && mobileHomeOpen && !query.trim() ? (
-          <Suspense
-            fallback={
-              <div className="mobile-dashboard-fallback" role="status">
-                Dashboard hazırlanıyor…
-              </div>
-            }
-          >
-            <MobileDashboard
-              profileName={profileName}
-              personalizationKey={activeProfileId}
-              heroItem={currentHeroItem}
-              heroSaved={Boolean(findSavedItem(savedItems, currentHeroItem as never))}
-              isLoading={isLoading}
-              savedItems={savedItems}
-              recommendations={displayedItems}
-              reasons={
-                category === 'for-you'
-                  ? forYouSubTab === 'series' && !query.trim()
-                    ? seriesUniverseData.reasonsMap
-                    : forYouReasons
-                  : EMPTY_REASONS_MAP
-              }
-              genresMap={genresMap}
-              universeCount={seriesUniverseData.universesCount}
-              mood={preferences.mood}
-              onMoodChange={(nextMood) => handleSavePreferences(preferences.providers, nextMood)}
-              onOpenItem={(item) => setDetailItem(item as never)}
-              onQuickSave={(item) => setQuickSaveItem(item as never)}
-              onIncrementEpisode={(item) => handleIncrementTvEpisode(item as never)}
-              onNavigate={(target) => {
-                setMobileHomeOpen(false);
-                setTab(target);
-              }}
-              onOpenIdentity={() => {
-                setMobileHomeOpen(false);
-                setTab('taste-map');
-                setTasteMapDisplayMode('identity');
-              }}
-            />
-          </Suspense>
-        ) : tab === 'discover' ? (
-          DiscoverSection ? (
-            <DiscoverSection
-              query={query}
-              heroItem={currentHeroItem}
-              featuredItems={featuredHeroItems}
-              isWatching={Boolean(watchingItem)}
-              onOpenDetails={(item: any) => setDetailItem(item)}
-              controls={controlsNode}
-              grid={catalogGrid}
-            />
-          ) : null
-        ) : (
-          ListSection ? (
-            <ListSection
-              stats={{
-                items: savedItems,
-                profileName,
-                favoriteActors,
-                genresMap,
-                cinemaKunye,
-                onSelectItem: (id: number, mediaType: string) => {
-                  const found = findSavedItem(savedItems, { id, media_type: mediaType });
-                  setDetailItem(found || { id, media_type: mediaType });
-                },
-                onMergeDuplicates: handleMergeDuplicates,
-              }}
-              controls={controlsNode}
-              grid={catalogGrid}
-            />
-          ) : null
-        )}
 
         {tab === 'relationships' ? (
-          RelationshipsSection ? (
+          <ErrorBoundary sectionName="İlişki Keşfi">
             <Suspense
               fallback={
                 <div className="lazy-tab-fallback" role="status">
@@ -4642,139 +3823,339 @@ export function App() {
                 </div>
               }
             >
-              <RelationshipsSection
+              <RelationshipExplorer
+                key={`${activeProfileId}-relationships`}
+                mode="relationships"
                 profileId={activeProfileId}
                 savedItems={savedItems}
                 preferences={preferences}
+                candidates={[]}
                 favoriteActors={favoriteActors}
                 genreNames={genresMap}
                 onRefresh={handleLoadRelationshipCandidates}
+                onOpenDetails={(item) => setDetailItem(item as SavedItem)}
+                onQuickSave={(item) => setQuickSaveItem(item as SavedItem)}
                 initialSourceKey={relationshipInitialSourceKey}
               />
             </Suspense>
-          ) : null
+          </ErrorBoundary>
         ) : tab === 'taste-map' ? (
-          TasteMapSection ? (
-            <Suspense
-              fallback={
-                <div className="lazy-tab-fallback" role="status">
-                  Zevkim yükleniyor…
-                </div>
+          <div className="taste-map-page">
+            <div className="taste-map-view-toggle" role="group" aria-label="Zevk haritası görünüm modu">
+              <button
+                className={`btn ${tasteMapDisplayMode === 'identity' ? 'btn-primary' : ''}`}
+                type="button"
+                onClick={() => setTasteMapDisplayMode('identity')}
+                aria-pressed={tasteMapDisplayMode === 'identity'}
+              >
+                Sinema Kimliğim
+              </button>
+              <button
+                className={`btn ${tasteMapDisplayMode === 'poster' ? 'btn-primary' : ''}`}
+                type="button"
+                onClick={() => setTasteMapDisplayMode('poster')}
+                aria-pressed={tasteMapDisplayMode === 'poster'}
+              >
+                Poster Duvarı
+              </button>
+              <button
+                className={`btn ${tasteMapDisplayMode === 'graph' ? 'btn-primary' : ''}`}
+                type="button"
+                onClick={() => setTasteMapDisplayMode('graph')}
+                aria-pressed={tasteMapDisplayMode === 'graph'}
+              >
+                Zevk Ağı (Grafik)
+              </button>
+            </div>
+
+            <ErrorBoundary sectionName="Zevk Haritası">
+              <Suspense
+                fallback={
+                  <div className="lazy-tab-fallback" role="status">
+                    Zevk Haritası yükleniyor…
+                  </div>
+                }
+              >
+                {tasteMapDisplayMode === 'poster' ? (
+                  <TasteMapView
+                    tasteMap={tasteMap}
+                    summary={tasteSummary}
+                    genresMap={genresMap}
+                    savedItems={savedItems}
+                    onOpenDetails={(item) => setDetailItem(item)}
+                    onQuickSave={(item) => setQuickSaveItem(item)}
+                    onSetStatus={(item, status) => handleSetStatus(item, status)}
+                    onToggleDislike={(key) => handleToggleDislike(key)}
+                    onRefreshTasteMap={handleRefreshTasteMap}
+                    isLoading={isLoading}
+                    isDemo={Boolean(activeProfile?.isDemo)}
+                    tmdbSource={tmdbSourceMeta.source}
+                    tmdbStaleReason={tmdbSourceMeta.staleReason}
+                  />
+                ) : tasteMapDisplayMode === 'identity' ? (
+                  <TasteProfileDashboard />
+                ) : (
+                  <RelationshipExplorer
+                    key={`${activeProfileId}-taste-map`}
+                    mode="taste-map"
+                    profileId={activeProfileId}
+                    savedItems={savedItems}
+                    preferences={preferences}
+                    candidates={[]}
+                    favoriteActors={favoriteActors}
+                    genreNames={genresMap}
+                    onRefresh={handleLoadRelationshipCandidates}
+                    onOpenDetails={(item) => setDetailItem(item as SavedItem)}
+                    onQuickSave={(item) => setQuickSaveItem(item as SavedItem)}
+                  />
+                )}
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        ) : (
+          <ErrorBoundary sectionName="Katalog ve Listem">
+            <MediaGrid
+              title={catalogTitle}
+              description={catalogDescription}
+              isLoading={category === 'for-you' && forYouSubTab === 'series' && !query.trim() ? false : isLoading}
+              loadingMore={loadingMore}
+              items={displayedItems}
+              savedItems={savedItems}
+              genres={genresMap}
+              recommendationReasons={
+                category === 'for-you'
+                  ? forYouSubTab === 'series' && !query.trim()
+                    ? seriesUniverseData.reasonsMap
+                    : forYouReasons
+                  : EMPTY_REASONS_MAP
               }
+              dislikedKeys={preferences.disliked}
+              preferredProviders={preferences.providers}
+              tab={tab}
+              query={query}
+              listStatus={listStatus}
+              category={category}
+              page={catalogPage}
+              totalPages={catalogTotalPages}
+              hasMore={tab === 'discover' && category !== 'for-you' && catalogPage < catalogTotalPages}
+              favoriteActors={favoriteActors}
+              onLoadMore={handleLoadMore}
+              onOpenDetails={(item) => setDetailItem(item)}
+              onQuickAdd={handleQuickAdd}
+              onSetStatus={handleSetStatus}
+              onQuickSave={(item) => setQuickSaveItem(item)}
+              onToggleDislike={handleToggleDislike}
+              onEmptyAction={handleEmptyAction}
+              onOpenPerson={(id, name) => {
+                setPersonId(id);
+                setPersonName(name);
+              }}
+              onToggleFavoriteActor={handleToggleFavoriteActor}
+              onRefreshForYou={handleRefreshForYou}
+              forYouProgressStep={forYouProgressStep}
+              tmdbSource={tmdbSourceMeta.source}
+              tmdbStaleReason={tmdbSourceMeta.staleReason}
+              selectedType={selectedType}
+              onTypeChange={handleSelectType}
+              selectedGenre={selectedGenre}
+              onGenreChange={handleSelectGenre}
+              selectedSort={selectedSort}
+              onSortChange={setSelectedSort}
+              forYouSubTab={forYouSubTab}
+              onForYouSubTabChange={setForYouSubTab}
+              seriesCount={seriesUniverseData.universesCount}
+              hiddenKeys={preferences.hidden}
+              mood={preferences.mood}
+              isDemo={Boolean(activeProfile?.isDemo)}
+              onIncrementEpisode={handleIncrementTvEpisode}
+              stockStats={stockStats}
+              isStockReplenishing={stockEngineState.isReplenishing}
+              stockReplenishError={stockEngineState.lastError}
+              onReplenishStock={handleManualStockReplenish}
+              onOpenAddCustom={() => setAddCustomOpen(true)}
+            />
+          </ErrorBoundary>
+        )}
+      </main>
+
+      <footer>
+        <div className="shell footer-shell">
+          <div>
+            Cinethos | Kişisel listen bu tarayıcıda saklanır. Katalog kaynağı:{' '}
+            <a
+              href="https://www.themoviedb.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="footer-link"
             >
-              <TasteMapSection
-                tasteMap={tasteMap}
-                tasteSummary={tasteSummary}
-                genresMap={genresMap}
-                savedItems={savedItems}
-                displayMode={tasteMapDisplayMode}
-                onDisplayModeChange={setTasteMapDisplayMode}
-                isLoading={isLoading}
-                isDemo={Boolean(activeProfile?.isDemo)}
-                tmdbSource={tmdbSourceMeta.source}
-                tmdbStaleReason={tmdbSourceMeta.staleReason}
-                isMobileViewport={isMobileViewport}
-              />
-            </Suspense>
-          ) : null
-        ) : null}
-          </main>
-
-          <AppFooter tmdbSource={tmdbSourceMeta.source} />
+              The Movie Database (TMDB)
+            </a>
+            .
+          </div>
+          <div className="footer-source-status">
+            <span>Veri Durumu:</span>{' '}
+            <strong>
+              {tmdbSourceMeta.source === 'live'
+                ? 'Canlı TMDB API'
+                : tmdbSourceMeta.source === 'stale-cache'
+                ? 'Eski Önbellek (Offline)'
+                : tmdbSourceMeta.source === 'demo'
+                ? 'Örnek Katalog'
+                : 'Bağlantı Bekleniyor'}
+            </strong>
+          </div>
+          <div className="footer-shortcuts-hint">
+            <span>Kısayollar: </span>
+            <kbd className="footer-kbd">1-4</kbd> Sekmeler ·{' '}
+            <kbd className="footer-kbd">/</kbd> Ara ·{' '}
+            <kbd className="footer-kbd">S</kbd> Eşitle ·{' '}
+            <kbd className="footer-kbd">N</kbd> Ekle ·{' '}
+            <kbd className="footer-kbd">Esc</kbd> Kapat
+          </div>
         </div>
-      </div>
+      </footer>
 
-      {isMobileViewport && (
-        <MobileDock
-          homeOpen={mobileHomeOpen}
-          tab={tab}
-          myListCount={allListCount}
-          onSelectHome={() => {
-            setMobileHomeOpen(true);
-            setTab('discover');
-            if (query.trim()) handleSearchClear();
-          }}
-          onSelectTab={(target) => {
-            setMobileHomeOpen(false);
-            setTab(target);
-          }}
-          onOpenProfile={() => setProfileOpen(true)}
-        />
-      )}
+      {/* Mobil 56px sticky alt tab bar (v6 spec Section 2.2 / 5) */}
+      <nav className="mobile-tab-bar" aria-label="Mobil Gezinme">
+        <button
+          type="button"
+          className={`mobile-tab-btn ${tab === 'discover' ? 'active' : ''}`}
+          onClick={() => setTab('discover')}
+          aria-label="Keşfet"
+        >
+          <svg className="icon" aria-hidden="true"><use href="#icon-film" /></svg>
+          <span className="mobile-tab-label">Keşfet</span>
+        </button>
 
-      <AppModals
-        detailItem={detailItem}
-        quickSaveItem={quickSaveItem}
+        <button
+          type="button"
+          className={`mobile-tab-btn ${tab === 'list' ? 'active' : ''}`}
+          onClick={() => setTab('list')}
+          aria-label="Listem"
+        >
+          <span className="mobile-tab-icon-wrap">
+            <svg className="icon" aria-hidden="true"><use href="#icon-bookmark" /></svg>
+            {allListCount > 0 && (
+              <span className="mobile-tab-badge">{allListCount > 99 ? '99+' : allListCount}</span>
+            )}
+          </span>
+          <span className="mobile-tab-label">Listem</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-tab-btn ${tab === 'taste-map' ? 'active' : ''}`}
+          onClick={() => setTab('taste-map')}
+          aria-label="Zevkim"
+        >
+          <svg className="icon" aria-hidden="true"><use href="#icon-dna" /></svg>
+          <span className="mobile-tab-label">Zevkim</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-tab-btn ${tab === 'relationships' ? 'active' : ''}`}
+          onClick={() => setTab('relationships')}
+          aria-label="İlişkiler"
+        >
+          <svg className="icon" aria-hidden="true"><use href="#icon-network" /></svg>
+          <span className="mobile-tab-label">İlişkiler</span>
+        </button>
+      </nav>
+
+      {/* Modals & Drawers */}
+      <DetailModal
+        item={detailItem}
+        savedItem={detailItem ? findSavedItem(savedItems, detailItem) : undefined}
+        savedItems={savedItems}
+        isOpen={Boolean(detailItem)}
+        genresMap={genresMap}
+        isDisliked={
+          detailItem
+            ? preferences.disliked.includes(
+                `${detailItem.media_type || (detailItem.title ? 'movie' : 'tv')}:${detailItem.id}`
+              )
+            : false
+        }
+        isHidden={
+          detailItem
+            ? Boolean(
+                preferences.hidden?.includes(
+                  `${detailItem.media_type || (detailItem.title ? 'movie' : 'tv')}:${detailItem.id}`
+                )
+              )
+            : false
+        }
+        favoriteActors={favoriteActors}
+        onClose={() => setDetailItem(null)}
+        onSave={handleSaveItem}
+        onRemove={handleRemoveItem}
+        onToggleDislike={handleToggleDislike}
+        onToggleHide={handleToggleHide}
+        onToggleFavoriteActor={handleToggleFavoriteActor}
+        onSelectMedia={(next) => setDetailItem(next)}
+        onOpenPerson={(id, name) => {
+          setPersonId(id);
+          setPersonName(name);
+        }}
+      />
+
+      <QuickSaveModal
+        item={quickSaveItem}
+        savedItem={quickSaveItem ? findSavedItem(savedItems, quickSaveItem) : undefined}
+        isOpen={Boolean(quickSaveItem)}
+        onClose={() => setQuickSaveItem(null)}
+        onSave={(item, status, rating) => {
+          handleSaveItem(item, status, rating);
+          showToast(`✓ "${displayTitle(item)}" listenize kaydedildi!`);
+        }}
+        onRemove={handleRemoveItem}
+      />
+
+      <PersonDrawer
         personId={personId}
         personName={personName}
-        addCustomOpen={addCustomOpen}
-        commandPaletteOpen={commandPaletteOpen}
-        profileOpen={profileOpen}
-        pendingBackup={pendingBackup}
-        archivePreview={archivePreview}
-        archiveRestoreBusy={archiveRestoreBusy}
-        authPrompt={authPrompt}
-        toasts={toasts}
-        isMobileViewport={isMobileViewport}
-        onOpenIdentityTab={() => {
-          setProfileOpen(false);
-          setMobileHomeOpen(false);
-          setTab('taste-map');
-          setTasteMapDisplayMode('identity');
+        profileId={activeProfileId}
+        isOpen={Boolean(personId)}
+        savedItems={savedItems}
+        isFavoriteActor={favoriteActors.some((a) => a.id === personId)}
+        onClose={() => setPersonId(null)}
+        onOpenDetails={(item) => setDetailItem(item)}
+        onQuickAdd={handleQuickAdd}
+        onMarkCompleted={handleMarkCompleted}
+        onQuickSave={(item) => setQuickSaveItem(item)}
+        onToggleFavoriteActor={handleToggleFavoriteActor}
+        onOpenInRelationships={(mediaKey) => {
+          setPersonId(null);
+          setRelationshipInitialSourceKey(mediaKey);
+          setTab('relationships');
         }}
+      />
+
+      <AddCustomModal
+        isOpen={addCustomOpen}
+        onClose={() => setAddCustomOpen(false)}
+        onAdd={(item, status) => {
+          handleSaveItem(item, status, '');
+          showToast(`✓ "${item.title}" listenize eklendi!`);
+        }}
+      />
+
+      <ProfileModal
+        isOpen={profileOpen}
         profiles={profiles}
         activeProfile={activeProfile}
         activeProfileId={activeProfileId}
-        profileName={profileName}
+        activeProfileName={profileName}
         preferences={preferences}
         savedItems={savedItems}
         favoriteActors={favoriteActors}
         dislikedItems={dislikedItems}
         genresMap={genresMap}
         cinemaKunye={cinemaKunye}
-        tasteMap={tasteMap}
+        tasteEntries={tasteMap.entries}
         syncStatus={syncStatus}
-        onCloseDetail={() => setDetailItem(null)}
-        onSelectDetail={(next) => setDetailItem(next)}
-        onCloseQuickSave={() => setQuickSaveItem(null)}
-        onOpenQuickSave={(item) => setQuickSaveItem(item)}
-        onClosePerson={() => setPersonId(null)}
-        onOpenPerson={(id, name) => {
-          setPersonId(id);
-          setPersonName(name);
-        }}
-        onCloseAddCustom={() => setAddCustomOpen(false)}
-        onCloseCommandPalette={() => setCommandPaletteOpen(false)}
-        onCloseProfile={() => setProfileOpen(false)}
-        onClosePendingBackup={() => setPendingBackup(null)}
-        onDismissArchivePreview={() => setArchivePreview(null)}
-        onConfirmArchiveRestore={confirmRestoreSqliteArchive}
-        onCloseAuthPrompt={() => setAuthPrompt(null)}
-        onDismissToast={dismissToast}
-        showToast={showToast}
-        onSaveItem={handleSaveItem}
-        onRemoveItem={handleRemoveItem}
-        onQuickAdd={handleQuickAdd}
-        onMarkCompleted={handleMarkCompleted}
-        onToggleDislike={handleToggleDislike}
-        onToggleHide={handleToggleHide}
-        onToggleFavoriteActor={handleToggleFavoriteActor}
-        onSelectTab={(targetTab) => setTab(targetTab)}
-        onOpenProfile={() => setProfileOpen(true)}
-        onOpenAddCustom={() => setAddCustomOpen(true)}
-        onFocusSearch={() => {
-          const searchInput = document.querySelector<HTMLInputElement>('#searchInput');
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.select();
-          }
-        }}
-        onOpenRelationshipForKey={(mediaKey) => {
-          setPersonId(null);
-          setRelationshipInitialSourceKey(mediaKey);
-          setTab('relationships');
-        }}
-        onPushToServer={pushToServer}
+        onClose={() => setProfileOpen(false)}
         onSaveProfileName={handleSaveProfileName}
         onSwitchProfile={handleSwitchProfile}
         onCreateProfile={handleCreateProfile}
@@ -4782,8 +4163,7 @@ export function App() {
         onToggleReminders={handleToggleReminders}
         onExportBackup={handleExportBackup}
         onImportBackupFile={handleImportBackupFile}
-        onConfirmImport={handleConfirmImport}
-        onImportCsvItems={(items, importedKunye, profileBlock) => {
+        onImportCsvItems={(items, importedKunye) => {
           const effectiveKunye = importedKunye
             ? mergeIncomingCinemaKunye(importedKunye)
             : cinemaKunye;
@@ -4793,12 +4173,9 @@ export function App() {
           );
           savedItemsRef.current = merged;
           setSavedItems(merged);
-          if (profileBlock) applyCsvProfileBlock(profileBlock);
           void recordProfileChangeAndMaybeBackup();
           showToast(`${items.length} yapım CSV'den listenize kayıpsız birleştirildi.`);
         }}
-        onCreateSqliteArchive={handleCreateSqliteArchive}
-        onRestoreSqliteArchive={handleRestoreSqliteArchive}
         onApplyRestoredDocument={(doc) => {
           applyDataDocumentToState(doc);
           void refreshCinemaKunyeFromServer('merge');
@@ -4815,9 +4192,33 @@ export function App() {
           void refreshCinemaKunyeFromServer(syncMode);
         }}
         onMergeDuplicates={handleMergeDuplicates}
+        isDemo={Boolean(activeProfile?.isDemo)}
         onToggleDemoMode={handleToggleDemoMode}
       />
-    </ShellProvider>
+
+      <ImportChoiceModal
+        isOpen={Boolean(pendingBackup)}
+        onClose={() => setPendingBackup(null)}
+        onConfirm={handleConfirmImport}
+      />
+
+      <TvdbStockModal
+        isOpen={tvdbModalOpen}
+        onClose={() => setTvdbModalOpen(false)}
+        userListItems={savedItems}
+        preferences={preferences}
+        profileId={activeProfileId}
+        onStockMutated={() => {
+          refreshStockStats();
+          if (category === 'stock') {
+            loadCategoryResults('stock', 1, false, '', selectedProvider, false, selectedType, selectedGenre);
+          }
+          showToast('✓ TVDB ve stok verileri başarıyla güncellendi!');
+        }}
+      />
+
+      <Toast message={toastMessage} />
+    </>
   );
 }
 export default App;

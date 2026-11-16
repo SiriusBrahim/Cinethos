@@ -13,20 +13,13 @@ import { createCineTrackApp, createSpaFallbackMiddleware } from './src/server/ap
 import { isAiStudioContainerEnv, resolveConfig } from './src/server/config.ts';
 import { refreshEnvGitHubPat } from './src/server/github-token-refresh.ts';
 import { redactSecrets } from './src/server/persistent-store.ts';
-import { createRespanTracing } from './src/server/respan-telemetry.ts';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const CINETRACK_HOST = '127.0.0.1';
 const resolved = resolveConfig({ rootDir: root });
-const isContainerDeployment = Boolean(
-  isAiStudioContainerEnv(process.env) ||
-  process.env.K_SERVICE ||
-  process.env.K_REVISION ||
-  process.env.CLOUD_RUN_JOB
-);
 const port = resolved.port;
 const bindHost = resolved.explicitHost || CINETRACK_HOST;
-const listenHost = resolved.explicitHost || (isContainerDeployment ? '0.0.0.0' : resolved.listenHost);
+const listenHost = resolved.listenHost;
 
 const dataDir = path.join(root, 'data');
 const maxDataBytes = DEFAULT_MAX_DATA_BYTES;
@@ -37,36 +30,21 @@ for (const warnMsg of resolved.warnings) {
   console.warn(warnMsg);
 }
 
-// Respan izleme tek bir kez, model istemcileri oluşturulmadan önce başlatılır.
-// RESPAN_API_KEY yoksa sessizce devre dışı kalır ve uygulama izleme olmadan çalışır.
-await createRespanTracing({
-  apiKey: resolved.respanApiKey,
-  ...(resolved.respanBaseUrl ? { baseUrl: resolved.respanBaseUrl } : {}),
-}).start();
-
 const envFilePath = path.join(root, '.env');
 let githubTokenLive = resolved.githubToken;
 let schedulePostMutationSync: ((reason: string) => void) | null = null;
-const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev');
 
-const {
-  app,
-  primaryRepository,
-  contentIntelligence,
-  startRuntimeModules,
-  stopRuntimeModules,
-  persistentStore,
-} = createCineTrackApp({
+const { app, storage, persistentStore } = createCineTrackApp({
   dataDir,
   maxDataBytes,
   maxProfiles,
   maxItemsPerProfile,
   bindHost,
-  devMode: isDevMode,
   trustProxy: resolved.trustProxy,
   ...(resolved.tmdbRateLimit !== undefined ? { rateLimitMaxRequests: resolved.tmdbRateLimit } : {}),
   ...(resolved.tmdbRateWindowMs !== undefined ? { rateLimitWindowMs: resolved.tmdbRateWindowMs } : {}),
   tmdbApiKey: resolved.tmdbApiKey,
+  tvdbApiKey: resolved.tvdbApiKey,
   githubToken: resolved.githubToken,
   githubTokenSource: resolved.githubTokenSource,
   githubTokenCandidates: resolved.githubTokenCandidates,
@@ -105,7 +83,6 @@ const {
 });
 
 async function startServer() {
-  await startRuntimeModules();
   // GitHub OAuth token'ları (~8 saat) süresi dolduğunda Windows Kimlik Yöneticisi'nden
   // (Git Credential Manager) taze token alınır; .env ve canlı senkron yapılandırması güncellenir.
   const applyFreshGitHubToken = async (reason: string, timeoutMs = 45_000): Promise<void> => {
@@ -126,8 +103,24 @@ async function startServer() {
       console.warn('[GitHub-Token] Yenileme atlandı:', e?.message || e);
     }
   };
+  await applyFreshGitHubToken('başlangıç', 8_000);
+
+  // Başlangıçta mevcut izleme listesi ve profillerdeki yapımları asenkron olarak kalıcı kataloğa aktar (BUG-04)
+  try {
+    const initialData = await storage.readDataAsync();
+    const allItems: SavedItem[] = [];
+    for (const p of initialData.profiles || []) {
+      if (Array.isArray(p.items)) allItems.push(...p.items);
+    }
+    if (allItems.length > 0) {
+      await persistentStore.upsertCatalogItemsSerialized(allItems);
+    }
+  } catch (e: any) {
+    console.warn('[Catalog] Başlangıç indeksleme uyarısı:', e?.message || e);
+  }
+
+  const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev');
   const httpServer = createHttpServer(app);
-  let viteInstance: { close: () => Promise<void> } | null = null;
 
   if (!isDevMode) {
     const distPath = path.join(root, 'dist');
@@ -142,37 +135,17 @@ async function startServer() {
     app.use(createSpaFallbackMiddleware(indexHtmlPath));
   } else {
     const hmrDisabled = process.env.DISABLE_HMR === 'true' || isAiStudioContainerEnv(process.env);
-    let viteMiddleware: express.RequestHandler | null = null;
-    const viteReadyPromise = (async () => {
-      const { createServer: createViteServer } = await import('vite');
-      const vite = await createViteServer({
-        server: {
-          middlewareMode: true,
-          host: listenHost,
-          port,
-          allowedHosts: isContainerDeployment ? true : ['localhost', '127.0.0.1', '.run.app'],
-          hmr: hmrDisabled ? false : { server: httpServer },
-          ...(hmrDisabled ? { ws: false } : {}),
-        },
-        appType: 'spa',
-      });
-      viteInstance = vite;
-      viteMiddleware = vite.middlewares;
-      return vite;
-    })();
-    viteReadyPromise.catch((err) => {
-      console.error('[Vite] Geliştirme sunucusu başlatılamadı:', err);
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        host: listenHost,
+        port,
+        hmr: hmrDisabled ? false : { server: httpServer },
+      },
+      appType: 'spa',
     });
-
-    app.use((req, res, next) => {
-      if (viteMiddleware) {
-        viteMiddleware(req, res, next);
-        return;
-      }
-      viteReadyPromise
-        .then((vite) => vite.middlewares(req, res, next))
-        .catch(next);
-    });
+    app.use(vite.middlewares);
   }
 
   httpServer.listen(port, listenHost, () => {
@@ -188,35 +161,6 @@ async function startServer() {
       console.log('TMDB_API_KEY is not configured; running in fallback demo mode.');
     }
 
-    // Başlangıç token tazeleme ve katalog indeksleme TCP port 3000 açıldıktan sonra arka planda çalışır.
-    void (async () => {
-      await applyFreshGitHubToken('başlangıç', 8_000);
-      try {
-        const { document: initialData } = await primaryRepository.readRaw();
-        const allItems: SavedItem[] = [];
-        for (const p of initialData.profiles || []) {
-          if (Array.isArray(p.items)) allItems.push(...p.items);
-        }
-        if (allItems.length > 0) {
-          await persistentStore.upsertCatalogItemsSerialized(allItems);
-          await contentIntelligence.enqueueLibraryItemsBatch(
-            allItems as unknown as Record<string, unknown>[],
-            { pageSize: 25 }
-          );
-        }
-        for (const p of initialData.profiles || []) {
-          for (const key of p.preferences?.disliked || []) {
-            contentIntelligence.enqueueHiddenOrDislikedItem(key);
-          }
-          for (const key of p.preferences?.hidden || []) {
-            contentIntelligence.enqueueHiddenOrDislikedItem(key);
-          }
-        }
-      } catch (e: any) {
-        console.warn('[Catalog] Başlangıç indeksleme uyarısı:', e?.message || e);
-      }
-    })();
-
     let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingMutationWhileBusy = false;
     const MUTATION_AUTO_SYNC_DEBOUNCE_MS = 3500;
@@ -225,7 +169,7 @@ async function startServer() {
     const runSafeAutoReconcile = async (label: string) => {
       try {
         const currentStatus = persistentStore.getSyncStatus();
-        if (!currentStatus.configured || currentStatus.authFailed) return;
+        if (!currentStatus.configured) return;
         if (persistentStore.isSyncBusy()) {
           pendingMutationWhileBusy = true;
           return;
@@ -236,20 +180,13 @@ async function startServer() {
             `[Auto-Sync:${label}] Kayıpsız iki yönlü eşitleme tamamlandı (indirilen: ${report.filesDownloaded.length}, yüklenen: ${report.filesUploaded.length}, birleştirilen: ${report.filesMerged.length}, doğrulandı: ${report.verifiedEqual}).`
           );
         } else if (report.errors.length > 0) {
-          const isAuthError = report.errors.some((e) => e.category === 'auth_error');
-          if (isAuthError) {
-            console.warn(
-              `[Auto-Sync:${label}] GitHub kimlik doğrulama hatası (HTTP 401). Otomatik arka plan eşitlemesi duraklatıldı; geçerli bir CINETRACK_GITHUB_PAT tanımlandığında eşitleme devam edecektir.`
-            );
-          } else {
-            console.warn(
-              `[Auto-Sync:${label}] Eşitleme uyarısı:`,
-              redactSecrets(
-                report.errors.map((e) => e.message).join('; '),
-                persistentStore.getKnownSecretsForRedaction()
-              )
-            );
-          }
+          console.warn(
+            `[Auto-Sync:${label}] Eşitleme uyarısı:`,
+            redactSecrets(
+              report.errors.map((e) => e.message).join('; '),
+              persistentStore.getKnownSecretsForRedaction()
+            )
+          );
         }
       } catch (err: any) {
         console.error(
@@ -303,50 +240,6 @@ async function startServer() {
     if (typeof tokenRefreshTimer.unref === 'function') {
       tokenRefreshTimer.unref();
     }
-
-    // OPS-01: SIGTERM/SIGINT'te yeni istek almayı bırak, zamanlayıcıları temizle,
-    // sürmekte olan eşitleme/yazmayı bitir, sonra çık.
-    let shuttingDown = false;
-    const shutdown = async (signal: string) => {
-      if (shuttingDown) return;
-      shuttingDown = true;
-      console.log(`[Shutdown] ${signal} alındı; yeni istekler kapatılıyor…`);
-      clearInterval(autoSyncTimer);
-      clearInterval(tokenRefreshTimer);
-      clearTimeout(startupSyncTimer);
-      if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
-
-      const forceExitTimer = setTimeout(() => {
-        console.warn('[Shutdown] Kapanış 10 sn içinde tamamlanmadı; süreç zorla kapatılıyor.');
-        process.exit(1);
-      }, 10_000);
-      forceExitTimer.unref?.();
-
-      if (viteInstance) {
-        await viteInstance.close().catch(() => undefined);
-      }
-
-      await new Promise<void>((resolve) => {
-        httpServer.close(() => resolve());
-      });
-
-      const deadline = Date.now() + 5_000;
-      while (persistentStore.isSyncBusy() && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      try {
-        await stopRuntimeModules();
-      } catch (stopErr) {
-        console.warn('[Shutdown] Modül durdurma uyarısı:', stopErr);
-      }
-
-      clearTimeout(forceExitTimer);
-      console.log('[Shutdown] Güvenli kapanış tamamlandı.');
-      process.exit(0);
-    };
-    process.once('SIGTERM', () => void shutdown('SIGTERM'));
-    process.once('SIGINT', () => void shutdown('SIGINT'));
   });
 }
 

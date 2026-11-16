@@ -10,42 +10,39 @@ import {
   RECOMMENDATION_WEIGHTS_V3, normalizeUserRating, signalDecay, getUserSignalV3,
   buildTasteProfileV3, scoreCandidatesV3, actorFrequency, pairMatchScore, castHarmonyScore,
   findSavedItem, scoreActorRecommendations, calculateActorRoleBonus, diversifyActorRecommendations,
-  makeMediaKey,   
+  makeMediaKey, parseMediaKey, normalizeFavoriteActor, normalizeFavoriteActors,
   describeActorFetchChipState,
   isItemSaved, filterHistoryByType, filterDislikedByType, TARGET_RECOMMENDATION_COUNT,
   POOL_TARGET_CAPACITY, POOL_LOW_WATERMARK, POOL_REPLENISH_MIN_NEW,
   determineItemEra, determineItemPopularityTier, normalizePoolCandidate,
   isCandidateEligibleInPool, filterEligiblePoolItems, balanceCandidatePool,
-  multiDimensionalDiversify, PoolReplenishmentLock, 
-   
+  multiDimensionalDiversify, PoolReplenishmentLock, poolReplenishmentLock,
+  loadPersistentPoolData, savePersistentPoolData, createDefaultPoolCursors, createDefaultPoolData,
   replenishCandidatePool, selectBalancedRecommendations,
-  assignTasteRing, demoteTasteRing, getTasteRingLabel, inferLifecycleRing, 
+  assignTasteRing, demoteTasteRing, getTasteRingLabel, inferLifecycleRing, normalizeTasteRing,
   normalizeTasteMapEntries, normalizeTasteMapRings,
-  updateTasteMapWithBatch,
-   isTasteMapCacheValid,
+  loadPersistentTasteMap, savePersistentTasteMap, updateTasteMapWithBatch,
+  recordTasteMapPoolScores, isTasteMapCacheValid,
   markTasteMapItemStatus, syncPoolCandidatesWithTasteMap,
   createDefaultTasteMapData, getTasteMapStorageKey,
   calculateTastePillars, computeTasteProfileSignature, buildTasteProfileSummary,
-  fetchActorCreditsBatch,  clearInFlightActorCredits,
-    getTasteMapActiveAndArchivedCounts,
+  fetchActorCreditsBatch, getInFlightActorCreditsCount, clearInFlightActorCredits,
+  getTasteMapEntries, getTasteMapArchivedEntries, getTasteMapActiveAndArchivedCounts,
   archiveTasteMapEntry, restoreTasteMapEntry,
-  MAX_IMPRESSION_HISTORY_PER_ENTRY, 
+  MAX_IMPRESSION_HISTORY_PER_ENTRY, appendBoundedImpression,
   sanitizeTasteMapEntryImpressions, getImpressionSummary,
-  ENGINE_VERSION, ALGORITHM_VERSION
+  ENGINE_VERSION, ALGORITHM_VERSION, computeWeightsSignature
 } from "../src/core/cinetrack-core.ts";
-import {
-  loadPersistentTasteMap,
-  savePersistentPoolData,
-  savePersistentTasteMap,
-} from "../src/services/discovery-storage.ts";
 import { PROVIDER_OPTIONS, DISCOVER_PROVIDER_CHIPS } from "../src/utils/helpers.ts";
 import {
   TMDB_CACHE_TTLS,
   resolveTmdbCacheTtl,
+  clearTmdbClientCache,
   parseTmdbSourceFromHeaders,
   getTmdbSourceLabel,
   getTmdbSourceDescription,
   setTmdbSourceState,
+  getTmdbSourceState,
   subscribeTmdbSource,
 } from "../src/services/api.ts";
 
@@ -1843,7 +1840,7 @@ describe("Sana Özel Aşama 2 — 500 + 500 Yenilenebilir Aday Havuzu", () => {
 
     let fetchCallCount = 0;
     let nextId = 9000;
-    const mockFetch = async (_path, _params) => {
+    const mockFetch = async (path, params) => {
       fetchCallCount++;
       return {
         results: Array.from({ length: 20 }, () => ({
@@ -1886,7 +1883,7 @@ describe("Sana Özel Aşama 2 — 500 + 500 Yenilenebilir Aday Havuzu", () => {
     });
 
     // /movie/popular isteği hata fırlatıyor
-    const mockFetch = async (path, _params) => {
+    const mockFetch = async (path, params) => {
       if (path === "/movie/popular") {
         throw new Error("TMDB network timeout");
       }
@@ -1922,7 +1919,7 @@ describe("Sana Özel Aşama 2 — 500 + 500 Yenilenebilir Aday Havuzu", () => {
     };
 
     const sharedId = 445566;
-    const mockFetch = async (_path) => ({
+    const mockFetch = async (path) => ({
       results: [
         { id: sharedId, title: "Ortak Film", vote_average: 8.2, popularity: 50, genre_ids: [18] }
       ],
@@ -2136,7 +2133,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
     });
 
     let nextId = 50000;
-    const mockFetch = async (_path, _params) => {
+    const mockFetch = async (path, params) => {
       // Yapay gecikme: iptal sinyalinin yarışta tetiklenebilmesi için
       await new Promise((r) => setTimeout(r, 25));
       return {
@@ -2203,7 +2200,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
     let activeInFlight = 0;
     let maxInFlight = 0;
 
-    const mockFetch = async (_path, _params) => {
+    const mockFetch = async (path, params) => {
       activeInFlight++;
       maxInFlight = Math.max(maxInFlight, activeInFlight);
       await new Promise((r) => setTimeout(r, 15));
@@ -2215,7 +2212,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
       };
     };
 
-    await replenishCandidatePool({
+    const result = await replenishCandidatePool({
       profileId: "profile-concurrency-test",
       mediaType: "movie",
       savedItems: [],
@@ -2232,7 +2229,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
 
   it("hata alan kaynak tekrar denenebilir (retryable) olarak kuyruğa alınır ve başarılı olunca imleç kesinleştirilir", async () => {
     let popularAttempt = 0;
-    const mockFetch = async (path, _params) => {
+    const mockFetch = async (path, params) => {
       if (path === "/movie/popular") {
         popularAttempt++;
         if (popularAttempt === 1) {
@@ -2278,7 +2275,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
       cursors: { popular: 7, top_rated: 1, recent: 1, exploration: 1, genre_discover: {}, similar: {}, person_credits: {} },
     });
 
-    const mockFetch = async (path, _params) => {
+    const mockFetch = async (path, params) => {
       if (path === "/movie/popular") {
         throw new Error("Persistent 500 error");
       }
@@ -2308,7 +2305,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
   it("yeni havuz 250 yeni adayla (veya 500 kapasiteye) tamamlanana kadar sayfalamaya devam eder", async () => {
     let nextId = 80000;
     let pageCounter = 0;
-    const mockFetch = async (_path, _params) => {
+    const mockFetch = async (path, params) => {
       pageCounter++;
       // Her sayfa 20 benzersiz aday döndürsün
       return {
@@ -3458,7 +3455,7 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
     let currentInFlight = 0;
     let maxInFlightObserved = 0;
 
-    const mockFetch = async (_path, _params) => {
+    const mockFetch = async (path, params) => {
       currentInFlight++;
       maxInFlightObserved = Math.max(maxInFlightObserved, currentInFlight);
       // Kısa bir bekleme simüle et
@@ -3489,7 +3486,7 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
   it("Oyuncu Bazında Durum: Başarılı, boş ve hatalı oyuncuların durumlarını ayrı ayrı takip eder ve bir hata diğerlerini etkilemez", async () => {
     const statusTransitions = [];
 
-    const mockFetch = async (path, _params) => {
+    const mockFetch = async (path, params) => {
       if (path.includes("/person/10/")) {
         // 10: Başarılı, dolu cast
         return { cast: [{ id: 101, title: "Film 10" }, { id: 102, title: "Film 10-2" }] };
@@ -3574,7 +3571,7 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
   it("Eski Yanıtları Engelleme (Stale Response Guard): Ticket geçersizleştiğinde eski istek sonucu sisteme yazılmaz", async () => {
     let activeTicket = 1;
 
-    const mockFetch = async (_path) => {
+    const mockFetch = async (path) => {
       // İstek sürerken kullanıcı yeni bir işlem başlattı (bilet 2'ye geçti)
       await new Promise((r) => setTimeout(r, 30));
       return { cast: [{ id: 888, title: "Eski İstek Yanıtı" }] };
@@ -4718,126 +4715,3 @@ describe("Faz 1: CI ve üretim başlatma zinciri güvenceleri", () => {
     assert.equal(startBat.includes("call npm run dev"), false, "start.bat geliştirme sunucusuna dayanmamalı");
   });
 });
-
-describe("P1 Algoritma Düzeltmesi: Ruh Hâli (Mood) Eşleştirmesi ve Deterministik Zaman (now)", () => {
-  it("scoreCandidatesV3: adayların gerçek özelliklerine göre atmosfer ve bağlam puanı üretir", () => {
-    const profile = buildTasteProfileV3([], { now: new Date("2026-01-01T00:00:00Z").getTime() });
-
-    // Aday A: Gerilim + Korku türü, karanlık/psikolojik özet, karanlık TMDB anahtar kelimesi
-    const candidateA = {
-      id: 101,
-      media_type: "movie",
-      title: "Karanlık Psikolojik Gerilim",
-      overview: "Karanlık cinayet ve gizemli psikolojik gerilim",
-      genre_ids: [53, 27],
-      keywords: [{ id: 259094 }],
-      release_date: "2015-05-10",
-      vote_average: 7.5,
-      vote_count: 800,
-    };
-
-    // Aday B: Nötr tür (Dram 18), karanlık/psikolojik özet
-    const candidateB = {
-      id: 102,
-      media_type: "movie",
-      title: "Karanlık Dram",
-      overview: "Karanlık tekinsiz bir gizem ve psikolojik sorgulama",
-      genre_ids: [18],
-      release_date: "2015-05-10",
-      vote_average: 7.5,
-      vote_count: 800,
-    };
-
-    // Aday C: Zıt tür (Komedi 35, Macera 12), neşeli/komik özet
-    const candidateC = {
-      id: 103,
-      media_type: "movie",
-      title: "Neşeli Komedi",
-      overview: "Komik neşeli eğlenceli bir macera",
-      genre_ids: [35, 12],
-      release_date: "2015-05-10",
-      vote_average: 7.5,
-      vote_count: 800,
-    };
-
-    // Aday D: Özelliksiz boş aday (nötr geri dönüş)
-    const candidateD = {
-      id: 104,
-      media_type: "movie",
-      title: "Unknown Item",
-      release_date: "2015-05-10",
-      vote_average: 7.5,
-      vote_count: 800,
-    };
-
-    const scored = scoreCandidatesV3(
-      [candidateA, candidateB, candidateC, candidateD],
-      profile,
-      { mood: "Karanlık / Psikolojik", now: new Date("2026-01-01T00:00:00Z") }
-    );
-
-    const [resA, resB, resC, resD] = scored;
-
-    // Aday A yüksek atmosfer uyumu sağlamalı (0.94)
-    assert.equal(resA.atmosphereScore, 0.94);
-    assert.equal(resA.parts.context, 0.94);
-    assert.equal(resA.candidate.atmosphereScore, 0.94);
-    assert.equal(resA.tags.some((t) => t.includes("Karanlık / Psikolojik uyumu (%94)")), true);
-
-    // Aday B ılımlı atmosfer uyumu sağlamalı (0.71)
-    assert.equal(resB.atmosphereScore, 0.71);
-    assert.equal(resB.parts.context, 0.71);
-    assert.equal(resB.candidate.atmosphereScore, 0.71);
-
-    // Aday C zıt atmosfer uyumu sağlamalı (0.18)
-    assert.equal(resC.atmosphereScore, 0.18);
-    assert.equal(resC.parts.context, 0.18);
-    assert.equal(resC.candidate.atmosphereScore, 0.18);
-
-    // Aday D nötr fallback puanı sağlamalı (0.50)
-    assert.equal(resD.atmosphereScore, 0.50);
-    assert.equal(resD.parts.context, 0.50);
-    assert.equal(resD.moodAffinity.isNeutralFallback, true);
-
-    // Sıralama A > B > D > C şeklinde olmalı (bütün adaylar artık körü körüne 0.75 almıyor!)
-    assert.ok(resA.score >= resB.score, "Aday A skoru B'den yüksek veya eşit olmalı");
-    assert.ok(resB.score > resC.score, "Aday B skoru zıt içerikli Aday C'den yüksek olmalı");
-  });
-
-  it("scoreCandidatesV3: now parametresi ile deterministik currentYear hesaplaması yapar", () => {
-    const profile = buildTasteProfileV3([], { now: new Date("2026-01-01T00:00:00Z").getTime() });
-    const candidate2024 = {
-      id: 201,
-      media_type: "movie",
-      title: "2024 Yapımı İçerik",
-      release_date: "2024-06-01",
-      vote_average: 7.0,
-      vote_count: 500,
-    };
-
-    // 2026 referansında: 2024 >= 2026 - 2 -> güncel kabul edilir (+0.2 recency bonusu)
-    const [scored2026] = scoreCandidatesV3(
-      [{ ...candidate2024 }],
-      profile,
-      { now: new Date("2026-01-01T00:00:00Z") }
-    );
-    assert.equal(scored2026.parts.context, 0.7); // 0.5 + 0.2
-
-    // 2030 referansında: 2024 < 2030 - 2 -> güncel kabul edilmez (bonus almaz, baz 0.5 kalır)
-    const [scored2030] = scoreCandidatesV3(
-      [{ ...candidate2024 }],
-      profile,
-      { now: new Date("2030-01-01T00:00:00Z") }
-    );
-    assert.equal(scored2030.parts.context, 0.5); // 0.5 baz puan
-
-    // String veya epoch number olarak now parametresi verme testi
-    const [scoredEpoch] = scoreCandidatesV3(
-      [{ ...candidate2024 }],
-      profile,
-      { now: new Date("2026-01-01T00:00:00Z").getTime() }
-    );
-    assert.equal(scoredEpoch.parts.context, 0.7);
-  });
-});
-

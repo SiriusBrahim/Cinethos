@@ -65,7 +65,6 @@ export const QuickSaveModal: React.FC<QuickSaveModalProps> = ({
     <div
       id="quickSaveModal"
       className="modal-wrap open"
-      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -98,49 +97,28 @@ export const QuickSaveModal: React.FC<QuickSaveModalProps> = ({
               />
             )}
             <div className="quick-save-info">
-              <div id="quickSaveMeta" className="quick-save-meta tabular-nums">
-                <span id="quickSaveBadge" className="quick-save-kind">{kind}</span>
-                {dates ? (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>{dates}</span>
-                  </>
-                ) : null}
-                {item.vote_average ? (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>★ {Number(item.vote_average).toFixed(1)}</span>
-                  </>
-                ) : null}
-              </div>
+              <span id="quickSaveBadge" className="badge-mini">
+                {kind}
+              </span>
               <h2 id="quickSaveTitle" className="quick-save-title">
                 {title}
               </h2>
+              <div id="quickSaveMeta" className="quick-save-meta">
+                {dates}
+                {item.vote_average ? ` · ⭐ ${Number(item.vote_average).toFixed(1)}` : ''}
+              </div>
             </div>
           </div>
 
           <div className="quick-save-body">
-            <span className="quick-save-label" id="quickStatusLabel">
-              İzleme Durumu
-            </span>
-            <div
-              className="quick-status-grid"
-              id="quickStatusGrid"
-              role="group"
-              aria-labelledby="quickStatusLabel"
-            >
+            <label className="quick-save-label">İzleme Durumu</label>
+            <div className="quick-status-grid" id="quickStatusGrid">
               <button
                 type="button"
                 className={`quick-status-opt ${selectedStatus === 'watchlist' ? 'active' : ''}`}
-                aria-label="Durum: İzlenecek"
-                aria-pressed={selectedStatus === 'watchlist'}
                 onClick={() => setSelectedStatus('watchlist')}
               >
-                <span className="status-opt-icon" aria-hidden="true">
-                  <svg className="icon">
-                    <use href="#icon-bookmark"></use>
-                  </svg>
-                </span>
+                <span className="status-opt-icon">📌</span>
                 <div className="status-opt-text">
                   <strong>İzlenecek</strong>
                   <small>Daha sonra izlemek için listene ekle</small>
@@ -150,15 +128,9 @@ export const QuickSaveModal: React.FC<QuickSaveModalProps> = ({
               <button
                 type="button"
                 className={`quick-status-opt ${selectedStatus === 'watching' ? 'active' : ''}`}
-                aria-label="Durum: İzliyorum"
-                aria-pressed={selectedStatus === 'watching'}
                 onClick={() => setSelectedStatus('watching')}
               >
-                <span className="status-opt-icon" aria-hidden="true">
-                  <svg className="icon">
-                    <use href="#icon-play"></use>
-                  </svg>
-                </span>
+                <span className="status-opt-icon">▶️</span>
                 <div className="status-opt-text">
                   <strong>İzliyorum</strong>
                   <small>Şu anda takip ettiğin yapım</small>
@@ -168,15 +140,9 @@ export const QuickSaveModal: React.FC<QuickSaveModalProps> = ({
               <button
                 type="button"
                 className={`quick-status-opt ${selectedStatus === 'completed' ? 'active' : ''}`}
-                aria-label="Durum: Tamamlandı"
-                aria-pressed={selectedStatus === 'completed'}
                 onClick={() => setSelectedStatus('completed')}
               >
-                <span className="status-opt-icon" aria-hidden="true">
-                  <svg className="icon">
-                    <use href="#icon-check"></use>
-                  </svg>
-                </span>
+                <span className="status-opt-icon">✅</span>
                 <div className="status-opt-text">
                   <strong>Tamamlandı</strong>
                   <small>İzlemeyi bitirdin</small>
@@ -184,12 +150,22 @@ export const QuickSaveModal: React.FC<QuickSaveModalProps> = ({
               </button>
             </div>
 
-            <div id="quickSaveRatingWrap" className="quick-save-rating-wrap">
-              <div className="quick-save-rating-head">
-                <span className="quick-save-rating-caption">
+            <div id="quickSaveRatingWrap" style={{ marginTop: '14px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '6px',
+                }}
+              >
+                <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 700 }}>
                   Kişisel Puanınız (İsteğe bağlı)
                 </span>
-                <span id="quickRatingScoreText" className="quick-save-rating-score tabular-nums">
+                <span
+                  id="quickRatingScoreText"
+                  style={{ fontSize: '11px', color: '#d3b579', fontWeight: 800 }}
+                >
                   {ratingText}
                 </span>
               </div>

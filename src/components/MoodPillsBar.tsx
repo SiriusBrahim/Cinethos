@@ -49,8 +49,8 @@ export const MoodPillsBar: React.FC<MoodPillsBarProps> = ({ activeMood, onSelect
               onClick={() => onSelectMood(isActive ? '' : mood.id)}
               className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 border shrink-0 ${
                 isActive
-                  ? 'bg-cinema-cyanDim text-cinema-cyan border-cinema-cyan/45 font-semibold'
-                  : 'bg-cinema-elevated text-cinema-textMuted border-cinema-borderSubtle hover:border-cinema-cyan/35 hover:text-cinema-textPrimary hover:bg-cinema-surface'
+                  ? 'bg-cinema-cyanDim text-cinema-textPrimary border-cinema-cyan/40 shadow-[0_0_12px_rgba(99,184,171,0.2)]'
+                  : 'bg-cinema-surfaceHover/80 text-cinema-textMuted border-white/7 hover:border-cinema-cyan/30 hover:text-cinema-textPrimary hover:bg-cinema-surfaceHover'
               }`}
               title={mood.description}
               aria-pressed={isActive}

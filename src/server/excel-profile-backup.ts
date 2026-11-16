@@ -34,11 +34,6 @@ import {
 import type { CatalogRecord, PersistentDataStore } from './persistent-store.ts';
 import { redactSecrets } from './persistent-store.ts';
 import { populateTasteDnaWorksheet } from './excel-taste-dna-sheet.ts';
-import {
-  BRAND_BACKUP_USER_AGENT,
-  BRAND_NAME,
-  BRAND_PROFILE_BASENAME,
-} from '../shared/brand.ts';
 
 export const EXCEL_SHEET_NAMES = Object.freeze([
   'Özet',
@@ -339,7 +334,7 @@ export function formatExportBaseName(now: Date = new Date()): string {
   const dd = String(now.getDate()).padStart(2, '0');
   const hh = String(now.getHours()).padStart(2, '0');
   const min = String(now.getMinutes()).padStart(2, '0');
-  return `${BRAND_PROFILE_BASENAME}_${yyyy}-${mm}-${dd}_${hh}${min}`;
+  return `Cinethos_Profile_${yyyy}-${mm}-${dd}_${hh}${min}`;
 }
 
 /**
@@ -790,7 +785,7 @@ const defaultPosterFetcher: PosterFetcherFn = async (url, timeoutMs) => {
         signal: controller.signal,
         headers: {
           Accept: 'image/jpeg,image/png,image/gif,image/*;q=0.8',
-          'User-Agent': BRAND_BACKUP_USER_AGENT,
+          'User-Agent': 'Cinethos-Backup-Exporter/1.0',
         },
       });
 
@@ -1324,7 +1319,7 @@ function mapRecordToExportRow(
     mediaType = catalogResolved;
   } else {
     console.warn(
-      `[${BRAND_NAME} Backup] Kayıt medya türü belirsiz (id=${String(source.id ?? catalogMatch?.id ?? '')}); varsayılan 'movie' kullanıldı.`
+      `[Cinethos Backup] Kayıt medya türü belirsiz (id=${String(source.id ?? catalogMatch?.id ?? '')}); varsayılan 'movie' kullanıldı.`
     );
     mediaType = 'movie';
   }
@@ -1497,7 +1492,7 @@ export async function buildProfileBackupDataset(
     const mType = resolveMediaType(hint);
     if (mType === 'unknown') {
       console.warn(
-        `[${BRAND_NAME} Backup] dislikedItemsHint kaydında medya türü belirsiz (id=${String(hint.id)}); atlanıyor.`
+        `[Cinethos Backup] dislikedItemsHint kaydında medya türü belirsiz (id=${String(hint.id)}); atlanıyor.`
       );
       continue;
     }
@@ -2350,8 +2345,8 @@ export async function generateProfileExcelBuffer(
   }
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = BRAND_NAME;
-  workbook.lastModifiedBy = BRAND_NAME;
+  workbook.creator = 'Cinethos';
+  workbook.lastModifiedBy = 'Cinethos';
   workbook.created = options.exportedAt || new Date();
   workbook.modified = options.exportedAt || new Date();
 
@@ -2533,7 +2528,7 @@ function populateSummaryWorksheet(
     c2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
   }
   const titleCell = ws.getCell('B1');
-  titleCell.value = `${BRAND_NAME} — Kişisel Film & Dizi Arşivi Özeti`;
+  titleCell.value = 'Cinethos — Kişisel Film & Dizi Arşivi Özeti';
   titleCell.font = { name: FONT_FAMILY, size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
@@ -2917,7 +2912,7 @@ function populateContentWorksheet(
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
     cell.alignment = { vertical: 'middle', horizontal: 'left' };
   }
-  titleRow.getCell(1).value = `${BRAND_NAME} — ${sheetName}`;
+  titleRow.getCell(1).value = `Cinethos — ${sheetName}`;
   titleRow.getCell(1).font = {
     name: FONT_FAMILY,
     size: 13,

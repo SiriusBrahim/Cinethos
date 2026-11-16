@@ -1,265 +1,6 @@
 # CineTrack — FAZ 0 Envanter ve Kod/Veri Denetim Raporu (`phase-0-findings.md`)
 
-**Durum:** v3 — FAZ 0 KAPANIŞ DENETİMİ (kullanıcı kapanış denetimi sonrası; **"Tamamlandı" ibaresi kaldırıldı**)  
-**v3 Denetim Tarihi:** `2026-11-16` · **Denetlenen dal:** `vibe/modular-shell-m1-b66b9a` @ `93d46b8` (PR #9)  
-**v2 (aşağıda arşiv):** `2026-11-16` @ `83016f5` · **v1:** `2026-11-01` @ `ef031af`
-
----
-
-## v3 — Faz 0 Kapanış Denetimi (kullanıcı denetimine yanıt)
-
-### K. Önemli not: iki denetim farklı kod görüyor
-
-Kapanış denetimi **`master @ ef031af`** üzerinden yapıldı. Faz 0'ın tüm dinamik çalışması (madge taraması, katman ihlal analizi, M1 modül kayıt defteri, shell-events) **`vibe/modular-shell-m1-b66b9a`** dalında ve **PR #9**'dadır; `master`'a henüz merge edilmedi. Bu yüzden denetim, Faz 0 v2'de yapılmış işleri göremedi. Aşağıdaki tablo, denetimin madde madde güncel dal üzerinden durumudur.
-
-### L. Dürüst durum tablosu (denetim maddeleriyle birebir)
-
-| Faz 0 adımı | Durum | Kanıt |
-| --- | --- | --- |
-| Kaynak dosya envanteri | ✅ | 208 dosya (madge), `docs/mia/faz0-envanter.md` |
-| Büyük modüllerin belirlenmesi | ✅ | App.tsx 4.654 / cinetrack-core 4.690 / persistent-store 4.230 / app.ts 2.281 |
-| Ana modül sınıflandırması | ✅ | v2 §E, 117+ sembol 5 kovaya ayrıldı |
-| Mimari dokümanının incelenmesi | ✅ | v2 §I — `ARCHITECTURE.md` Faz 2'de güncellenecek |
-| **Import bağımlılık grafiği** | ✅ **v3'te tamamlandı** | aşağıda §M — dizin matrisi + dosya bazlı kritik kenarlar |
-| Döngüsel bağımlılık analizi | ✅ | v2 §C — 7 döngü (4'ü `import type`, 1 gerçek değer döngüsü) |
-| **Fonksiyon bazında sorumluluk haritası** | ✅ **v3'te tamamlandı** | aşağıda §N — taşıma tablosu (cinetrack-core 126 export bildirimi + persistent-store 21 export + app.ts 41 endpoint + App.tsx 42 handler) |
-| **Veri sahipliği haritası** | ✅ **v3'te tamamlandı** | aşağıda §O — R/W matrisi (13 idb deposu + localStorage anahtarları × 8 yönetici) |
-| Modüller arası veri akışı | ✅ | v2 §F + v3 §O |
-| Profil değiştirme yarışları | ✅ | v2 §G — `requestGateRef` (5 nokta), `applyingRemoteSnapshotRef` (4 nokta), `*_ref` senkronu |
-| SQLite/JSON veri bütünlüğü | ⚠️ Kısmi | `sqlite-*` testleri yeşil (422 içinde); **canlı disk verisiyle çalıştırma yok** |
-| Canlı yerel veri denetimi | ⏳ Bekliyor | `data/cinetrack-data.json` mevcut; salt okunur denetim için kullanıcı onayı bekleniyor |
-| Testlerin modüllerle eşleştirilmesi | ✅ | v2 §H — 25 test dosyası risk sıralı |
-| Lint ve TypeScript kontrolü | ✅ | 0 hata / 0 uyarı (`--max-warnings 0` + 2× tsc) |
-| Unit testleri | ✅ | 422/422 + 362/362 (taste) — CI: `Lint · Typecheck · Test · Build: SUCCESS` |
-| **E2E testleri** | ❌ **CI'DA KIRMIZI** | aşağıda §P — gerçek hata bulundu, düzeltme uygulandı, CI doğrulaması bekleniyor |
-| Güncel Faz 0 raporu | ✅ | bu dosya (v3) |
-
-**Güncel tamamlanma tahmini: ~%85.** Kalan: E2E'nin CI'da yeşile dönmesi (düzeltme pushlandı) + canlı veri denetimi onayı. Denetimin %45-50 tahmini, `master`'daki eski görüntüye dayanıyordu.
-
-### M. Çıktı (a) — Gerçek import grafiği: dizin matrisi + kritik kenarlar
-
-madge ile 208 dosya tarandı (`npx madge --extensions ts,tsx --json src`). Dizinler arası import sayıları:
-
-| Kaynak ↓ / Hedef → | app | app/mobile | components | core | core/taste | design-system | hooks | i18n | modules/* | server | services | shared | types | utils | workers |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **App.tsx (kök)** | 8 | 3 | 5 | 9 | — | — | 7 | — | — | — | 15 | 1 | — | 3 | — |
-| **app/** | — | — | 10 | 4 | — | — | — | — | 4 | — | 1 | 2 | 1 | 3 | — |
-| **app/mobile/** | 3 | — | 1 | 1 | 2 | 6 | 1 | — | — | — | — | 1 | — | 1 | — |
-| **components/** | 3 | — | 4 | 50 | 2 | — | 4 | 6 | — | 0 | 36 | 4 | 8 | 30 | 0 |
-| **core/** | 0 | 0 | 0 | — | — | 0 | 0 | 0 | 0 | 0 | **4** | **3** | **1** | 0 | 0 |
-| **hooks/** | 1 | — | — | 4 | 2 | — | — | — | — | — | 9 | — | — | 1 | — |
-| **modules/** | 3 | — | 7 | 3 | — | — | — | — | 0 | — | — | — | — | — | — |
-| **server/** | — | — | — | 29 | 11 | — | — | — | — | — | — | 5 | — | — | — |
-| **services/** | — | — | — | 21 | 2 | — | — | — | — | — | — | — | 11 | 3 | — |
-| **workers/** | — | — | — | 1 | 4 | — | — | — | — | — | — | — | — | — | — |
-
-Genel yön sağlamı: `modules → components → services → core` zinciri hâkim; `server → core` (40) ve `components → core` (50) beklenen yoğunluklar. **Kural ihlali yalnızca `core → services` (4 import, 2 dosya) hattıdır.**
-
-**Dosya bazlı kritik kenarlar (mimari sınır testlerinin yakalayacağı tam liste):**
-
-| Kenar | Dosyalar | Nitelik | Faz 1 kararı |
-| --- | --- | --- | --- |
-| `core → services` (4) | `core/actor-recommendations.ts → services/api-client.ts` · `core/relationship-explorer.ts → services/{encoding-service,storage-idb,series-tv-seeds}.ts` | ❌ katman ihlali | Faz 5: port/enjeksiyon desenine çevrilir |
-| `core → shared` (3) | `cinetrack-core.ts`, `exporters.ts`, `relationship-explorer.ts` → `shared/brand.ts` | ⚠️ marka adı sabiti | Zararsız; `shared` her katmana açıktır |
-| `core → types` (1) | `core/person-insights.ts → types/tmdb.ts` | ⚠️ tip importu | Zararsız |
-| `modules → app` (3) | `TasteMapSection.tsx → {shell-context,lazy-with-retry}` · `RelationshipsSection.tsx → shell-context` | ⚠️ M1 bilinçli bağ | Faz 7'de ShellContext sözleşmesine bağlanır |
-| `app → modules` (4) | `module-registry.ts → 4 Section bileşeni` | ⚠️ M1 bilinçli bağ | Registry kayıt noktası; yasak listesinde değil |
-| `components → app` (3) | `CommandPalette.tsx`, `Header.tsx → module-registry/navigation` | ⚠️ M1 bilinçli bağ | Aynı şekilde |
-| `hooks → app` (1) | `useKeyboardShortcuts.ts → module-registry.ts` | ⚠️ M1 bilinçli bağ | Aynı şekilde |
-| `components → server` / `workers` | — | ✅ sıfır | — |
-
-### N. Çıktı (b) — Fonksiyon bazlı taşıma tablosu
-
-**N.1 `src/core/cinetrack-core.ts` (4.690 satır, 126 export bildirimi) → 8 yönetici:**
-
-| Sembol grubu (temsilciler) | Export sayısı ~ | Hedef yönetici | Hedef dosya (öneri) |
-| --- | --- | --- | --- |
-| Veri modeli + normalizasyon: `SavedItem`, `DataDocument`, `Profile`, `Preferences`, `FavoriteActorInfo`, `NextEpisode`, `normalizeSavedItem`, `normalizeProfile`, `normalizeDataDocument`, `normalizePreferences`, `normalize{FavoriteActor(s),DeletedKeys}`, `findSavedItem`, `buildSavedItemsIndex`, `findSavedIndexed`, `isItemSaved`, `dedupeItems`, `parseBackupText`, `CURRENT_SCHEMA_VERSION`, `PROFILE_ID_PATTERN`, `DISLIKED_KEY_PATTERN` | ~24 | **Veri Yöneticisi** (+ ortak tipler) | `core/media/types.ts` (Faz 1) + `modules/data/` |
-| Liste/durum yardımcıları: `filterHistoryByType`, `filterDislikedByType`, season sanitizer'ları (`sanitizeSeasonMap/Progress/Counts`, `buildSeasonCounts`, `defaultCurrentSeason`, `sanitizeNextEpisode`), `resolveAirDate`, `reminderDaysUntil`, `REMINDER_WINDOW_DAYS` | ~14 | **Kütüphane Yöneticisi** | `modules/library/operations/` |
-| Zevk profili hesabı: `buildTasteProfileV3`, `TasteProfileV3`, `calculateTastePillars`, `TastePillarsSummary`, `getUserSignalV3`, `signalDecay`, `normalizeUserRating`, `computeTasteProfileSignature`, `buildTasteProfileSummary`, `TasteProfileSnapshot`, `ALGORITHM_VERSION`, `ENGINE_VERSION` | ~14 | **Zevk ve Hafıza Yöneticisi** | `modules/intelligence/taste/` |
-| Zevk Haritası kalıcılığı: `TasteMapEntry/Impression`, `PersistentTasteMapData`, `getTasteMapStorageKey`, `createDefaultTasteMapData`, `appendBoundedImpression`, `sanitizeTasteMapEntryImpressions`, `getImpressionSummary`, `markTasteMapItemStatus`, `updateTasteMapWithBatch`, `recordDisplayedRecommendations`, `getTasteMap*`, `archive/restoreTasteMapEntry`, `pruneArchivedTasteEntries`, `recordTasteMapPoolScores`, `isTasteMapCacheValid`, `syncPoolCandidatesWithTasteMap`, `MAX_IMPRESSION_HISTORY_PER_ENTRY`, `MAX_ARCHIVED_TASTE_ENTRIES` | ~26 | **Zevk ve Hafıza Yöneticisi** (anahtarlar Veri'nin) | `modules/intelligence/taste/` |
-| Öneri puanlama: `scoreCandidatesV3`, `RECOMMENDATION_WEIGHTS_V3`, `actorFrequency`, `pairMatchScore`, `castHarmonyScore`, `extractOverviewTokens`, `computeWeightsSignature`, `clamp01/clamp11/bayesianRating/billingWeight` (re-export) | ~10 | **Öneri ve Keşif Yöneticisi** | `modules/recommendations/` |
-| Aday havuzu: `PoolCandidateItem`, `CandidatePoolCursors`, `PersistentCandidatePoolData`, `POOL_*` sabitleri, `createDefaultPool*`, `determineItemEra`, `determineItemPopularityTier`, `normalizePoolCandidate`, `isCandidateEligibleInPool`, `filterEligiblePoolItems`, `isMediaRegisteredInUserProfile`, `filterHiddenUserRegisteredItems`, `balanceCandidatePool`, `multiDimensionalDiversify`, `selectBalancedRecommendations`, `PoolReplenishmentLock`, `hydratePoolFromCatalog`, `topUpFilteredCandidates`, `replenishCandidatePool`, `HIDE_LISTED_CATEGORIES`, `filterOutLastRecommendedCandidates`, `TARGET_RECOMMENDATION_COUNT` | ~28 | **Öneri ve Keşif Yöneticisi** | `modules/recommendations/pool/` |
-| Altyapı yardımcıları: `createRequestGate`, `escapeHTML`, `safeHttpsUrl`, `validItemId`, `matchesSelectedGenre`, `resolveDiscoverGenreParam` | ~6 | **paylaşılan yardımcılar** | `shared/` (Faz 8) |
-
-**N.2 `src/server/persistent-store.ts` (4.230 satır, 21 export) → yöneticiler:**
-
-| Semboller | Hedef yönetici | Not |
-| --- | --- | --- |
-| `CatalogRecord`, `CatalogManifest`, `mergeCatalogItem`, `toCanonicalKey` | **İçerik Yöneticisi** | Katalog sorumluluğu `data/synchronization/`'dan ayrılır |
-| `DerivedProfileItem`, `DerivedProfileDocument` | **Zevk ve Hafıza Yöneticisi** | Türetilmiş profil önbelleği |
-| `TokenSourceKind`, `TokenFormatKind`, `GitHubTokenCandidateInfo`, `redactSecrets` | **Veri Yöneticisi** (gizlilik) | `redactSecrets` `shared/`'a da taşınabilir |
-| `PersistentStoreOptions`, `PersistentDataStore` (sınıf) | **Veri Yöneticisi** | Faz 2: `PrimaryDataRepository` arkasına alınır |
-| `SyncFileStage`, `GitHubSyncErrorCategory`, `RemoteRepoAccessCheck`, `SyncFileStateRecord`, `SyncStatus`, `SyncResult`, `StagedFileOutcome`, `StagedSyncReport`, `stringifyDeterministic`, `hashContent`, `sanitizeProfileId` | **Arka Plan Yöneticisi** (senkron) | Faz 2 ön koşulu: `SyncStorePort` — sınıf döngüsünü koparır |
-
-**N.3 `src/server/app.ts` (2.281 satır, 41 HTTP endpoint) → API grupları:**
-
-| Grup | Endpoint'ler | Hedef yönetici |
-| --- | --- | --- |
-| Sağlık + arşiv | `GET /api/health`, `GET /api/archive/sqlite/status`, `POST /api/archive/sqlite{,/prepare,/restore,/finalize,/rollback}` | Veri Yöneticisi |
-| Veri | `GET/PUT /api/data`, `GET /api/isolated/{profile,user-lists}`, `GET /api/data/backups`, `POST /api/data/{backup-now,restore}` | Veri Yöneticisi |
-| TMDB proxy | `GET /api/tmdb-status`, `GET /api/tmdb`, `GET /api/tmdb-image` | İçerik Yöneticisi |
-| Stok + künye | `GET /api/stock`, `POST /api/stock/upload`, `GET/POST /api/cinema-kunye` | İçerik Yöneticisi |
-| Senkron (11) | `/api/sync/{status,inspect,pull,push,reconcile,trigger,test-connection,token,public-consent,public-catalog-consent,staged}` | Arka Plan Yöneticisi |
-| Katalog + türetilmiş profil | `GET/POST /api/catalog{,/upsert}`, `GET/POST /api/profiles/derived{,/upsert}` | İçerik / Zevk-Hafıza |
-| Yedek (6) | `POST /api/backup/{hybrid-merge,profile-export,profile-export/stream,excel/preview}`, `GET /api/backup/exports/:fileName` | Veri Yöneticisi |
-
-**N.4 `src/App.tsx` (4.654 satır, 42 handler) → handler grupları:**
-
-| Grup | Handler'lar | Hedef |
-| --- | --- | --- |
-| Kütüphane işlemleri | `handleSaveItem`, `handleRemoveItem`, `handleSetStatus`, `handleMarkCompleted`, `handleIncrementTvEpisode`, `handleToggleDislike`, `handleToggleFavoriteActor`, `handleQuickAdd`, `handleMergeDuplicates` | Kütüphane Yöneticisi (Faz 3) |
-| Profil + tercih | `handleSwitchProfile`, `handleCreateProfile`, `handleSaveProfileName`, `handleSavePreferences`, `handleToggleReminders`, `handleToggleDemoMode` | Uygulama Yöneticisi (ProfileContext) |
-| Keşif + öneri | `handleSearchSubmit`, `handleSearchClear`, `handleSelectGenre`, `handleSelectType`, `handleRefreshForYou`, `handleLoadMore`, `handleManualStockReplenish` | Öneri ve Keşif Yöneticisi |
-| Zevk Haritası | `handleRefreshTasteMap`, `handleLoadRelationshipCandidates` | Zevk ve Hafıza Yöneticisi |
-| Senkron + çakışma | `handleMergedServerDocument`, `handleMergeSyncedDocument`, `handleServerConflict`, `handleKeepLocalOnConflict`, `handleUseServerOnConflict`, `handleMergeBothOnConflict`, `handleVisibilitySync` | Arka Plan Yöneticisi (senkron) |
-| Yedek/arma | `handleExportBackup`, `handleImportBackupFile`, `handleConfirmImport`, `handleCreateSqliteArchive`, `handleRestoreSqliteArchive` | Veri Yöneticisi |
-| Arayüz durumu | `handleEmptyAction`, `handleToggleHide` vb. | Uygulama/Deneyim Yöneticisi |
-
-### O. Çıktı (c) — Veri sahipliği R/W matrisi (13 idb deposu + localStorage × 8 yönetici)
-
-**Kural:** her satırın **tek W sahibi** vardır. R = okuma, W = yazma, — = erişim yok.
-
-| Depo / anahtar | Uygulama | Deneyim | İçerik | Kütüphane | Zevk-Hafıza | Öneri-Keşif | Veri | Arka Plan |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ct:profile` (cinetrack-profile-db) | R | — | — | R | — | — | **W** | — |
-| `ct:user-lists` (cinetrack-user-lists-db) | — | — | — | R | R | R | **W** | — |
-| `ct:stock` (cinetrack-stock-db) | — | — | R | — | — | **W** | — | W (dolum job'ı) |
-| `ct:surfaced` (cinetrack-surfaced-db) | — | — | — | — | — | **W** | — | — |
-| `ct:series-index` (cinetrack-series-index-db) | — | — | **W** | — | R | R | — | — |
-| `ct:actor-credits` (7 gün TTL) | — | — | **W** | — | R | R | — | — |
-| `ct:encodings` (48 boyutlu vektörler) | — | — | — | — | **W** | R | — | — |
-| `cinetrack-discovery-history-db` (Zevk Haritası) | — | — | — | — | **W** | R | — | — |
-| `cinetrack-candidate-pool-db` | — | — | — | — | — | **W** | — | — |
-| `ct:skip-log` | — | — | — | — | — | **W** | — | — |
-| `ct:graph-cache` (relationship-cache: graphs/features/edges) | — | — | — | — | **W** | R | — | — |
-| `ct:offline-queue` (offline-queue-db) | — | — | — | — | — | — | R | **W** |
-| `ct:ui-prefs` | R | **W** | — | — | — | — | — | — |
-| Poster LRU (`ct_poster_lru` + SW Cache Storage) | — | — | **W** | — | — | — | — | — |
-| `cinetrack.profiles.v1`, `cinetrack.activeProfile.v1`, `cinetrack.profile.v1` | R | — | — | — | — | — | **W** | — |
-| `cinetrack.profile.<id>.{preferences,watchlist}.v1`, `cinetrack_fav_actors_<id>`, `cinetrack_deleted_keys_<id>` | — | — | — | R | — | — | **W** | — |
-| `cinetrack.dirty.v2`, `cinetrack_offline_sync_queue_v1` | — | — | — | — | — | — | R | **W** |
-| `cinetrack_disliked_cache`, `cinetrack_evidence_objections` | — | — | — | — | **W** | R | — | — |
-| `ct:library-view` (MediaGrid) | — | **W** | — | R | — | — | — | — |
-| `ct:mobile-dashboard:*` (MobileDashboard ham localStorage) | — | **W** | — | — | — | — | — | — |
-| `ct:theme` (theme.ts) | R | **W** | — | — | — | — | — | — |
-| `ct:auto-backup-meta`, `ct:poster-hydration`, `ct:stock-poster-hydration`, `ct:idle-enrichment-quota`, `ct:cinema-kunye` | — | — | R/W | — | — | — | R | **W** |
-
-**Matristen çıkan Faz 1 kuralları:** (1) `ct:stock`'un iki W sahibi var (Öneri dolum + Arka Plan job'ı) → Faz 4'te tek job'a indirilir; (2) `ct:mobile-dashboard:*` ham localStorage → Faz 7'de DashboardRepository'ye taşınır (MIA planı §6); (3) sunucu tarafında JSON (varsayılan) / SQLite (opt-in) / GitHub yedek yalnızca **Veri Yöneticisi** W sahibidir; (4) kayıtsız anahtar yazımı Faz 8'de ESLint kuralıyla engellenir.
-
-### P. E2E kırmızısının kök nedeni ve uygulanan düzeltme
-
-CI (PR #9, run `43777139705`): `Playwright E2E: FAILURE` — **gerçek test hatası**, ortam sorunu değil. İki ayrı kök neden:
-
-1. **`app-smoke.spec.ts:20` — strict mode violation:** `.brand-title` locator'ı **2 element** çözüyor: (1) `AppSidebar.tsx:78` markası ("Cinethos Keşfet sayfasına dön" butonu), (2) `Header.tsx:242` markası (`aria-label="Ana sayfa"`). İki bileşen de her viewport'ta DOM'da; CSS yalnızca birini gizler (≥1024px header brand gizli, ≤768px header'ın tamamı gizli). Çift marka, `ef031af`'teki sidebar kabuğunun Header ile birlikte mount edilmesinden gelen **bilinçli kabuk tasarımıdır** — üretim hatası değil, spec'in eski tek-marka varsayımı hata.
-2. **`responsive.spec.ts:31` — `.app-header` mobilde gizli:** `design-system.css:170` kuralı (`≤768px` → `.mobile-frame .app-header { display: none }`) mobil kabukta header'ı MobileTopBar'a devreder; spec tüm viewport'larda header görünürlüğü bekliyordu. Tablet (768px) tam sınırda olduğundan 10 sn timeout ile düşüyordu.
-
-**Uygulanan düzeltme (yalnızca test katmanı, üretim kodu değişmedi):** `app-smoke` → `.brand-title:visible`; `responsive` → ef031af kabuğuna uyarlanan viewport koşullu beklentiler: ≤768px'te `.mobile-topbar` + `.mobile-dock` görünür ve `.app-header` gizli; 769–1023px'te `.header-nav-tabs` görünür; ≥1024px'te `.sidebar-nav-list` görünür (header nav CSS ile gizlenir). `.mobile-tab-bar` (FloatingGlassDock) artık render edilmediğinden spec'ten çıkarıldı; dockta 'Listem' etiketi 'Kütüphane' olarak değişti. JS eşiği (`useMediaQuery('(max-width: 768px)')`) CSS ile birebir uyumlu doğrulandı.
-
-**Sonuç (commit `c9da060`, CI run `43778497153`):** `Playwright E2E: PASS` ✅ — Lint/Typecheck/Test/Build PASS, Production dependency audit PASS, Production server smoke PASS. Kalan tek kırmızı: `Full dependency audit (informational)` — Glob GHSA-3g3m-2fjr-6pw4 (moderate); kök: `exceljs → archiver → glob@7.2.3` geçişli zinciri. Kör override archiver/exceljs'i kırma riski taşıdığından **kabul edilmiş risk** olarak belgelendi; exceljs güncellemesiyle izlenir (job bloklamaz).
-
-### Q. Faz 0 kapanış durumu — **FAZ 0 KAPANDI** ✅
-
-1. ~~E2E'nin CI'da yeşile dönmesi~~ ✅ tamamlandı (`c9da060`).
-2. ~~Canlı veri denetimi~~ ✅ **tamamlandı (salt okunur, `2026-11-16`):**
-   - `data/cinetrack-data.json`: `version: 3`, `schemaVersion: 3`, `engineVersion: "v3.2.0"`, `revision: 28`, `activeProfileId` biçimi geçerli, 1 profil. Repo'nun kendi `normalizeDataDocument`'ı ile doğrulandı: **başarılı, kök anahtar kaybı yok**.
-   - Yedek zinciri sağlıklı: `data/backups/` içinde rev24→rev28 arası 7 döner yedek + `.bak` (rev27) — atomik yazım + yedekleme davranışı canlıda teyit edildi.
-   - **YENİ BULGU (P2, Faz 2 girdisi):** `data/taste/` içinde `cinetrack-taste-events.json` dosyasının **11 karantinaya alınmış `.corrupt.<ts>` kopyası** mevcut. Taste olay deposu tekrar tekrar bozulmuş (muhtemel neden: kilitlenmemiş eşzamanlı yazım — `taste-store.ts`); sistem karantina + yeniden oluşturmayla toparlıyor (mevcut dosya okunabilir, 0 olay) ama **kanıt kaybı yaşanmış**. Faz 2'de taste olay deposunun `PrimaryDataRepository` altında atomik yazım + kilit kullanması zorunlu kılınmalı.
-
-**Sonuç: 17 maddelik kontrol listesinde açık madde kalmadı — Faz 0 kapandı.** Faz 1'e geçiliyor; kullanıcı kararıyla iki parçalı yürütülecek: **Faz 1A** (sözleşmeler + ortak altyapı tasarımı, kod taşıma YOK) → **Faz 1B** (mevcut sistemlerin yeni sözleşmelere bağlanması). Bkz. MIA planı §7.1.
-
----
----
-
-## v2 — Faz 0 Tamamlama Raporu (arşiv — v3'teki §M/§N/§O tabloları bu bölümün §C/§E/§F maddelerini genişletir)
-
-### A. Düzeltmeler (v1'e ve önceki planlara göre)
-
-1. **SQLite varsayılan DEĞİL:** `resolveStorageDriver()` (`sqlite-primary-store.ts:53`) — `CINETRACK_STORAGE=sqlite` açıkça verilmezse sürücü **json**. Önceki MIA planındaki "SQLite = ana kullanıcı verisi birincil kaynağı" ifadesi düzeltildi: SQLite **opt-in** sürücü; JSON hâlâ varsayılan doğruluk kaynağı. Faz 2 kararı buna göre güncellendi (aşağıda F).
-2. **Arka plan altyapısı kısmen mevcut:** `TasteEvent` modeli (`core/taste/types.ts`), olay depolaması (`server/taste-store.ts`, 224), öğrenme projeksiyonu (`core/taste/taste-event-projector.ts`, 65), kanıt defteri (`core/taste/evidence-ledger.ts`, 202), worker tabanlı hesap (`workers/taste-profile-worker.ts`, 173), koordinatör (`server/taste-rebuild-coordinator.ts`, 655) ve kalıcı kuyruk (`services/offline-queue.ts`). **Karar:** Bunlar kaldırılmaz; Arka Plan Yöneticisi bunları koordine eden üst katman olur. `TasteEvent` ikinci bir genel kuyrukla çoğaltılmaz — görev sınırı: TasteEvent = zevk öğrenme olay modeli; Outbox = genel arka plan iş kuyruğu.
-3. **Depo referansı:** `6yildiz9-maker` eski sahiptir; güncel depo `SiriusBrahim/cinetrack` (M1 dalı `ef031af`'in çok ötesinde: shell-events, 4 modül bölümü, kayıt defteri commit'leri).
-
-### B. Dinamik Denetim Sonuçları (bu dalda çalıştırıldı)
-
-| Kontrol | Sonuç |
-| --- | --- |
-| Lint (`--max-warnings 0` + 2× tsc) | ✅ 0 hata / 0 uyarı |
-| Birim testleri | ✅ 422/422 |
-| Taste testleri | ✅ 362/362 |
-| Üretim build + PWA | ✅ (chunk haritası korundu) |
-| madge import grafiği | ✅ 208 dosya, 7 döngü (bkz. C) |
-
-### C. Import Bağımlılık Grafiği ve Döngüler (madge)
-
-Yön kuralı `modules → services → core` genel olarak sağlanıyor. **7 döngü:**
-
-| Döngü | Nitelik | Çözüm |
-| --- | --- | --- |
-| `cinetrack-core` ↔ `actor-recommendations` / `candidate-pool-store-port` / `cinema-kunye` / `ring-lifecycle` | 4 × **yalnızca `import type`** — çalışma zamanında yok | Faz 1: `core/media/types.ts` (SavedItem, DataDocument, FavoriteActorInfo, PersistentCandidatePoolData, PersistentTasteMapData, TasteMapEntry) + `core/media/keys.ts` (makeMediaKey ailesi). Eski dosya yeniden export eder → uyumluluk korunur |
-| `persistent-store` ↔ `github-bidirectional-sync` (± `github-catalog-sync`) | **GERÇEK değer döngüsü** (sınıf + 9 sembol) | Faz 2 ön koşulu: `SyncStorePort` arayüzü; store portu verir, sınıfı import etmez |
-| `relationship-explorer` → `relationship-semantics` → `relationship-wordlists` | Yönsel zincir, saf veri | Faz 5'te doğrulanır; düşük risk |
-
-### D. Katman İhlalleri
-
-| Kural | Sonuç |
-| --- | --- |
-| `core/` → `services/`/`server/` | ❌ 2 ihlal: `relationship-explorer.ts` (encoding-service, storage-idb, series-tv-seeds), `actor-recommendations.ts` (api-client) → Faz 5'te port/enjeksiyon desenine çevrilir |
-| `components`/`modules`/`app` → `server/` | ✅ sıfır |
-| `modules/*` → `modules/*` | ✅ sıfır |
-| `core/` içinde localStorage | ✅ sıfır |
-
-### E. Fonksiyon Bazında Sınıflandırma — `cinetrack-core.ts` (4.690 satır, **117 export**)
-
-| Sorumluluk | Temsilci semboller | MIA hedefi |
-| --- | --- | --- |
-| Veri modeli + normalizasyon | `normalizeSavedItem`, `findSavedItem`, `buildSavedItemsIndex`, `normalizePreferences`, `normalizeProfile`, `normalizeDataDocument`, `dedupeItems`, `parseBackupText` | `core/media/` (Faz 1) |
-| Zevk profili hesabı | `buildTasteProfileV3`, `calculateTastePillars`, `getUserSignalV*`, `signalDecay`, `normalizeUserRating`, `computeTasteProfileSignature` | Intelligence/taste (core'da kalır) |
-| Öneri puanlama + aday havuzu | `scoreCandidatesV3`, `RECOMMENDATION_WEIGHTS_V3`, `normalizePoolCandidate`, `balanceCandidatePool`, `multiDimensionalDiversify`, `selectBalancedRecommendations`, `hydratePoolFromCatalog`, `POOL_*` | Recommendation (core'da kalır) |
-| Zevk Haritası kalıcılığı | `getTasteMapStorageKey`, `markTasteMapItemStatus`, `archive/restore/pruneArchivedTasteEntries`, impression fonksiyonları | Intelligence/taste + Veri (anahtar Veri'nin) |
-| Altyapı yardımcıları | `createRequestGate`, `escapeHTML`, `safeHttpsUrl`, season sanitizer'ları | `shared/` (Faz 8 temizliği) |
-
-**Paylaşılan semboller:** `SavedItem` (7 dosya), `makeMediaKey` (4), `DataDocument` (3) — Faz 1 tip modülünün ilk sakinleri.
-
-### F. Veri Sahipliği ve Kalıcılık Haritası
-
-- **IndexedDB (12 depo):** profile-db, user-lists-db (Veri) · stock-db, series-index-db, actor-credits-db, poster-lru-db (İçerik) · encodings-db (Zevk/Hafıza) · relationship-cache (İlişkiler) · offline-queue-db (Senkron) · skip-log-db, surfaced-db (Öneri) · ui-prefs-db (Deneyim).
-- **localStorage:** `cinetrack.profile.*` (Profil), `cinetrack_disliked_cache`, `cinetrack_evidence_objections` (Zevk), `ct:library-view`, `ct:mobile-dashboard:*` (Deneyim → DashboardRepository), `cinetrack_offline_sync_queue_v1` (Senkron). **Faz 2 kuralı:** tüm anahtarlar `keys.ts`'te sahibiyle kayıtlı; kayıtsız anahtar ESLint ile engellenir.
-- **Sunucu:** JSON (varsayılan, atomik yazım + karantina/kurtarma) · SQLite (opt-in) · GitHub (uzak yedek). **İki ana kaynak oluşamaz:** opt-in SQLite'ta JSON yalnızca açık kurtarma modunda; sağlık ekranında aktif kaynak + revision farkı gösterilir.
-
-### G. Profil Değiştirme Yarışları (asenkron güvenlik incelemesi)
-
-Mevcut korumalar (App.tsx) — **taşıma sırasında birebir korunacak:**
-
-1. `requestGateRef` (`createRequestGate`): uçuştaki öneri/katalog istekleri bilet bazlı (`begin`/`isCurrent`) geçersizleşir — 5 çağrı noktası tespit edildi.
-2. `handleSwitchProfile` girişte `requestGateRef.current.invalidate()` + yükleme durumlarının sıfırlanması.
-3. `applyingRemoteSnapshotRef`: uzak doküman uygulaması sırasında yerel yazımların bastırılması (4 nokta).
-4. Profil başına `*_ref` senkronizasyonu (`profilesRef`, `savedItemsRef`, `preferencesRef`, `favoriteActorsRef`) — state güncellemeleri asenkron olduğundan handler'lar ref'lerden okur.
-
-**Faz 6/7 kuralı:** bu korumalar yönetici kancalarına taşınırken davranış değiştirilemez; profil geçişi `ProfileSwitched` olayı + kuyruk profil izolasyonu ile güçlendirilir.
-
-### H. Test Kapsamı → Modül Eşlemesi
-
-25 test dosyası; risk sıralaması: `core.test` / `persistent-store` / `sqlite-*` / `github-bidirectional-sync` / `offline-queue-durability` / `relationship-explorer` / `loved-similarity` = **yüksek** (taşımada export uyumluluğu şart) · `api-*` / `image-proxy` / `respan` = düşük (dokunulmaz) · `module-registry` / `shell-events` = düşük (M1). Kural: testler davranışa göre yeşil kalmalı; yalnızca import yolu güncellenebilir.
-
-### I. Doküman Güncelliği
-
-- Bu dosya (v2) güncellendi. ✅
-- `ARCHITECTURE.md`'nin "JSON tek doğruluk kaynağı" kararı **hâlâ doğrudur** (SQLite opt-in) — ancak SQLite bölümünün eklenmesi gerekir → Faz 2'de güncellenecek.
-- `docs/mia/faz0-envanter.md` (madge envanteri) bu raporla tutarlı; ayrıntı orada.
-
-### J. Faz 1'e Kesin Geçiş Planı
-
-1. `core/media/types.ts` + `core/media/keys.ts` — 4 tip döngüsünü koparır, `cinetrack-core.ts` yeniden export eder (davranış değişikliği sıfır).
-2. 4 yönetici sözleşmesi: `LibraryManager`, `TasteManager` (mevcut TasteEvent modeline referanslı), `MemoryManager` (evidence-ledger üstüne), `RecommendationManager`.
-3. `SyncStorePort` — Faz 2'nin gerçek döngü ön koşulu.
-4. Kabul: lint + 422 + 362 + build yeşil; madge döngü sayısı 7 → 3 (yalnızca gerçek değer zincirleri kalır).
-
----
----
-
-# CineTrack — FAZ 0 Envanter ve Kod/Veri Denetim Raporu (`phase-0-findings.md`)
-
-**Durum:** v1 — ARŞİV (aşağıdaki içerik 2026-11-01 tarihli ilk denetimdir; güncel bulgular yukarıdaki v2 bölümündedir)  
+**Durum:** Tamamlandı (Salt Okunur Denetim — **Hiçbir kaynak kod veya veri dosyası değiştirilmemiştir**)  
 **Denetim Tarihi:** `2026-11-01`  
 **Denetlenen Şema / Motor Sürümü:** `schemaVersion: 3` · `version: 3` · `engineVersion: "v3.2.0"`
 
@@ -269,15 +10,17 @@ Mevcut korumalar (App.tsx) — **taşıma sırasında birebir korunacak:**
 
 FAZ 0 kapsamında CineTrack kod tabanının istemci, çekirdek öneri motoru, yerel sunucu depolama katmanı, çift yönlü GitHub eşitleme motoru ve disk üzerindeki canlı `data/cinetrack-data.json` verisi salt okunur olarak denetlenmiştir.
 
-### Canlı `data/cinetrack-data.json` Şema Doğrulaması
-> Gizlilik gereği bu raporda kullanıcıya ait profil adı, kütüphane büyüklüğü, puan/tercih sayıları ve dosya boyutu gibi kişisel veriler **kaldırılmıştır**. Aşağıdaki bulgular yalnızca şema ve davranış doğrulaması içerir.
-
-| Doğrulama | Sonuç | Kaynak |
+### Canlı `data/cinetrack-data.json` Metrikleri
+| Metrik | Değer | Kaynak / Doğrulama |
 | :--- | :--- | :--- |
-| Kök belge şeması | `version: 3`, `schemaVersion: 3`, `engineVersion: "v3.2.0"` | `data/cinetrack-data.json` kök nesnesi |
-| Profil yapısı | `profiles[]` + `activeProfileId` + `preferences` alanları mevcut | `ensureDataShape` |
-| Kayıt üst sınırı | `DEFAULT_MAX_DATA_BYTES = 25 MiB` | `src/core/limits.ts` |
-| Bölüm ilerleme modeli | Sezon bazlı bölüm sayacı (`season_progress`) | `src/core/tv-progress.ts` |
+| Dosya Boyutu | `2.944.846 bayt` (~`2,81 MiB` / `78.250` satır) | Üst sınır: `DEFAULT_MAX_DATA_BYTES = 25 MiB` (`src/core/limits.ts`) |
+| Şema / Revizyon | `version: 3`, `schemaVersion: 3`, `engineVersion: "v3.2.0"`, `revision: 1` | `data/cinetrack-data.json` kök nesnesi |
+| Aktif Profil | `id: "profile-default"`, `name: "ibrahim"`, `isDemo: false` | `createdAt: "2026-10-19T10:35:53.061Z"` |
+| Toplam Kayıtlı İçerik (`items`) | **2.085** kayıt | `watchlist`: **1.059** · `completed`: **1.025** · `watching`: **1** |
+| Kişisel Puanlı Kayıt Sayısı | **47** kayıt (`2.038` kayıtta `personal_rating === ""`) | Dağılım: `[5, 6, 7, 8, 9, 10]`, ondalık puan sayısı: `0` |
+| Negatif Tercih (`preferences.disliked`) | **22** kanonik anahtar (`movie:<id>` / `tv:<id>`) | `preferences.hidden`: tanımlı değil (`0` kayıt) |
+| Favori Oyuncular (`favoriteActors`) | **100** oyuncu kaydı | Silme mezar taşı (`deleted_keys`): tanımlı değil (`0` kayıt) |
+| Aktif Sezon İlerlemesi Olan Dizi | **4** dizi kaydında dolu `season_progress` haritası | Sezon bazlı bölüm sayacı modeli |
 
 ### Temel Bulguların Özeti
 1. **Puan Ölçeği:** Kullanıcı puanı `SavedItem.personal_rating` alanında `number | ''` tipindedir; geçerli aralık **`1..10`** olup puansız durum `null` veya `0` değil **boş dizge (`""`)** ile temsil edilir. UI yalnızca `1..10` tam sayı girişine izin verir; CSV içe aktarmada `0.5–5.0` yıldızlı Letterboxd puanları `Math.round(p * 2)` ile `1..10` tam sayıya çevrilir. Öneri motoru bu puanı `normalizeUserRating` ile `[-1, +1]` aralığına (`5 -> 0` nötr) dönüştürür.
@@ -287,7 +30,7 @@ FAZ 0 kapsamında CineTrack kod tabanının istemci, çekirdek öneri motoru, ye
    - `preferences.hidden` (**"Tekil İçerik Gizle"**): Şemada, GitHub birleştirmede ve aday havuzu filtrelerinde tanımlıdır; zevk profiline negatif ceza **uygulamaz** (nötr bastırma), **ancak UI'da bu diziye yazan hiçbir buton/işleyici yoktur**.
    - `hideListedItems` (**"Listemdekileri Gizle"**): `cinetrack-data.json` dışındaki tarayıcı görünüm filtresidir (`localStorage` + IndexedDB `ct:ui-prefs`); yalnızca Keşfet (`trending`, `top-rated`, `gems`) ve `stock` sekmelerinde kayıtlı 5 durumu gizler.
 4. **Dizi Bölüm İlerleme Modeli:** Bölüm ID listesi **kullanılmaz**; `season_progress: Record<seasonNumber, watchedEpisodeCount>` şeklinde **1-indeksli sezon bazlı sayaç** modeli kullanılır (`Season 0 / Specials` kapsam dışıdır).
-5. **GitHub Dosya Tanıma:** `SYNC_STATIC_INVENTORY` altındaki **4 statik JSON yolu** (`data/catalog/{movies,tv,manifest}.json` ve `data/cinetrack-data.json`) ile `data/profiles/*.json` altındaki **`/^[a-zA-Z0-9_-]+\.json$/` kalıbına uyan dinamik türetilmiş profil dosyaları** tanınır. `>1 MB` dosyalar GitHub Contents API sınırına takıldığında otomatik olarak **Git Blob API (`/git/blobs/{sha}`)** üzerinden okunur.
+5. **GitHub Dosya Tanıma:** `SYNC_STATIC_INVENTORY` altındaki **4 statik JSON yolu** (`data/catalog/{movies,tv,manifest}.json` ve `data/cinetrack-data.json`) ile `data/profiles/*.json` altındaki **`/^[a-zA-Z0-9_-]+\.json$/` kalıbına uyan dinamik türetilmiş profil dosyaları** tanınır. `>1 MB` dosyalar (ör. `2,94 MB` büyüklüğündeki canlı `cinetrack-data.json`) GitHub Contents API sınırına takıldığında otomatik olarak **Git Blob API (`/git/blobs/{sha}`)** üzerinden okunur.
 
 ---
 
@@ -389,10 +132,10 @@ Canlı `data/cinetrack-data.json` içindeki kayıtlar üzerinde **33 aktif alan*
 | İstemci IDB Depoları | `surfacedAt`, `skippedAt`, `cachedAt`, `updatedAt` | `number` (epoch ms) / ISO `string` | `ct:surfaced`, `ct:skip-log`, `ct:actor-credits`, `ct:stock`, `ct:series-index`, `ct:ui-prefs` | Cihaz-yerel TTL / FIFO soğuma süresi kontrolünde kullanılır |
 
 ### 2.2. Kritik Eksik Alan Tespiti: `ratedAt`, `watchedAt` ve `completedAt` YOKTUR
-Tüm kaynak dosyalar (`src/**/*.ts`, `src/**/*.tsx`, `server.ts`) ve canlı veri belgesi taranmıştır:
-- `SavedItem` üzerinde **`ratedAt` alanı yoktur**.
-- `SavedItem` üzerinde **`watchedAt` alanı yoktur**.
-- `SavedItem` üzerinde **`completedAt` alanı yoktur**; `completedAt` ismi yalnızca `BidirectionalSyncReport` ve `idb-schema-version.ts` içinde işlem bitiş zamanı için kullanılmaktadır.
+Tüm kaynak dosyalar (`src/**/*.ts`, `src/**/*.tsx`, `server.ts`) ve canlı `data/cinetrack-data.json` üzerindeki `2.085` öğe taranmıştır:
+- `SavedItem` üzerinde **`ratedAt` alanı yoktur** (`0/2.085` kayıt).
+- `SavedItem` üzerinde **`watchedAt` alanı yoktur** (`0/2.085` kayıt).
+- `SavedItem` üzerinde **`completedAt` alanı yoktur** (`0/2.085` kayıt; `completedAt` ismi yalnızca `BidirectionalSyncReport` ve `idb-schema-version.ts` içinde işlem bitiş zamanı için kullanılmaktadır).
 
 **Mevcut Kod Üzerindeki Somut Etkileri:**
 1. **Zevk Sinyali Sönümlemesi (`cinetrack-core.ts:926, 935, 944`):** `getUserSignalV3` fonksiyonu `signalDecay(item.updatedAt || item.addedAt, halfLifeDays)` çağrısı yapar. Eski bir filme yıllar sonra yalnız metin notu eklenmesi `updatedAt` tarihini yenilediği için sinyalin yaşlanma ağırlığını sıfırlar.
@@ -472,7 +215,7 @@ Kaynaklar: `src/server/github-bidirectional-sync.ts` (`SYNC_STATIC_INVENTORY` sa
 - Tarayıcıdaki 13 IndexedDB deposu (`ct:*`) doğrudan GitHub'a yazılmaz; yalnızca kalıcı karşılıkları olan `cinetrack-data.json`, `data/catalog/*.json` ve `data/profiles/*.json` üzerinden senkronize edilir.
 
 ### 5.3. Büyük Dosya (`>1 MB`) Okuma, Semantik Özet ve Geri Okuma Doğrulaması
-1. **`>1 MB` Git Blob API Yedek Yolu (`fetchRemoteFileRaw`):** GitHub Contents API `1 MB` üstü dosyalarda `403 too_large` veya `encoding: "none", content: ""` döndürür. Sistem bu durumu yakalayıp üst dizini (`GET /contents/data`) listeleyerek dosyanın Git `sha` değerini bulur ve `GET /repos/{owner}/{repo}/git/blobs/{sha}` (**Git Blob API**, `25 MiB` üst sınırına kadar) üzerinden base64 içeriği eksiksiz indirir.
+1. **`>1 MB` Git Blob API Yedek Yolu (`fetchRemoteFileRaw`):** GitHub Contents API `1 MB` üstü dosyalarda (örneğin şu an `2,94 MB` olan canlı `data/cinetrack-data.json`) `403 too_large` veya `encoding: "none", content: ""` döndürür. Sistem bu durumu yakalayıp üst dizini (`GET /contents/data`) listeleyerek dosyanın Git `sha` değerini bulur ve `GET /repos/{owner}/{repo}/git/blobs/{sha}` (**Git Blob API**, `25 MiB` üst sınırına kadar) üzerinden base64 içeriği eksiksiz indirir.
 2. **İki Katmanlı Hash (`rawFileHash` vs `semanticHash`):**
    - `rawFileHash`: Dosyanın ham UTF-8 baytlarının SHA-256 özetidir (yazma sonrası geri okuma doğrulaması için kullanılır).
    - `semanticHash`: Uçucu zaman damgaları (`DataDocument.updatedAt`, `CatalogRecord.firstStoredAt/lastUpdatedAt`, `CatalogManifest.updatedAt`, `DerivedProfile.generatedAt/calculatedAt`) soyulduktan sonra deterministik anahtar sıralı JSON üzerinden hesaplanan SHA-256 özetidir. Yerel ve uzak `semanticHash` eşitse gereksiz commit atılmaz (`skippedNoop`).
@@ -525,12 +268,12 @@ FAZ 0 envanter bulguları doğrultusunda mevcut mimariyi güvence altına alan v
 | :--- | :--- | :--- | :--- | :--- |
 | **ADR-01** | **Yerel-Öncelikli (Local-First) Tek Kaynak JSON + İsteğe Bağlı Özel GitHub Eşitlemesi** | Birincil doğruluk kaynağı yerel `data/cinetrack-data.json` dosyasıdır (`127.0.0.1` dinleme + uzaktan erişimde `CINETRACK_TOKEN`). Harici bulut veritabanı (Supabase, Firebase, PostgreSQL vb.) eklenmez; cihazlar arası eşitleme yalnızca kullanıcının kendi GitHub deposu üzerinden yapılır. | Çevrimdışı tam çalışabilirlik, sıfır üçüncü taraf hesap bağımlılığı, `25 MiB` atomik `.tmp + fsync + rename` ve `7` döner yedek güvencesi (`storage.ts`, `config.ts`). | **ONAYLANDI** |
 | **ADR-02** | **Kanonik Medya Anahtarı (`movie:<id>` / `tv:<id>`)** | Tüm listeler, kataloglar, `disliked`, `hidden`, `deleted_keys`, türetilmiş profil skorları ve IndexedDB depoları içerikleri `<media_type>:<id>` kanonik anahtarıyla indeksler. | TMDB film ve dizi ID uzayları çakışabildiğinden (`movie:100` !== `tv:100`), yalın sayısal ID kullanımı veri ezilmesine yol açar (`mediaKeyOf`, `cinetrack-core.ts:242`). | **ONAYLANDI** |
-| **ADR-03** | **Kişisel Puan Ölçeği (`1..10 \| ''`) ve `personal_rating_cleared` Koruması** | Kullanıcı puanı şemada `1..10` aralığında sayısal değer (UI ve CSV içe aktarmada `1..10` tam sayı), puansız durumda ise kesinlikle `''` (boş dizge) olarak tutulur; puan silindiğinde `personal_rating_cleared: true` işaretlenir. Öneri motoru iç dönüşümde `5` puanı `0.0` nötr kabul eden `[-1, +1]` ölçeğini kullanır. | Canlı verideki puanlı kayıtların tamamı `1..10` tam sayıdır; `personal_rating_cleared` bayrağı çift yönlü eşitlemede silinen puanın eski kopyadan geri gelmesini engeller (`github-bidirectional-sync.ts:540–571`). | **ONAYLANDI** |
+| **ADR-03** | **Kişisel Puan Ölçeği (`1..10 \| ''`) ve `personal_rating_cleared` Koruması** | Kullanıcı puanı şemada `1..10` aralığında sayısal değer (UI ve CSV içe aktarmada `1..10` tam sayı), puansız durumda ise kesinlikle `''` (boş dizge) olarak tutulur; puan silindiğinde `personal_rating_cleared: true` işaretlenir. Öneri motoru iç dönüşümde `5` puanı `0.0` nötr kabul eden `[-1, +1]` ölçeğini kullanır. | Canlı verideki `47/47` puanlı kayıt `1..10` tam sayıdır; `personal_rating_cleared` bayrağı çift yönlü eşitlemede silinen puanın eski kopyadan geri gelmesini engeller (`github-bidirectional-sync.ts:540–571`). | **ONAYLANDI** |
 | **ADR-04** | **Zaman Damgası Semantiği (`addedAt` / `updatedAt` Korunması ve İleriki Fazda `ratedAt` / `completedAt` Ayrımı)** | FAZ 0'da şemaya dokunulmaz; `addedAt` ilk eklenme tarihini, `updatedAt` son mutasyon tarihini temsil eder. Sonraki fazda geriye dönük uyumlu (opsiyonel) `ratedAt?: string` ve `completedAt?: string` alanları eklenerek sinyal sönümlemesi, CSV `WatchedDate` ve Wrapped hesaplamaları `updatedAt` yan etkisinden arındırılacaktır. | Mevcut şemada `ratedAt`/`watchedAt`/`completedAt` bulunmadığı için eski bir kayda not eklenmesi `updatedAt` üzerinden izlenme yılını ve sinyal yaşını değiştirmektedir (`wrapped-summary.ts:116`, `exporters.ts:262`). | **ONAYLANDI** |
 | **ADR-05** | **Üçlü Görünürlük ve Negatif Sinyal Ayrımı (`disliked` vs `hidden` vs `hideListedItems`)** | `preferences.disliked` hem aday havuzundan dışlayan hem de zevk vektörüne `-0.8` ceza veren açık negatif sinyaldir. `preferences.hidden` zevk vektörünü etkilemeyen nötr bastırma alanıdır (ileriki fazda UI aksiyonu bağlanabilir). `hideListedItems` ise yalnızca tarayıcıda yaşayan görünüm filtresidir. | "Bu içeriği görmek istemiyorum ama türünü seviyorum" (`hidden`) ile "Bu tarz içerikleri sevmiyorum" (`disliked`) sinyallerinin öneri kalitesini bozmaması için matematiksel ayrım zorunludur (`cinetrack-core.ts:1037, 4283–4297`). | **ONAYLANDI** |
 | **ADR-06** | **Sezon Bazlı Bölüm Sayacı (`season_progress`) İlerleme Modeli** | Dizilerde bölüm ilerlemesi `1..N` sezonları için `Record<seasonNumber, watchedCount>` haritasıyla tutulur (`Season 0` hariç); eşitlemede sezon bazında `Math.max` uygulanır ve son sezon tamamlandığında `status` otomatik `'completed'` olur. | Binlerce bölümlük dizilerde JSON boyutunu şişirmeden çevrimdışı `+1 Bölüm` akışını ve sezon geçişlerini deterministik olarak çözer (`tv-progress.ts`). Bilinçli sayaç düşürme durumu ileriki fazda `updatedAt` önceliğiyle iyileştirilebilir. | **ONAYLANDI** |
 | **ADR-07** | **Sürüm İmzalı Türetilmiş Önbellekler ve 13 Yalıtılmış İstemci Deposu** | Büyük ve sık değişen keşif verileri (`ct:stock`, `ct:surfaced`, `ct:series-index`, `ct:encodings`, `cinetrack-discovery-history-db` vb.) `localStorage` yerine IndexedDB depolarında tutulur; `data/profiles/<profileId>.json` ve `ct:encodings` (`ENCODING_LAYOUT_VERSION`) parmak izi / şema sürümü uyuşmadığında otomatik geçersiz kılınır. | `5 MB` `localStorage` kotası aşımını engeller ve algoritma güncellemelerinde bayat (stale) skor/vektör kullanımını sıfırlar (`idb-schema-version.ts`, `derived-profile-cache.ts`). | **ONAYLANDI** |
-| **ADR-08** | **Çok Dosyalı GitHub Eşitlemesinde Semantik Hash, Blob API (`>1 MB`) ve `deleted_keys` Mezar Taşı** | GitHub eşitlemesi 4 statik JSON + dinamik `data/profiles/*.json` envanterini kapsar; `>1 MB` dosyalarda Git Blob API devreye girer, uçucu zaman damgaları `semanticHash` dışına çıkarılır, silinen kayıtlar `30` günlük `deleted_keys` mezar taşıyla korunur ve her `PUT` sonrasında SHA-256 geri okuma doğrulaması yapılır. | Canlı `data/cinetrack-data.json` dosyası `1 MB` Contents API sınırını aşabildiği için Blob API + kayıpsız birleştirme veri bütünlüğünü garanti eder (`github-bidirectional-sync.ts:2243–2407`). | **ONAYLANDI** |
+| **ADR-08** | **Çok Dosyalı GitHub Eşitlemesinde Semantik Hash, Blob API (`>1 MB`) ve `deleted_keys` Mezar Taşı** | GitHub eşitlemesi 4 statik JSON + dinamik `data/profiles/*.json` envanterini kapsar; `>1 MB` dosyalarda Git Blob API devreye girer, uçucu zaman damgaları `semanticHash` dışına çıkarılır, silinen kayıtlar `30` günlük `deleted_keys` mezar taşıyla korunur ve her `PUT` sonrasında SHA-256 geri okuma doğrulaması yapılır. | Canlı `data/cinetrack-data.json` dosyası `2,94 MB` olduğu için standart Contents API (`1 MB` sınırı) tek başına yetersizdir; Blob API + kayıpsız birleştirme veri bütünlüğünü garanti eder (`github-bidirectional-sync.ts:2243–2407`). | **ONAYLANDI** |
 
 ---
 

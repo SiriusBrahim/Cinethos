@@ -1,6 +1,5 @@
 import type { SavedItem } from '../core/cinetrack-core.ts';
 import type { TmdbItem } from '../types/tmdb.ts';
-import { resolvePoster } from '../core/media/poster.ts';
 
 export const IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 
@@ -151,7 +150,7 @@ let preferImageProxy = false;
 if (typeof window !== 'undefined') {
   try {
     preferImageProxy = window.sessionStorage?.getItem('cinetrack_prefer_image_proxy') === '1';
-  } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+  } catch {}
 }
 
 export function isImageProxyPreferred(): boolean {
@@ -167,7 +166,7 @@ export function setImageProxyPreferred(preferred: boolean): void {
       } else {
         window.sessionStorage?.removeItem('cinetrack_prefer_image_proxy');
       }
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
 }
 
@@ -181,45 +180,18 @@ export function tmdbProxyUrl(pathOrUrl: string, size = 'w500'): string {
   return `/api/tmdb-image?path=${encodeURIComponent(cleanPath)}&size=${size}`;
 }
 
-/**
- * SQLite arşivine gömülecek poster URL'ini üretir.
- * Yalnızca izin verilen görsel alan adlarında MUTLAK https adresi döner;
- * aksi hâlde boş dizge (arşive poster eklenmez).
- */
-export function archivePosterUrl(
-  item?: { poster_url?: string | null; poster_path?: string | null } | null
-): string {
-  if (!item) return '';
-  const allowed = /^https:\/\/(image\.tmdb\.org|img\.tmdb\.org)\//i;
-
-  const raw = typeof item.poster_url === 'string' ? item.poster_url.trim() : '';
-  if (raw) {
-    if (allowed.test(raw)) return raw;
-    if (raw.startsWith('https://')) return '';
-    if (raw.startsWith('/')) return `https://image.tmdb.org/t/p/w500${raw}`;
-  }
-
-  const posterPath = typeof item.poster_path === 'string' ? item.poster_path.trim() : '';
-  if (!posterPath) return '';
-  if (allowed.test(posterPath)) return posterPath;
-  if (posterPath.startsWith('https://')) return '';
-  return `https://image.tmdb.org/t/p/w500${posterPath.startsWith('/') ? posterPath : `/${posterPath}`}`;
-}
-
 export function imageUrl(path?: string | null, size = 'w500'): string {
   if (!path) return '';
-  const trimmed = path.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    if (preferImageProxy && (trimmed.includes('image.tmdb.org') || trimmed.includes('img.tmdb.org'))) {
-      return tmdbProxyUrl(trimmed, size);
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    if (preferImageProxy && (path.includes('image.tmdb.org') || path.includes('img.tmdb.org'))) {
+      return tmdbProxyUrl(path, size);
     }
-    return trimmed;
+    return path;
   }
   if (preferImageProxy) {
-    return tmdbProxyUrl(trimmed, size);
+    return tmdbProxyUrl(path, size);
   }
-  const cleanTmdb = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return `${IMAGE_BASE}${size}${cleanTmdb}`;
+  return `${IMAGE_BASE}${size}${path}`;
 }
 
 export function handleImageError(
@@ -297,21 +269,21 @@ export function formatMediaDates(
 
 export function getPoster(item?: Partial<TmdbItem> | SavedItem | null, size = 'w500'): string {
   if (!item) return '';
-  // ARCH-03: poster alanı seçimi ve doğrulaması tek modülde.
-  const resolved = resolvePoster(item);
-  if (resolved.kind === 'none') return '';
-  if (resolved.kind === 'url') {
+  if (item.poster_url) {
     try {
-      const url = new URL(resolved.value);
-      if (preferImageProxy && (url.hostname === 'image.tmdb.org' || url.hostname === 'img.tmdb.org')) {
-        return tmdbProxyUrl(url.href, size);
+      const url = new URL(item.poster_url);
+      if (url.protocol === 'https:') {
+        if (preferImageProxy && (url.hostname === 'image.tmdb.org' || url.hostname === 'img.tmdb.org')) {
+          return tmdbProxyUrl(url.href, size);
+        }
+        return url.href;
       }
-      return url.href;
+      return '';
     } catch {
       return '';
     }
   }
-  return imageUrl(resolved.value, size);
+  return imageUrl(item.poster_path, size);
 }
 
 export function dateYearsAgo(years: number): string {
@@ -401,43 +373,5 @@ export function formatWatchTime(totalMinutes: number): string {
   if (hours === 0) return `${remainingMins} dk`;
   if (remainingMins === 0) return `${hours} sa`;
   return `${hours} sa ${remainingMins} dk`;
-}
-
-function localDayKey(date: Date): string {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-/**
- * Üst üste etkinlik günü sayısı. Bugün (veya dün) etkinlik yoksa seri 0'dır.
- */
-export function computeActivityStreak(
-  items: Array<{ addedAt?: string; updatedAt?: string }>,
-  now: Date = new Date()
-): number {
-  const days = new Set<string>();
-  for (const item of items) {
-    for (const raw of [item?.updatedAt, item?.addedAt]) {
-      if (typeof raw !== 'string' || !raw) continue;
-      const date = new Date(raw);
-      if (!Number.isNaN(date.getTime())) days.add(localDayKey(date));
-    }
-  }
-  if (days.size === 0) return 0;
-
-  const cursor = new Date(now);
-  if (!days.has(localDayKey(cursor))) {
-    cursor.setDate(cursor.getDate() - 1);
-    if (!days.has(localDayKey(cursor))) return 0;
-  }
-
-  let streak = 0;
-  while (days.has(localDayKey(cursor))) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
 }
 

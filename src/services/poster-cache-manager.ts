@@ -52,7 +52,7 @@ export async function recordPosterAccess(
   if (store) {
     try {
       await set(url, next, store);
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
 }
 
@@ -65,7 +65,7 @@ async function readPosterMeta(url: string): Promise<PosterLruMeta | null> {
         memoryPosterMeta.set(url, val);
         return val;
       }
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
   return memoryPosterMeta.get(url) || null;
 }
@@ -76,7 +76,7 @@ async function deletePosterMeta(url: string): Promise<void> {
   if (store) {
     try {
       await del(url, store);
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
 }
 
@@ -94,7 +94,7 @@ async function measureCachedResponseBytes(res: Response, meta: PosterLruMeta | n
       if (buf && buf.byteLength > 0) {
         return buf.byteLength;
       }
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    } catch {}
   }
   return DEFAULT_POSTER_ESTIMATE_BYTES;
 }
@@ -204,7 +204,7 @@ export function requestServiceWorkerPosterPurge(): void {
     if (typeof navigator !== 'undefined' && navigator.serviceWorker?.controller) {
       navigator.serviceWorker.controller.postMessage({ type: 'ENFORCE_POSTER_QUOTA' });
     }
-  } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+  } catch {}
 }
 
 export function resetPosterMetaForTests(): void {

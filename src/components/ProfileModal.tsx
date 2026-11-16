@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChartColumn, DatabaseBackup, RefreshCw, UserRound } from 'lucide-react';
 import type {
   DataDocument,
   FavoriteActorInfo,
@@ -8,7 +7,6 @@ import type {
   SavedItem,
 } from '../core/cinetrack-core.ts';
 import type { CinemaKunyeDocument } from '../core/cinema-kunye.ts';
-import type { CsvProfileBlock } from '../core/exporters.ts';
 import {
   fetchServerBackups,
   fetchSyncStatus,
@@ -20,7 +18,6 @@ import { recordManualBackupSuccess } from '../services/auto-backup-service.ts';
 import { resetDerivedCachesPreserveProfileAndStock } from '../services/idb-schema-version.ts';
 import { PROVIDER_OPTIONS } from '../utils/helpers.ts';
 import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
-import { handleTabListKeyDown } from '../utils/tabListKeyboard.ts';
 import { ProfileStatsTab } from './ProfileStatsTab.tsx';
 import { ProfileBackupTab } from './ProfileBackupTab.tsx';
 import {
@@ -53,24 +50,16 @@ interface ProfileModalProps {
   onToggleReminders: () => void;
   onExportBackup: () => void;
   onImportBackupFile: (file: File) => void;
-  onImportCsvItems?: (
-    items: SavedItem[],
-    cinemaKunye?: CinemaKunyeDocument,
-    profileBlock?: CsvProfileBlock | null
-  ) => void;
+  onImportCsvItems?: (items: SavedItem[], cinemaKunye?: CinemaKunyeDocument) => void;
   onBeforeSyncFlush?: () => Promise<void>;
   onMergeSyncedDocument?: (doc: DataDocument) => void;
   onApplyRestoredDocument?: (doc: DataDocument) => void;
   onCinemaKunyeSynced?: (mode: 'merge' | 'overwrite') => void;
-  onCreateSqliteArchive?: () => Promise<void>;
-  onRestoreSqliteArchive?: (file: File) => Promise<void>;
   onMergeDuplicates?: (
     keepId: SavedItem['id'],
     dropId: SavedItem['id'],
     mediaType: 'movie' | 'tv'
   ) => void;
-  /** Profildeki kompakt kimlik kartından menüdeki geniş görünüme geçer. */
-  onOpenIdentity?: () => void;
   isDemo?: boolean;
   onToggleDemoMode?: () => void;
 }
@@ -102,12 +91,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onMergeSyncedDocument,
   onApplyRestoredDocument,
   onCinemaKunyeSynced,
-  onCreateSqliteArchive,
-  onRestoreSqliteArchive,
   onMergeDuplicates,
   isDemo = false,
   onToggleDemoMode,
-  onOpenIdentity,
 }) => {
   const [activeTab, setActiveTab] = useState<ProfileModalTabKey>('stats');
   const [name, setName] = useState(activeProfileName);
@@ -127,18 +113,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     () => profiles.filter((p) => p.id !== activeProfileId),
     [profiles, activeProfileId]
   );
-
-  const heroStats = useMemo(() => {
-    let completed = 0;
-    let watchlist = 0;
-    for (const item of savedItems) {
-      if (item.status === 'completed') completed += 1;
-      else if (item.status === 'watchlist') watchlist += 1;
-    }
-    return { total: savedItems.length, completed, watchlist, profiles: profiles.length };
-  }, [savedItems, profiles.length]);
-
-  const heroInitial = (activeProfileName || 'P').trim().charAt(0).toUpperCase();
 
   useEffect(() => {
     if (isOpen) {
@@ -258,7 +232,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     <div
       id="profileModal"
       className="modal-wrap open"
-      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -273,50 +246,24 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         aria-describedby="profileDescription"
         tabIndex={-1}
       >
-        <header className="profile-hero">
+        <header className="profile-modal-header">
           <button className="modal-close" type="button" onClick={onClose} aria-label="Kapat">
             <svg className="icon" aria-hidden="true">
               <use href="#icon-close"></use>
             </svg>
           </button>
-
-          <div className="profile-hero-main">
-            <span className="profile-hero-avatar" aria-hidden="true">
-              {heroInitial}
-            </span>
-            <div className="profile-hero-copy">
-              <span className="profile-hero-eyebrow">Küratör Profili</span>
-              <h2 id="profileModalTitle" className="profile-hero-name">
-                {activeProfileName}
-              </h2>
-              <p id="profileDescription" className="profile-hero-meta">
-                Kişisel izleme istatistikleri, tercihler, yedekleme ve sistem bakımı.
-              </p>
+          <div>
+            <h2 id="profileModalTitle" className="detail-title mb-1.5">
+              {activeProfileName}
+            </h2>
+            <div id="profileDescription" className="detail-meta">
+              Kişisel izleme istatistikleri, tercihler, yedekleme ve sistem bakımı.
             </div>
           </div>
-
-          <dl className="profile-hero-stats">
-            <div className="profile-hero-stat">
-              <dt>Yapım</dt>
-              <dd className="tabular-nums">{heroStats.total}</dd>
-            </div>
-            <div className="profile-hero-stat">
-              <dt>Tamamlanan</dt>
-              <dd className="tabular-nums">{heroStats.completed}</dd>
-            </div>
-            <div className="profile-hero-stat">
-              <dt>İzlenecek</dt>
-              <dd className="tabular-nums">{heroStats.watchlist}</dd>
-            </div>
-            <div className="profile-hero-stat">
-              <dt>Profil</dt>
-              <dd className="tabular-nums">{heroStats.profiles}</dd>
-            </div>
-          </dl>
         </header>
 
         <nav className="profile-modal-tabs-bar" aria-label="Profil Sekmeleri">
-          <div className="profile-nav-tabs" role="tablist" onKeyDown={handleTabListKeyDown}>
+          <div className="profile-nav-tabs" role="tablist">
             <button
               type="button"
               className={`profile-nav-tab whitespace-nowrap ${activeTab === 'stats' ? 'active' : ''}`}
@@ -324,8 +271,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'stats'}
               onClick={() => setActiveTab('stats')}
             >
-              <ChartColumn className="profile-nav-icon" aria-hidden="true" />
-              <span>İstatistikler</span>
+              İstatistikler & Analiz
             </button>
             <button
               type="button"
@@ -334,8 +280,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'profile'}
               onClick={() => setActiveTab('profile')}
             >
-              <UserRound className="profile-nav-icon" aria-hidden="true" />
-              <span>Profil & Tercihler</span>
+              Profil & Tercihler
             </button>
             <button
               type="button"
@@ -344,8 +289,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'backup'}
               onClick={() => setActiveTab('backup')}
             >
-              <DatabaseBackup className="profile-nav-icon" aria-hidden="true" />
-              <span>Yedekleme</span>
+              Yedekleme & Aktarım
             </button>
             <button
               type="button"
@@ -354,8 +298,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               aria-selected={activeTab === 'sync'}
               onClick={() => setActiveTab('sync')}
             >
-              <RefreshCw className="profile-nav-icon" aria-hidden="true" />
-              <span>Eşitleme & Bakım</span>
+              Eşitleme & Bakım
             </button>
           </div>
         </nav>
@@ -369,7 +312,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               genresMap={genresMap}
               tasteEntries={tasteEntries}
               cinemaKunye={cinemaKunye}
-              onOpenIdentity={onOpenIdentity}
             />
           )}
 
@@ -384,7 +326,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   Profil adı
                   <input
                     id="profileName"
-                    aria-label="Profil adı"
                     className="field"
                     type="text"
                     maxLength={40}
@@ -396,10 +337,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </label>
 
                 {/* Veri Kaynağı Göstergesi & Geçiş */}
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cinema-borderSubtle bg-cinema-elevated px-3.5 py-2.5 mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700/60 bg-slate-900/60 px-3.5 py-2.5 mb-2">
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="text-cinema-textMuted">Veri Kaynağı:</span>
-                    <strong className={isDemo ? 'text-cinema-gold' : 'text-cinema-success'}>
+                    <span className="text-slate-400">Veri Kaynağı:</span>
+                    <strong className={isDemo ? 'text-amber-300' : 'text-emerald-300'}>
                       {isDemo ? 'Demo Modu (Örnek Yapımlar)' : 'Canlı Veri (Kişisel Profil)'}
                     </strong>
                   </div>
@@ -461,7 +402,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       <div className="profile-card-new-form">
                         <input
                           id="newProfileName"
-                          aria-label="Yeni profil adı"
                           className="field new-profile-input"
                           type="text"
                           maxLength={40}
@@ -584,8 +524,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 onCreateInstantBackup={handleCreateInstantBackup}
                 onLoadServerBackups={handleLoadServerBackups}
                 onRestoreSnapshot={handleRestoreSnapshot}
-                onCreateSqliteArchive={onCreateSqliteArchive}
-                onRestoreSqliteArchive={onRestoreSqliteArchive}
               />
             </div>
           )}

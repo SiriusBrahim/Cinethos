@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { activateOnKeyDown } from '../utils/a11y.ts';
 import {
   PersistentTasteMapData,
   TasteProfileSummary,
@@ -575,28 +574,28 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
   ];
 
   return (
-    <div className="identity-view w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-8 animate-fade-in text-cinema-text">
+    <div className="identity-view w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-8 animate-fade-in text-slate-100">
       {/* Sub-view Switcher: Kimlik & Kanıtlar vs. Halka Yaşam Döngüsü */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-cinema-borderSubtle">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-white/10">
         <div>
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-cinema-gold">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-amber-400">
             Kişisel DNA & Zevk Analizi
           </span>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-cinema-textPrimary flex items-center gap-2 font-display">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
             <span>🧬 Kimliğim</span>
-            <span className="text-xs px-2.5 py-1 rounded-full bg-cinema-goldDim text-cinema-gold border border-cinema-gold/30 font-medium">
+            <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium">
               Bunu Nasıl Bildin?
             </span>
           </h1>
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-cinema-elevated border border-cinema-borderSubtle">
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-md">
           <button
             type="button"
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
               subView === 'constellation'
-                ? 'bg-cinema-surface text-cinema-gold border border-cinema-gold/35 shadow-sm'
-                : 'text-cinema-textMuted hover:text-cinema-textPrimary'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-[0_0_15px_rgba(255,179,0,0.15)]'
+                : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setSubView('constellation')}
           >
@@ -606,8 +605,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
             type="button"
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
               subView === 'rings'
-                ? 'bg-cinema-surface text-cinema-gold border border-cinema-gold/35 shadow-sm'
-                : 'text-cinema-textMuted hover:text-cinema-textPrimary'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-[0_0_15px_rgba(255,179,0,0.15)]'
+                : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setSubView('rings')}
           >
@@ -619,14 +618,14 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
       {subView === 'rings' ? (
         /* Ring Wall sub-view: keeps existing deep poster wall functionality */
         <div className="rings-container space-y-4">
-          <div className="p-4 rounded-2xl bg-cinema-surface border border-cinema-gold/30 text-xs text-cinema-text flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/20 text-xs text-amber-200/90 flex items-center justify-between">
             <span>
               <strong>Halka Yaşam Döngüsü:</strong> Ring 0 (Çekirdek Zevk), Ring 1 (Güçlü Adaylar) ve Ring 2 (Keşif & Uç Noktalar)
               posterlerini inceleyip manuel olarak yeniden düzenleyebilirsiniz.
             </span>
             <button
               type="button"
-              className="text-cinema-gold hover:underline font-semibold shrink-0 ml-4 cursor-pointer"
+              className="text-amber-400 hover:underline font-semibold shrink-0 ml-4 cursor-pointer"
               onClick={() => setSubView('constellation')}
             >
               ← Kimliğime Dön
@@ -652,17 +651,17 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
         /* Primary Identity Constellation & Evidence View */
         <>
           {/* 1. HERO OVERVIEW SECTION */}
-          <div className="relative overflow-hidden rounded-3xl bg-cinema-surface border border-cinema-borderSubtle p-6 sm:p-8 shadow-sm">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-cinema-gold/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900/90 via-slate-950/90 to-amber-950/20 border border-white/10 p-6 sm:p-8 backdrop-blur-xl shadow-2xl">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
               {/* Left: Dominant Traits Dev Tipografi */}
               <div className="lg:col-span-8 space-y-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-xs uppercase tracking-widest text-cinema-gold font-mono font-medium">
+                  <span className="text-xs uppercase tracking-widest text-amber-400/90 font-mono font-medium">
                     En Baskın Sinematik Karakteristikler
                   </span>
-                  <span className="w-8 h-[1px] bg-cinema-gold/30" />
+                  <span className="w-8 h-[1px] bg-amber-500/30" />
                 </div>
 
                 <div className="space-y-1">
@@ -671,44 +670,41 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                       key={t.id}
                       className="group cursor-pointer flex items-baseline gap-3 transition-transform hover:translate-x-1"
                       onClick={() => setSelectedEvidence(t.evidence)}
-                      onKeyDown={activateOnKeyDown(() => setSelectedEvidence(t.evidence))}
-                      role="button"
-                      tabIndex={0}
                       title="Kanıtlarını gör"
                     >
-                      <span className="text-xs font-mono text-cinema-gold/75 tabular-nums">
+                      <span className="text-xs font-mono text-amber-500/60 tabular-nums">
                         0{idx + 1}.
                       </span>
-                      <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-cinema-textPrimary group-hover:text-cinema-gold transition-colors font-display">
+                      <span className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white group-hover:text-amber-300 transition-colors">
                         {t.title}
                       </span>
-                      <span className="text-xs font-mono text-cinema-textMuted px-2 py-0.5 rounded bg-cinema-elevated border border-cinema-borderSubtle tabular-nums">
+                      <span className="text-xs font-mono text-slate-400 px-2 py-0.5 rounded bg-white/5 border border-white/10">
                         %{t.score}
                       </span>
                     </div>
                   ))}
                 </div>
 
-                <p className="text-sm text-cinema-textMuted max-w-2xl leading-relaxed pt-2">
+                <p className="text-sm text-slate-400 max-w-2xl leading-relaxed pt-2">
                   İzleme geçmişiniz, puan tercihleriniz ve atlanan sahneler analiz edildiğinde, algoritmik kimliğiniz bu üç temel eksen etrafında yoğunlaşıyor.
                 </p>
               </div>
 
               {/* Right: Confidence Badge & Stats */}
-              <div className="lg:col-span-4 flex flex-col gap-4 bg-cinema-elevated border border-cinema-borderSubtle rounded-2xl p-5">
-                <div className="flex items-center justify-between pb-3 border-b border-cinema-borderSubtle">
-                  <span className="text-xs text-cinema-textMuted">Profil Güveni</span>
+              <div className="lg:col-span-4 flex flex-col gap-4 bg-slate-950/60 border border-white/10 rounded-2xl p-5 backdrop-blur-md">
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <span className="text-xs text-slate-400">Profil Güveni</span>
                   <div className="flex items-center gap-1.5">
                     <span
                       className={`w-2 h-2 rounded-full ${
                         stats.confidence === 'high'
-                          ? 'bg-cinema-success'
+                          ? 'bg-[#6fbf8a] shadow-[0_0_8px_#6fbf8a]'
                           : stats.confidence === 'medium'
-                          ? 'bg-cinema-gold'
-                          : 'bg-cinema-danger'
+                          ? 'bg-[#d3b579] shadow-[0_0_8px_#d3b579]'
+                          : 'bg-[#e0645e] shadow-[0_0_8px_#e0645e]'
                       }`}
                     />
-                    <span className="text-xs font-semibold text-cinema-textPrimary">
+                    <span className="text-xs font-semibold text-[#eef0f2]">
                       {stats.confidence === 'high'
                         ? 'Yüksek Güven'
                         : stats.confidence === 'medium'
@@ -720,22 +716,22 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
 
                 <div className="grid grid-cols-2 gap-3 py-1">
                   <div>
-                    <div className="text-xs text-cinema-textMuted">Analiz Edilen İçerik</div>
-                    <div className="text-xl font-bold text-cinema-textPrimary tabular-nums">
+                    <div className="text-xs text-slate-400">Analiz Edilen İçerik</div>
+                    <div className="text-xl font-bold text-white tabular-nums">
                       {stats.movies} Film · {stats.tv} Dizi
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-cinema-textMuted">Tamamlanan</div>
-                    <div className="text-xl font-bold text-cinema-gold tabular-nums">
+                    <div className="text-xs text-slate-400">Tamamlanan</div>
+                    <div className="text-xl font-bold text-amber-300 tabular-nums">
                       {stats.completed} Yapım
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-cinema-borderSubtle flex items-center justify-between text-[11px] text-cinema-textMuted">
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
                   <span>Hesaplama Motoru: v6 (Derin Sinema)</span>
-                  <span className="text-cinema-gold font-medium">Canlı Senkronize</span>
+                  <span className="text-amber-400/80">Canlı Senkronize</span>
                 </div>
               </div>
             </div>
@@ -744,10 +740,10 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
           {/* 2. 9-KATEGORİ SEKME ÇUBUĞU */}
           <div className="space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="text-xs font-semibold tracking-wider uppercase text-cinema-textMuted">
+              <span className="text-xs font-semibold tracking-wider uppercase text-slate-400">
                 9 Boyutlu Zevk Spektrumu
               </span>
-              <span className="text-xs text-cinema-textMuted">
+              <span className="text-xs text-slate-400">
                 Kartlara tıklayarak &ldquo;Bunu Nasıl Bildik?&rdquo; kanıt modalını açın.
               </span>
             </div>
@@ -762,8 +758,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                     onClick={() => setSelectedCategory(c.id)}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
                       isActive
-                        ? 'bg-cinema-goldDim text-cinema-gold border border-cinema-gold/40 font-semibold'
-                        : 'bg-cinema-surface text-cinema-textMuted hover:text-cinema-textPrimary border border-cinema-borderSubtle hover:border-cinema-borderStrong'
+                        ? 'bg-cinema-goldDim text-cinema-gold border border-cinema-gold/40 shadow-[0_0_15px_rgba(211,181,121,0.15)]'
+                        : 'bg-cinema-surfaceHover/80 text-cinema-textMuted hover:text-cinema-textPrimary border border-white/7 hover:border-white/15'
                     }`}
                   >
                     <span>{c.icon}</span>
@@ -784,8 +780,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                 onClick={() => setConstellationFilter('all')}
                 className={`px-3 py-1 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                   constellationFilter === 'all'
-                    ? 'bg-cinema-surface text-cinema-textPrimary border border-cinema-borderStrong font-semibold'
-                    : 'text-cinema-textMuted hover:text-cinema-textPrimary bg-cinema-elevated border border-cinema-borderSubtle'
+                    ? 'bg-white/15 text-cinema-textPrimary border border-white/20'
+                    : 'text-cinema-textMuted hover:text-cinema-textPrimary bg-cinema-surfaceHover/50'
                 }`}
               >
                 Tümü ({metrics.length})
@@ -795,8 +791,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                 onClick={() => setConstellationFilter('known')}
                 className={`px-3 py-1 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                   constellationFilter === 'known'
-                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-semibold'
-                    : 'text-cinema-textMuted hover:text-emerald-800 bg-cinema-elevated border border-cinema-borderSubtle'
+                    ? 'bg-[#6fbf8a]/15 text-[#6fbf8a] border border-[#6fbf8a]/35'
+                    : 'text-cinema-textMuted hover:text-[#6fbf8a] bg-cinema-surfaceHover/50'
                 }`}
               >
                 🟢 Bildiğim Kanıtlar (%75+)
@@ -806,8 +802,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                 onClick={() => setConstellationFilter('predicted')}
                 className={`px-3 py-1 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                   constellationFilter === 'predicted'
-                    ? 'bg-cinema-goldDim text-cinema-gold border border-cinema-gold/35 font-semibold'
-                    : 'text-cinema-textMuted hover:text-cinema-gold bg-cinema-elevated border border-cinema-borderSubtle'
+                    ? 'bg-cinema-goldDim text-cinema-gold border border-cinema-gold/35'
+                    : 'text-cinema-textMuted hover:text-cinema-gold bg-cinema-surfaceHover/50'
                 }`}
               >
                 🟡 Tahmin Ettiklerim (%50-74)
@@ -817,8 +813,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                 onClick={() => setConstellationFilter('mixed')}
                 className={`px-3 py-1 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                   constellationFilter === 'mixed'
-                    ? 'bg-cinema-purpleDim text-cinema-purple border border-cinema-purple/35 font-semibold'
-                    : 'text-cinema-textMuted hover:text-cinema-purple bg-cinema-elevated border border-cinema-borderSubtle'
+                    ? 'bg-cinema-purple/15 text-cinema-purple border border-cinema-purple/35'
+                    : 'text-cinema-textMuted hover:text-cinema-purple bg-cinema-surfaceHover/50'
                 }`}
               >
                 🟣 Karışık Kanıt
@@ -828,8 +824,8 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                 onClick={() => setConstellationFilter('unknown')}
                 className={`px-3 py-1 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                   constellationFilter === 'unknown'
-                    ? 'bg-cinema-dangerDim text-cinema-danger border border-cinema-danger/35 font-semibold'
-                    : 'text-cinema-textMuted hover:text-cinema-danger bg-cinema-elevated border border-cinema-borderSubtle'
+                    ? 'bg-cinema-dangerDim text-cinema-danger border border-cinema-danger/35'
+                    : 'text-cinema-textMuted hover:text-cinema-danger bg-cinema-surfaceHover/50'
                 }`}
               >
                 🔴 Bilmediğim / Keşif (&lt;%50)
@@ -841,7 +837,7 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
               {displayedMetrics.map((item) => {
                 const isHigh = item.score >= 75;
                 const isMid = item.score >= 50 && item.score < 75;
-                const scoreColor = isHigh ? '#15803D' : isMid ? '#C83724' : '#0F766E';
+                const scoreColor = isHigh ? '#6fbf8a' : isMid ? '#d3b579' : '#63b8ab';
 
                 return (
                   <div
@@ -850,18 +846,11 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                       setSelectedEvidence(item.evidence);
                       onOpenEvidenceModal?.(item.evidence);
                     }}
-                    onKeyDown={activateOnKeyDown(() => {
-                      setSelectedEvidence(item.evidence);
-                      onOpenEvidenceModal?.(item.evidence);
-                    })}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${item.categoryLabel} kanıtlarını gör`}
-                    className="group relative p-5 rounded-2xl bg-cinema-surface hover:bg-cinema-elevated border border-cinema-borderSubtle hover:border-cinema-gold/45 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between"
+                    className="group relative p-5 rounded-2xl bg-cinema-surface hover:bg-cinema-surfaceHover border border-white/7 hover:border-cinema-gold/40 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-2xl flex flex-col justify-between"
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 rounded bg-cinema-elevated text-cinema-textMuted border border-cinema-borderSubtle">
+                        <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 rounded bg-white/5 text-cinema-textMuted border border-white/7">
                           {item.categoryLabel}
                         </span>
                         <span className="text-xs font-mono font-bold tabular-nums" style={{ color: scoreColor }}>
@@ -878,9 +867,9 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                       </p>
                     </div>
 
-                    <div className="pt-4 mt-4 border-t border-cinema-borderSubtle flex items-center justify-between text-xs text-cinema-textMuted">
+                    <div className="pt-4 mt-4 border-t border-white/5 flex items-center justify-between text-xs text-cinema-textMuted">
                       <span className="flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cinema-success" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#6fbf8a]" />
                         {item.positiveCount} pozitif kanıt
                       </span>
                       <span className="text-cinema-gold text-[11px] font-semibold group-hover:underline">
@@ -894,7 +883,7 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
           </div>
 
           {/* 4. TASTECOMPARE: FILM VS DİZİ KARŞILAŞTIRMASI */}
-          <div className="rounded-3xl bg-cinema-surface border border-cinema-borderSubtle p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="rounded-3xl bg-cinema-surface border border-white/7 p-6 sm:p-8 backdrop-blur-md space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-cinema-cyan">
@@ -909,13 +898,13 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Movies Side */}
-              <div className="p-5 rounded-2xl bg-cinema-elevated border border-cinema-cyan/25 space-y-4">
+              <div className="p-5 rounded-2xl bg-[#13151a] border border-cinema-cyan/25 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-cinema-cyan/15">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">🎬</span>
                     <h3 className="font-bold text-cinema-cyan">Filmlerdeki Zevk Profili</h3>
                   </div>
-                  <span className="text-xs font-mono text-cinema-cyan">{stats.movies} Film Analiz Edildi</span>
+                  <span className="text-xs font-mono text-cinema-cyan/90">{stats.movies} Film Analiz Edildi</span>
                 </div>
                 <p className="text-xs text-cinema-textMuted leading-relaxed">
                   Filmlerde daha çok <strong>karanlık, kapalı mekan psikolojik gerilimleri</strong> ve varoluşsal bilim kurgu tercih ediliyor. Yüksek puanlar ağırlıklı olarak bağımsız yapımlara ve keskin senaryolara verilmiş.
@@ -925,20 +914,20 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                     <span className="text-cinema-textMuted">Atmosfer Yoğunluğu</span>
                     <span className="text-cinema-cyan font-mono">%88</span>
                   </div>
-                  <div className="w-full bg-cinema-surface border border-cinema-borderSubtle h-1.5 rounded-full overflow-hidden">
+                  <div className="w-full bg-[#0a0b0e] h-1.5 rounded-full overflow-hidden">
                     <div className="bg-cinema-cyan h-full rounded-full" style={{ width: '88%' }} />
                   </div>
                 </div>
               </div>
 
               {/* Series Side */}
-              <div className="p-5 rounded-2xl bg-cinema-elevated border border-cinema-purple/25 space-y-4">
+              <div className="p-5 rounded-2xl bg-[#13151a] border border-cinema-purple/25 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-cinema-purple/15">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">📺</span>
                     <h3 className="font-bold text-cinema-purple">Dizilerdeki Zevk Profili</h3>
                   </div>
-                  <span className="text-xs font-mono text-cinema-purple">{stats.tv} Dizi Analiz Edildi</span>
+                  <span className="text-xs font-mono text-cinema-purple/90">{stats.tv} Dizi Analiz Edildi</span>
                 </div>
                 <p className="text-xs text-cinema-textMuted leading-relaxed">
                   Dizilerde ise <strong>derin evren inşası (world-building)</strong>, çok karakterli politik entrikalar ve sınırlı mini-dizi formatları öne çıkıyor. Bölüm sürekliliği ve gizem unsurları sürükleyiciliği artırıyor.
@@ -948,7 +937,7 @@ export const IdentityView: React.FC<IdentityViewProps> = ({
                     <span className="text-cinema-textMuted">Evren ve Karakter Derinliği</span>
                     <span className="text-cinema-purple font-mono">%92</span>
                   </div>
-                  <div className="w-full bg-cinema-surface border border-cinema-borderSubtle h-1.5 rounded-full overflow-hidden">
+                  <div className="w-full bg-[#0a0b0e] h-1.5 rounded-full overflow-hidden">
                     <div className="bg-cinema-purple h-full rounded-full" style={{ width: '92%' }} />
                   </div>
                 </div>

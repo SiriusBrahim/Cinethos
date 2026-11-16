@@ -1,14 +1,11 @@
 import { useEffect } from 'react';
-import type { ModuleId } from '../app/module-registry.ts';
-import { getModuleByShortcut } from '../app/module-registry.ts';
 
 export interface KeyboardShortcutsHandlers {
   onFocusSearch?: () => void;
-  onSelectTab?: (tab: ModuleId) => void;
+  onSelectTab?: (tab: 'discover' | 'list' | 'taste-map' | 'relationships') => void;
   onOpenSettings?: () => void;
   onQuickSaveOrSync?: () => void;
   onOpenAddCustom?: () => void;
-  onOpenCommandPalette?: () => void;
   onEscape?: () => void;
 }
 
@@ -18,13 +15,6 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutsHandlers): void 
       // Don't intercept shortcut modifiers (Ctrl, Meta, Alt) except Escape
       if (e.key === 'Escape') {
         handlers.onEscape?.();
-        return;
-      }
-
-      // Cmd+K / Ctrl+K opens the command palette from anywhere, inputs included
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        handlers.onOpenCommandPalette?.();
         return;
       }
 
@@ -48,11 +38,25 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutsHandlers): void 
         return;
       }
 
-      // 1-4 → kayıtlı modüller (module-registry'den), 5 → ayarlar
-      const moduleByShortcut = getModuleByShortcut(e.key);
-      if (moduleByShortcut) {
+      // 1-5 switches tabs and opens settings
+      if (e.key === '1') {
         e.preventDefault();
-        handlers.onSelectTab?.(moduleByShortcut.id);
+        handlers.onSelectTab?.('discover');
+        return;
+      }
+      if (e.key === '2') {
+        e.preventDefault();
+        handlers.onSelectTab?.('list');
+        return;
+      }
+      if (e.key === '3') {
+        e.preventDefault();
+        handlers.onSelectTab?.('taste-map');
+        return;
+      }
+      if (e.key === '4') {
+        e.preventDefault();
+        handlers.onSelectTab?.('relationships');
         return;
       }
       if (e.key === '5') {

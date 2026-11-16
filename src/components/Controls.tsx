@@ -32,6 +32,8 @@ interface ControlsProps {
   stockStats?: { movieCount: number; tvCount: number };
   onReplenishStock?: () => void;
   isStockReplenishing?: boolean;
+  onOpenTvdbStock?: () => void;
+  tvdbCount?: number;
 }
 
 export const Controls: React.FC<ControlsProps> = ({
@@ -62,6 +64,8 @@ export const Controls: React.FC<ControlsProps> = ({
   stockStats,
   onReplenishStock,
   isStockReplenishing = false,
+  onOpenTvdbStock,
+  tvdbCount,
 }) => {
   const [showStockHealth, setShowStockHealth] = useState(false);
 
@@ -227,7 +231,11 @@ export const Controls: React.FC<ControlsProps> = ({
               className={`category-pill tabular-nums ${selectedCategory === 'stock' ? 'active' : ''}`}
               onClick={() => onCategoryChange('stock')}
             >
-              {stockStats ? `Stok (${stockStats.movieCount}+${stockStats.tvCount})` : 'Stok'}
+              {stockStats
+                ? `Stok (${stockStats.movieCount}+${stockStats.tvCount}${
+                    tvdbCount !== undefined && tvdbCount > 0 ? ` • TVDB: ${tvdbCount}` : ''
+                  })`
+                : 'Stok'}
             </button>
             <button
               type="button"
@@ -238,6 +246,17 @@ export const Controls: React.FC<ControlsProps> = ({
             >
               Stok Kalitesi
             </button>
+            {onOpenTvdbStock && (
+              <button
+                type="button"
+                className="category-pill whitespace-nowrap flex items-center gap-1.5 bg-[#63b8ab]/15 text-[#63b8ab] border border-[#63b8ab]/30 font-semibold hover:bg-[#63b8ab]/25 transition-colors"
+                onClick={onOpenTvdbStock}
+                title={`TheTVDB v4 Stok Entegrasyonu ve İçe/Dışa Aktar (${tvdbCount ?? 0} Yapım)`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#63b8ab]" />
+                TVDB Stok {tvdbCount !== undefined ? `(${tvdbCount})` : ''}
+              </button>
+            )}
           </div>
         )}
 
@@ -317,7 +336,6 @@ export const Controls: React.FC<ControlsProps> = ({
               <input
                 type="checkbox"
                 className="filter-checkbox-input"
-                aria-label="Listemdekileri Gizle"
                 checked={hideListedItems}
                 onChange={(e) => onHideListedItemsChange?.(e.target.checked)}
               />

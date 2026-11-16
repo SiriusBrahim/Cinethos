@@ -37,12 +37,6 @@ function getStatusSignalDescription(
   return status ? `Listendeki durum: ${status}` : 'Kayıtlı yapım';
 }
 
-function formatConfidenceTier(score: number): { label: string; badgeClass: string } {
-  if (score >= 85) return { label: 'Yüksek Güven', badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-200' };
-  if (score >= 65) return { label: 'Orta Güven', badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200' };
-  return { label: 'Temel Güven', badgeClass: 'bg-cinema-elevated text-cinema-textMuted border border-cinema-borderSubtle' };
-}
-
 export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> = ({
   selectedNode,
   selectedLinks,
@@ -83,190 +77,68 @@ export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> =
                     type: link.type === 'personal' ? 'semantic' : link.type,
                     score: link.score,
                     confidence: link.confidence,
-                    confidenceScore: link.confidenceScore ?? Number((link.confidence / 100).toFixed(2)),
                     evidence: Array.isArray(link.evidence) ? link.evidence : [],
-                    evidenceTypes: link.evidenceTypes,
-                    features: link.features,
                   },
                 ];
 
-            return details.map((detail, detailIndex) => {
-              const confPct = Math.round(
-                detail.confidenceScore != null ? detail.confidenceScore * 100 : detail.confidence,
-              );
-              const tier = formatConfidenceTier(confPct);
-
-              return (
-                <div
-                  className="relationship-evidence"
-                  key={`${linkIndex}-${detail.type}-${detailIndex}`}
-                >
-                  {counterpartTitle && (
-                    <span className="relationship-counterpart">
-                      Bağlantı: {counterpartTitle}
-                    </span>
-                  )}
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <strong>
-                      {getRelationshipTypeLabel(detail.type)} · {detail.score}/100
-                    </strong>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${tier.badgeClass}`}>
-                      %{confPct} {tier.label}
-                    </span>
+            return details.map((detail, detailIndex) => (
+              <div
+                className="relationship-evidence"
+                key={`${linkIndex}-${detail.type}-${detailIndex}`}
+              >
+                {counterpartTitle && (
+                  <span className="relationship-counterpart">
+                    Bağlantı: {counterpartTitle}
+                  </span>
+                )}
+                <strong>
+                  {getRelationshipTypeLabel(detail.type)} · {detail.score}/100
+                </strong>
+                <span>
+                  Kanıt güveni: {detail.confidence}/100
+                  {detail.type === 'semantic' ? ' · Özet ve tür verisine dayalı' : ''}
+                </span>
+                {Boolean((detail as any).breakdown) && (
+                  <div className="relationship-breakdown-tags" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '4px 0 6px 0', fontSize: '11px', color: '#94a3b8' }}>
+                    {(detail as any).breakdown.vectorContribution !== undefined && (
+                      <span className="breakdown-tag" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '1px 6px', borderRadius: '4px' }}>
+                        %{(detail as any).breakdown.vectorContribution} Vektör
+                      </span>
+                    )}
+                    {(detail as any).breakdown.genreContribution !== undefined && (
+                      <span className="breakdown-tag" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#d8b4fe', padding: '1px 6px', borderRadius: '4px' }}>
+                        %{(detail as any).breakdown.genreContribution} Tür
+                      </span>
+                    )}
+                    {(detail as any).breakdown.personContribution !== undefined && (
+                      <span className="breakdown-tag" style={{ background: 'rgba(236, 72, 153, 0.15)', color: '#f472b6', padding: '1px 6px', borderRadius: '4px' }}>
+                        %{(detail as any).breakdown.personContribution} Kadro
+                      </span>
+                    )}
+                    {(detail as any).breakdown.toneContribution !== undefined && (
+                      <span className="breakdown-tag" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#fde047', padding: '1px 6px', borderRadius: '4px' }}>
+                        %{(detail as any).breakdown.toneContribution} Ton
+                      </span>
+                    )}
+                    {(detail as any).breakdown.seriesContribution !== undefined && (
+                      <span className="breakdown-tag" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#86efac', padding: '1px 6px', borderRadius: '4px' }}>
+                        %{(detail as any).breakdown.seriesContribution} Evren
+                      </span>
+                    )}
+                    {(detail as any).breakdown.contrastContribution !== undefined && (
+                      <span className="breakdown-tag" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#fdba74', padding: '1px 6px', borderRadius: '4px' }}>
+                        %{(detail as any).breakdown.contrastContribution} Karşıtlık
+                      </span>
+                    )}
                   </div>
-
-                  {/* Kanıt Türleri Etiketleri */}
-                  {detail.evidenceTypes && detail.evidenceTypes.length > 0 && (
-                    <div className="flex flex-wrap gap-1 my-1">
-                      {detail.evidenceTypes.map((et) => (
-                        <span
-                          key={et}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-cinema-elevated border border-cinema-borderSubtle text-cinema-textSecondary font-mono"
-                        >
-                          {et === 'director'
-                            ? '🎬 Yönetmen'
-                            : et === 'writer'
-                              ? '✍️ Senarist'
-                              : et === 'actor'
-                                ? '🎭 Oyuncu'
-                                : et === 'universe'
-                                  ? '🌌 Evren'
-                                  : et === 'concept'
-                                    ? '💡 Konsept'
-                                    : et === 'keyword'
-                                      ? '🏷️ Anahtar Kelime'
-                                      : et === 'atmosphere'
-                                        ? '🌫️ Atmosfer'
-                                        : et === 'contrast'
-                                          ? '⚡ Karşıtlık'
-                                          : et}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Özellik Ayrımı (Features) */}
-                  {detail.features && (
-                    <div className="text-[11px] text-cinema-textMuted space-y-0.5 my-1.5">
-                      {detail.features.matchedDirectors && detail.features.matchedDirectors.length > 0 && (
-                        <div>
-                          <span className="text-cinema-textMuted">Ortak Yönetmen:</span>{' '}
-                          <span className="text-cinema-textPrimary font-medium">{detail.features.matchedDirectors.join(', ')}</span>
-                        </div>
-                      )}
-                      {detail.features.matchedWriters && detail.features.matchedWriters.length > 0 && (
-                        <div>
-                          <span className="text-cinema-textMuted">Ortak Senarist:</span>{' '}
-                          <span className="text-cinema-textPrimary font-medium">{detail.features.matchedWriters.join(', ')}</span>
-                        </div>
-                      )}
-                      {detail.features.matchedActors && detail.features.matchedActors.length > 0 && (
-                        <div>
-                          <span className="text-cinema-textMuted">Ortak Oyuncular:</span>{' '}
-                          <span className="text-cinema-textPrimary font-medium">{detail.features.matchedActors.join(', ')}</span>
-                        </div>
-                      )}
-                      {detail.features.universeName && (
-                        <div>
-                          <span className="text-cinema-textMuted">Seri / Evren:</span>{' '}
-                          <span className="text-emerald-800 font-semibold">{detail.features.universeName}</span>
-                        </div>
-                      )}
-                      {detail.features.matchedConcepts && detail.features.matchedConcepts.length > 0 && (
-                        <div>
-                          <span className="text-cinema-textMuted">Tematik Konseptler:</span>{' '}
-                          <span className="text-teal-800 font-medium">{detail.features.matchedConcepts.join(', ')}</span>
-                        </div>
-                      )}
-                      {detail.features.matchedKeywords && detail.features.matchedKeywords.length > 0 && (
-                        <div>
-                          <span className="text-cinema-textMuted">TMDB Anahtar Kelimeleri:</span>{' '}
-                          <span className="text-indigo-800 font-medium">{detail.features.matchedKeywords.join(', ')}</span>
-                        </div>
-                      )}
-                      {detail.features.atmosphereCluster && (
-                        <div>
-                          <span className="text-cinema-textMuted">Atmosfer Kümesi:</span>{' '}
-                          <span className="text-amber-800 font-medium">{detail.features.atmosphereCluster}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Katkı Payı Dağılımı (Breakdown) */}
-                  {detail.breakdown && (
-                    <div className="flex flex-wrap gap-1.5 my-1.5 text-[11px] text-cinema-textPrimary">
-                      {detail.breakdown.vectorContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
-                          %{detail.breakdown.vectorContribution} Vektör
-                        </span>
-                      )}
-                      {detail.breakdown.conceptContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200">
-                          %{detail.breakdown.conceptContribution} Konsept
-                        </span>
-                      )}
-                      {detail.breakdown.keywordContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200">
-                          %{detail.breakdown.keywordContribution} Kelime
-                        </span>
-                      )}
-                      {detail.breakdown.genreContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200">
-                          %{detail.breakdown.genreContribution} Tür
-                        </span>
-                      )}
-                      {detail.breakdown.directorContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200">
-                          %{detail.breakdown.directorContribution} Yönetmen
-                        </span>
-                      )}
-                      {detail.breakdown.writerContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-800 border border-orange-200">
-                          %{detail.breakdown.writerContribution} Senarist
-                        </span>
-                      )}
-                      {detail.breakdown.actorContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-pink-50 text-pink-800 border border-pink-200">
-                          %{detail.breakdown.actorContribution} Oyuncu
-                        </span>
-                      )}
-                      {detail.breakdown.personContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-pink-50 text-pink-800 border border-pink-200">
-                          %{detail.breakdown.personContribution} Kadro
-                        </span>
-                      )}
-                      {detail.breakdown.universeContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          %{detail.breakdown.universeContribution} Evren
-                        </span>
-                      )}
-                      {detail.breakdown.toneContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                          %{detail.breakdown.toneContribution} Ton
-                        </span>
-                      )}
-                      {detail.breakdown.seriesContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          %{detail.breakdown.seriesContribution} Evren
-                        </span>
-                      )}
-                      {detail.breakdown.contrastContribution !== undefined && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
-                          %{detail.breakdown.contrastContribution} Karşıtlık
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <ul>
-                    {(Array.isArray(detail.evidence) ? detail.evidence : []).map((evidence) => (
-                      <li key={evidence}>{evidence}</li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            });
+                )}
+                <ul>
+                  {(Array.isArray(detail.evidence) ? detail.evidence : []).map((evidence) => (
+                    <li key={evidence}>{evidence}</li>
+                  ))}
+                </ul>
+              </div>
+            ));
           })}
           <div className="relationship-detail-actions">
             {selectedItem && onOpenDetails && selectedNode.mediaType !== 'profile' && (
@@ -305,7 +177,7 @@ export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> =
           <i className="legend-dot legend-dot-match" /> Yüksek kişisel uyum
         </span>
         <span>
-          <i className="legend-line legend-line-semantic" /> Anlamsal / Konsept
+          <i className="legend-line legend-line-semantic" /> Özet / tür benzerliği
         </span>
         <span>
           <i className="legend-line legend-line-atmosphere" /> Atmosferik yakınlık
@@ -314,10 +186,10 @@ export const RelationshipDetailsPanel: React.FC<RelationshipDetailsPanelProps> =
           <i className="legend-line legend-line-contrast" /> Karşıt ton
         </span>
         <span>
-          <i className="legend-line legend-line-person" /> Kişi (Yönetmen / Senarist / Oyuncu)
+          <i className="legend-line legend-line-person" /> Kişi bağlantısı
         </span>
         <span>
-          <i className="legend-line legend-line-universe" /> Seri / Evren
+          <i className="legend-line legend-line-universe" /> Seri / evren
         </span>
       </div>
     </aside>

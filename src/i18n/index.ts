@@ -1,5 +1,3 @@
-import { BRAND_NAME } from '../shared/brand.ts';
-
 export type SupportedLocale = 'tr';
 
 export interface TranslationDictionary {
@@ -24,7 +22,7 @@ export interface TranslationDictionary {
 }
 
 const trDictionary: TranslationDictionary = {
-  appName: BRAND_NAME,
+  appName: 'Cinethos',
   searchPlaceholder: "Film veya dizi ara… (Kısayol: '/')",
   installApp: 'Uygulamayı Yükle',
   installIos: 'Ana Ekrana Ekle',

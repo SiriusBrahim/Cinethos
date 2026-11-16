@@ -95,27 +95,22 @@ export const DetailModal: React.FC<DetailModalProps> = ({
       return;
     }
 
-    const itemId = item?.id;
-    const itemMediaType = item?.media_type;
-    const itemTitle = item?.title;
-    const itemOverview = item?.overview;
-
     let active = true;
-    const mediaType = itemMediaType || (itemTitle ? 'movie' : 'tv');
-    fetchTmdb(`/${mediaType}/${itemId}`, { append_to_response: 'credits,videos' })
+    const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
+    fetchTmdb(`/${mediaType}/${item.id}`, { append_to_response: 'credits,videos' })
       .then(async (data) => {
         if (!active || !data) return;
         let resolvedOverview = typeof data.overview === 'string' ? data.overview.trim() : '';
         let usedFallback = false;
 
-        if (!resolvedOverview && !String(itemOverview || '').trim()) {
+        if (!resolvedOverview && !String(item.overview || '').trim()) {
           try {
-            const enData = await fetchTmdb(`/${mediaType}/${itemId}`, { language: 'en-US' });
+            const enData = await fetchTmdb(`/${mediaType}/${item.id}`, { language: 'en-US' });
             if (active && typeof enData?.overview === 'string' && enData.overview.trim()) {
               resolvedOverview = enData.overview.trim();
               usedFallback = true;
             }
-          } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+          } catch {}
         }
 
         if (!active) return;
@@ -131,7 +126,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
             .map((c: any) => Number(c?.id))
             .filter((n: number) => Number.isInteger(n) && n > 0);
           if (top3Ids.length > 0) {
-            void enrichStockItemsTopCast({ [makeMediaKey(mediaType, itemId)]: top3Ids });
+            void enrichStockItemsTopCast({ [makeMediaKey(mediaType, item.id)]: top3Ids });
           }
         }
         if (mediaType === 'movie' && data.belongs_to_collection?.id) {
@@ -150,7 +145,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
     // Fetch providers
     setLoadingProviders(true);
-    fetchTmdb(`/${mediaType}/${itemId}/watch/providers`)
+    fetchTmdb(`/${mediaType}/${item.id}/watch/providers`)
       .then((data) => {
         if (!active) return;
         setProviders(data?.results?.TR || null);
@@ -160,7 +155,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
         if (active) setLoadingProviders(false);
       });
 
-    fetchTmdb(`/${mediaType}/${itemId}/similar`)
+    fetchTmdb(`/${mediaType}/${item.id}/similar`)
       .then((data) => {
         if (!active) return;
         setSimilarItems(Array.isArray(data?.results) ? data.results : []);
@@ -170,9 +165,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
     return () => {
       active = false;
     };
-    // `item` yalnızca custom kayıt dalında bütünüyle kullanılıyor; detailItem state
-    // olduğu için kimliği sadece yeni içerik seçildiğinde değişir.
-  }, [item, isOpen]);
+  }, [item?.id, item?.media_type, isOpen]);
 
   useEffect(() => {
     if (!isOpen || !item) return;
@@ -331,7 +324,6 @@ export const DetailModal: React.FC<DetailModalProps> = ({
     <div
       id="detailModal"
       className="modal-wrap open"
-      role="presentation"
       aria-hidden="false"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -591,7 +583,6 @@ export const DetailModal: React.FC<DetailModalProps> = ({
               ? currentItem.tags
               : [];
             const matchVal = Number(entry?.tasteScore ?? currentItem.tasteScore ?? currentItem.matchScore ?? item?.matchScore ?? 0);
-            const lovedSimDetail = currentItem.lovedSimDetail || item?.lovedSimDetail || entry?.lovedSimDetail || null;
 
             const signalLabels: Record<string, string> = {
               genre: 'Tür Uyumu',
@@ -663,50 +654,6 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                         <span className="explain-rec-val tabular-nums">{sig.percent}/100</span>
                       </div>
                     ))}
-                  </div>
-                )}
-                {lovedSimDetail && lovedSimDetail.matchedTitle && (
-                  <div className="mt-3.5 pt-3 border-t border-cinema-borderSubtle" aria-label="Sevilen yapım benzerlik analizi">
-                    <div className="flex items-center justify-between text-xs mb-2">
-                      <span className="font-display font-medium text-cinema-gold">
-                        Sevilen Yapımlarla Benzerlik: &ldquo;{lovedSimDetail.matchedTitle}&rdquo;
-                      </span>
-                      <span className="font-mono text-cinema-textPrimary font-semibold tabular-nums">
-                        %{Math.round(lovedSimDetail.similarity * 100)}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-5 divide-x divide-cinema-borderSubtle rounded-md border border-cinema-borderSubtle bg-cinema-elevated text-center text-[11px]">
-                      <div className="py-1.5 px-1">
-                        <div className="text-[10px] text-cinema-textMuted">Tür</div>
-                        <div className="font-mono text-cinema-textPrimary mt-0.5 font-medium tabular-nums">
-                          %{Math.round(lovedSimDetail.genreSim * 100)}
-                        </div>
-                      </div>
-                      <div className="py-1.5 px-1">
-                        <div className="text-[10px] text-cinema-textMuted">Hikâye</div>
-                        <div className="font-mono text-cinema-textPrimary mt-0.5 font-medium tabular-nums">
-                          %{Math.round(lovedSimDetail.storySim * 100)}
-                        </div>
-                      </div>
-                      <div className="py-1.5 px-1">
-                        <div className="text-[10px] text-cinema-textMuted">Oyuncu</div>
-                        <div className="font-mono text-cinema-textPrimary mt-0.5 font-medium tabular-nums">
-                          %{Math.round(lovedSimDetail.castSim * 100)}
-                        </div>
-                      </div>
-                      <div className="py-1.5 px-1">
-                        <div className="text-[10px] text-cinema-textMuted">Atmosfer</div>
-                        <div className="font-mono text-cinema-textPrimary mt-0.5 font-medium tabular-nums">
-                          %{Math.round(lovedSimDetail.atmosphereSim * 100)}
-                        </div>
-                      </div>
-                      <div className="py-1.5 px-1">
-                        <div className="text-[10px] text-cinema-textMuted">Dönem</div>
-                        <div className="font-mono text-cinema-textPrimary mt-0.5 font-medium tabular-nums">
-                          %{Math.round(lovedSimDetail.eraSim * 100)}
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 )}
               </section>
