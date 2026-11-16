@@ -15,13 +15,21 @@
  *
  * Kullanım:
  *   node scripts/maintenance/analyze.mjs [--install] [--report-dir <yol>] [--only <id,id>]
+ *     [--compare <onceki-rapor.json>] [--save-baseline <baseline.json>]
+ *
+ * Bütünlük kuralı: analiz tamamlanamazsa (ayrıştırılamayan test çıktısı, mimari
+ * tarama hatası, bağımlılık yokluğu) sonuç PASS olamaz; INCOMPLETE veya ERROR olur
+ * ve süreç sıfırdan farklı çıkış koduyla biter.
  */
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { runArchitectureScan } from './architecture-boundaries.mjs';
+import { flattenViolations, runArchitectureScan } from './architecture-boundaries.mjs';
+import { computeRulesHash } from './architecture-guard.mjs';
+import { compareSnapshots, formatComparisonMarkdown, normalizeSnapshot } from './report-diff.mjs';
+import { classifyFinding, loadRiskPolicy, summarizeRisks } from './risk-classifier.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -117,13 +125,24 @@ const CHECKS = [
 ];
 
 function parseArgs(argv) {
-  const options = { reportDir: 'maintenance-report', install: false, only: null, help: false };
+  const options = {
+    reportDir: 'maintenance-report',
+    install: false,
+    only: null,
+    help: false,
+    compare: null,
+    saveBaseline: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') options.help = true;
     else if (arg === '--install') options.install = true;
     else if (arg === '--report-dir') options.reportDir = argv[index + 1] ?? options.reportDir;
     else if (arg.startsWith('--report-dir=')) options.reportDir = arg.slice('--report-dir='.length);
+    else if (arg === '--compare') options.compare = argv[index + 1] ?? null;
+    else if (arg.startsWith('--compare=')) options.compare = arg.slice('--compare='.length);
+    else if (arg === '--save-baseline') options.saveBaseline = argv[index + 1] ?? null;
+    else if (arg.startsWith('--save-baseline=')) options.saveBaseline = arg.slice('--save-baseline='.length);
     else if (arg === '--only') {
       options.only = String(argv[index + 1] ?? '')
         .split(',')
@@ -151,6 +170,8 @@ Seçenekler:
   --report-dir <yol>   Rapor dizini (varsayılan: maintenance-report).
   --only <id,id>       Yalnızca verilen kontrolleri çalıştırır.
                        Kimlikler: ${CHECKS.map((check) => check.id).join(', ')}
+  --compare <dosya>    Önceki rapor/baseline ile karşılaştırır (yeni/düzelen ihlaller).
+  --save-baseline <dosya> Karşılaştırma için kompakt baseline yazar.
   --help               Bu yardımı gösterir.
 
 Rapor: <rapor dizini>/report.md, report.json ve logs/.
@@ -224,12 +245,14 @@ function parseEslint(stdout) {
     warnings += result.warningCount ?? 0;
     for (const message of result.messages ?? []) {
       findings.push({
+        source: 'eslint',
         file: path.relative(ROOT, result.filePath ?? ''),
         line: message.line ?? 0,
         column: message.column ?? 0,
         severity: message.severity === 2 ? 'error' : 'warning',
         rule: message.ruleId ?? null,
         message: message.message,
+        fixable: Boolean(message.fix),
       });
     }
   }
@@ -249,15 +272,17 @@ function parseTsc(stdout, stderr) {
     summary: total === 0 ? 'tip hatası yok' : `${total} tip hatası`,
     counts: { errors: total },
     findings: matches.slice(0, 25).map((match) => ({
+      source: 'tsc',
       file: match[1],
       line: Number(match[2]),
       rule: match[4],
       message: match[5],
+      fixable: false,
     })),
   };
 }
 
-function parseNodeTest(stdout, stderr) {
+export function parseNodeTest(stdout, stderr) {
   const output = `${stdout}\n${stderr}`;
   // Node test runner hem TAP ("# tests 12") hem spec ("ℹ tests 12") özeti üretir.
   const lastValue = (label) => {
@@ -277,14 +302,13 @@ function parseNodeTest(stdout, stderr) {
     .map((line) => ({ message: line }));
 
   if (tests === null) {
-    return {
-      summary:
-        failedLines.length > 0
-          ? `test özeti bulunamadı; başarısız test satırı: ${failedLines.length}`
-          : 'test özeti bulunamadı',
-      counts: null,
-      findings: failedLines,
-    };
+    // Özet yoksa sonuç başarı sayılamaz: çıktı biçimi beklenenden farklı veya test
+    // çalıştırılamamış olabilir. Çağıran taraf bunu INCOMPLETE olarak işaretler.
+    throw new Error(
+      failedLines.length > 0
+        ? `test özeti bulunamadı (${failedLines.length} başarısız satır)`
+        : 'test özeti bulunamadı',
+    );
   }
   return {
     summary: `${tests} test, ${pass ?? 0} geçti, ${fail ?? 0} başarısız${
@@ -300,6 +324,9 @@ function parseBuild(stdout, stderr) {
     .trim()
     .split(/\r?\n/)
     .filter(Boolean);
+  if (lines.length === 0) {
+    throw new Error('derleme çıktısı boş; derlemenin gerçekten çalıştığı doğrulanamadı');
+  }
   return {
     summary: 'derleme çıktısı üretildi',
     counts: null,
@@ -422,8 +449,54 @@ function statusLabel(status) {
   }
 }
 
+/**
+ * Genel sonuç: PASS yalnızca tüm zorunlu kontroller PASS VE mimari tarama
+ * tamamlandığında verilir. Aksi halde FAIL / INCOMPLETE / ERROR döner.
+ * Dışa açıktır (test edilebilirlik).
+ */
+export function computeVerdict({ checks, architecture, architectureError }) {
+  // İsteğe bağlı kontroller (ör. --install verilmediğinde npm ci) atlandığında
+  // analiz eksik sayılmaz; yalnızca zorunlu ve isteğe bağlı OLMAYAN atlamalar
+  // INCOMPLETE üretir.
+  const blockingChecks = (checks ?? []).filter((check) => check.blocking);
+  const blockingFailures = blockingChecks.filter((check) => check.status === 'FAIL').length;
+  const incompleteChecks = blockingChecks.filter(
+    (check) =>
+      check.status === 'INCOMPLETE' || (check.status === 'SKIP' && check.optional !== true),
+  ).length;
+
+  let status = 'PASS';
+  if (architectureError) status = 'ERROR';
+  else if (blockingFailures > 0) status = 'FAIL';
+  else if (incompleteChecks > 0 || !architecture) status = 'INCOMPLETE';
+
+  return {
+    status,
+    blockingFailures,
+    incompleteChecks,
+    architectureScanned: Boolean(architecture),
+    architectureError: architectureError ?? null,
+    totalChecks: (checks ?? []).length,
+  };
+}
+
+function verdictText(verdict) {
+  switch (verdict.status) {
+    case 'PASS':
+      return '**Sonuç: ✅ PASS** — zorunlu kontrollerin tamamı başarılı ve mimari tarama tamamlandı.';
+    case 'FAIL':
+      return `**Sonuç: ❌ FAIL** — ${verdict.blockingFailures} zorunlu kontrol başarısız. Bu rapor bir bakım PR’ı üretmez; hata giderilmeden hiçbir otomatik düzeltme hazır sayılmaz.`;
+    case 'ERROR':
+      return `**Sonuç: ⛔ ERROR** — analiz tamamlanamadı: ${mdEscape(
+        verdict.architectureError ?? 'mimari tarama çalıştırılamadı',
+      )}. PASS verilmez.`;
+    default:
+      return `**Sonuç: ⚠️ INCOMPLETE** — ${verdict.incompleteChecks} zorunlu kontrol tamamlanamadı (eksik bağımlılık, ayrıştırılamayan çıktı veya atlanan kontrol). Eksik analiz PASS sayılmaz.`;
+  }
+}
+
 function buildMarkdown(report) {
-  const { meta, verdict, checks, architecture, architectureError } = report;
+  const { meta, verdict, checks, architecture, architectureError, compare } = report;
   const lines = [];
   const push = (line = '') => lines.push(line);
 
@@ -445,11 +518,13 @@ function buildMarkdown(report) {
 
   push('## 1. Genel durum');
   push();
-  push(
-    verdict.status === 'PASS'
-      ? '**Sonuç: ✅ PASS** — zorunlu kontrollerin tamamı başarılı.'
-      : `**Sonuç: ❌ FAIL** — ${verdict.blockingFailures} zorunlu kontrol başarısız. Bu rapor bir bakım PR’ı üretmez; hata giderilmeden hiçbir otomatik düzeltme hazır sayılmaz.`,
-  );
+  push(verdictText(verdict));
+  if (verdict.status !== 'PASS') {
+    push();
+    push(
+      '> **Analiz bütünlüğü:** Sonuç PASS değildir. Eksik veya hatalı analiz başarı gibi raporlanmaz; önce eksik sinyal giderilmelidir.',
+    );
+  }
   push();
   push('| Kontrol | Durum | Süre | Özet | Zorunlu |');
   push('|---|---|---|---|---|');
@@ -477,8 +552,9 @@ function buildMarkdown(report) {
       } else {
         for (const finding of check.findings) {
           const location = finding.file ? `${finding.file}${finding.line ? `:${finding.line}` : ''}` : '';
+          const risk = finding.risk ? `[${finding.risk}${finding.autoFixable ? ' · otomatik uygun' : ' · manuel'}] ` : '';
           push(
-            `- ${location ? `\`${mdEscape(location)}\` — ` : ''}${mdText(
+            `- ${risk}${location ? `\`${mdEscape(location)}\` — ` : ''}${mdText(
               finding.message ?? finding.title ?? JSON.stringify(finding),
             )}`,
           );
@@ -576,6 +652,9 @@ function buildMarkdown(report) {
   push('- Mimari ihlaller bilinçli olarak yalnızca raporlanır; düzeltme insan kararıyla ayrı PR’da yapılır.');
   push('- Test/CI doğrulaması bu modülün yerine geçmez; bu modül de test/CI’ın yerine geçmez.');
   push();
+  if (compare) {
+    lines.push(...formatComparisonMarkdown(compare, 'önceki M0 raporu'));
+  }
   push('_Rapor `scripts/maintenance/analyze.mjs` tarafından üretildi. Tam veri: `report.json`, komut çıktıları: `logs/`._');
 
   return `${lines.join('\n')}\n`;
@@ -602,6 +681,7 @@ async function main() {
   await fs.mkdir(logsDir, { recursive: true });
 
   const checks = [];
+  const riskPolicy = loadRiskPolicy();
   let installFailed = false;
   let dependenciesAvailable = await pathExists(path.join(ROOT, 'node_modules'));
 
@@ -611,6 +691,7 @@ async function main() {
       label: check.label,
       command: displayCommand(check.command),
       blocking: check.blocking,
+      optional: Boolean(check.optional),
     };
 
     const skip = (reason) => {
@@ -651,19 +732,40 @@ async function main() {
       counts: null,
       findings: [],
     };
+    let incompleteReason = null;
     if (result.timedOut) {
-      parsed.summary = 'zaman aşımı';
-    } else if (check.parse) {
-      try {
-        parsed = parseOutput(check.parse, result);
-      } catch (error) {
-        parsed.summary = `çıktı ayrıştırılamadı: ${error.message}`;
+      incompleteReason = 'zaman aşımı; sonuç doğrulanamadı';
+      parsed.summary = incompleteReason;
+    } else {
+      if (check.parse) {
+        try {
+          parsed = parseOutput(check.parse, result);
+        } catch (error) {
+          incompleteReason = `çıktı ayrıştırılamadı: ${error.message}`;
+          parsed.summary = incompleteReason;
+        }
+      }
+      if (result.exitCode === 0 && check.requireZeroFindings && (parsed.counts?.errors ?? 0) > 0) {
+        incompleteReason = 'çıkış kodu 0 ancak bulgu sayısı sıfır değil';
       }
     }
 
-    const passed = result.exitCode === 0 && !result.timedOut;
-    // Zorunlu olmayan kontrollerde bulgu "FAIL" değil bilgi amaçlı "INFO" olarak raporlanır.
-    const status = passed ? 'PASS' : check.blocking ? 'FAIL' : 'INFO';
+    // PASS yalnızca komut başarılı VE çıktı doğrulanabildiğinde verilir.
+    // Ayrıştırılamayan/eksik çıktı, zorunlu kontrolde INCOMPLETE; isteğe bağlıda INFO'dur.
+    let status;
+    if (incompleteReason) {
+      status = check.blocking ? 'INCOMPLETE' : 'INFO';
+    } else if (result.exitCode === 0) {
+      status = 'PASS';
+    } else {
+      status = check.blocking ? 'FAIL' : 'INFO';
+    }
+
+    // Bulgulara risk etiketi ekle (yalnızca etiket; otomatik düzeltme yok).
+    parsed.findings = (parsed.findings ?? []).map((finding) => {
+      const classified = classifyFinding(finding, riskPolicy);
+      return { ...finding, risk: classified.risk, autoFixable: classified.autoFixable, rationale: classified.rationale };
+    });
     const logFile = path.join(logsDir, `${String(index + 1).padStart(2, '0')}-${check.id}.log`);
     await fs.writeFile(logFile, logHeader(check, result));
 
@@ -693,17 +795,49 @@ async function main() {
     architectureError = error.message;
   }
 
-  const blockingFailures = checks.filter((check) => check.blocking && check.status === 'FAIL').length;
+  let compare = null;
+  let compareError = null;
+  if (options.compare) {
+    try {
+      const previousRaw = await fs.readFile(path.resolve(ROOT, options.compare), 'utf8');
+      const previous = normalizeSnapshot(JSON.parse(previousRaw));
+      if (!previous) throw new Error('önceki rapor biçimi tanınamadı');
+      compare = compareSnapshots(previous, normalizeSnapshot({ verdict: null, checks, architecture }));
+    } catch (error) {
+      compareError = error.message;
+    }
+  }
+
+  const meta = buildMeta();
+  const verdict = computeVerdict({ checks, architecture, architectureError });
+  if (compareError) {
+    verdict.status = verdict.status === 'PASS' ? 'INCOMPLETE' : verdict.status;
+    verdict.compareError = compareError;
+  }
+
+  const violations = flattenViolations(architecture);
+  const riskSummary = summarizeRisks(
+    [
+      ...violations.map((violation) => ({
+        source: 'architecture',
+        file: violation.file,
+        rule: violation.rule,
+        message: violation.specifier,
+      })),
+      ...checks.flatMap((check) => check.findings ?? []),
+    ],
+    riskPolicy,
+  );
+
   const report = {
-    meta: buildMeta(),
-    verdict: {
-      status: blockingFailures === 0 ? 'PASS' : 'FAIL',
-      blockingFailures,
-      totalChecks: checks.length,
-    },
+    meta,
+    verdict,
     checks,
     architecture,
     architectureError,
+    riskSummary,
+    compare,
+    compareError,
   };
 
   await fs.writeFile(path.join(reportDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -713,19 +847,57 @@ async function main() {
     await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, markdown);
   }
 
-  console.log(`\nRapor: ${path.relative(ROOT, path.join(reportDir, 'report.md'))} (${report.verdict.status})`);
+  if (options.saveBaseline) {
+    let rulesHash = null;
+    try {
+      rulesHash = computeRulesHash(
+        await fs.readFile(path.join(ROOT, 'scripts/maintenance/architecture-rules.json'), 'utf8'),
+      );
+    } catch {
+      rulesHash = null;
+    }
+    const baseline = {
+      version: 1,
+      commit: meta.commit,
+      generatedAt: meta.generatedAt,
+      verdict: verdict.status,
+      rulesHash,
+      violations: violations.map((violation) => ({
+        rule: violation.rule,
+        file: violation.file,
+        specifier: violation.specifier,
+        reasons: violation.reasons,
+      })),
+      checks: checks.map((check) => ({ id: check.id, status: check.status })),
+    };
+    const baselinePath = path.resolve(ROOT, options.saveBaseline);
+    await fs.mkdir(path.dirname(baselinePath), { recursive: true });
+    await fs.writeFile(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+    console.log(`Baseline: ${path.relative(ROOT, baselinePath)}`);
+  }
+
+  console.log(`\nRapor: ${path.relative(ROOT, path.join(reportDir, 'report.md'))} (${verdict.status})`);
   if (architecture) {
     console.log(
-      `Mimari: ${architecture.localEdges} kenar, ${architecture.ruleResults.reduce(
-        (total, rule) => total + rule.violations.length,
-        0,
-      )} ihlal, ${architecture.cycles.length} döngü (yalnızca rapor).`,
+      `Mimari: ${architecture.localEdges} kenar, ${violations.length} ihlal, ${architecture.cycles.length} döngü (yalnızca rapor).`,
+    );
+  } else {
+    console.error(`Mimari tarama başarısız: ${architectureError ?? 'bilinmeyen hata'}`);
+  }
+  if (compareError) console.error(`Karşılaştırma okunamadı: ${compareError}`);
+  if (compare) {
+    console.log(
+      `Karşılaştırma: ${compare.newViolations.length} yeni, ${compare.fixedViolations.length} düzelen ihlal.`,
     );
   }
-  process.exitCode = blockingFailures === 0 ? 0 : 1;
+  process.exitCode = verdict.status === 'PASS' ? 0 : 1;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+const isDirectRun =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

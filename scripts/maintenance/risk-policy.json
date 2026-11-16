@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "comment": "M0 risk sınıflandırması. Otomatik düzeltme yetkisi VERMEZ; yalnızca bulguları R0/R1/R2 olarak etiketler. R2 alanları hiçbir aşamada otomatik onarılmaz.",
+  "r2Globs": [
+    "src/core/**",
+    "src/contracts/**",
+    "src/app/**",
+    "src/modules/**",
+    "src/server/app.ts",
+    "src/server/storage.ts",
+    "src/server/persistent-store.ts",
+    "src/server/primary-data-repository.ts",
+    "src/server/sqlite-*.ts",
+    "src/server/github-bidirectional-sync.ts",
+    "src/server/archive-*.ts",
+    "src/server/restore-*.ts",
+    "src/server/sync-*.ts",
+    "src/server/security.ts",
+    "src/server/library-event-diff.ts",
+    "src/server/app-event-bus.ts",
+    "src/server/content-*.ts",
+    "src/core/taste/**",
+    "**/migrations/**",
+    "**/*.sql"
+  ],
+  "r1Sources": ["tsc", "test", "build", "audit", "config"],
+  "r0Rules": ["no-unused-vars", "@typescript-eslint/no-unused-vars", "prefer-const"],
+  "r2Topics": [
+    "veritabanı şeması ve migration",
+    "kullanıcı/profil verisi",
+    "yedekleme ve senkronizasyon",
+    "öneri ve zevk algoritmaları",
+    "EventBus, outbox ve kuyruk semantiği",
+    "API ve modül sözleşmeleri",
+    "kimlik doğrulama ve güvenlik sınırları"
+  ]
+}

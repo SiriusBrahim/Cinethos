@@ -63,14 +63,16 @@ Bu alanlarda bot yalnızca bulgu/etki analizi ve manuel görev taslağı oluştu
 ## 4. Uygulama aşamaları
 
 ### M0 — Güvenli temel ve gözlem modu
-- [ ] Ayrı GitHub Actions workflow oluştur.
-- [ ] Workflow yalnızca read-only analiz yapsın; repository write token kullanmasın.
-- [ ] Lint, TypeScript, test/build sonuçlarını ve statik analiz bulgularını tek raporda birleştir.
-- [ ] Bağımlılık güvenlik taraması ekle.
-- [ ] Mimari import sınırları için mevcut yapıyı ölç; henüz otomatik düzeltme yapma.
-- [ ] Çıktıları GitHub Actions özeti ve artifact olarak sakla.
+- [x] Ayrı GitHub Actions workflow oluştur. → `.github/workflows/maintenance.yml` (PR + gece + manuel).
+- [x] Workflow yalnızca read-only analiz yapsın; repository write token kullanmasın. → `permissions: contents: read`, `persist-credentials: false`, secret yok.
+- [x] Lint, TypeScript, test/build sonuçlarını ve statik analiz bulgularını tek raporda birleştir. → `scripts/maintenance/analyze.mjs` (`report.md`, `report.json`, `logs/`).
+- [x] Bağımlılık güvenlik taraması ekle. → `audit-prod` (zorunlu, high+) + `audit-all` (bilgi).
+- [x] Mimari import sınırları için mevcut yapıyı ölç; henüz otomatik düzeltme yapma. → `architecture-boundaries.mjs` + `architecture-baseline.json` + `check-architecture.mjs` (yalnızca rapor/kapı; düzeltme yok).
+- [x] Çıktıları GitHub Actions özeti ve artifact olarak sakla. → `$GITHUB_STEP_SUMMARY` + `maintenance-report` artifact (30 gün).
 
 **Kabul:** Workflow PR ve zamanlanmış çalışmada güvenilir rapor üretir; kaynak kodu veya branch değiştirmez.
+
+**M0 güvenilirlik düzeltmeleri (bu PR):** `.js/.mjs` taraması, çok satırlı importlar, mimari hatasında PASS yasağı, ayrıştırılamayan test çıktısında INCOMPLETE, gerekçeli istisna baseline'ı, kural kilidi, Actions SHA pinleri, Faz 3 öncesi/sonrası karşılaştırma. Ayrıntı: [`M0-DOGRULAMA-VE-ISLETIM.md`](./M0-DOGRULAMA-VE-ISLETIM.md).
 
 ### M1 — Kontrollü R0 otomatik düzeltmeler
 - [ ] R0 allowlist ve dosya kapsamını kod/config olarak tanımla.
@@ -102,10 +104,10 @@ Bu alanlarda bot yalnızca bulgu/etki analizi ve manuel görev taslağı oluştu
 
 ## 5. Çalıştırma tetikleyicileri
 
-- Her Pull Request: read-only hızlı tarama ve ilgili doğrulama.
+- Her Pull Request: read-only tam tarama ve ilgili doğrulama.
 - Her gece: bağımlılık/güvenlik ve statik analiz taraması.
-- Haftalık: kapsamlı mimari ve kod sağlığı raporu.
-- Elle tetikleme: R0 safe-fix PR üretimi.
+- Haftalık: kapsamlı mimari ve kod sağlığı raporu (gece taraması mimari bölümünü zaten üretir; ayrı haftalık iş M3).
+- Elle tetikleme: tam analiz ve Faz 3 sonrası karşılaştırma (`analysis: post-faz3`). R0 safe-fix PR üretimi M1'de açılacaktır.
 
 Zamanlanmış işler kaynak kodu doğrudan değiştirmez; R0 onarım PR'ı ayrı, denetlenebilir bir işlem olarak çalışır.
 

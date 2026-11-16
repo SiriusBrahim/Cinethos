@@ -2,12 +2,20 @@ name: Maintenance Analysis
 
 # Otomatik kod bakım modülü — M0 (gözlem modu).
 # Plan: docs/maintenance/OTOMATIK-KOD-BAKIM-ONARIM-PLANI.md
+# İşletim: docs/maintenance/M0-DOGRULAMA-VE-ISLETIM.md
 #
 # Bu workflow yalnızca ölçer ve raporlar:
 #   - read-only `contents` izni ister, yazma token'ı almaz,
 #   - checkout kimlik bilgilerini kalıcı hale getirmez (persist-credentials: false),
-#   - branch/PR oluşturmaz, kaynak dosya değiştirmez.
+#   - branch/PR oluşturmaz, kaynak dosya değiştirmez, otomatik düzeltme yapmaz.
+# Aksiyonlar tam commit SHA'larına sabitlenmiştir (mutable tag yok).
 # Rapor GitHub Actions özetine ve `maintenance-report` artifact'ına yazılır.
+#
+# Çalışma biçimleri:
+#   - pull_request: hızlı geri bildirim (tam analiz + baseline karşılaştırması)
+#   - schedule: her gece bağımlılık/güvenlik ve statik analiz
+#   - workflow_dispatch: manuel tam analiz; `analysis: post-faz3` ile Faz 3 sonrası
+#     karşılaştırma raporu (docs/maintenance/baselines/m0-pre-faz3.json)
 
 on:
   pull_request:
@@ -16,6 +24,16 @@ on:
     # Her gece 03:00 UTC — bağımlılık/güvenlik ve statik analiz taraması.
     - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      analysis:
+        description: 'Analiz türü (post-faz3 = Faz 3 sonrası karşılaştırma)'
+        type: choice
+        options: [full, post-faz3]
+        default: full
+      compare_baseline:
+        description: 'Faz 3 öncesi baseline ile karşılaştır'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -24,37 +42,63 @@ concurrency:
   group: maintenance-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CI: '1'
+  FORCE_COLOR: '0'
+
 jobs:
   analyze:
     name: Salt okunur bakım analizi
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository (read-only, no persisted credentials)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # package.json engines ile aynı sürüme sabitlenir; npm 11'in optional
           # dependency denetimi mevcut lockfile'ı reddettiği için sürüm kaydırılmaz.
           node-version: '22.18.0'
           cache: npm
 
+      - name: Clean install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Yeni mimari ihlali, düzeltilmiş ama istisnada kalan kayıt veya gevşetilmiş
+      # kural bu adımı (ve dolayısıyla işi) başarısız kılar.
+      - name: Architecture boundaries guard
+        run: npm run check:architecture
+
+      - name: Maintenance bot self-tests
+        run: npm run test:maintenance
+
       - name: Run maintenance analysis
         env:
-          CI: '1'
-          FORCE_COLOR: '0'
-        run: node scripts/maintenance/analyze.mjs --install --report-dir maintenance-report
+          ANALYSIS_KIND: ${{ inputs.analysis || 'full' }}
+          COMPARE_BASELINE: ${{ github.event_name == 'workflow_dispatch' && inputs.compare_baseline || 'true' }}
+        run: |
+          set -euo pipefail
+          BASELINE="docs/maintenance/baselines/m0-pre-faz3.json"
+          ARGS=(--report-dir maintenance-report)
+          if [ "${COMPARE_BASELINE}" = "true" ] && [ -f "${BASELINE}" ]; then
+            ARGS+=(--compare "${BASELINE}")
+          fi
+          if [ "${ANALYSIS_KIND}" = "post-faz3" ] && [ ! -f "${BASELINE}" ]; then
+            echo "::error::post-faz3 analizi için baseline bulunamadı: ${BASELINE}"
+            exit 1
+          fi
+          node scripts/maintenance/analyze.mjs "${ARGS[@]}"
 
       - name: Upload maintenance report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maintenance-report
           path: maintenance-report/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30

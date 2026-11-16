@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "comment": "M0 gerekçeli istisna listesi. Yalnızca ÖNCEDEN VAR OLAN core-purity ihlallerini içerir (ilk raporda 5; geliştirilmiş çok satırlı import taraması 2 ek önceden var olan ihlal buldu). Bu ihlaller otomatik düzeltilmez; düzeltildiklerinde ilgili kayıt BURADAN ÇIKARILMALIDIR (aksi halde mimari kapı 'stale exception' ile başarısız olur). Yeni ihlal eklemek insan onayı gerektirir.",
+  "exceptions": [
+    {
+      "rule": "core-purity",
+      "file": "src/core/actor-recommendations.ts",
+      "specifier": "../services/api-client.ts",
+      "risk": "R2",
+      "reason": "Aktör önerileri API istemcisine bağımlı. Taşıma R2 kapsamındadır (öneri algoritması + istemci servis sınırı); insan tasarımı ve ayrı PR gerekir."
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/cinetrack-core.ts",
+      "specifier": "idb-keyval",
+      "risk": "R2",
+      "reason": "Çekirdek veri modülü tarayıcı IndexedDB yardımcı bağımlılığını import ediyor. Kalıcılık sarmalayıcısına taşınması R2 kapsamındadır (kullanıcı verisi)."
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/cinetrack-core.ts",
+      "specifier": "../services/api-client.ts",
+      "risk": "R2",
+      "reason": "Çekirdek veri modülü istemci API katmanına bağımlı. Ağ erişiminin core dışına taşınması R2 kapsamındadır; davranış değişikliği riski taşır."
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/relationship-explorer.ts",
+      "specifier": "../services/encoding-service.ts",
+      "risk": "R2",
+      "reason": "İlişki keşif grafiği istemci kodlama servisine bağımlı. Kodlama yardımcısının saf core modülüne taşınması R2 kapsamındadır."
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/relationship-explorer.ts",
+      "specifier": "../services/storage-idb.ts",
+      "risk": "R2",
+      "reason": "Çok satırlı import geliştirilmiş tarayıcıyla ortaya çıktı: ilişki keşfi IndexedDB depolama servisine bağımlı. Kalıcılık sınırının core dışına taşınması R2 kapsamındadır (kullanıcı verisi)."
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/relationship-explorer.ts",
+      "specifier": "../services/series-tv-seeds.ts",
+      "risk": "R2",
+      "reason": "Çok satırlı import geliştirilmiş tarayıcıyla ortaya çıktı: ilişki keşfi dizi tohum verisi servisine bağımlı. Veri kaynağının core dışına taşınması R2 kapsamındadır."
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/taste/migration.ts",
+      "specifier": "crypto",
+      "risk": "R2",
+      "reason": "Zevk haritası migrasyonu Node crypto yerleşik modülünü kullanıyor. Çalışma zamanından bağımsız hash sarmalayıcısı tasarımı R2 kapsamındadır (migration semantiği)."
+    }
+  ]
+}

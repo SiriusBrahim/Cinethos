@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "comment": "Mimari kural bütünlüğü kilidi. architecture-rules.json değişirse sha256 uyuşmaz ve mimari kapı başarısız olur; kural değişikliği ancak bu dosya bilinçli olarak güncellenerek (kod incelemesinde görünür) yapılabilir. 'required' alanları kuralların gevşetilmesini yakalar.",
+  "sha256": "a0c1e64c1e601feb4539e24e5b5126b177a0e5564e4c640d42716073bd6ed5ef",
+  "ruleIds": ["core-purity", "server-isolation", "client-no-server", "contracts-isolation"],
+  "required": {
+    "core-purity": {
+      "from": ["src/core/**"],
+      "forbidLayers": [
+        "server",
+        "services",
+        "hooks",
+        "components",
+        "app",
+        "features",
+        "modules",
+        "design-system"
+      ],
+      "forbidPackages": [
+        "react",
+        "react-dom",
+        "express",
+        "idb-keyval",
+        "framer-motion",
+        "lucide-react",
+        "react-force-graph-2d",
+        "cmdk",
+        "exceljs"
+      ],
+      "forbidNodeBuiltins": true
+    },
+    "server-isolation": {
+      "from": ["server.ts", "src/server/**"],
+      "forbidLayers": ["components", "hooks", "features", "design-system"],
+      "forbidPackages": [
+        "react",
+        "react-dom",
+        "react-force-graph-2d",
+        "framer-motion",
+        "lucide-react",
+        "cmdk"
+      ]
+    },
+    "client-no-server": {
+      "from": [
+        "src/components/**",
+        "src/hooks/**",
+        "src/app/**",
+        "src/features/**",
+        "src/design-system/**"
+      ],
+      "forbidLayers": ["server"],
+      "forbidPackages": ["express", "exceljs"],
+      "forbidNodeBuiltins": true
+    },
+    "contracts-isolation": {
+      "from": ["src/contracts/**"],
+      "forbidLayers": [
+        "core",
+        "server",
+        "services",
+        "hooks",
+        "components",
+        "app",
+        "features",
+        "modules",
+        "design-system"
+      ],
+      "forbidPackages": ["react", "react-dom", "express"],
+      "forbidNodeBuiltins": true
+    }
+  }
+}

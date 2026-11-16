@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "commit": "148c95d8fa1340cd43152f9023b01b299bf81e7c",
+  "generatedAt": "2026-11-16T23:07:26.700Z",
+  "verdict": "PASS",
+  "rulesHash": "a0c1e64c1e601feb4539e24e5b5126b177a0e5564e4c640d42716073bd6ed5ef",
+  "violations": [
+    {
+      "rule": "core-purity",
+      "file": "src/core/actor-recommendations.ts",
+      "specifier": "../services/api-client.ts",
+      "reasons": [
+        "katman: services"
+      ]
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/cinetrack-core.ts",
+      "specifier": "idb-keyval",
+      "reasons": [
+        "paket: idb-keyval"
+      ]
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/cinetrack-core.ts",
+      "specifier": "../services/api-client.ts",
+      "reasons": [
+        "katman: services"
+      ]
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/relationship-explorer.ts",
+      "specifier": "../services/encoding-service.ts",
+      "reasons": [
+        "katman: services"
+      ]
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/relationship-explorer.ts",
+      "specifier": "../services/storage-idb.ts",
+      "reasons": [
+        "katman: services"
+      ]
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/relationship-explorer.ts",
+      "specifier": "../services/series-tv-seeds.ts",
+      "reasons": [
+        "katman: services"
+      ]
+    },
+    {
+      "rule": "core-purity",
+      "file": "src/core/taste/migration.ts",
+      "specifier": "crypto",
+      "reasons": [
+        "node yerleşik modülü: crypto"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "install",
+      "status": "SKIP"
+    },
+    {
+      "id": "eslint",
+      "status": "PASS"
+    },
+    {
+      "id": "typecheck",
+      "status": "PASS"
+    },
+    {
+      "id": "typecheck-tests",
+      "status": "PASS"
+    },
+    {
+      "id": "unit-tests",
+      "status": "PASS"
+    },
+    {
+      "id": "taste-tests",
+      "status": "PASS"
+    },
+    {
+      "id": "build",
+      "status": "PASS"
+    },
+    {
+      "id": "audit-prod",
+      "status": "PASS"
+    },
+    {
+      "id": "audit-all",
+      "status": "INFO"
+    }
+  ]
+}

@@ -29,6 +29,11 @@ jobs:
       - name: Lint & Typecheck
         run: npm run lint
 
+      # MIA bakım modülü: mevcut mimari ihlaller gerekçeli istisna listesinde tutulur;
+      # YENİ ihlal, düzeltilmiş ama istisnada kalan kayıt veya gevşetilmiş kural CI'ı düşürür.
+      - name: Architecture boundaries (new violations fail)
+        run: npm run check:architecture
+
       - name: Unit Tests
         run: npm test
 
