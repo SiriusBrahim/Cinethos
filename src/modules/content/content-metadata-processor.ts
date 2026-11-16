@@ -316,7 +316,10 @@ function sanitizeValueRecursive(
   unknownOut: Set<string>,
   depth = 0
 ): unknown {
-  if (depth > 6 || value === null || value === undefined) return value;
+  // Güvenlik sınırı: aşırı derin nesneyi olduğu gibi bırakmak allowlist'i deler.
+  // Derinlik limiti aşıldığında alt ağacı tamamen düşür; hiçbir ham nesne sızmasın.
+  if (depth > 6) return undefined;
+  if (value === null || value === undefined) return value;
   if (typeof value !== 'object') return value;
   if (Array.isArray(value)) {
     return value.map((entry) =>
