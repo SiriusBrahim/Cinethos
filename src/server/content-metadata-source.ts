@@ -44,6 +44,13 @@ export type CustomMetadataFetcher = (params: {
   existingPayload?: Record<string, unknown> | null;
 }) => Promise<Record<string, unknown> | null>;
 
+/** Yerel katalogdan okunan tekil içerik anlık görüntüsü (Content Manager okuma). */
+export interface CatalogEntrySnapshot {
+  readonly mediaKey: string;
+  readonly mediaType: MediaKind;
+  readonly payload: Record<string, unknown>;
+}
+
 export interface ContentMetadataSourceOptions {
   dataDir?: string;
   tmdbApiKey?: string;
@@ -176,6 +183,40 @@ export class ContentMetadataSource {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Yerel katalog stokunun tamamını allowlist temizliğinden geçmiş olarak döner.
+   * Content Manager'ın katalog aramasını ikinci bir dosya okuyucusu olmadan
+   * yapmasını sağlar.
+   */
+  async listCatalogEntries(): Promise<CatalogEntrySnapshot[]> {
+    const entries: CatalogEntrySnapshot[] = [];
+    for (const mediaType of ['movie', 'tv'] as const) {
+      const filePath = path.join(
+        this.dataDir,
+        'catalog',
+        mediaType === 'tv' ? 'tv.json' : 'movies.json'
+      );
+      try {
+        const res = await readJsonFileWithRecoveryAsync<Record<string, Record<string, unknown>>>(
+          filePath
+        );
+        if ((res.status !== 'ok' && res.status !== 'recovered') || !res.data) continue;
+        for (const [rawKey, rawEntry] of Object.entries(res.data)) {
+          if (!rawEntry || typeof rawEntry !== 'object') continue;
+          const sanitized = sanitizeRawContentInput(rawEntry).sanitized;
+          const numericId = Number(rawEntry.id ?? sanitized.id);
+          if (!Number.isSafeInteger(numericId) || numericId <= 0) continue;
+          const mediaKey = `${mediaType}:${numericId}`;
+          if (!rawKey || rawKey === 'updatedAt') continue;
+          entries.push({ mediaKey, mediaType, payload: sanitized });
+        }
+      } catch {
+        /* katalog dosyası yoksa/okunamazsa arama diğer türle devam eder */
+      }
+    }
+    return entries;
   }
 
   async acquireMetadata(params: {

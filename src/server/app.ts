@@ -55,6 +55,8 @@ import {
   type ContentProcessingCoordinator,
 } from './content-processing-coordinator.ts';
 import { createContentIntelligenceRouter } from './content-intelligence-routes.ts';
+import { createLibraryService } from '../modules/library/service.ts';
+import { createContentService } from '../modules/content/service.ts';
 import { diffLibraryEvents, findSavedItemByMediaKey } from './library-event-diff.ts';
 import type {
   EventSubscription,
@@ -443,6 +445,10 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   profileContext: ProfileContext;
   moduleRegistry: ModuleRegistry;
   contentIntelligence: ContentProcessingCoordinator;
+  /** MIA Faz 3 — merkezi kütüphane yazma hattı (ILibraryService). */
+  libraryService: ReturnType<typeof createLibraryService>;
+  /** MIA Faz 3 — merkezi ortak içerik okuma hattı (IContentService). */
+  contentService: ReturnType<typeof createContentService>;
   startRuntimeModules: () => Promise<void>;
   stopRuntimeModules: () => Promise<void>;
   tmdbProxy: ReturnType<typeof createTmdbProxyService>;
@@ -614,6 +620,28 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   const contentIntelligence = createContentProcessingCoordinator({
     dataDir: resolvedDataDir,
     tmdbApiKey: options.tmdbApiKey || process.env.TMDB_API_KEY,
+  });
+
+  // MIA Faz 3 — Kütüphane Yöneticisi: kullanıcı listesi yazımlarının tek hattı.
+  // Mevcut PrimaryDataRepository + ProfileContext + AppEventBus yeniden kullanılır;
+  // ortak içerik deposuna yazmaz.
+  const libraryService = createLibraryService({
+    repository: primaryRepository,
+    profileContext,
+    eventPublisher: eventBus,
+  });
+
+  // MIA Faz 3 — İçerik Yöneticisi: mevcut metadata adaptörü, içerik kaydı ve
+  // kuyruk portları üzerinden ortak içerik okuması. Yeni bir TMDB istemcisi,
+  // repository veya şema oluşturulmaz.
+  const contentService = createContentService({
+    metadataSource: contentIntelligence.metadataSource,
+    getStoredRecord: (mediaKey) => contentIntelligence.getByMediaKey(mediaKey),
+    readDocument: async () => {
+      const result = await primaryRepository.read();
+      return result.document;
+    },
+    enqueueRawItem: (rawItem) => contentIntelligence.enqueueRawItem(rawItem),
   });
 
   moduleRegistry.register(primaryStorageModule);
@@ -2675,6 +2703,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     profileContext,
     moduleRegistry,
     contentIntelligence,
+    libraryService,
+    contentService,
     startRuntimeModules,
     stopRuntimeModules,
     tmdbProxy,

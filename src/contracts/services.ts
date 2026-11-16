@@ -46,6 +46,12 @@ export interface AddLibraryItemInput {
   readonly list: LibraryListId;
   /** Ekleme anında verilen puan (yalnızca 'watched' için anlamlı). */
   readonly rating?: number | null;
+  /**
+   * Content Manager sahipliğindeki içerik metaverisi (opsiyonel). Kütüphane
+   * kaydına yalnızca allowlist'teki içerik alanları kopyalanır; kişisel alanlar
+   * bu kanaldan yazılamaz.
+   */
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 /** Durum/puan güncelleme girdisi — `WriteProfileRef` ZORUNLU. */
@@ -54,6 +60,14 @@ export interface UpdateLibraryItemInput {
   readonly mediaKey: string;
   readonly list?: LibraryListId;
   readonly rating?: number | null;
+  /** Content Manager sahipliğindeki içerik metaverisi (allowlist ile sınırlı). */
+  readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Kişisel izleme ilerlemesi (kullanıcı verisi — yalnızca buradan yazılır). */
+  readonly progress?: {
+    readonly episodesWatched?: number;
+    readonly currentSeason?: number;
+    readonly seasonProgress?: Readonly<Record<number, number>>;
+  };
 }
 
 /** Silme girdisi (geri alma için kayıt tutulur — mevcut tombstone davranışı). */
