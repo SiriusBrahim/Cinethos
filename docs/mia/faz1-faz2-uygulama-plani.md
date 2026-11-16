@@ -98,8 +98,8 @@ Ajan tamamlandığında tek raporda şunları sunmalı:
 
 ## 5. Doğrulama kaydı (ajan teslimi)
 
-- **Doğrulanan son commit SHA:** `553eae1` (dal `vibe/test-ci-dogrulama-b66b9a`).
-- **Yerel zincir** (commit `6de10f2` üzerinde çalıştırıldı; `553eae1` yalnızca CI workflow değişikliği içerir ve tüm zincir CI'da aynı SHA'da yeniden koşuldu):
+- **Doğrulanan son commit SHA:** `66e5c07` (dal `vibe/test-ci-dogrulama-b66b9a`; tüm kaynak, test ve CI workflow değişikliklerini içerir). Bu SHA üzerindeki Actions çalıştırması: https://github.com/SiriusBrahim/Cinethos/actions/runs/43967865241 — iki job da yeşil.
+- **Yerel zincir** (commit `6de10f2` üzerinde çalıştırıldı; sonraki commit'ler yalnızca CI workflow ve dokümantasyon değişikliği içerir ve tüm zincir CI'da her SHA'da yeniden koşuldu):
   - `npm ci` (temiz kurulum) ✅ exit 0
   - `npm audit --omit=dev --audit-level=high` ✅ exit 0
   - `npm run lint` (eslint + tsc + tsc tests) ✅ exit 0
@@ -108,9 +108,10 @@ Ajan tamamlandığında tek raporda şunları sunmalı:
   - `npm run build` ✅ exit 0
   - Playwright E2E ✅ 11/11
   - Production smoke (`--omit=dev`) ✅ (/api/tmdb-status, /, /discover/deep-link)
-- **GitHub Actions (aynı SHA `553eae1`):**
-  - verify job (npm ci → audit → lint → test → build → prune → smoke): ✅ — https://github.com/SiriusBrahim/Cinethos/actions/runs/43966609295
+- **GitHub Actions (aynı SHA `66e5c07`):**
+  - verify job (npm ci → audit → lint → test → **test:taste** → build → prune → smoke): ✅ — https://github.com/SiriusBrahim/Cinethos/actions/runs/43967865241
   - e2e job (Playwright E2E): ✅ — aynı çalıştırma; E2E artık CI'da zorunlu adım.
+  - Not: `npm run test:taste` CI'da bağımsız bir adımdır; başarısızlığı job'u ve PR'ı kırmızı yapar (commit `66e5c07`).
 - **Eklenen/güncellenen test dosyaları:**
   - `tests/mia-maintainer-regressions.test.mjs` (yeni, 9 senaryo — plan 2.3)
   - `tests/mia-phase1-contracts.test.mjs` (EventBus AggregateError assertion güçlendirme)
