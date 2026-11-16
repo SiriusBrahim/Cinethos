@@ -257,10 +257,15 @@ export class ContentProcessingCoordinator implements IApplicationModule {
       });
       this.initialIndexStats = {
         ...this.initialIndexStats,
-        status: 'completed',
+        status: result.rejected > 0 ? 'partial' : 'completed',
         totalUnique: result.total,
         queued: result.accepted,
         rejected: result.rejected,
+        failed: result.rejected,
+        lastError:
+          result.rejected > 0
+            ? `${result.rejected} kayıt kuyruğa alınamadı; indeksleme kısmi tamamlandı.`
+            : null,
       };
     } catch (err) {
       this.initialIndexStats = {
