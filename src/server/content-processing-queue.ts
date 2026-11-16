@@ -469,7 +469,7 @@ export class ContentProcessingQueue {
         existing.data_hash === pipelineResult.dataHash
       ) {
         if (updateQueueTable) {
-          this.repository.markJobCompleted(job.media_key);
+          this.repository.markJobCompleted(job.media_key, job.updated_at);
         }
         return {
           mediaKey: job.media_key,
@@ -480,7 +480,7 @@ export class ContentProcessingQueue {
 
       const saved = this.repository.upsertCompletedResult(pipelineResult);
       if (updateQueueTable) {
-        this.repository.markJobCompleted(job.media_key);
+        this.repository.markJobCompleted(job.media_key, job.updated_at);
       }
 
       return {
@@ -516,7 +516,7 @@ export class ContentProcessingQueue {
         error: errMsg,
       });
       if (updateQueueTable) {
-        this.repository.markJobFailed(job.media_key, errMsg);
+        this.repository.markJobFailed(job.media_key, errMsg, job.updated_at);
       }
       this.logger?.error?.(`${job.media_key} işlenemedi: ${errMsg}`);
       return {
