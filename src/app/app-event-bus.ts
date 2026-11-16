@@ -110,16 +110,18 @@ export class AppEventBus implements IEventPublisher, IEventSubscriber {
     const set = this.handlers.get(event.eventType);
     if (!set || set.size === 0) return;
 
-    await Promise.all(
-      [...set].map(async (handler) => {
-        try {
-          await handler(event);
-        } catch (error) {
-          // Bireysel abone hatası diğer aboneleri düşürmemeli, ancak sessiz yutulmaz.
-          console.warn(`[AppEventBus] ${String(event.eventType)} işleyicisi hata fırlattı:`, error);
-        }
-      })
-    );
+    // Tüm aboneleri çalıştır; bir abonenin hatası diğerlerini durdurmasın.
+    // Ancak kritik teslimat hataları publish() sonucunda çağırana dönmelidir.
+    const results = await Promise.allSettled([...set].map((handler) => handler(event)));
+    const failures = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `[AppEventBus] ${String(event.eventType)} olayı ${failures.length} abone tarafından işlenemedi.`
+      );
+    }
   }
 
   subscribe<K extends keyof AppEventMap>(
