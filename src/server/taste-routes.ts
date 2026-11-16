@@ -279,6 +279,14 @@ export function createTasteRouter(
     eventBus?: AppEventBus;
     tasteAdapter?: ServerTasteServiceAdapter;
     deferAdapterSubscription?: boolean;
+    onDomainEvent?: (
+      event: TypedAppEvent,
+      rawMetadata?: Record<string, unknown>
+    ) => Promise<void> | void;
+    onRawTasteEvent?: (
+      event: TasteEvent,
+      rawMetadata?: Record<string, unknown>
+    ) => Promise<void> | void;
   } = {}
 ): Router {
   const router = Router();
@@ -638,10 +646,21 @@ export function createTasteRouter(
         }
       }
 
+      const rawMeta =
+        body && "rawMetadata" in body && body.rawMetadata && typeof body.rawMetadata === "object"
+          ? (body.rawMetadata as Record<string, unknown>)
+          : body && "metadata" in body && body.metadata && typeof body.metadata === "object"
+            ? (body.metadata as Record<string, unknown>)
+            : undefined;
+
       const { added } = await appendTasteEventIdempotent(event, dataDir);
       const rebuildResult = added
         ? await triggerTasteProfileRebuild(dataDir)
         : { generationId: undefined };
+
+      if (options.onRawTasteEvent) {
+        await options.onRawTasteEvent(event, rawMeta);
+      }
 
       res.json({
         success: true,
@@ -663,6 +682,7 @@ export function createTasteRouter(
         | {
             event?: TypedAppEvent;
             metadata?: TasteMetadataInput | Record<string, unknown>;
+            rawMetadata?: Record<string, unknown>;
           };
       const event: TypedAppEvent | undefined =
         body && "event" in body && body.event
@@ -674,6 +694,13 @@ export function createTasteRouter(
       }
 
       await ensureInitialTasteBootstrap(dataDir);
+      const rawMeta =
+        body && "rawMetadata" in body && body.rawMetadata && typeof body.rawMetadata === "object"
+          ? (body.rawMetadata as Record<string, unknown>)
+          : body && "metadata" in body && body.metadata && typeof body.metadata === "object"
+            ? (body.metadata as Record<string, unknown>)
+            : undefined;
+
       if (body && "metadata" in body && body.metadata) {
         const meta = coerceItemToTasteMetadata(body.metadata as Record<string, unknown>);
         if (meta) {
@@ -686,6 +713,10 @@ export function createTasteRouter(
         return res.status(outcome.retryable ? 500 : 409).json({
           error: outcome.error || "Domain olayı işlenemedi",
         });
+      }
+
+      if (options.onDomainEvent) {
+        await options.onDomainEvent(event, rawMeta);
       }
 
       res.json({

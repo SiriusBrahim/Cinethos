@@ -49,6 +49,11 @@ import {
 } from './taste-service-adapter.ts';
 import { readTasteManifest } from './taste-store.ts';
 import { configureTasteHydration } from './taste-rebuild-coordinator.ts';
+import {
+  createContentProcessingCoordinator,
+  type ContentProcessingCoordinator,
+} from './content-processing-coordinator.ts';
+import { createContentIntelligenceRouter } from './content-intelligence-routes.ts';
 import type {
   EventSubscription,
   IApplicationModule,
@@ -413,6 +418,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   eventBus: AppEventBus;
   profileContext: ProfileContext;
   moduleRegistry: ModuleRegistry;
+  contentIntelligence: ContentProcessingCoordinator;
   startRuntimeModules: () => Promise<void>;
   stopRuntimeModules: () => Promise<void>;
   tmdbProxy: ReturnType<typeof createTmdbProxyService>;
@@ -576,9 +582,15 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     },
   };
 
+  const contentIntelligence = createContentProcessingCoordinator({
+    dataDir: resolvedDataDir,
+    tmdbApiKey: options.tmdbApiKey || process.env.TMDB_API_KEY,
+  });
+
   moduleRegistry.register(primaryStorageModule);
   moduleRegistry.register(tasteEngineModule);
   moduleRegistry.register(backupSyncModule);
+  moduleRegistry.register(contentIntelligence);
 
   const serverModuleContext: ModuleContext = {
     profile: profileContext,
@@ -1542,6 +1554,28 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
           : {}),
       });
       notifyLocalMutation('user-data-save');
+
+      // MIA Faz 2: Tüm profil listelerindeki, ilgilenmiyorum ve gizlenenlerdeki
+      // içerikleri (görsel ve kişisel alanlardan arındırarak) arka planda kuyruğa al.
+      if (contentIntelligence.queue.isRunning()) {
+        const batchItems: Record<string, unknown>[] = [];
+        for (const prof of result.document.profiles || []) {
+          if (Array.isArray(prof.items)) {
+            for (const it of prof.items) {
+              batchItems.push(it as unknown as Record<string, unknown>);
+            }
+          }
+          for (const key of prof.preferences?.disliked || []) {
+            contentIntelligence.enqueueHiddenOrDislikedItem(key);
+          }
+          for (const key of prof.preferences?.hidden || []) {
+            contentIntelligence.enqueueHiddenOrDislikedItem(key);
+          }
+        }
+        if (batchItems.length > 0) {
+          void contentIntelligence.enqueueLibraryItemsBatch(batchItems).catch(() => undefined);
+        }
+      }
     } catch (error: any) {
       if (error instanceof CorruptJsonFileError) {
         res.status(500).json({ status_message: error.message, code: error.code });
@@ -2049,6 +2083,11 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const raw = req.body;
       const items = Array.isArray(raw?.items) ? raw.items : Array.isArray(raw) ? raw : raw ? [raw] : [];
       const result = await persistentStore.upsertCatalogItemsSerialized(items);
+      if (contentIntelligence.queue.isRunning() && items.length > 0) {
+        void contentIntelligence
+          .enqueueLibraryItemsBatch(items as Record<string, unknown>[])
+          .catch(() => undefined);
+      }
       res.json({ ok: true, ...result });
     } catch (err: any) {
       if (err instanceof CorruptJsonFileError) {
@@ -2448,7 +2487,25 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       eventBus,
       tasteAdapter,
       deferAdapterSubscription: true,
+      onDomainEvent: async (event, rawMetadata) => {
+        if (rawMetadata) {
+          contentIntelligence.eventSubscriber.registerMetadataHint(event.eventId, rawMetadata);
+        }
+        await eventBus.publish(event);
+      },
+      onRawTasteEvent: async (tasteEvent, rawMetadata) => {
+        if (tasteEvent.contentId) {
+          contentIntelligence.enqueueHiddenOrDislikedItem(tasteEvent.contentId, rawMetadata);
+        }
+      },
     })
+  );
+
+  // MIA Faz 2: Content Intelligence & Ortak İçerik Veritabanı HTTP uçları
+  app.use(
+    '/api/content-intelligence',
+    personalReadGuard,
+    createContentIntelligenceRouter(contentIntelligence)
   );
 
   if (typeof options.registerCustomRoutes === 'function') {
@@ -2495,6 +2552,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     eventBus,
     profileContext,
     moduleRegistry,
+    contentIntelligence,
     startRuntimeModules,
     stopRuntimeModules,
     tmdbProxy,

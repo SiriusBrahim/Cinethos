@@ -992,6 +992,10 @@ export function App() {
                 ? extractTasteMetadataFromItem(found as unknown as Record<string, unknown>)
                 : undefined;
             },
+            resolveRawMetadata: (mediaKey) => {
+              const found = savedItemsRef.current.find((entry) => makeMediaKey(entry) === mediaKey);
+              return found ? (found as unknown as Record<string, unknown>) : undefined;
+            },
             onError: (error) => {
               const msg = error instanceof Error ? error.message : String(error);
               lastSyncError = msg;

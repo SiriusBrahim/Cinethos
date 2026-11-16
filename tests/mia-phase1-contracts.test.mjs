@@ -691,6 +691,7 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
         ['primary-storage', 'healthy'],
         ['taste-engine', 'healthy'],
         ['backup-sync', 'healthy'],
+        ['content-intelligence', 'healthy'],
       ]
     );
 
@@ -770,6 +771,7 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
     assert.equal(runtime.moduleRegistry.isStarted('primary-storage'), false);
     assert.equal(runtime.moduleRegistry.isStarted('taste-engine'), false);
     assert.equal(runtime.moduleRegistry.isStarted('backup-sync'), false);
+    assert.equal(runtime.moduleRegistry.isStarted('content-intelligence'), false);
     await new Promise((resolve) => server.close(resolve));
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

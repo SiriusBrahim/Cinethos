@@ -311,25 +311,92 @@ export interface PostEventResponse {
 }
 
 const pendingEventMetadata = new Map<string, TasteMetadataInput>();
+const pendingEventRawMetadata = new Map<string, Record<string, unknown>>();
+
+export function sanitizeRawMetadataForContentIntelligence(
+  raw: Record<string, unknown> | null | undefined
+): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const blockedKeys = new Set([
+    "poster_path",
+    "posterPath",
+    "poster_url",
+    "posterUrl",
+    "backdrop_path",
+    "backdropPath",
+    "backdrop_url",
+    "backdropUrl",
+    "profile_path",
+    "profilePath",
+    "still_path",
+    "stillPath",
+    "logo_path",
+    "logoPath",
+    "images",
+    "posters",
+    "backdrops",
+    "profileId",
+    "profile_id",
+    "userId",
+    "user_id",
+    "status",
+    "list",
+    "personal_rating",
+    "personalRating",
+    "rating",
+    "ratedAt",
+    "completedAt",
+    "addedAt",
+    "season_progress",
+    "episodes_watched",
+    "notes",
+  ]);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (blockedKeys.has(key) || value === undefined) continue;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 export function registerTasteMetadataForEvent(
   eventId: string,
-  metadata?: TasteMetadataInput
+  metadata?: TasteMetadataInput,
+  rawMetadata?: Record<string, unknown>
 ): void {
-  if (!eventId || !metadata) return;
-  pendingEventMetadata.set(eventId, metadata);
-  if (pendingEventMetadata.size > 200) {
-    const oldestKey = pendingEventMetadata.keys().next().value;
-    if (oldestKey) pendingEventMetadata.delete(oldestKey);
+  if (!eventId) return;
+  if (metadata) {
+    pendingEventMetadata.set(eventId, metadata);
+    if (pendingEventMetadata.size > 200) {
+      const oldestKey = pendingEventMetadata.keys().next().value;
+      if (oldestKey) pendingEventMetadata.delete(oldestKey);
+    }
+  }
+  const sanitizedRaw = sanitizeRawMetadataForContentIntelligence(rawMetadata);
+  if (sanitizedRaw) {
+    pendingEventRawMetadata.set(eventId, sanitizedRaw);
+    if (pendingEventRawMetadata.size > 200) {
+      const oldestKey = pendingEventRawMetadata.keys().next().value;
+      if (oldestKey) pendingEventRawMetadata.delete(oldestKey);
+    }
   }
 }
 
 /** Yeni taste olayı gönder + sunucu worker yeniden hesaplaması bitince dinleyicileri tetikle */
 export async function postTasteEvent(
   event: TasteEvent,
-  metadata?: TasteMetadataInput
+  metadata?: TasteMetadataInput,
+  rawMetadata?: Record<string, unknown>
 ): Promise<PostEventResponse> {
-  const payload = metadata ? { event, metadata } : event;
+  const sanitizedRaw = sanitizeRawMetadataForContentIntelligence(rawMetadata);
+  const payload =
+    metadata || sanitizedRaw
+      ? {
+          event,
+          ...(metadata ? { metadata } : {}),
+          ...(sanitizedRaw ? { rawMetadata: sanitizedRaw } : {}),
+        }
+      : event;
   const res = await requestJson<PostEventResponse>(`${BASE}/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -349,9 +416,18 @@ export async function postTasteEvent(
  */
 export async function postTasteDomainEvent(
   event: TypedAppEvent,
-  metadata?: TasteMetadataInput
+  metadata?: TasteMetadataInput,
+  rawMetadata?: Record<string, unknown>
 ): Promise<PostEventResponse> {
-  const payload = metadata ? { event, metadata } : { event };
+  const sanitizedRaw = sanitizeRawMetadataForContentIntelligence(rawMetadata);
+  const payload =
+    metadata || sanitizedRaw
+      ? {
+          event,
+          ...(metadata ? { metadata } : {}),
+          ...(sanitizedRaw ? { rawMetadata: sanitizedRaw } : {}),
+        }
+      : { event };
   const res = await requestJson<PostEventResponse>(`${BASE}/domain-event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -366,19 +442,23 @@ export async function postTasteDomainEvent(
 
 const CLIENT_TASTE_DOMAIN_EVENTS = [
   "LibraryItemAdded",
+  "LibraryItemUpdated",
   "LibraryStatusChanged",
   "LibraryRatingChanged",
   "LibraryItemRemoved",
+  "FavoriteActorChanged",
 ] as const;
 
 export function subscribeClientTasteSyncToEventBus(
   subscriber: IEventSubscriber,
   options: {
     resolveMetadata?: (mediaKey: string) => TasteMetadataInput | undefined;
+    resolveRawMetadata?: (mediaKey: string) => Record<string, unknown> | undefined;
     onError?: (error: unknown, event: TypedAppEvent) => void;
     sendDomainEvent?: (
       event: TypedAppEvent,
-      metadata?: TasteMetadataInput
+      metadata?: TasteMetadataInput,
+      rawMetadata?: Record<string, unknown>
     ) => Promise<PostEventResponse>;
   } = {}
 ): EventSubscription {
@@ -389,14 +469,23 @@ export function subscribeClientTasteSyncToEventBus(
       if (cachedMeta) {
         pendingEventMetadata.delete(event.eventId);
       }
+      const cachedRawMeta = pendingEventRawMetadata.get(event.eventId);
+      if (cachedRawMeta) {
+        pendingEventRawMetadata.delete(event.eventId);
+      }
       const mediaKey =
         typeof (event.payload as { mediaKey?: unknown })?.mediaKey === "string"
           ? (event.payload as { mediaKey: string }).mediaKey
           : event.entityId;
       const meta = cachedMeta ?? (mediaKey ? options.resolveMetadata?.(mediaKey) : undefined);
+      const rawMeta =
+        cachedRawMeta ??
+        sanitizeRawMetadataForContentIntelligence(
+          mediaKey ? options.resolveRawMetadata?.(mediaKey) : undefined
+        );
 
       try {
-        await sender(event, meta);
+        await sender(event, meta, rawMeta);
       } catch (error) {
         options.onError?.(error, event);
         throw error;

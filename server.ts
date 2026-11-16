@@ -52,6 +52,7 @@ const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes
 const {
   app,
   primaryRepository,
+  contentIntelligence,
   startRuntimeModules,
   stopRuntimeModules,
   persistentStore,
@@ -198,6 +199,18 @@ async function startServer() {
         }
         if (allItems.length > 0) {
           await persistentStore.upsertCatalogItemsSerialized(allItems);
+          await contentIntelligence.enqueueLibraryItemsBatch(
+            allItems as unknown as Record<string, unknown>[],
+            { pageSize: 25 }
+          );
+        }
+        for (const p of initialData.profiles || []) {
+          for (const key of p.preferences?.disliked || []) {
+            contentIntelligence.enqueueHiddenOrDislikedItem(key);
+          }
+          for (const key of p.preferences?.hidden || []) {
+            contentIntelligence.enqueueHiddenOrDislikedItem(key);
+          }
         }
       } catch (e: any) {
         console.warn('[Catalog] Başlangıç indeksleme uyarısı:', e?.message || e);
