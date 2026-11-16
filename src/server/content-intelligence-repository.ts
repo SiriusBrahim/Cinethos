@@ -361,7 +361,14 @@ export class ContentIntelligenceRepository {
          processed_at, created_at, updated_at,
          processing_version, processing_status, processing_error
        ) VALUES (?, ?, ?, NULL, ?, ?, '{}', '{}', '{}', '{}', '', NULL, ?, ?, ?, 'pending', NULL)
-       ON CONFLICT(media_key) DO NOTHING`
+       ON CONFLICT(media_key) DO UPDATE SET
+         metadata_json = CASE
+           WHEN content_intelligence.processing_status = 'pending'
+                AND excluded.metadata_json != '{}'
+           THEN excluded.metadata_json
+           ELSE content_intelligence.metadata_json
+         END,
+         updated_at = excluded.updated_at`
     ).run(
       params.mediaKey,
       params.mediaType,
@@ -849,6 +856,72 @@ export class ContentIntelligenceRepository {
       )
       .run(eventId, eventType, mediaKey ?? null, nowIso);
     return (res.changes ?? 0) > 0;
+  }
+
+  /**
+   * MIA Faz 2 — Adım 2.3 (Dilim E): Transactional outbox kabulü.
+   *
+   * Olay kabul kaydı (`content_processed_events`) ve kuyruk kaydı
+   * (`content_intelligence` stub + `content_processing_queue`) TEK SQLite
+   * transaction içinde oluşturulur. Enqueue yarıda başarısız olursa
+   * transaction geri alınır ve event kalıcı olarak "processed" işaretlenmez;
+   * böylece olay tekrar denenebilir durumda kalır.
+   */
+  acceptEventTransactionally(input: {
+    eventId: string;
+    eventType: string;
+    mediaKey: string | null;
+    job: {
+      mediaKey: string;
+      mediaType: MediaKind;
+      tmdbId: number;
+      sourceRevision?: string | null;
+      payload?: Record<string, unknown> | null;
+      triggerEventId?: string | null;
+      maxAttempts?: number;
+    };
+  }): { accepted: boolean; deduplicated: boolean; enqueued: boolean; status: string } {
+    const db = this.requireDb();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const nowIso = new Date().toISOString();
+      const eventRes = db
+        .prepare(
+          `INSERT OR IGNORE INTO content_processed_events (event_id, event_type, media_key, processed_at)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(input.eventId, input.eventType, input.mediaKey ?? null, nowIso);
+
+      if ((eventRes.changes ?? 0) === 0) {
+        db.exec('ROLLBACK');
+        return { accepted: false, deduplicated: true, enqueued: false, status: 'deduplicated' };
+      }
+
+      this.upsertPendingStub({
+        mediaKey: input.job.mediaKey,
+        mediaType: input.job.mediaType,
+        tmdbId: input.job.tmdbId,
+        ...(input.job.sourceRevision ? { sourceRevision: input.job.sourceRevision } : {}),
+        ...(input.job.payload ? { sanitizedMetadata: input.job.payload } : {}),
+      });
+
+      const enq = this.enqueueJob(input.job);
+
+      db.exec('COMMIT');
+      return {
+        accepted: true,
+        deduplicated: false,
+        enqueued: enq.enqueued,
+        status: enq.status,
+      };
+    } catch (err) {
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // transaction zaten kapalı olabilir; kurtarma yok, hata yukarı taşınır
+      }
+      throw err;
+    }
   }
 
   getStatus(): ContentRepositoryStatus {

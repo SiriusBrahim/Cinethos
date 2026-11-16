@@ -303,6 +303,15 @@ export class ContentProcessingQueue {
     }
   }
 
+  /**
+   * MIA Faz 2 — Adım 2.3 (Dilim E): Transactional outbox ile kuyruğa alınan
+   * işler için pompa bildirimi. Enqueue repository transaction'ı içinde
+   * kalıcı hale geldikten sonra çağrılır.
+   */
+  notifyExternalEnqueue(): void {
+    this.schedulePump();
+  }
+
   private schedulePump(): void {
     if (!this.running || this.pumpScheduled) return;
     this.pumpScheduled = true;
