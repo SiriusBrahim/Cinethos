@@ -55,6 +55,7 @@ import {
   type ContentProcessingCoordinator,
 } from './content-processing-coordinator.ts';
 import { createContentIntelligenceRouter } from './content-intelligence-routes.ts';
+import { diffLibraryEvents } from './library-event-diff.ts';
 import type {
   EventSubscription,
   IApplicationModule,
@@ -596,6 +597,47 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   moduleRegistry.register(backupSyncModule);
   moduleRegistry.register(contentIntelligence);
 
+  // MIA Faz 2 — Adım 2.7 (Dilim G): Başlangıç indekslemesi modülü. Sunucu
+  // açılışında PrimaryDataRepository üzerinden tüm profillerin beş liste
+  // kapsamını (izledim/izleyeceğim/izliyorum/ilgilenmiyorum/gizlenen) ortak
+  // kuyruğa sayfalı olarak verir; normal kullanıcı olaylarıyla idempotent
+  // birleşir (aynı media_key için tek iş).
+  const initialIndexerModule: IApplicationModule = {
+    id: 'initial-indexer',
+    version: '1.0.0',
+    layer: 'background',
+    async initialize() {},
+    async start() {
+      try {
+        const raw = await primaryRepository.readRaw();
+        const stats = await contentIntelligence.runInitialIndexing(raw.document, {
+          pageSize: 25,
+        });
+        serverModuleContext.logger.info(
+          'initial-indexer',
+          `Başlangıç indekslemesi tamamlandı: ${stats.queued} iş kuyruğa alındı (${stats.rejected} reddedildi).`
+        );
+      } catch (err) {
+        // Başlangıç indekslemesi normal kullanıcı olaylarını engellememeli.
+        serverModuleContext.logger.warn(
+          'initial-indexer',
+          `Başlangıç indekslemesi uyarısı: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    },
+    async stop() {},
+    async healthCheck(): Promise<ModuleHealth> {
+      const stats = contentIntelligence.getInitialIndexStats();
+      return {
+        moduleId: 'initial-indexer',
+        status:
+          stats.status === 'completed' ? 'healthy' : stats.status === 'failed' ? 'unhealthy' : 'degraded',
+        detail: `status=${stats.status} queued=${stats.queued} rejected=${stats.rejected}`,
+      };
+    },
+  };
+  moduleRegistry.register(initialIndexerModule);
+
   const serverModuleContext: ModuleContext = {
     profile: profileContext,
     events: eventBus,
@@ -721,6 +763,11 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         driver: repoHealth.driver,
       },
       modules: moduleHealth,
+      // MIA Faz 2 — Adım 2.7: İlk indeksleme durumu sağlık API'sinde görünür.
+      contentIntelligence: {
+        initialIndex: contentIntelligence.getInitialIndexStats(),
+        queue: contentIntelligence.repository.getQueueStats(),
+      },
     });
   });
 
@@ -1520,6 +1567,9 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const strictProfileMatch =
         req.headers['x-cinetrack-strict-profile'] === '1' ||
         req.headers['x-cinetrack-strict-profile'] === 'true';
+      // MIA Faz 2 — Adım 2.5 (Dilim F): Gerçek liste olayları için önceki belge
+      // diff tabanı olarak okunur (birincil okuma repository üzerinden).
+      const beforeDoc = (await primaryRepository.readRaw()).document;
       const result = await primaryRepository.saveRaw(req.body, {
         expectedRevision,
         hasInvalidIfMatch,
@@ -1564,6 +1614,28 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
           : {}),
       });
       notifyLocalMutation('user-data-save');
+
+      // MIA Faz 2 — Adım 2.5 (Dilim F): Gerçek liste işlemleri AppEventBus
+      // üzerinden typed olay olarak yayımlanır (LibraryItemAdded/Updated/
+      // StatusChanged/RatingChanged/Removed + FavoriteActorChanged). Yayım
+      // HTTP yanıtını bekletmez ve bloke etmez; abone (Content Intelligence
+      // transactional outbox) olayları kalıcı kuyruğa alır.
+      try {
+        const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
+        for (const ev of libraryEvents) {
+          void eventBus
+            .publish(ev)
+            .catch((pubErr) => {
+              console.warn(
+                `[Olay] ${ev.eventType} yayımı tamamlanamadı (${ev.eventId}):`,
+                pubErr instanceof Error ? pubErr.message : pubErr
+              );
+            });
+        }
+      } catch (diffErr) {
+        // Olay türetme hatası ana yazma yanıtını bozmamalı.
+        console.warn('Liste olay türetme uyarısı:', diffErr instanceof Error ? diffErr.message : diffErr);
+      }
 
       // MIA Faz 2: Tüm profil listelerindeki, ilgilenmiyorum ve gizlenenlerdeki
       // içerikleri (görsel ve kişisel alanlardan arındırarak) arka planda kuyruğa al.
