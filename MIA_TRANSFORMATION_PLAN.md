@@ -234,6 +234,18 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 
 ---
 
+## 6.1 Faz 3 Öncesi Bağımsız Altyapı — Otomatik Kod Bakım ve Onarım
+
+MIA faz numaraları değiştirilmeden, Faz 3'e geçişten önce bağımsız bir bakım otomasyonu kurulacaktır. Bu çalışma MIA'nın yeni bir fazı değildir; Faz 3 öncesi kabul kapısıdır.
+
+- Ayrıntılı uygulama planı: [Otomatik Kod Bakım ve Onarım Planı](docs/maintenance/OTOMATIK-KOD-BAKIM-ONARIM-PLANI.md).
+- Otomasyon GitHub Actions üzerinde, uygulama runtime'ından bağımsız çalışır.
+- İlk aşama read-only taramadır; sonraki aşamada yalnızca allowlist içindeki düşük riskli R0 düzeltmeleri ayrı branch/PR ile sunulur.
+- Bot doğrudan master'a yazamaz, kendi PR'ını merge edemez.
+- R1 değişiklikleri insan incelemesine, R2 mimari/veri/algoritma değişiklikleri insan tasarımına ve açık onayına tabidir.
+- MIA Faz 3 öncesinde M0 gözlem modu ve M1 kontrollü R0 PR akışı test edilmiş olmalıdır.
+- Mevcut [Test ve CI Doğrulama Planı](docs/mia/faz1-faz2-uygulama-plani.md) yalnızca test/CI doğrulamasını kapsar; bakım otomasyonu kapsamına genişletilmez.
+
 ## 7. Faz Planı ve Kabul Kriterleri
 
 | Faz | Yapılacak iş | Öncelik | Bu plandaki karşılık |
