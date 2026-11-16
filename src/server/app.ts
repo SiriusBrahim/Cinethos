@@ -1218,7 +1218,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         uploadedPath = upload.filePath;
 
         const archive = await readSqliteArchive(upload.filePath);
-        const current = await storage.readDataAsync();
+        // MIA Faz 1 — Adım 1.4: Birincil veri okumaları PrimaryDataRepository üzerinden yapılır.
+        const current = (await primaryRepository.readRaw()).document;
         const restoreId = crypto.randomUUID();
         const createdAt = Date.now();
         const beforeDocumentHash = hashDocument(current);
@@ -2266,7 +2267,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.post('/api/backup/profile-export', originGuard, tokenGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const storedDoc = await storage.readDataAsync();
+      // MIA Faz 1 — Adım 1.4: Yedek dışa aktarma okumaları PrimaryDataRepository üzerinden.
+      const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
 
       const profileId =
@@ -2323,7 +2325,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.post('/api/backup/profile-export/stream', originGuard, tokenGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const storedDoc = await storage.readDataAsync();
+      // MIA Faz 1 — Adım 1.4: Yedek dışa aktarma okumaları PrimaryDataRepository üzerinden.
+      const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
       const profileId =
         typeof req.body?.profileId === 'string' && req.body.profileId.trim()
@@ -2398,7 +2401,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.post('/api/backup/excel/preview', originGuard, tokenGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const storedDoc = await storage.readDataAsync();
+      // MIA Faz 1 — Adım 1.4: Yedek dışa aktarma okumaları PrimaryDataRepository üzerinden.
+      const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
       const profileId =
         typeof req.body?.profileId === 'string' && req.body.profileId.trim()

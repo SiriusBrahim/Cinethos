@@ -1810,6 +1810,10 @@ export class GitHubBidirectionalSyncManager {
   public async inspectLocalSide(): Promise<ParsedSideBundle> {
     const userDataPath = path.join(this.deps.dataDir, 'cinetrack-data.json');
     let remoteRepoDoc: DataDocument | null = null;
+    // MIA Faz 1 — Adım 1.4 GEREKÇE: Bu modül senkronizasyon/yedek altyapı
+    // katmanıdır; storage handle'ına deps üzerinden erişen düşük seviye
+    // (low-level) bir istisnadır. API/uygulama yolları PrimaryDataRepository
+    // kullanmak zorundadır; senkron katmanı ham belgeye erişebilir.
     if (!existsSync(userDataPath) && this.deps.storage?.readDataAsync) {
       try {
         remoteRepoDoc = await this.deps.storage.readDataAsync();
@@ -4858,6 +4862,8 @@ export class GitHubBidirectionalSyncManager {
 
         let localContent: string;
         if (candidate.repoPath === 'data/cinetrack-data.json') {
+          // MIA Faz 1 — Adım 1.4 GEREKÇE: Senkron katmanı düşük seviye ham belge
+          // okuma istisnasıdır (yukarıdaki sınıf açıklamasına bakınız).
           const storedDoc = await this.deps.storage.readDataAsync();
           if (storedDoc.profiles.length === 0 && (storedDoc.revision ?? 0) === 0) continue;
           localContent = JSON.stringify(storedDoc, null, 2);
