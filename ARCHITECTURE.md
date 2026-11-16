@@ -109,3 +109,42 @@ Faz 3, kullanıcı kütüphanesi işlemleri ile ortak içerik verisi yönetimini
 - Tek öğelik UI eylemleri `useItemActions` → `onCommitSavedItem` → `PUT /api/data` yolunu korur; kayıt üretimi artık Library Manager ile ortak `operations.ts` üzerindendir.
 - `libraryService` / `contentService`, `createCineTrackApp` üzerinden programatik istemcilere ve sonraki fazlardaki HTTP uçlarına hazırdır. UI'nin doğrudan `PUT /api/data` yazımının tamamen HTTP uçlarına taşınması kademeli olarak yapılacaktır (Faz 3 kapsamı dışında bırakılan test/CI işleriyle birlikte değerlendirilmelidir).
 - Eksik metadata zenginleştirme mevcut içerik kuyruğuna devredilir; kuyruk işleyicisi ve vektör üretimi Content Intelligence'ın sorumluluğunda kalır.
+
+---
+
+## 6. MIA Faz 4 — Background Manager (kalıcı görev kuyruğu)
+
+Faz 4, domain olaylarını kalıcı hale getirir ve yalnızca kayıtlı işleyicisi olan olaylar için görev üretir. Mevcut `AppEventBus`, `ProfileContext` ve SQLite altyapısı yeniden kullanılır; ikinci bir event bus, outbox veya kuyruk yoktur.
+
+### 6.1 Katmanlar ve dosyalar
+
+| Katman | Dosya | Sorumluluk |
+|---|---|---|
+| Sözleşmeler | `src/contracts/background.ts` | `BackgroundTaskStatus` (pending, processing, completed, retry_wait, failed, cancelled), `BackgroundTaskHandler`, `BackgroundTaskStore` portu, kayıt tipleri. |
+| Kalıcı depo | `src/server/background-task-repository.ts` | Aynı `data/cinetrack.db` içinde `background_events` + `background_tasks`; transaction'lı kabul, lease'li claim, retry/fail/cancel, açılış kurtarması. |
+| Yönetici | `src/modules/background/service.ts` | `BackgroundManager`: `persistEvent` kabulü, merkezi işleyici eşlemesi, pompa, retry sınıflandırması, durum yazımı, sağlık/istatistik. |
+| İşleyiciler | `src/modules/background/handlers.ts` | Pilot audit-only işleyiciler (`LibraryItemAdded`, `LibraryRatingChanged`); profil izolasyonu ve payload doğrulaması. |
+| Payload allowlist | `src/modules/background/event-payload.ts` | Olay türü başına izinli alanlar; not/serbest metin kalıcı deftere yazılmaz. |
+| Hata politikası | `src/modules/background/errors.ts` | Geçici/kalıcı hata sınıfları, `base * 2^(attempt-1)` deterministik backoff (üst sınır 30 sn). |
+| Uygulama bağlama | `src/server/app.ts` | `createAppEventBus({ persistEvent })`; repository + manager; `startRuntimeModules`/`stopRuntimeModules`; dönüşte `backgroundManager`. |
+
+### 6.2 Akış ve garantiler
+
+1. `LibraryService` → `diffLibraryEvents` → `eventBus.publish(event)`.
+2. `publish`, `persistEvent` kancasıyla olayı ve görevleri **tek SQLite transaction** içinde yazar; yazım başarısızsa çağırana hata döner (sessiz yutma yok).
+3. `background_events.event_id` PK'dır; `background_tasks` üzerinde `UNIQUE(event_id, handler_id)` vardır → aynı olay/işleyici ikinci kez işlenmez.
+4. Görev `claimNextTask` ile kiralanır (`processing`, `attempts+1`, `lease_until`); hata diğer görevleri durdurmaz.
+5. Geçici hata → `retry_wait` + `next_retry_at` + `last_error`; kalıcı hata veya deneme tükenmesi → `failed`; manuel iptal → `cancelled`.
+6. Profil izolasyonu: görev `profile_id` taşır; işleyici aktif profili doğrular. Profil değiştiyse hiçbir yazma yapılmaz, görev yeniden planlanır veya deneme tükenince `failed` olur.
+7. Çökme kurtarması: açılışta lease'i dolmuş `processing` görevleri `pending` (deneme tükendiyse `failed`) durumuna alınır; `pending`/zamanı gelmiş `retry_wait` görevleri devam eder.
+
+### 6.3 Veri sınırları
+
+- Görev tabloları kullanıcıya ait **profil kimliği** taşır; yalnızca yerel `data/cinetrack.db` içinde tutulur. Bu dosya GitHub senkronizasyon envanterinde **değildir**.
+- Ortak içerik tablolarına (`content_intelligence`, `content_processing_queue`, `content_processed_events`) ALTER veya veri yazımı yapılmaz; Faz 4 depoları yalnızca `background_*` tablolarıdır.
+- Olay payload'ı allowlist ile küçültülür; kişisel not, serbest metin veya izleme geçmişi deftere taşınmaz.
+- Pilot işleyiciler audit-only'dir; içerik, öneri ve zevk algoritmaları değişmez.
+
+### 6.4 ModuleRegistry notu
+
+`background-manager`, `/api/health` modül listesi sözleşmesini (ve mevcut doğrulama testlerini) bozmamak için registry'ye ayrı kimlik olarak eklenmemiştir; `ModuleContext` ile beslenip `startRuntimeModules`/`stopRuntimeModules` içinde başlatılır/durdurulur. Registry'ye taşıma, health listesi güncellendiğinde tek satırlık değişikliktir.

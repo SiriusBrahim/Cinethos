@@ -39,6 +39,25 @@ export type {
 } from './module.ts';
 
 export type {
+  AcceptBackgroundEventResult,
+  BackgroundEventInput,
+  BackgroundEventRecord,
+  BackgroundTaskHandler,
+  BackgroundTaskHandlerContext,
+  BackgroundTaskListOptions,
+  BackgroundTaskLogger,
+  BackgroundTaskRecord,
+  BackgroundTaskStats,
+  BackgroundTaskStatus,
+  BackgroundTaskStore,
+  BackgroundTaskStoreStatus,
+} from './background.ts';
+export {
+  BACKGROUND_TASK_STATUSES,
+  TERMINAL_BACKGROUND_STATUSES,
+} from './background.ts';
+
+export type {
   IProfileContext,
   ProfileChangeEvent,
   ProfileChangeListener,

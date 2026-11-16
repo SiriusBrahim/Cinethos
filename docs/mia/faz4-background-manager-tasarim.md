@@ -1,6 +1,7 @@
 # MIA Faz 4 — Background Manager: Envanter ve Şema Onay Dosyası
 
-**Durum:** Uygulama **başlamadı** — şema/migration onayı bekleniyor (talimat §2).
+**Durum:** Şema onaylandı ve uygulama tamamlandı (bkz. §10). Bağımsız test/CI doğrulaması Agent 1'in sorumluluğundadır.
+**Onay:** §8 kararları A/A/A olarak onaylandı (iki yeni tablo aynı DB'de, salt-okunur pilot işleyici, tüm olaylar kaydedilir + yalnızca pilot ikisi için görev).
 **Kaynak dal:** `agent-2/phase-3` (57905e2)
 **Çalışma dalı:** `agent-2/phase-4-background-manager`
 **Tarih:** 2026-11-16
@@ -163,3 +164,72 @@ yeniden başlatma sonrası `pending` kurtarma, aynı `eventId` iki kez → tek g
 - UI'de görev paneli/ilerleme göstergesi.
 - Yeni HTTP API ucu, yedekleme/senkronizasyon değişikliği.
 - Test/CI dosyaları (Agent 1) ve PR merge.
+
+---
+
+## 10. Uygulama sonucu
+
+### 10.1 Eklenen / değişen dosyalar
+
+| Dosya | Tür | Sorumluluk |
+|---|---|---|
+| `src/contracts/background.ts` | yeni | `BackgroundTaskStatus` (6 durum), `BackgroundEventRecord`, `BackgroundTaskRecord`, `BackgroundTaskHandler`, `BackgroundTaskHandlerContext`, `BackgroundStats`. |
+| `src/contracts/index.ts` | güncellendi | Faz 4 tiplerinin barrel dışa açımı. Mevcut sözleşmeler değişmedi. |
+| `src/server/background-task-repository.ts` | yeni | SQLite `background_events` + `background_tasks`; onaylı additive DDL; transaction'lı olay kabulü; claim/lease, retry, fail, cancel, `recoverInterrupted`, istatistik. |
+| `src/modules/background/event-payload.ts` | yeni | Olay türü başına payload allowlist'i (kullanıcı verisi minimizasyonu). |
+| `src/modules/background/errors.ts` | yeni | `RetryableBackgroundError` / `PermanentBackgroundError`, retry sınıflandırması, deterministik backoff. |
+| `src/modules/background/handlers.ts` | yeni | Pilot audit-only işleyiciler (`library.item-added.audit`, `library.rating-changed.audit`); profil izolasyonu + payload doğrulaması. |
+| `src/modules/background/service.ts` | yeni | `BackgroundManager`: `persistEvent` kabulü, işleyici eşlemesi, pompa, retry, idempotency, kurtarma, sağlık/istatistik. |
+| `src/server/app.ts` | güncellendi | Repository + manager oluşturma, `createAppEventBus({ persistEvent })` bağlantısı, yaşam döngüsü (`startRuntimeModules`/`stopRuntimeModules`), dönüş nesnesine `backgroundManager`. |
+| `docs/mia/faz4-background-manager-tasarim.md` | bu belge | Envanter + onay + uygulama kaydı. |
+| `ARCHITECTURE.md` | güncellendi | §6 Faz 4 katmanı ve veri sınırları. |
+
+### 10.2 Yeniden kullanılan mevcut altyapı
+
+- `AppEventBus` + `IEventPublisher` / `IEventSubscriber` + `AppEventMap` (yeni olay türü eklenmedi, sözleşme değişmedi).
+- `ProfileContext` (`getCurrent`, `ProfileConflictError`) — görev profilinin aktifliği buradan doğrulanır.
+- `ModuleContext` (`profile`, `logger`) — manager `initialize(context)` ile beslenir.
+- Mevcut SQLite altyapısı: aynı `data/cinetrack.db`, `node:sqlite` `DatabaseSync`, WAL + `busy_timeout`, transaction deseni.
+- `data/cinetrack.db` GitHub senkronizasyon envanterinde değildir; profil kimliği taşıyan görev satırları depoya sızmaz.
+
+### 10.3 Bilinçli sapma: ModuleRegistry kaydı
+
+`background-manager`, `ModuleRegistry`'ye **ayrı modül olarak kaydedilmedi**. Nedeni: `GET /api/health` modül listesi mevcut beş kimliği (`primary-storage`, `taste-engine`, `backup-sync`, `content-intelligence`, `initial-indexer`) tam olarak doğruluyor ve bu test Agent 1'in sahipliğinde; talimat §5 test/CI dosyalarının değiştirilmesini yasaklıyor. Bunun yerine manager, `startRuntimeModules`/`stopRuntimeModules` içinde `serverModuleContext` ile başlatılıp durduruluyor ve `createCineTrackApp` dönüşünden erişilebiliyor. Yaşam döngüsü sözleşmesi (`initialize → start → stop`) ve `healthCheck()` uygulanır; registry'ye taşıma, Agent 1 health listesini güncellediğinde tek satırlık değişikliktir.
+
+### 10.4 Akış (uygulanan)
+
+1. `LibraryService.addItem/updateItem` → `diffLibraryEvents` → `eventBus.publish(event)`.
+2. `AppEventBus.publish` → `persistEvent` → `BackgroundManager.acceptEvent`.
+3. `acceptEvent` payload'ı allowlist'ten geçirir → `BackgroundTaskRepository.acceptEvent` tek transaction:
+   `background_events` INSERT OR IGNORE; yalnızca kayıtlı işleyicisi olan olaylar için `background_tasks` (`UNIQUE(event_id, handler_id)`).
+4. `publish` bellek içi aboneleri çalıştırır (içerik abonesi, taste adapter, shell köprüsü) — mevcut davranış korunur.
+5. Manager pompası `claimNextTask` ile görevi kiralar (`processing`, `attempts+1`, `lease_until`), olayı ve işleyiciyi yükler, `handler.handle(event, {profileContext, now, logger})` çağırır.
+6. Başarı → `completed`. Hata → `ProfileConflictError` ise `retry_wait` (profil yeni profile yazılmaz), geçici hata ise `retry_wait`, kalıcı hata/deneme tükenmesi ise `failed`.
+7. Açılışta `recoverInterrupted`: lease'i dolmuş `processing` → `pending` (deneme tükendiyse `failed`).
+
+### 10.5 Doğrulama (yerel, geçici betiklerle — test dosyası eklenmedi)
+
+| Senaryo | Sonuç |
+|---|---|
+| Olay + görev kalıcı yazımı, ikinci `eventId` → yeni görev yok | ✅ |
+| Görev `pending → processing → completed`, `attempts=1` | ✅ |
+| Geçici hata → `retry_wait` (last_error kayıtlı) → süre dolunca `completed` | ✅ |
+| Kalıcı hata → `failed`, ikinci pompada yeniden çalışma yok | ✅ |
+| Aktif profil farklı → yazma yok, `profile-not-active` | ✅ |
+| Lease'i dolmuş `processing` → `pending` → `completed` | ✅ |
+| `createCineTrackApp` entegrasyonu: 2 olay → 2 görev → `completed`; `/api/health` modül listesi değişmedi | ✅ |
+| Allowlist dışı alan (`personalNote`) kalıcı deftere yazılmadı | ✅ |
+| `npm test` 447/447, `npm run test:taste` 355/355, `npm run build` | ✅ |
+| `npx eslint src server.ts tests --max-warnings 0`, `npx tsc --noEmit` | ✅ |
+
+### 10.6 Migration notu
+
+Uygulanan değişiklik **yalnızca eklemedir**: aynı `data/cinetrack.db` içinde `CREATE TABLE IF NOT EXISTS background_events`, `background_tasks` ve indeksleri. Mevcut `content_intelligence`, `content_processing_queue`, `content_processed_events` tablolarına ALTER, veri taşıma veya geri doldurma yoktur. Geri alma: iki tabloyu düşürmek yeterlidir; uygulama kodu bu tablolar yokken yeniden oluşturur.
+
+### 10.7 Bilinen sınırlar
+
+- Pilot işleyiciler **audit-only**'dir; gerçek yan etkiler (içerik zenginleştirme, türetilmiş önbellek) sonraki fazlarda mevcut servisler üzerinden eklenecektir. Bu, içerik/öneri davranışının değişmediğini garanti eder.
+- Manager tek işçi (concurrency=1) ile çalışır; sıralı işleme yeterli ve hata izolasyonu korunur. Yatay ölçek için `claimNextTask` lease modeli hazırdır.
+- `retry_wait` görevleri için pompa 500 ms'lik poll + bildirim ile ilerler; ayrı bir zamanlayıcı servisi yoktur.
+- Aynı `eventId` farklı payload ile gelirse ilk kayıt korunur (olay defteri değişmez; idempotency gereği).
+- Döngüsel importlar ve mimari baseline bu fazda değiştirilmedi.
