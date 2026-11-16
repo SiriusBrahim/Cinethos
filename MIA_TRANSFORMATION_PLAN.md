@@ -72,7 +72,7 @@ En kritik yönetici. Üç sorumluluk birlikte çalışır, **birbirinin verisini
 
 | Alt modül | Mevcut kaynak | İşlem |
 | --- | --- | --- |
-| `taste/` | `core/taste/taxonomy.ts` (674), `core/loved-similarity.ts`, `core/mood-affinity.ts` (641), `core/scoring.ts` | Hesaplama **core'da kalır** (787 test: 425 çekirdek + 362 zevk); `ProfileAnalyzer`/`FeatureExtractor` ince sarmalayıcı |
+| `taste/` | `core/taste/taxonomy.ts` (674), `core/loved-similarity.ts`, `core/mood-affinity.ts` (641), `core/scoring.ts` | Hesaplama **core'da kalır** (808 test: 446 çekirdek + 362 zevk); `ProfileAnalyzer`/`FeatureExtractor` ince sarmalayıcı |
 | `memory/` | **YOK — yeni** | `EvidenceLedger` (kanıtlar), `LearningState` (öğrenme durumu), `decay` (solma/pekiştirme); idb deposu + `MemoryRepository` |
 | `relationships/` | `core/relationship-explorer.ts` (925), `relationship-semantics.ts` (790), `core/person-insights.ts` | `SemanticAnalyzer` + `GraphBuilder`; UI `modules/relationships/`'ta kalır |
 | Sinyal ağırlıkları | `RECOMMENDATION_WEIGHTS_V3` | `core/scoring.ts`'e `SIGNAL_WEIGHTS`: watchlist 0.3 · watching 0.6 · watched 1.0 (puanla çarpılır) · disliked −0.8 |
@@ -239,7 +239,7 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 | Faz | Yapılacak iş | Öncelik | Bu plandaki karşılık |
 | --- | --- | --- | --- |
 | 0 | Mimari envanter + bağımlılık haritası (import grafiği, çoklu-kullanım fonksiyonları, test kapsamı; taşıma/dokunulmaz işaretleme) | P0 | §1 tabloları başlangıç noktası; `madge`/dependency-cruiser raporu |
-| 1 | Modül sözleşmeleri: `LibraryManager`, `TasteManager`, `MemoryManager`, `RecommendationManager` arayüzleri (gerçek tipler kod incelemesinden) | P1 | §1 service.ts sözleşmeleri |
+| 1 | Modül sözleşmeleri: `LibraryManager`, `TasteManager`, `MemoryManager`, `RecommendationManager` arayüzleri (gerçek tipler kod incelemesinden) | P1 | §1 service.ts sözleşmeleri · **çekirdek + CIM sözleşmeleri tamam:** [`docs/mia/faz1-sozlesmeler.md`](docs/mia/faz1-sozlesmeler.md) |
 | 2 | Veri Yöneticisi: repository'ler, adaptörler, revision, transaction, profil izolasyonu, migration, kurtarma + **SQLite çalışma modu (§5.1)** | P1 | Outbox üretim verisi üzerinde ancak bundan sonra |
 | 3 | Kütüphane + İçerik Yöneticileri: tek işlem hattı | P1 | `library/operations/*` |
 | 4 | Arka Plan Yöneticisi: kalıcı kuyruk, abonelik, retry, idempotency, izolasyon, durumlar — **önce yalnız `LibraryItemAdded` + `LibraryRatingChanged`** | P1 | §2–3 |
@@ -284,4 +284,4 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 | Öneri | Bağımsız yönetici; hafızaya yazamaz |
 | Dağıtım | Tek uygulama, tek sunucu |
 
-**Değişmez güvence:** Mevcut kullanıcı profilleri, içerik stokları, Zevk Haritası, ilişki verileri ve öneri geçmişi hiçbir aşamada kaybolmaz; 787 test (425 çekirdek + 362 zevk) + E2E her fazda yeşil kalmak zorundadır.
+**Değişmez güvence:** Mevcut kullanıcı profilleri, içerik stokları, Zevk Haritası, ilişki verileri ve öneri geçmişi hiçbir aşamada kaybolmaz; 808 test (446 çekirdek + 362 zevk) + E2E her fazda yeşil kalmak zorundadır.

@@ -2,7 +2,7 @@
 
 > **Statü:** Bağlayıcı. Faz 1'den itibaren her değişiklik bu sekiz kurala göre değerlendirilir; kural ihlali "borç" olarak değil **kusur** olarak işlenir.
 > **Dayanak:** [Faz 0 denetimi](./faz0-checklist.md) · [Dönüşüm planı](../../MIA_TRANSFORMATION_PLAN.md) §4 ve §8
-> **Son doğrulama:** 425/425 çekirdek + 362/362 zevk testi, lint temiz, build 427,71 kB.
+> **Son doğrulama (Faz 1 sonu):** 446/446 çekirdek + 362/362 zevk testi, lint temiz, build 427,71 kB.
 
 ## 1. Modüler monolit
 
@@ -64,13 +64,13 @@
 
 **Kural:** Bir fazın kabul kriterleri karşılanmadan sonraki fazın büyük uygulamasına geçilmez.
 
-**Bugünkü durum:** Faz 0 kapandı: 13/15 madde tamam, 2 madde açık (asenkron profil yarışı, E2E seçicileri). Faz 1 (sözleşme tasarımı) için engel yok.
+**Bugünkü durum:** Faz 0 kapandı (13/15), Faz 1 sözleşmeleri tamamlandı ([faz1-sozlesmeler.md](./faz1-sozlesmeler.md)); profil damgası çekirdekte var, üretim yazma yoluna Faz 2/3'te bağlanacak.
 **Faz kapıları:**
 | Kapı | Koşul |
 | --- | --- |
 | Faz 2 başlangıcı | `SyncStorePort` çıkarımı + profile damgası + yarış testi |
 | Faz 3 başlangıcı | Kütüphane sözleşmeleri yeşil, App'ten taşınan akışlarda baseline testleri değişmeden geçiyor |
-| Her faz sonu | lint 0 uyarı · 425/425 · 362/362 · build < 500 kB · E2E kritik senaryolar yeşil |
+| Her faz sonu | lint 0 uyarı · 446/446 · 362/362 · build < 500 kB · E2E kritik senaryolar yeşil |
 
 ## Kural → doğrulama eşlemesi
 
@@ -81,6 +81,6 @@
 | 3 Mevcut koruma | 7 Faz 0 belgesi | `faz0-baseline.test.mjs` |
 | 4 Veri bütünlüğü | 409/428, snapshot, mezar taşı | `persistent-store`, `sqlite-primary-store`, `archive-restore-consistency` |
 | 5 Tekrarsız iş | TTL + LRU + stok | `tmdb-proxy`, `poster-cache-manager` testleri |
-| 6 Asenkron güvenlik | **yok** | Faz 2 yarış testi (yazılacak) |
+| 6 Asenkron güvenlik | çekirdek hazır (`profile-context`), üretim yolu bağlı değil | `tests/mia-profile-events.test.mjs`; Faz 2 yarış testi |
 | 7 Ortak mantık | mobil hazır veri alıyor | Faz 3 sözleşme testleri |
 | 8 Aşamalı geçiş | Faz 0 kapandı | faz kapıları tablosu |
