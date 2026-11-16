@@ -848,6 +848,115 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
   const imageCache = new Map<string, { at: number; buffer: Buffer; contentType: string }>();
   const MAX_IMAGE_CACHE_ENTRIES = 300;
 
+  // P1-02 sertleştirmesi: gövde sınırı, MIME allowlist, tek-uçuş paylaşımı ve
+  // eşzamanlı indirme sınırı. Sabitler testlerle (tests/image-proxy-hardening.test.mjs)
+  // ortak sözleşmedir.
+  const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+  const MAX_CONCURRENT_IMAGE_DOWNLOADS = 8;
+  let activeImageDownloads = 0;
+  const inflightImageFetches = new Map<
+    string,
+    Promise<{ status: number; contentType?: string; buffer?: Buffer; error?: string }>
+  >();
+
+  // Dosyadaki 'Response' adı express Response'una çözümlendiği için upstream
+  // fetch yanıtı ayrı bir takma adla tiplenir.
+  type UpstreamResponse = Awaited<ReturnType<typeof fetch>>;
+
+  const cancelUpstreamBody = async (upstream: UpstreamResponse): Promise<void> => {
+    try {
+      await upstream.body?.cancel();
+    } catch {
+      // Gövde zaten kapanmış olabilir; sessizce yut.
+    }
+  };
+
+  const readImageBodyWithCap = async (
+    upstream: UpstreamResponse
+  ): Promise<{ ok: true; buffer: Buffer } | { ok: false }> => {
+    const body = upstream.body;
+    if (!body) {
+      return { ok: false };
+    }
+    const reader = body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          const chunk = Buffer.from(value);
+          total += chunk.byteLength;
+          if (total > IMAGE_MAX_BYTES) {
+            // Sınır aşıldı: upstream gövdesini iptal et, indirilenleri at.
+            // Reader stream'i kilitlediği için iptal reader üzerinden yapılmalı.
+            try {
+              await reader.cancel();
+            } catch {
+              // Kaynak zaten kapanmış olabilir; sessizce yut.
+            }
+            return { ok: false };
+          }
+          chunks.push(chunk);
+        }
+      }
+    } catch {
+      return { ok: false };
+    }
+    return { ok: true, buffer: Buffer.concat(chunks) };
+  };
+
+  const downloadImage = async (
+    targetUrl: string
+  ): Promise<{ status: number; contentType?: string; buffer?: Buffer; error?: string }> => {
+    // Eşzamanlı indirme sınırı: senkron bölümde artırılır; 9. istek 429 alır.
+    if (activeImageDownloads >= MAX_CONCURRENT_IMAGE_DOWNLOADS) {
+      return { status: 429, error: 'too_many_concurrent_downloads' };
+    }
+    activeImageDownloads += 1;
+    try {
+      const upstream = await fetchImpl(targetUrl, {
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'User-Agent': 'Cinethos-Proxy/1.0',
+        },
+      });
+
+      if (!upstream.ok) {
+        await cancelUpstreamBody(upstream);
+        return { status: upstream.status === 429 ? 429 : 502, error: 'upstream_error' };
+      }
+
+      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      if (!/^image\//i.test(contentType)) {
+        // Allowlist dışı MIME: gövde okunmadan iptal edilir.
+        await cancelUpstreamBody(upstream);
+        return { status: 502, error: 'unsupported_media_type' };
+      }
+
+      // Bildirilen boyut sınırı aşılıyorsa gövde hiç okunmadan reddedilir.
+      const contentLengthRaw = upstream.headers.get('content-length');
+      const declaredLength = contentLengthRaw !== null ? Number(contentLengthRaw) : NaN;
+      if (Number.isFinite(declaredLength) && declaredLength > IMAGE_MAX_BYTES) {
+        await cancelUpstreamBody(upstream);
+        return { status: 502, error: 'payload_too_large' };
+      }
+
+      const readResult = await readImageBodyWithCap(upstream);
+      if (!readResult.ok) {
+        return { status: 502, error: 'payload_too_large' };
+      }
+
+      return { status: 200, contentType, buffer: readResult.buffer };
+    } catch (err: any) {
+      return { status: 502, error: err?.message || 'network_error' };
+    } finally {
+      activeImageDownloads -= 1;
+    }
+  };
+
   const handleTmdbImage = async (req: Request, res: Response): Promise<void> => {
     try {
       const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
@@ -888,24 +997,25 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
         return;
       }
 
-      const upstream = await fetchImpl(targetUrl, {
-        signal: AbortSignal.timeout(10000),
-        headers: {
-          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-          'User-Agent': 'Cinethos-Proxy/1.0',
-        },
-      });
+      // Tek-uçuş paylaşımı: aynı URL için eşzamanlı istekler tek upstream çağrısına iner.
+      let shared = inflightImageFetches.get(targetUrl);
+      if (!shared) {
+        shared = downloadImage(targetUrl).finally(() => {
+          inflightImageFetches.delete(targetUrl);
+        });
+        inflightImageFetches.set(targetUrl, shared);
+      }
+      const outcome = await shared;
 
-      if (!upstream.ok) {
-        res.status(upstream.status).json({ error: 'Resim yüklenemedi.' });
+      if (outcome.status !== 200 || !outcome.buffer) {
+        res.status(outcome.status).json({ error: 'Resim yüklenemedi.' });
         return;
       }
 
-      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
-      const arrayBuf = await upstream.arrayBuffer();
-      const buffer = Buffer.from(arrayBuf);
+      const contentType = outcome.contentType || 'image/jpeg';
+      const buffer = outcome.buffer;
 
-      if (buffer.byteLength <= 8 * 1024 * 1024) {
+      if (buffer.byteLength <= IMAGE_MAX_BYTES) {
         imageCache.set(targetUrl, { at: Date.now(), buffer, contentType });
         while (imageCache.size > MAX_IMAGE_CACHE_ENTRIES) {
           const oldest = imageCache.keys().next().value;

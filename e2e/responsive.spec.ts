@@ -29,19 +29,16 @@ for (const viewport of VIEWPORTS) {
 
     await page.goto('/');
 
-    // ef031af kabugu: <=768px mobil kabuk devrede (header gizli; MobileTopBar + MobileDock),
-    // 769-1023px arasi header nav listesi, >=1024px'te ise sidebar nav listesi gorunurdur
-    // (header-nav-tabs CSS ile gizlenir -- app.css @media min-width:1024px).
+    // Guncel kabuk: Header her genislikte gorunur; header-nav-tabs yalnizca >768px,
+    // <=768px'te ise sabit alt gezinme .mobile-tab-bar devrededir
+    // (components.css @media max-width:768px .header-nav-tabs { display:none }).
+    // Eski MobileTopBar/MobileDock/AppSidebar kabugu kaldirildi; AppSidebar su anda render edilmiyor.
+    await expect(page.locator('.app-header')).toBeVisible();
     if (viewport.width <= 768) {
-      await expect(page.locator('.mobile-topbar')).toBeVisible();
-      await expect(page.locator('.mobile-dock')).toBeVisible();
-      await expect(page.locator('.app-header')).toBeHidden();
-    } else if (viewport.width < 1024) {
-      await expect(page.locator('.app-header')).toBeVisible();
-      await expect(page.locator('.header-nav-tabs')).toBeVisible();
+      await expect(page.locator('.header-nav-tabs')).toBeHidden();
+      await expect(page.locator('.mobile-tab-bar')).toBeVisible();
     } else {
-      await expect(page.locator('.app-header')).toBeVisible();
-      await expect(page.locator('.sidebar-nav-list')).toBeVisible();
+      await expect(page.locator('.header-nav-tabs')).toBeVisible();
     }
     await expect(page.locator('main.shell')).toBeVisible();
 
@@ -50,9 +47,9 @@ for (const viewport of VIEWPORTS) {
     );
     expect(overflow, 'sayfa yatay olarak taşmamalı').toBeLessThanOrEqual(1);
 
-    // Gorunur gezinme ogesi uzerinden Listem'e gec (mobil dockta etiket 'Kutuphane').
+    // Gorunur gezinme ogesi uzerinden Listem'e gec (mobil tab barinda etiket 'Listem').
     if (viewport.width <= 768) {
-      await page.locator('.mobile-dock-btn', { hasText: 'Kütüphane' }).click();
+      await page.locator('.mobile-tab-btn', { hasText: 'Listem' }).click();
     } else {
       await page.locator('[role="tab"]:visible', { hasText: 'Listem' }).first().click();
     }

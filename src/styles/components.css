@@ -89,7 +89,19 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-shrink: 0;
+    /* Dar gorunum alanlarinda (360-1024px) topbar icinde tasma yerine sarilma:
+       E2E responsive yatay tasma testi (overflow <= 1px) geregi flex-shrink serbest. */
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .profile-name-text {
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .pwa-install-btn {
