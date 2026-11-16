@@ -29,7 +29,7 @@ export interface InitialIndexItem {
 }
 
 export interface InitialIndexStats {
-  status: 'idle' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'running' | 'completed' | 'partial' | 'failed';
   lastRunAt: string | null;
   totalUnique: number;
   queued: number;
