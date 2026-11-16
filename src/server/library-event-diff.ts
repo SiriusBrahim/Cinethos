@@ -10,8 +10,7 @@
  * - RatingChanged olayı kişisel puanı ortak metadata'ya YAZMAZ (subscriber
  *   yalnızca içerik henüz yoksa indekslemeyi tetikler).
  * - Remove olayı ortak içerik kaydını silmez.
- * - eventId deterministiktir: aynı kayıt (profil+revizyon+olay+anahtar)
- *   tekrar yayımlanırsa abone tarafında idempotent tekilleştirilir.
+ * - eventId opak ve kişisel olmayan UUID'dir; profil/oyuncu kimliği taşımaz.
  */
 
 import { createAppEvent } from '../app/app-event-bus.ts';
@@ -55,6 +54,13 @@ const ITEM_TRACKED_FIELDS: readonly string[] = [
   'genre_ids',
 ];
 
+function createOpaqueEventId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `evt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function actorSignature(list: FavoriteActorInfo[] | undefined): string {
   if (!Array.isArray(list)) return '';
   return list
@@ -81,8 +87,7 @@ function diffProfileEvents(
     afterItems.set(savedItemMediaKey(it), it);
   }
 
-  const deterministicId = (eventType: string, mediaKey: string): string =>
-    `lib-${profileId}-r${revision}-${eventType}-${mediaKey}`;
+  const eventId = (): string => createOpaqueEventId();
 
   // Eklenenler
   for (const [mediaKey, item] of afterItems) {
@@ -92,7 +97,7 @@ function diffProfileEvents(
         eventType: 'LibraryItemAdded',
         ref,
         entityId: mediaKey,
-        eventId: deterministicId('added', mediaKey),
+        eventId: eventId(),
         payload: {
           mediaKey,
           mediaType: savedItemMediaKind(item),
@@ -110,7 +115,7 @@ function diffProfileEvents(
         eventType: 'LibraryItemRemoved',
         ref,
         entityId: mediaKey,
-        eventId: deterministicId('removed', mediaKey),
+        eventId: eventId(),
         payload: {
           mediaKey,
           mediaType: savedItemMediaKind(item),
@@ -133,7 +138,7 @@ function diffProfileEvents(
           eventType: 'LibraryStatusChanged',
           ref,
           entityId: mediaKey,
-          eventId: deterministicId('status', mediaKey),
+          eventId: eventId(),
           payload: { mediaKey, mediaType: savedItemMediaKind(after), from: listBefore, to: listAfter },
         })
       );
@@ -147,7 +152,7 @@ function diffProfileEvents(
           eventType: 'LibraryRatingChanged',
           ref,
           entityId: mediaKey,
-          eventId: deterministicId('rating', mediaKey),
+          eventId: eventId(),
           payload: {
             mediaKey,
             mediaType: savedItemMediaKind(after),
@@ -169,7 +174,7 @@ function diffProfileEvents(
           eventType: 'LibraryItemUpdated',
           ref,
           entityId: mediaKey,
-          eventId: deterministicId('updated', mediaKey),
+          eventId: eventId(),
           payload: { mediaKey, mediaType: savedItemMediaKind(after), changedFields },
         })
       );
@@ -202,7 +207,7 @@ function diffProfileEvents(
       createAppEvent({
         eventType: 'FavoriteActorChanged',
         ref,
-        eventId: `lib-${profileId}-r${revision}-favactors-${actorsAfter}`,
+        eventId: eventId(),
         payload: {
           change,
           ...(afterSet.size > 0
