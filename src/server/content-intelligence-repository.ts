@@ -681,7 +681,11 @@ export class ContentIntelligenceRepository {
 
     const existing = db
       .prepare('SELECT status, payload_json, updated_at FROM content_processing_queue WHERE media_key = ?')
-      .get(job.mediaKey) as { status?: string; payload_json?: string | null } | undefined;
+      .get(job.mediaKey) as {
+      status?: string;
+      payload_json?: string | null;
+      updated_at?: string | null;
+    } | undefined;
 
     if (existing?.status === 'processing') {
       // Çalışan işin snapshot'ı değişmez. Yeni payload aynı satırda saklanır;

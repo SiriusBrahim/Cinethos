@@ -33,7 +33,9 @@ test.describe('Cinethos smoke', () => {
 
     await page.goto('/');
 
-    for (const tab of ['Keşfet', 'Listem', 'Zevkim']) {
+    // Guncel kabuk: Header sekmeleri Kesfet / Listem / Kimligim / Evrenler
+    // (Zevkim artik mobil tab barinda; masaustu header'inda Kimligim ve Evrenler var).
+    for (const tab of ['Keşfet', 'Listem', 'Kimliğim', 'Evrenler']) {
       await expect(page.getByRole('tab', { name: tab })).toBeVisible();
     }
     await expect(page.getByRole('button', { name: /Profil: E2E Kullanıcı/ })).toBeVisible();

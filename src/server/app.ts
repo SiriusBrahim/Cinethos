@@ -55,7 +55,7 @@ import {
   type ContentProcessingCoordinator,
 } from './content-processing-coordinator.ts';
 import { createContentIntelligenceRouter } from './content-intelligence-routes.ts';
-import { diffLibraryEvents } from './library-event-diff.ts';
+import { diffLibraryEvents, findSavedItemByMediaKey } from './library-event-diff.ts';
 import type {
   EventSubscription,
   IApplicationModule,
@@ -78,7 +78,11 @@ async function synchronizeProfileContext(
   const activeProfileId = String(
     document.activeProfileId || document.profiles?.[0]?.id || 'default'
   );
-  const revision = Number.isSafeInteger(document.revision) ? document.revision : 0;
+  // Number.isSafeInteger tip daraltması yapmadığı için açık typeof kontrolü gerekir.
+  const revision =
+    typeof document.revision === 'number' && Number.isSafeInteger(document.revision)
+      ? document.revision
+      : 0;
   const current = context.getCurrent();
   if (current.profileId !== activeProfileId) {
     await context.switchProfile(activeProfileId, revision);
@@ -1632,6 +1636,26 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
       for (const ev of libraryEvents) {
         try {
+          // Plan 2.5 — gerekli kaynak ipuçları: olayı türeten kaydın ortak
+          // (allowlist) metaverisi hint olarak kaydedilir; kişisel alanlar
+          // registerMetadataHint içinde sanitize edilir. Böylece metadata
+          // kaynağı (TMDB/katalog) olmasa bile ortak kayıt doğrulamalı
+          // metaveriyle tamamlanabilir.
+          const hintMediaKey =
+            typeof ev.entityId === 'string' && /^(movie|tv):\d+$/.test(ev.entityId)
+              ? ev.entityId
+              : typeof (ev.payload as Record<string, unknown> | undefined)?.mediaKey === 'string'
+                ? String((ev.payload as Record<string, unknown>).mediaKey)
+                : '';
+          const hintItem =
+            findSavedItemByMediaKey(result.document, hintMediaKey) ??
+            findSavedItemByMediaKey(beforeDoc, hintMediaKey);
+          if (hintItem) {
+            contentIntelligence.eventSubscriber.registerMetadataHint(
+              ev.eventId,
+              hintItem as unknown as Record<string, unknown>
+            );
+          }
           await eventBus.publish(ev);
         } catch (pubErr) {
           const payload = (ev.payload ?? {}) as Record<string, unknown>;

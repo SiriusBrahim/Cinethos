@@ -241,3 +241,24 @@ export function diffLibraryEvents(
   }
   return events;
 }
+
+/**
+ * Plan 2.5 — "gerekli kaynak ipuçları": Kütüphane olayı yayımlanırken içeriğin
+ * ortak (allowlist) metaverisi metadata hint olarak kaydedilir. SavedItem'ın
+ * kişisel alanları (status, personal_rating, notlar, izleme ilerlemesi, kullanıcı
+ * tarihleri) ContentEventSubscriber.registerMetadataHint içindeki
+ * sanitizeRawContentInput ile atılır; yalnızca lisanslı ortak içerik alanları
+ * kalır. Hint yoksa tüketicisi yalnızca mediaKey ile kuyruğa alır.
+ */
+export function findSavedItemByMediaKey(
+  doc: DataDocument | null | undefined,
+  mediaKey: string
+): SavedItem | undefined {
+  if (!doc || !mediaKey) return undefined;
+  for (const profile of doc.profiles ?? []) {
+    for (const item of profile.items ?? []) {
+      if (savedItemMediaKey(item) === mediaKey) return item;
+    }
+  }
+  return undefined;
+}
