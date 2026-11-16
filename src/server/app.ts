@@ -70,6 +70,23 @@ function formatMegabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
+/** Keep the runtime profile fence aligned after every durable document write. */
+async function synchronizeProfileContext(
+  context: ProfileContext,
+  document: DataDocument
+): Promise<void> {
+  const activeProfileId = String(
+    document.activeProfileId || document.profiles?.[0]?.id || 'default'
+  );
+  const revision = Number.isSafeInteger(document.revision) ? document.revision : 0;
+  const current = context.getCurrent();
+  if (current.profileId !== activeProfileId) {
+    await context.switchProfile(activeProfileId, revision);
+  } else {
+    context.commitRevision(revision, activeProfileId);
+  }
+}
+
 /**
  * P0-04: Gövdeyi diske akıtırken yarıda kesilme, soket hatası ve boyut aşımını
  * birlikte yönetir. Fonksiyon HER durumda sonuçlanır; geçici dosya çağıran
@@ -484,16 +501,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     layer: 'background',
     async initialize() {
       const rawState = await primaryRepository.readRaw();
-      const document = rawState.document;
-      const activeProfileId = String(
-        document?.activeProfileId || document?.profiles?.[0]?.id || 'default'
-      );
-      const revision = Number.isSafeInteger(document?.revision) ? document.revision : 0;
-      const current = profileContext.getCurrent();
-      if (current.profileId !== activeProfileId) {
-        await profileContext.switchProfile(activeProfileId, revision);
-      } else {
-        profileContext.commitRevision(revision, activeProfileId);
+      if (rawState.document) {
+        await synchronizeProfileContext(profileContext, rawState.document);
       }
     },
     async start() {
@@ -1107,7 +1116,9 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         confirmBulkDelete: true,
         requirePrecondition: false,
       });
-      return restored.ok;
+      if (!restored.ok) return false;
+      await synchronizeProfileContext(profileContext, restored.document);
+      return true;
     } catch {
       return false;
     }
@@ -1154,6 +1165,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       res.status(saved.status).json({ status_message: saved.message, code: saved.code });
       return;
     }
+    await synchronizeProfileContext(profileContext, saved.document);
 
     const writtenProfiles = Array.isArray(saved.document?.profiles) ? saved.document.profiles : [];
     const writtenItems = countTotalItems(saved.document);
@@ -1610,15 +1622,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       }
 
       const rev = result.document.revision ?? 1;
-      const nextActiveProfileId = String(
-        result.document.activeProfileId || result.document.profiles?.[0]?.id || 'default'
-      );
-      const currentProfileRef = profileContext.getCurrent();
-      if (currentProfileRef.profileId !== nextActiveProfileId) {
-        await profileContext.switchProfile(nextActiveProfileId, rev);
-      } else {
-        profileContext.commitRevision(rev, nextActiveProfileId);
-      }
+      await synchronizeProfileContext(profileContext, result.document);
       notifyLocalMutation('user-data-save');
 
       // Kritik domain olaylarını HTTP yanıtından önce teslim et. EventBus artık
@@ -2308,6 +2312,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         });
         return;
       }
+
+      await synchronizeProfileContext(profileContext, result.document);
 
       let savedKunye = cinemaKunye;
       if (Object.keys(cinemaKunye.entries).length > 0) {
