@@ -67,6 +67,7 @@ const IMPORT_RE = /(?:^|\n)\s*(import|export)\s+(type\s+)?(?:[^'"]*?\sfrom\s+)?[
 const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 const EXPORT_DECL_RE =
   /(?:^|\n)\s*export\s+(?:declare\s+)?(?:async\s+)?(?:default\s+)?(function\*?|const|let|var|class|interface|type|enum)\s+([A-Za-z0-9_$]+)/g;
+const DEFAULT_IMPORT_RE = /(?:^|\n)\s*import\s+([A-Za-z0-9_$]+)\s*(?:,\s*\{[^}]*\}\s*)?from\s*['"]([^'"]+)['"]/g;
 const NAMED_IMPORT_RE = /(?:^|\n)\s*(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
 
 function walk(dir, out = []) {
@@ -127,6 +128,11 @@ function parseFile(abs) {
     exports.push(match[2]);
   }
   const named = [];
+  const defaultTargets = [];
+  for (const match of code.matchAll(DEFAULT_IMPORT_RE)) {
+    const target = resolveImport(abs, match[2]);
+    if (target) defaultTargets.push(target);
+  }
   for (const match of code.matchAll(NAMED_IMPORT_RE)) {
     const statementType = Boolean(match[1]);
     const target = resolveImport(abs, match[3]);
@@ -144,6 +150,7 @@ function parseFile(abs) {
     dynamicEdges,
     exports: [...new Set(exports)],
     namedImports: named,
+    defaultTargets,
     lines: code.split('\n').length,
   };
 }
@@ -446,6 +453,36 @@ function build() {
     layerStats.set(file.layer, stat);
   }
 
+  const testUsage = new Map();
+  const testTargetFiles = new Set();
+  const urlReferenced = new Set();
+  for (const file of parsed.values()) {
+    for (const match of file.code.matchAll(/new URL\(\s*['"]([^'"]+)['"]/g)) {
+      const target = resolveImport(file.abs, match[1]);
+      if (target) urlReferenced.add(target);
+    }
+  }
+  const testsDir = path.join(ROOT, 'tests');
+  if (fs.existsSync(testsDir)) {
+    const walkTests = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walkTests(full);
+        else if (/\.(mjs|ts)$/.test(entry.name)) {
+          const file = parseFile(full);
+          for (const { target, name } of file.namedImports) {
+            const targetFile = parsed.get(target);
+            if (!targetFile) continue;
+            testTargetFiles.add(targetFile.rel);
+            if (!testUsage.has(`${targetFile.rel}#${name}`)) testUsage.set(`${targetFile.rel}#${name}`, new Set());
+            testUsage.get(`${targetFile.rel}#${name}`).add(rel(full));
+          }
+        }
+      }
+    };
+    walkTests(testsDir);
+  }
+
   const stores = storageInventory([...parsed.values()]);
   const tests = testInventory();
   const moduleEdges = new Map();
@@ -463,6 +500,51 @@ function build() {
     moduleEdges.set(key, entry);
   }
   const moduleGraph = [...moduleEdges.values()].sort((a, b) => b.count - a.count);
+
+  const dynamicTargets = new Set();
+  const defaultImportTargets = new Set();
+  for (const file of parsed.values()) {
+    for (const edge of file.dynamicEdges) dynamicTargets.add(edge.target);
+    for (const target of file.defaultTargets) defaultImportTargets.add(target);
+  }
+  const unusedExports = [];
+  const duplicateNames = new Map();
+  const managers = [];
+  for (const file of parsed.values()) {
+    const declared = declarationsOf(file.code);
+    for (const declaration of declared) {
+      if (!declaration.exported) continue;
+      if (!duplicateNames.has(declaration.name)) duplicateNames.set(declaration.name, new Set());
+      duplicateNames.get(declaration.name).add(file.rel);
+      if (/^(create|use|build|make)[A-Z]/.test(declaration.name) || /(Manager|Store|Service|Repository|Adapter)$/.test(declaration.name)) {
+        managers.push({ file: file.rel, name: declaration.name, kind: declaration.kind, line: declaration.line });
+      }
+      const key = `${file.rel}#${declaration.name}`;
+      const usedInSrc =
+        symbolUsage.has(key) || dynamicTargets.has(file.abs) || defaultImportTargets.has(file.abs);
+      const usedInTests = testUsage.has(key);
+      const valueLike = declaration.kind === 'function' || declaration.kind === 'const' || declaration.kind === 'class' || declaration.kind === 'let';
+      if (valueLike && !usedInSrc && !usedInTests && file.rel !== 'src/App.tsx' && file.rel !== 'src/main.tsx' && file.rel !== 'server.ts') {
+        unusedExports.push({ file: file.rel, name: declaration.name, kind: declaration.kind, line: declaration.line });
+      }
+    }
+  }
+  const duplicateSymbols = [...duplicateNames.entries()]
+    .map(([name, files]) => ({ name, files: [...files].sort() }))
+    .filter((entry) => entry.files.length >= 2)
+    .sort((a, b) => b.files.length - a.files.length)
+    .slice(0, 30);
+  const orphanFiles = [...parsed.values()]
+    .filter((file) => {
+      if (file.rel === 'src/App.tsx' || file.rel === 'src/main.tsx' || file.rel === 'server.ts') return false;
+      if (file.rel.includes('vite-env')) return false;
+      if (dynamicTargets.has(file.abs) || defaultImportTargets.has(file.abs)) return false;
+      if (urlReferenced.has(file.abs) || testTargetFiles.has(file.rel)) return false;
+      return reverse.get(file.abs).size === 0;
+    })
+    .map((file) => ({ path: file.rel, lines: file.lines, exports: declarationsOf(file.code).length }))
+    .sort((a, b) => b.lines - a.lines);
+
   const modules = [...new Set(moduleGraph.flatMap((edge) => [edge.from, edge.to]))].sort();
   const declarations = {};
   for (const file of parsed.values()) {
@@ -514,6 +596,10 @@ function build() {
     tests,
     moduleGraph,
     modules,
+    unusedExports,
+    orphanFiles,
+    duplicateSymbols,
+    managers,
     declarations,
     dataAccess,
     fileEdges: edges
@@ -784,7 +870,69 @@ function renderMarkdown(report) {
     out.push(`- → \`${edge.to}\`${edge.typeOnly ? ' *(tip)*' : ''}`);
   }
   out.push('');
-  out.push('## 14. Giriş Noktaları (fan-in = 0)');
+  out.push('## 14. Kullanılmayan Kod Adayları');
+  out.push('');
+  out.push(
+    `**Hiçbir yerden import edilmeyen dosya: ${report.orphanFiles.length}** (statik + dinamik + default import + new URL(...) + test import taraması; entry dosyaları hariç). ` +
+      'Bunlar ölü kod adayıdır: kaldırmadan önce rota/URL ile erişim veya CSS/asset referansı kontrol edilmeli.'
+  );
+  out.push('');
+  out.push(
+    table(
+      ['Dosya', 'Satır', 'Bildirim'],
+      report.orphanFiles.map((entry) => [`\`${entry.path}\``, entry.lines, entry.exports])
+    )
+  );
+  out.push('');
+  out.push(
+    `**Dışa aktarılmış ama dışarıdan kullanılmayan sembol adayı: ${report.unusedExports.length}.** Bunların çoğu aynı dosyada kullanılan sabit/yardımcıdır; silme değil **export daraltma** adayıdır. En büyük dosyalardan ilk 40:`
+  );
+  out.push('');
+  if (report.unusedExports.length > 0) {
+    out.push(
+      table(
+        ['Dosya', 'Sembol', 'Tür', 'Satır'],
+        report.unusedExports
+          .sort((a, b) => (report.largest.findIndex((file) => file.path === a.file) - report.largest.findIndex((file) => file.path === b.file)))
+          .slice(0, 40)
+          .map((entry) => [
+          `\`${entry.file}\``,
+          `\`${entry.name}\``,
+          entry.kind,
+          entry.line,
+        ])
+      )
+    );
+  }
+  out.push('');
+  out.push('### Aynı adı taşıyan exportlar (sorumluluk çakışması adayları)');
+  out.push('');
+  out.push(
+    table(
+      ['Sembol', 'Tanımlandığı dosya sayısı', 'Dosyalar'],
+      report.duplicateSymbols.map((entry) => [
+        `\`${entry.name}\``,
+        entry.files.length,
+        entry.files.slice(0, 6).map((file) => `\`${file}\``).join('<br>'),
+      ])
+    )
+  );
+  out.push('');
+  out.push('## 15. Manager / Service Envanteri (otomatik tespit)');
+  out.push('');
+  out.push(
+    table(
+      ['Dosya', 'Sembol', 'Tür', 'Satır'],
+      report.managers.map((entry) => [
+        `\`${entry.file}\``,
+        `\`${entry.name}\``,
+        entry.kind,
+        entry.line,
+      ])
+    )
+  );
+  out.push('');
+  out.push('## 16. Giriş Noktaları (fan-in = 0)');
   out.push('');
   out.push(
     report.entryPoints.length === 0

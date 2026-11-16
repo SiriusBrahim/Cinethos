@@ -1,5 +1,7 @@
 # MIA Faz 0 — Mimari Envanter ve Bağımlılık Haritası
 
+**Faz 0 belge seti:** [Kontrol listesi](./faz0-checklist.md) · [Bağımlılık grafiği](./faz0-bagimlilik-grafigi.md) · [Fonksiyon sahipliği](./faz0-fonksiyon-sahipligi.md) · [Veri sahipliği](./faz0-veri-sahipligi.md) · [İş akışları](./faz0-is-akislari.md) · [Ham ölçüm verisi](./faz0-envanter-veri.md)
+
 ## 0. Doğrulanmış Yeniden Ölçüm (2026-11-15)
 
 Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölçümle** doğrulanmış hâlidir. Veri: `node scripts/arch-inventory.mjs --write` → [`faz0-envanter-veri.md`](./faz0-envanter-veri.md) (202 kaynak dosya, 640 iç import kenarı, 82.134 satır).
@@ -20,7 +22,7 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 2. `relationship-explorer` ↔ `relationship-wordlists`: tek `import type` (`RelationshipType`) ile kırılıyor.
 3. `persistent-store` → `github-bidirectional-sync` → `github-catalog-sync` → `persistent-store`: **tek gerçek değer döngüsü**; `SyncStorePort` çıkarılmadan Faz 2 taşıması yapılmamalı.
 
-### 0.1 Faz 0 kapanış tablosu (13 madde)
+### 0.1 Faz 0 kapanış tablosu (15 madde)
 
 | # | Madde | Durum | Kanıt |
 | --- | --- | --- | --- |
@@ -32,15 +34,15 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 | 6 | Döngüsel bağımlılık analizi | ✅ | `faz0-bagimlilik-grafigi.md` §2 — 3 SCC, 1 gerçek değer döngüsü |
 | 7 | Fonksiyon bazında sorumluluk haritası | ✅ | [`faz0-fonksiyon-sahipligi.md`](./faz0-fonksiyon-sahipligi.md) — 15 büyük dosya, blok + satır aralığı |
 | 8 | Veri sahipliği haritası | ✅ | [`faz0-veri-sahipligi.md`](./faz0-veri-sahipligi.md) §2–4 — sunucu dosyaları, 14 IDB deposu, localStorage anahtarları |
-| 9 | Modüller arası veri akışı | ⚠️ Kısmi | Sahiplik ve R/W yönleri var; uçtan uca akış diyagramı Faz 1 sözleşmeleriyle kesinleşecek |
-| 10 | Profil değiştirme yarışları | ⚠️ Analiz var, çalıştırma yok | `faz0-veri-sahipligi.md` §6 — `profileId` damgası eksikliği tespit edildi |
+| 9 | Modüller arası veri akışı | ✅ | [`faz0-is-akislari.md`](./faz0-is-akislari.md) — ekleme, durum geçişleri, zevk profili, öneri, Zevk Haritası/ilişki, önbellek, GitHub, silme/geri yükleme akışları |
+| 10 | Profil değiştirme yarışları | ⚠️ Veri katmanı test edildi, asenkron öneri yarışı doğrulanmadı | `tests/faz0-baseline.test.mjs` (profil izolasyonu + 409) geçti; `profileId` damgası eksikliği `faz0-is-akislari.md` §8 |
 | 11 | SQLite/JSON veri bütünlüğü | ✅ | `sqlite-primary-store.test.mjs` 4/4 (migration, bozuk JSON kurtarma, revizyon seçimi) + canlı `CINETRACK_STORAGE=sqlite` açılışında migration doğrulandı |
 | 12 | Canlı yerel veri denetimi | ✅ | `data/cinetrack-data.json`: `version 3`, `schemaVersion 3`, `engineVersion v3.2.0`, 1 profil |
-| 13 | Testlerin modüllerle eşleştirilmesi | ✅ | `faz0-envanter-veri.md` §9 (25 test dosyası, hedef kaynaklar) |
-| 14 | Lint/TypeScript | ✅ | `npm run lint` temiz (eslint + 2× tsc) |
+| 13 | Testlerin modüllerle eşleştirilmesi | ✅ | `faz0-envanter-veri.md` §9 (26 test dosyası, hedef kaynaklar) |
+| 14 | Lint/TypeScript | ✅ | `npm run lint` temiz (eslint + 2× tsc) · `npm test` 425/425 |
 | 15 | E2E testleri | ⚠️ Çalıştırıldı: **4/11 geçti**, 7 başarısızlık testlerin eski düzene yazılmış olmasından | §0.2 — ayrıntılı senaryo/temel neden tablosu |
 
-**Sonuç:** 12/15 madde tamam, 3 madde kısmi (veri akışı diyagramı, profil yarışı, E2E). E2E artık **çalıştırıldı**; 7 başarısızlığın tamamı testlerin sidebar + `MobileDock` öncesi düzene yazılmış seçicilerinden kaynaklanıyor, ürün hatası kanıtlanmadı (§0.2). Faz 1 **sözleşme tasarımı** için engel yok; Faz 2 veri taşıması `SyncStorePort` + profil damgası çözülmeden başlamamalı.
+**Sonuç:** 13/15 madde tamam, 2 madde kısmi (asenkron profil yarışı, E2E seçicileri). Tam kontrol listesi: [`faz0-checklist.md`](./faz0-checklist.md). E2E artık **çalıştırıldı**; 7 başarısızlığın tamamı testlerin sidebar + `MobileDock` öncesi düzene yazılmış seçicilerinden kaynaklanıyor, ürün hatası kanıtlanmadı (§0.2). Faz 1 **sözleşme tasarımı** için engel yok; Faz 2 veri taşıması `SyncStorePort` + profil damgası çözülmeden başlamamalı.
 
 ### 0.2 E2E sonuçları — 2026-11-16
 
@@ -65,7 +67,7 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 2. `e2e/app-smoke.spec.ts` — `.brand-title` seçicisini görünür öğeye kapsamak (ör. `page.locator('.app-sidebar .brand-title')`).
 3. Testleri güncelledikten sonra `--workers=1 --retries=0` ile tekrar koşup 11/11 hedeflenmeli.
 
-**Baseline:** `npm run lint` temiz · `npm test` 422/422 · `npm run test:taste` 362/362 · `npm run build` başarılı (ana JS 427,76 kB).
+**Baseline:** `npm run lint` temiz · `npm test` **425/425** · `npm run test:taste` 362/362 · `npm run build` başarılı (ana JS 427,76 kB). Yeni: `tests/faz0-baseline.test.mjs` (öneri puan kilidi, profil izolasyonu, silme/geri yükleme).
 
 
 > **Kapsam:** `src/` + `server.ts` — madge 208 dosya; doğrulanmış TS kaynak sayısı **202** (§0), 25 test dosyası, 12 idb deposu, 36 localStorage anahtarı (§0).
