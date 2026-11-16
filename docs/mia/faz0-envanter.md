@@ -1,6 +1,29 @@
 # MIA Faz 0 — Mimari Envanter ve Bağımlılık Haritası
 
-> **Kapsam:** `src/` + `server.ts` — 208 dosya (madge), 25 test dosyası, 12 idb deposu, 7+ localStorage anahtarı.
+## 0. Doğrulanmış Yeniden Ölçüm (2026-11-15)
+
+Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölçümle** doğrulanmış hâlidir. Veri: `node scripts/arch-inventory.mjs --write` → [`faz0-envanter-veri.md`](./faz0-envanter-veri.md) (202 kaynak dosya, 640 iç import kenarı, 82.134 satır).
+
+| Ölçüm | Önceki ifade | Doğrulanan | Not |
+| --- | --- | --- | --- |
+| Kaynak dosya sayısı | 208 (madge) | **202** (`src/**/*.ts[x]` + `server.ts`) | madge farklı bir dosya kümesi sayıyor; bu tablo yalnızca derlenen TS kaynaklarını sayar |
+| Döngü | 7 (madge) | **3 SCC**, bunlardan **1'i gerçek değer döngüsü** | madge basit döngüleri tek tek sayar; aynı 5'li core kümesi tek SCC'dir |
+| Katman ihlali | core→services: 2 dosya | **4 değer importu**, 2 dosya | `relationship-explorer` 3 servise, `actor-recommendations` 1 servise bağlı |
+| Paylaşılan sembol | `SavedItem` 7 dosya | **57 dosya (8 değer / 49 tip)** | Önceki sayım yalnızca değer importlarını görmüş; tip taşıma kararı daha da güçlü |
+| IndexedDB deposu | 12 | **12** | `cinetrack-relationship-cache` `DB_NAME` sabitiyle açılıyor, inline değil |
+| localStorage | "7+" | **36 anahtar/şablon** | `ct:*`, `cinetrack.*`, `cinetrack_*` aileleri; şablonlar `*` ile normalize |
+| Test dosyası | 25 | **25 dosya / 204 statik `test()` bloğu** | Çalıştırıcı: `npm test` **422/422**, `npm run test:taste` **362/362** |
+| En büyük dosya | — | `github-bidirectional-sync.ts` 4.754 · `cinetrack-core.ts` 4.691 · `App.tsx` 4.651 · `persistent-store.ts` 4.230 | `core` 20.390 satır, `server` 22.224 satır |
+
+**Teyit edilen döngü ayrıntısı:**
+1. Core 5'lisi (`cinetrack-core`, `actor-recommendations`, `candidate-pool-store-port`, `cinema-kunye`, `ring-lifecycle`): dört `import type` ile kırılıyor — `core/media/types.ts` taşıması bunu tamamen bitirir.
+2. `relationship-explorer` ↔ `relationship-wordlists`: tek `import type` (`RelationshipType`) ile kırılıyor.
+3. `persistent-store` → `github-bidirectional-sync` → `github-catalog-sync` → `persistent-store`: **tek gerçek değer döngüsü**; `SyncStorePort` çıkarılmadan Faz 2 taşıması yapılmamalı.
+
+**Faz 0 kabul durumu:** Envanter, bağımlılık haritası, çoklu-kullanım semboller, depolama mülkiyeti ve taşıma/dokunulmaz işaretleme tamam. Baseline: `npm run lint` temiz, `npm test` 422/422, `npm run test:taste` 362/362, `npm run build` başarılı (ana JS 427,76 kB). Faz 1'e (sözleşmeler + `core/media/types.ts`) geçilebilir.
+
+
+> **Kapsam:** `src/` + `server.ts` — madge 208 dosya; doğrulanmış TS kaynak sayısı **202** (§0), 25 test dosyası, 12 idb deposu, 36 localStorage anahtarı (§0).
 > **Araçlar:** `madge --circular` (döngü taraması), hedefli grep taramaları (katman ihlalleri, depolama envanteri).
 > **Karar etkisi:** Bu envanter Faz 1 (sözleşmeler) ve taşımaların (Faz 2–7) tek referansıdır.
 
