@@ -483,7 +483,18 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     version: '1.0.0',
     layer: 'background',
     async initialize() {
-      await primaryRepository.readRaw();
+      const rawState = await primaryRepository.readRaw();
+      const document = rawState.document;
+      const activeProfileId = String(
+        document?.activeProfileId || document?.profiles?.[0]?.id || 'default'
+      );
+      const revision = Number.isSafeInteger(document?.revision) ? document.revision : 0;
+      const current = profileContext.getCurrent();
+      if (current.profileId !== activeProfileId) {
+        await profileContext.switchProfile(activeProfileId, revision);
+      } else {
+        profileContext.commitRevision(revision, activeProfileId);
+      }
     },
     async start() {
       primaryStorageStarted = true;
@@ -1599,6 +1610,15 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       }
 
       const rev = result.document.revision ?? 1;
+      const nextActiveProfileId = String(
+        result.document.activeProfileId || result.document.profiles?.[0]?.id || 'default'
+      );
+      const currentProfileRef = profileContext.getCurrent();
+      if (currentProfileRef.profileId !== nextActiveProfileId) {
+        await profileContext.switchProfile(nextActiveProfileId, rev);
+      } else {
+        profileContext.commitRevision(rev, nextActiveProfileId);
+      }
       res.setHeader('ETag', `"rev-${rev}"`);
       res.json({
         ok: true,
