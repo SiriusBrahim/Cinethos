@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import type { Preferences, Profile, SavedItem } from '../core/cinetrack-core.ts';
 import type { CinemaKunyeDocument } from '../core/cinema-kunye.ts';
-import { exportItemsToCsv, importItemsFromCsv } from '../core/exporters.ts';
+import { exportItemsToCsv, importItemsFromCsv, type CsvProfileBlock } from '../core/exporters.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';
 import {
   createProfileBackupExport,
@@ -10,6 +10,7 @@ import {
   type ServerBackupMetadata,
 } from '../services/api.ts';
 import { recordManualBackupSuccess } from '../services/auto-backup-service.ts';
+import { BRAND_NAME, brandProfileFileName } from '../shared/brand.ts';
 import type { RemoteSyncStatusPayload } from './ProfileGitHubSyncSection.tsx';
 
 interface ProfileBackupTabProps {
@@ -26,10 +27,16 @@ interface ProfileBackupTabProps {
   backupMessage: string;
   onExportBackup: () => void;
   onImportBackupFile: (file: File) => void;
-  onImportCsvItems?: (items: SavedItem[], cinemaKunye?: CinemaKunyeDocument) => void;
+  onImportCsvItems?: (
+    items: SavedItem[],
+    cinemaKunye?: CinemaKunyeDocument,
+    profileBlock?: CsvProfileBlock | null
+  ) => void;
   onCreateInstantBackup: () => Promise<void>;
   onLoadServerBackups: () => Promise<void>;
   onRestoreSnapshot: (id: string) => Promise<void>;
+  onCreateSqliteArchive?: () => Promise<void>;
+  onRestoreSqliteArchive?: (file: File) => Promise<void>;
 }
 
 export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
@@ -50,9 +57,14 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
   onCreateInstantBackup,
   onLoadServerBackups,
   onRestoreSnapshot,
+  onCreateSqliteArchive,
+  onRestoreSqliteArchive,
 }) => {
   const [importStatus, setImportStatus] = useState('');
   const [csvStatus, setCsvStatus] = useState('');
+  const [sqliteStatus, setSqliteStatus] = useState('');
+  const [sqliteBusy, setSqliteBusy] = useState<'export' | 'restore' | null>(null);
+  const sqliteInputRef = useRef<HTMLInputElement>(null);
   const [exportingExcelMode, setExportingExcelMode] = useState<'xlsx_only' | 'json_and_xlsx' | null>(null);
   const [uploadExcelToGithub, setUploadExcelToGithub] = useState(false);
   const [excelExportReport, setExcelExportReport] = useState<ProfileBackupExportReportClient | null>(null);
@@ -112,7 +124,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
         const result = importItemsFromCsv(text);
         const kunyeCount = Object.keys(result.cinemaKunye.entries).length;
         if ((result.importedItems.length > 0 || kunyeCount > 0) && onImportCsvItems) {
-          onImportCsvItems(result.importedItems, result.cinemaKunye);
+          onImportCsvItems(result.importedItems, result.cinemaKunye, result.profileBlock);
           setCsvStatus(
             `${result.importedItems.length} yapım${
               kunyeCount > 0 ? ` ve ${kunyeCount} sinema künyesi kaydı` : ''
@@ -200,7 +212,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
       if (report.excelBackup.ok && report.excelBackup.downloadUrl) {
         await triggerVerifiedBlobDownload({
           downloadUrl: report.excelBackup.downloadUrl,
-          fileName: report.excelBackup.fileName || 'Cinethos_Profile.xlsx',
+          fileName: report.excelBackup.fileName || brandProfileFileName('xlsx'),
           kind: 'xlsx',
           expectedSizeBytes: report.excelBackup.sizeBytes,
           expectedSha256: report.excelBackup.sha256,
@@ -216,13 +228,46 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
     }
   };
 
+  const handleCreateSqliteArchive = async () => {
+    if (!onCreateSqliteArchive) return;
+    setSqliteBusy('export');
+    setSqliteStatus('Profil, stok ve stok posterleri tek bir SQLite dosyasına yazılıyor…');
+    try {
+      await onCreateSqliteArchive();
+      setSqliteStatus('SQLite arşivi indirildi: profil + stok + görseller tek dosyada.');
+    } catch (error: any) {
+      setSqliteStatus(error?.message || 'SQLite arşivi oluşturulamadı.');
+    } finally {
+      setSqliteBusy(null);
+    }
+  };
+
+  const handleSqliteFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !onRestoreSqliteArchive) return;
+    setSqliteBusy('restore');
+    setSqliteStatus('SQLite arşivi okunuyor; içerik özeti hazırlanıyor…');
+    try {
+      // P1-04: bu adım yalnızca ön izleme üretir; onay penceresi App tarafında açılır.
+      await onRestoreSqliteArchive(file);
+      setSqliteStatus(
+        'Arşiv incelendi. Onay penceresinde içeriği kontrol edip geri yüklemeyi başlatın.'
+      );
+    } catch (error: any) {
+      setSqliteStatus(error?.message || 'SQLite arşivi geri yüklenemedi.');
+    } finally {
+      setSqliteBusy(null);
+    }
+  };
+
   return (
     <div className="profile-tab-panel">
       {/* 1. JSON Yedekleme */}
       <div className="profile-tools-section">
         <strong className="profile-tools-heading">JSON Profil Yedeği</strong>
         <p className="provider-message">
-          Cinethos profilinizi, izleme listenizi ve ayarlarınızı standart JSON formatında dışa aktarın veya geri yükleyin.
+          {BRAND_NAME} profilinizi, izleme listenizi ve ayarlarınızı standart JSON formatında dışa aktarın veya geri yükleyin.
         </p>
         <div className="csv-actions-row">
           <button
@@ -242,6 +287,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="JSON yedeği dosyası seç"
             accept=".json,application/json"
             className="file-input-hidden"
             onChange={handleFileChange}
@@ -249,6 +295,48 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
         </div>
         {importStatus && <p className="provider-message mt-2">{importStatus}</p>}
       </div>
+
+      {/* 1.5 SQLite Arşivi — profil + stok + stok görselleri tek dosyada */}
+      {onCreateSqliteArchive && (
+        <div className="profile-tools-section">
+          <strong className="profile-tools-heading">SQLite Arşivi (.sqlite)</strong>
+          <p className="provider-message">
+            Tüm profillerin tam kaydını (izleme listeleri, puanlar, tercihler, favori oyuncular,
+            zevk haritaları), film/dizi stoklarını ve <strong>stok posterlerinin kendisini</strong>{' '}
+            tek bir <code>.sqlite</code> dosyasında saklar. Bu dosyadan tüm veriler eksiksiz geri
+            yüklenebilir.
+          </p>
+          <div className="csv-actions-row">
+            <button
+              type="button"
+              className="btn btn-primary whitespace-nowrap shrink-0"
+              disabled={sqliteBusy !== null}
+              onClick={() => void handleCreateSqliteArchive()}
+            >
+              {sqliteBusy === 'export'
+                ? 'SQLite arşivi hazırlanıyor…'
+                : 'SQLite Arşivi İndir'}
+            </button>
+            <button
+              type="button"
+              className="btn whitespace-nowrap shrink-0"
+              disabled={sqliteBusy !== null || !onRestoreSqliteArchive}
+              onClick={() => sqliteInputRef.current?.click()}
+            >
+              {sqliteBusy === 'restore' ? 'Geri yükleniyor…' : 'SQLite Arşivinden Geri Yükle'}
+            </button>
+            <input
+              ref={sqliteInputRef}
+              type="file"
+              aria-label="SQLite arşiv dosyası seç"
+              accept=".sqlite,application/vnd.sqlite3,application/octet-stream"
+              className="file-input-hidden"
+              onChange={(e) => void handleSqliteFileChange(e)}
+            />
+          </div>
+          {sqliteStatus && <p className="provider-message mt-2">{sqliteStatus}</p>}
+        </div>
+      )}
 
       {/* 2. Posterli Excel (.xlsx) Profil Yedeği */}
       <div className="profile-tools-section excel-backup-section">
@@ -286,6 +374,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           <label className="excel-github-toggle mt-2">
             <input
               type="checkbox"
+              aria-label="Oluşturulan xlsx arşivini GitHub deposuna yükle"
               checked={uploadExcelToGithub}
               disabled={exportingExcelMode !== null}
               onChange={(e) => setUploadExcelToGithub(e.target.checked)}
@@ -403,7 +492,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
                     void triggerVerifiedBlobDownload({
                       downloadUrl: excelExportReport.excelBackup.downloadUrl!,
                       fileName:
-                        excelExportReport.excelBackup.fileName || 'Cinethos_Profile.xlsx',
+                        excelExportReport.excelBackup.fileName || brandProfileFileName('xlsx'),
                       kind: 'xlsx',
                       expectedSizeBytes: excelExportReport.excelBackup.sizeBytes,
                       expectedSha256: excelExportReport.excelBackup.sha256,
@@ -424,7 +513,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
                     void triggerVerifiedBlobDownload({
                       downloadUrl: excelExportReport.jsonBackup.downloadUrl!,
                       fileName:
-                        excelExportReport.jsonBackup.fileName || 'Cinethos_Profile.json',
+                        excelExportReport.jsonBackup.fileName || brandProfileFileName('json'),
                       kind: 'json',
                       expectedSizeBytes: excelExportReport.jsonBackup.sizeBytes,
                       expectedSha256: excelExportReport.jsonBackup.sha256,
@@ -468,6 +557,7 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           <input
             ref={csvInputRef}
             type="file"
+            aria-label="CSV dosyası seç"
             accept=".csv,text/csv"
             className="file-input-hidden"
             onChange={handleCsvFileChange}

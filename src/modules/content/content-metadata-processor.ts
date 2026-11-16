@@ -20,7 +20,6 @@ import {
   type MetadataValidationIssue,
   type MetadataValidationResult,
   type NormalizedContentMetadata,
-  type RawContentInput,
 } from './types.ts';
 
 /** Görsel alanları — Content Intelligence deposuna ASLA kopyalanmaz. */
@@ -272,7 +271,7 @@ function resolveIdentity(
       errors.push(`Geçersiz medya türü: ${String(rawTypeField)}`);
     }
   } else if (parsedFromKey) {
-    mediaType = parsedFromKey.media_type;
+    mediaType = parsedFromKey.type;
   } else if (raw.first_air_date || raw.firstAirDate || raw.number_of_seasons !== undefined) {
     mediaType = 'tv';
   } else if (raw.release_date || raw.releaseDate || typeof raw.title === 'string') {
@@ -308,7 +307,7 @@ function resolveIdentity(
       message: "Medya türü ('movie' veya 'tv') belirlenemedi.",
     });
     errors.push("Medya türü ('movie' veya 'tv') belirlenemedi.");
-  } else if (parsedFromKey && parsedFromKey.media_type !== mediaType) {
+  } else if (parsedFromKey && parsedFromKey.type !== mediaType) {
     errors.push(
       `Medya anahtarı (${rawKey}) ile mediaType (${mediaType}) çelişiyor.`
     );

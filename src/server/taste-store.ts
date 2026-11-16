@@ -58,19 +58,31 @@ export const TASTE_PATHS: TasteStorePaths = resolveTastePaths("data");
 // === Event Store ===
 
 /**
+ * Olay ekle (append-only, idempotent — TP-005).
+ * Aynı eventId ikinci kez gelirse yazım atlanır; `added` ile bildirilir.
+ */
+export async function appendTasteEventIdempotent(
+  event: TasteEvent,
+  dataDir: string = "data"
+): Promise<{ added: boolean }> {
+  const paths = resolveTastePaths(dataDir);
+  const events = await readTasteEvents(dataDir);
+  if (events.some((e) => e.eventId === event.eventId)) {
+    return { added: false };
+  }
+  events.push(event);
+  await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2));
+  return { added: true };
+}
+
+/**
  * Olay ekle (append-only, idempotent — TP-005)
  */
 export async function appendTasteEvent(
   event: TasteEvent,
   dataDir: string = "data"
 ): Promise<void> {
-  const paths = resolveTastePaths(dataDir);
-  const events = await readTasteEvents(dataDir);
-  if (events.some((e) => e.eventId === event.eventId)) {
-    return;
-  }
-  events.push(event);
-  await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2));
+  await appendTasteEventIdempotent(event, dataDir);
 }
 
 /**

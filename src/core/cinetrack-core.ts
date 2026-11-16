@@ -168,6 +168,32 @@ import {
   migratePersistentTasteMapData,
 } from './keys.ts';
 
+import {
+  type LovedItemFeatures,
+  type LovedSimBreakdown,
+  type LovedSimMatchResult,
+  calculateGenreSim,
+  calculateStorySim,
+  calculateCastSim,
+  calculateAtmosphereSim,
+  calculateEraSim,
+  computeItemToItemLovedSim,
+  computeLovedSimilarityScore,
+} from './loved-similarity.ts';
+
+export {
+  type LovedItemFeatures,
+  type LovedSimBreakdown,
+  type LovedSimMatchResult,
+  calculateGenreSim,
+  calculateStorySim,
+  calculateCastSim,
+  calculateAtmosphereSim,
+  calculateEraSim,
+  computeItemToItemLovedSim,
+  computeLovedSimilarityScore,
+};
+
 export {
   makeMediaKey,
   parseMediaKey,
@@ -1050,6 +1076,7 @@ export interface TasteProfileV3 {
   lovedOverviewTokens: Set<string>;
   positiveGenres: string[];
   coOccurredPairs: Set<string>;
+  lovedItemFeatures?: LovedItemFeatures[];
 }
 
 export function buildTasteProfileV3(
@@ -1095,6 +1122,7 @@ export function buildTasteProfileV3(
   const lovedProductionCompanyIds = new Set<number>();
   const lovedOverviewTokens = new Set<string>();
   const coOccurredPairs = new Set<string>();
+  const lovedItemFeatures: LovedItemFeatures[] = [];
 
   let rawItems: any[] = [...(Array.isArray(items) ? items : [])];
 
@@ -1175,9 +1203,47 @@ export function buildTasteProfileV3(
           if (company?.id) lovedProductionCompanyIds.add(Number(company.id));
         }
       }
-      for (const token of extractOverviewTokens(item.overview)) {
+      const itemTokens = extractOverviewTokens(item.overview);
+      for (const token of itemTokens) {
         lovedOverviewTokens.add(token);
       }
+
+      const itemGenres: number[] = Array.isArray(item.genre_ids)
+        ? item.genre_ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+        : Array.isArray(item.genres)
+        ? item.genres.map((g: any) => Number(typeof g === 'object' ? g?.id : g)).filter((n: number) => Number.isFinite(n) && n > 0)
+        : [];
+
+      const rawCast = Array.isArray(item.cast) ? item.cast : [];
+      const itemCastIds: number[] = rawCast
+        .slice(0, 10)
+        .map((c: any) => Number(c?.id))
+        .filter((n: number) => Number.isFinite(n) && n > 0);
+
+      const rawCrew = Array.isArray(item.crew) ? item.crew : [];
+      const itemDirectorIds: number[] = rawCrew
+        .filter((m: any) => m && (m.job === 'Director' || m.job === 'Creator'))
+        .map((m: any) => Number(m.id))
+        .filter((n: number) => Number.isFinite(n) && n > 0);
+
+      const rawDate = item.release_date || item.first_air_date;
+      const itemYear = typeof rawDate === 'string' && /^\d{4}/.test(rawDate)
+        ? parseInt(rawDate.slice(0, 4), 10)
+        : undefined;
+
+      lovedItemFeatures.push({
+        key: makeMediaKey(item),
+        id: item.id,
+        media_type: item.media_type || (item.title ? 'movie' : 'tv'),
+        title: String(item.title || item.name || '').trim(),
+        genre_ids: itemGenres,
+        overviewTokens: new Set(itemTokens),
+        castIds: itemCastIds,
+        directorIds: itemDirectorIds,
+        collectionId: item.belongs_to_collection?.id ? Number(item.belongs_to_collection.id) : undefined,
+        year: itemYear,
+        weight: Math.max(0.5, effContribution),
+      });
     }
 
     // Genres
@@ -1355,6 +1421,7 @@ export function buildTasteProfileV3(
     lovedOverviewTokens,
     positiveGenres,
     coOccurredPairs,
+    lovedItemFeatures,
   };
 }
 
@@ -1917,7 +1984,7 @@ export function createDefaultTasteMapData(profileId: string): PersistentTasteMap
 const MAX_ARCHIVED_TASTE_ENTRIES = 250;
 const inMemoryTasteMapFallback = new Map<string, { storageRef: Storage | null; raw: string }>();
 
-function pruneArchivedTasteEntries(
+export function pruneArchivedTasteEntries(
   archived: Record<string, TasteMapEntry>,
   maxEntries = MAX_ARCHIVED_TASTE_ENTRIES
 ): Record<string, TasteMapEntry> {
@@ -3114,17 +3181,13 @@ export function scoreCandidatesV3(
       storyScore = clamp01(0.3 + 0.7 * Math.min(1, ratio * 2));
     }
 
-    // 5. Sevilen Yapımlara Benzerlik (0.09)
-    let lovedSimScore = 0.5;
-    if (candidate.seedSourceType === 'completed') {
-      lovedSimScore = 0.95;
-    } else if (candidate.seedSourceType === 'watching') {
-      lovedSimScore = 0.85;
-    } else if (candidate.seedSourceType === 'watchlist') {
-      lovedSimScore = 0.65;
-    } else if (candidate.poolSources && candidate.poolSources >= 2) {
-      lovedSimScore = 0.75;
-    }
+    // 5. Sevilen Yapımlara Benzerlik (0.09) — Çok boyutlu anlamsal benzerlik
+    const lovedSimResult = computeLovedSimilarityScore(
+      candidate,
+      profile.lovedItemFeatures || [],
+      tokens
+    );
+    const lovedSimScore = lovedSimResult.score;
 
     // 6. Genel Oyuncu Tercihi (0.12) & 7. Tür x Oyuncu Tercihi (0.08)
     let actorScore = 0.5;
@@ -3297,6 +3360,9 @@ export function scoreCandidatesV3(
     if (franchiseScore >= 0.8) {
       tags.push('Sevdiğin film serisinden');
     }
+    if (lovedSimResult.breakdown && lovedSimResult.breakdown.similarity >= 0.58 && lovedSimResult.breakdown.matchedTitle) {
+      tags.push(`Sevdiğin "${lovedSimResult.breakdown.matchedTitle}" ile benzer (%${Math.round(lovedSimResult.breakdown.similarity * 100)})`);
+    }
     if (qualityScore >= 0.72) {
       tags.push(`TMDB'de ${bayes.toFixed(1)} puan`);
     }
@@ -3354,6 +3420,7 @@ export function scoreCandidatesV3(
     candidate.lastShownAt = lastShownAt;
     candidate.tags = tags.slice(0, 4);
     candidate.signalBreakdown = parts;
+    candidate.lovedSimDetail = lovedSimResult.breakdown;
 
     return {
       candidate,

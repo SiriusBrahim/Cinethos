@@ -81,8 +81,8 @@ function resolveJobIdentity(
   const parsed = keyCandidate ? parseMediaKey(keyCandidate) : null;
   const mediaType: MediaKind | null =
     input.mediaType ??
-    (parsed?.media_type === 'tv' || parsed?.media_type === 'movie'
-      ? parsed.media_type
+    (parsed?.type === 'tv' || parsed?.type === 'movie'
+      ? parsed.type
       : payload?.media_type === 'tv' || payload?.mediaType === 'tv'
         ? 'tv'
         : payload?.media_type === 'movie' || payload?.mediaType === 'movie'

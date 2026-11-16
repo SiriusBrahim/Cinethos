@@ -26,7 +26,6 @@ import {
 import { createDataStorage } from '../src/server/storage.ts';
 import { createCineTrackApp } from '../src/server/app.ts';
 import { resolveConfig } from '../src/server/config.ts';
-import { GitHubBidirectionalSyncManager } from '../src/server/github-bidirectional-sync.ts';
 import { executeProfileBackupExport } from '../src/server/excel-profile-backup.ts';
 
 const TEST_OWNER = 'kunye-owner';

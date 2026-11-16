@@ -22,7 +22,6 @@ import { EXTRACTOR_VERSION } from '../../core/taste/constants.ts';
 import { extractContentTasteItem } from '../../core/taste/feature-extractor.ts';
 import type { TasteMetadataInput } from '../../core/taste/types.ts';
 import type {
-  ContentDimensionConfidence,
   ContentDomainDimensions,
   ContentFeatureBundle,
   ContentPacingKind,

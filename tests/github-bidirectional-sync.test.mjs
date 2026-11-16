@@ -1604,7 +1604,7 @@ test('Aşama 5.11: Başarısız dosyanın yanlışlıkla başarılı sayılmamas
     const { store } = createIsolatedSyncEnv(tmpDir);
     store.upsertCatalogItems([makeMovieRecord(1)]);
 
-    gh.setInterceptor(({ method, pathname, jsonResponse }) => {
+    gh.setInterceptor(({ method, jsonResponse }) => {
       if (method === 'PUT') {
         return jsonResponse(404, { message: 'Not Found' });
       }

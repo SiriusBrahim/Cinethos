@@ -4,6 +4,7 @@ import {
   type CinemaKunyeDocument,
 } from '../core/cinema-kunye.ts';
 import type { BidirectionalSyncReport, SyncOperationKind } from '../core/sync-display.ts';
+import { apiFetch, readApiErrorMessage } from './api-client.ts';
 
 export type TmdbDataSource = 'live' | 'demo' | 'stale-cache' | 'error' | 'unknown';
 
@@ -26,7 +27,7 @@ export interface ServerBackupMetadata {
 }
 
 export interface ServerConflictDetail {
-  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop';
+  code: 'revision_conflict' | 'profile_conflict' | 'precondition_required' | 'sudden_item_drop';
   message: string;
   currentRevision?: number;
   expectedRevision?: number;
@@ -383,12 +384,28 @@ export async function pushServerDataDetailed(
   payload: DataDocument,
   options: {
     baseRevision?: number | null;
+    expectedProfileId?: string;
     confirmBulkDelete?: boolean;
     forceOverwrite?: boolean;
     mergeStrategy?: 'lossless';
     foldUnhydratedDefaultProfile?: boolean;
   } = {}
 ): Promise<PushServerDataResult> {
+  if (options.expectedProfileId && payload.activeProfileId !== options.expectedProfileId) {
+    return {
+      ok: false,
+      status: 409,
+      conflict: {
+        code: 'profile_conflict',
+        message: `Profil uyuşmazlığı: beklenen '${options.expectedProfileId}', gelen '${payload.activeProfileId}'.`,
+        currentRevision: getLastKnownServerRevision() ?? undefined,
+        expectedRevision: options.baseRevision ?? undefined,
+        localPayload: payload,
+      },
+      errorMessage: 'Profil uyuşmazlığı nedeniyle yazma reddedildi.',
+    };
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -478,7 +495,11 @@ export async function pushServerDataDetailed(
 }
 
 export async function pushServerData(payload: DataDocument): Promise<boolean> {
-  const res = await pushServerDataDetailed(payload);
+  const knownRevision = getLastKnownServerRevision();
+  const res = await pushServerDataDetailed(payload, {
+    baseRevision: knownRevision,
+    expectedProfileId: payload?.activeProfileId || undefined,
+  });
   return res.ok;
 }
 
@@ -1339,5 +1360,367 @@ export async function saveServerCinemaKunye(
   }
 }
 
+// ---------------------------------------------------------
+// SQLite arşivi — profil + stok + stok görsellerinin tam yedeği
+// ---------------------------------------------------------
 
+export interface SqliteArchiveStatus {
+  available: boolean;
+  schemaVersion: number;
+  maxPosters: number;
+}
 
+export interface SqliteArchiveSnapshotPayload {
+  dataDocument: DataDocument;
+  tasteMaps?: Record<string, unknown>;
+  stock?: {
+    movies?: unknown[];
+    tv?: unknown[];
+    updatedAt?: string;
+    cursors?: Record<string, unknown>;
+  };
+  posterUrls?: string[];
+  appVersion?: string;
+}
+
+export interface SqliteArchiveStats {
+  profiles?: number;
+  items?: number;
+  tasteMaps?: number;
+  stockMovies?: number;
+  stockTv?: number;
+  postersStored?: number;
+  postersFailed?: number;
+  posterBytes?: number;
+  byteLength?: number;
+}
+
+export interface SqliteArchiveDownload {
+  ok: boolean;
+  blob?: Blob;
+  fileName?: string;
+  stats?: SqliteArchiveStats;
+  message?: string;
+}
+
+export interface SqliteArchiveProfileSummary {
+  id: string;
+  name: string;
+  items: number;
+}
+
+/** P1-04: Geri yükleme başlamadan önce gösterilen arşiv özeti. */
+export interface SqliteArchiveInspect {
+  schemaVersion: number;
+  createdAt: string;
+  appVersion: string;
+  counts: {
+    profiles: number;
+    items: number;
+    tasteMaps: number;
+    stockMovies: number;
+    stockTv: number;
+    posters: number;
+  };
+  documentHash: string;
+  byteLength: number;
+  profiles: SqliteArchiveProfileSummary[];
+}
+
+export interface SqliteArchivePrepareResult {
+  ok: boolean;
+  message?: string;
+  code?: string;
+  restoreId?: string;
+  expiresAt?: string;
+  inspect?: SqliteArchiveInspect;
+  current?: {
+    counts: { profiles: number; items: number; revision: number };
+    documentHash: string;
+  };
+}
+
+export interface SqliteArchiveRestoreResult {
+  ok: boolean;
+  message?: string;
+  code?: string;
+  /** Sunucudaki önceki belgeye dönüş ve finalize için kullanılır (P0-01). */
+  restoreId?: string;
+  rollbackId?: string;
+  documentHash?: string;
+  postersComplete?: boolean;
+  rolledBack?: boolean;
+  dataDocument?: DataDocument;
+  tasteMaps?: Record<string, unknown>;
+  stock?: {
+    movies?: unknown[];
+    tv?: unknown[];
+    updatedAt?: string;
+    cursors?: Record<string, unknown>;
+  };
+  counts?: {
+    profiles: number;
+    items: number;
+    tasteMaps: number;
+    stockMovies: number;
+    stockTv: number;
+    posters: number;
+  };
+  postersWritten?: number;
+  postersSkipped?: number;
+  createdAt?: string;
+}
+
+/**
+ * P1-04: Arşivi yüklemeden önce içeriğini okur. Hiçbir veri değiştirmez.
+ * Sunucu dosyayı kısa süreliğine saklar ve `restoreId` döner; onay sonrası
+ * ikinci yükleme gerekmez.
+ */
+export async function prepareSqliteArchiveRestore(file: Blob): Promise<SqliteArchivePrepareResult> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/prepare', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        code: typeof data?.code === 'string' ? data.code : undefined,
+        message:
+          data?.status_message ||
+          `SQLite arşivi incelenemedi (HTTP ${res.status})`,
+      };
+    }
+    return {
+      ok: true,
+      restoreId: String(data?.restoreId || ''),
+      expiresAt: data?.expiresAt,
+      inspect: data?.inspect,
+      current: data?.current,
+    };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'SQLite arşivi incelenemedi (ağ hatası).' };
+  }
+}
+
+/** Onaylanan hazırlığı uygular; dosya yeniden gönderilmez. */
+export async function restorePreparedSqliteArchive(
+  restoreId: string
+): Promise<SqliteArchiveRestoreResult> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId }),
+    });
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        code: typeof data?.code === 'string' ? data.code : undefined,
+        rolledBack: Boolean(data?.rolledBack),
+        message:
+          data?.status_message ||
+          `SQLite arşivi geri yüklenemedi (HTTP ${res.status})`,
+      };
+    }
+    if (data?.dataDocument?.revision !== undefined) {
+      setLastKnownServerRevision(Number(data.dataDocument.revision) || 0);
+    }
+    return {
+      ok: true,
+      dataDocument: data?.dataDocument,
+      tasteMaps: data?.tasteMaps || {},
+      stock: data?.stock || { movies: [], tv: [] },
+      counts: data?.counts,
+      postersWritten: Number(data?.postersWritten) || 0,
+      postersSkipped: Number(data?.postersSkipped) || 0,
+      postersComplete: data?.postersComplete !== false,
+      documentHash: typeof data?.documentHash === 'string' ? data.documentHash : undefined,
+      restoreId: typeof data?.restoreId === 'string' ? data.restoreId : undefined,
+      createdAt: data?.createdAt,
+    };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'SQLite arşivi geri yüklenemedi (ağ hatası).' };
+  }
+}
+
+/** Yan veri yazımı başarısız olursa sunucudaki önceki belgeyi geri yükler (P0-01). */
+export async function rollbackSqliteArchiveRestore(
+  rollbackId: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/rollback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rollbackId }),
+    });
+    if (!res.ok) {
+      let message = `Geri alma başarısız (HTTP ${res.status})`;
+      try {
+        const data = await res.json();
+        if (data?.status_message) message = String(data.status_message);
+      } catch {
+        // gövde JSON değil
+      }
+      return { ok: false, message };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'Geri alma isteği gönderilemedi.' };
+  }
+}
+
+/**
+ * P0-01-D: İstemci stok ve zevk haritalarını doğruladıktan sonra journal kaydını
+ * kapatır. Başarısız olursa sunucu bir sonraki açılışta restore'u geri alabilir;
+ * bu yüzden çağıran bunu kullanıcıya bildirmelidir.
+ */
+export async function finalizeSqliteArchiveRestore(
+  restoreId: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/finalize', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId }),
+    });
+    if (!res.ok) {
+      const detail = await readApiErrorMessage(res, `Finalize başarısız (HTTP ${res.status})`);
+      return { ok: false, message: detail.message };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'Finalize isteği gönderilemedi.' };
+  }
+}
+
+export async function fetchSqliteArchiveStatus(): Promise<SqliteArchiveStatus | null> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/status', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      available: Boolean(data?.available),
+      schemaVersion: Number(data?.schemaVersion) || 1,
+      maxPosters: Number(data?.maxPosters) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Profil + stok + posterleri tek `.sqlite` dosyası olarak indirir. */
+export async function downloadSqliteArchive(
+  payload: SqliteArchiveSnapshotPayload
+): Promise<SqliteArchiveDownload> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      let message = `SQLite arşivi oluşturulamadı (HTTP ${res.status})`;
+      try {
+        const data = await res.json();
+        if (data?.status_message) message = String(data.status_message);
+      } catch {
+        // gövde JSON değilse varsayılan mesaj kullanılır
+      }
+      return { ok: false, message };
+    }
+
+    const rawStats = res.headers.get('X-Archive-Stats');
+    let stats: SqliteArchiveStats | undefined;
+    if (rawStats) {
+      try {
+        stats = JSON.parse(rawStats);
+      } catch {
+        stats = undefined;
+      }
+    }
+
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = /filename="([^"]+)"/.exec(disposition);
+    const blob = await res.blob();
+
+    return {
+      ok: true,
+      blob,
+      fileName: match?.[1] || `cinetrack-archive-${Date.now()}.sqlite`,
+      ...(stats ? { stats } : {}),
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      message: error?.message || 'SQLite arşivi indirilemedi (ağ hatası).',
+    };
+  }
+}
+
+/** `.sqlite` arşivinden tüm verileri geri yükler (profil, stok, zevk haritaları, posterler). */
+export async function restoreSqliteArchive(file: Blob): Promise<SqliteArchiveRestoreResult> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        message:
+          data?.status_message ||
+          `SQLite arşivi geri yüklenemedi (HTTP ${res.status})`,
+      };
+    }
+
+    if (data?.dataDocument?.revision !== undefined) {
+      setLastKnownServerRevision(Number(data.dataDocument.revision) || 0);
+    }
+
+    return {
+      ok: true,
+      dataDocument: data?.dataDocument,
+      tasteMaps: data?.tasteMaps || {},
+      stock: data?.stock || { movies: [], tv: [] },
+      counts: data?.counts,
+      postersWritten: Number(data?.postersWritten) || 0,
+      postersSkipped: Number(data?.postersSkipped) || 0,
+      createdAt: data?.createdAt,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      message: error?.message || 'SQLite arşivi geri yüklenemedi (ağ hatası).',
+    };
+  }
+}

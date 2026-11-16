@@ -11,6 +11,7 @@
 
 export type {
   MediaKey,
+  MediaKind,
   ModuleHealth,
   OperationOutcome,
   ProfileConflictReason,

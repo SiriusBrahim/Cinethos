@@ -15,7 +15,6 @@ import {
   buildTasteIndex,
   createEmptyTasteIndex,
 } from "../../src/core/taste/taste-index-builder.ts";
-import { buildMetadataHash } from "../../src/core/taste/feature-extractor.ts";
 import {
   TASTE_SCHEMA_VERSION,
   EXTRACTOR_VERSION,

@@ -119,7 +119,7 @@ export class ContentEventSubscriber {
     const mediaType: MediaKind | null =
       payload.mediaType === 'tv' || payload.mediaType === 'movie'
         ? payload.mediaType
-        : parsed?.media_type ?? null;
+        : parsed?.type ?? null;
     const tmdbId = parsed && /^\d+$/.test(parsed.id) ? Number(parsed.id) : null;
     const canonicalKey = mediaType && tmdbId ? `${mediaType}:${tmdbId}` : null;
 

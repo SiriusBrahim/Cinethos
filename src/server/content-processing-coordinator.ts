@@ -201,9 +201,9 @@ export class ContentProcessingCoordinator implements IApplicationModule {
     const parsed = parseMediaKey(mediaKey);
     return this.queue.enqueue({
       mediaKey,
-      mediaType: parsed?.media_type,
+      mediaType: parsed?.type,
       tmdbId: parsed && /^\d+$/.test(parsed.id) ? Number(parsed.id) : undefined,
-      payload: rawItem ?? (parsed ? { id: Number(parsed.id), media_type: parsed.media_type } : null),
+      payload: rawItem ?? (parsed ? { id: Number(parsed.id), media_type: parsed.type } : null),
     });
   }
 

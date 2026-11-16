@@ -8,3 +8,4 @@ dev-dist/
 bun.lock
 data/
 
+test-results/

@@ -10,39 +10,34 @@ import {
   RECOMMENDATION_WEIGHTS_V3, normalizeUserRating, signalDecay, getUserSignalV3,
   buildTasteProfileV3, scoreCandidatesV3, actorFrequency, pairMatchScore, castHarmonyScore,
   findSavedItem, scoreActorRecommendations, calculateActorRoleBonus, diversifyActorRecommendations,
-  makeMediaKey, parseMediaKey, normalizeFavoriteActor, normalizeFavoriteActors,
-  describeActorFetchChipState,
+  makeMediaKey, describeActorFetchChipState,
   isItemSaved, filterHistoryByType, filterDislikedByType, TARGET_RECOMMENDATION_COUNT,
   POOL_TARGET_CAPACITY, POOL_LOW_WATERMARK, POOL_REPLENISH_MIN_NEW,
   determineItemEra, determineItemPopularityTier, normalizePoolCandidate,
   isCandidateEligibleInPool, filterEligiblePoolItems, balanceCandidatePool,
-  multiDimensionalDiversify, PoolReplenishmentLock, poolReplenishmentLock,
-  loadPersistentPoolData, savePersistentPoolData, createDefaultPoolCursors, createDefaultPoolData,
-  replenishCandidatePool, selectBalancedRecommendations,
-  assignTasteRing, demoteTasteRing, getTasteRingLabel, inferLifecycleRing, normalizeTasteRing,
-  normalizeTasteMapEntries, normalizeTasteMapRings,
+  multiDimensionalDiversify, PoolReplenishmentLock, savePersistentPoolData,   replenishCandidatePool, selectBalancedRecommendations,
+  assignTasteRing, demoteTasteRing, getTasteRingLabel, inferLifecycleRing,   normalizeTasteMapEntries, normalizeTasteMapRings,
   loadPersistentTasteMap, savePersistentTasteMap, updateTasteMapWithBatch,
-  recordTasteMapPoolScores, isTasteMapCacheValid,
+  isTasteMapCacheValid,
   markTasteMapItemStatus, syncPoolCandidatesWithTasteMap,
   createDefaultTasteMapData, getTasteMapStorageKey,
   calculateTastePillars, computeTasteProfileSignature, buildTasteProfileSummary,
-  fetchActorCreditsBatch, getInFlightActorCreditsCount, clearInFlightActorCredits,
-  getTasteMapEntries, getTasteMapArchivedEntries, getTasteMapActiveAndArchivedCounts,
+  fetchActorCreditsBatch, clearInFlightActorCredits,
+  getTasteMapActiveAndArchivedCounts,
   archiveTasteMapEntry, restoreTasteMapEntry,
-  MAX_IMPRESSION_HISTORY_PER_ENTRY, appendBoundedImpression,
-  sanitizeTasteMapEntryImpressions, getImpressionSummary,
-  ENGINE_VERSION, ALGORITHM_VERSION, computeWeightsSignature
+  MAX_IMPRESSION_HISTORY_PER_ENTRY,   sanitizeTasteMapEntryImpressions, getImpressionSummary,
+  ENGINE_VERSION, ALGORITHM_VERSION
 } from "../src/core/cinetrack-core.ts";
 import { PROVIDER_OPTIONS, DISCOVER_PROVIDER_CHIPS } from "../src/utils/helpers.ts";
 import {
   TMDB_CACHE_TTLS,
   resolveTmdbCacheTtl,
-  clearTmdbClientCache,
+
   parseTmdbSourceFromHeaders,
   getTmdbSourceLabel,
   getTmdbSourceDescription,
   setTmdbSourceState,
-  getTmdbSourceState,
+
   subscribeTmdbSource,
 } from "../src/services/api.ts";
 
@@ -782,7 +777,7 @@ describe("Favori Oyuncu Çökme Regresyonu — describeActorFetchChipState & Str
     const actors = [{ id: 934, name: "Rebecca Ferguson" }];
     let upstreamCalls = 0;
 
-    const mockFetch = async (_path, _params, signal) => {
+    const mockFetch = async (__path, __params, signal) => {
       // Paylaşılan in-flight çağrıya çağıranın bireysel signal'i sızmamalı
       assert.equal(signal, undefined);
       upstreamCalls += 1;
@@ -1840,7 +1835,7 @@ describe("Sana Özel Aşama 2 — 500 + 500 Yenilenebilir Aday Havuzu", () => {
 
     let fetchCallCount = 0;
     let nextId = 9000;
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (_path, _params) => {
       fetchCallCount++;
       return {
         results: Array.from({ length: 20 }, () => ({
@@ -1883,7 +1878,7 @@ describe("Sana Özel Aşama 2 — 500 + 500 Yenilenebilir Aday Havuzu", () => {
     });
 
     // /movie/popular isteği hata fırlatıyor
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (path, _params) => {
       if (path === "/movie/popular") {
         throw new Error("TMDB network timeout");
       }
@@ -1919,7 +1914,7 @@ describe("Sana Özel Aşama 2 — 500 + 500 Yenilenebilir Aday Havuzu", () => {
     };
 
     const sharedId = 445566;
-    const mockFetch = async (path) => ({
+    const mockFetch = async (_path) => ({
       results: [
         { id: sharedId, title: "Ortak Film", vote_average: 8.2, popularity: 50, genre_ids: [18] }
       ],
@@ -2133,7 +2128,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
     });
 
     let nextId = 50000;
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (_path, _params) => {
       // Yapay gecikme: iptal sinyalinin yarışta tetiklenebilmesi için
       await new Promise((r) => setTimeout(r, 25));
       return {
@@ -2200,7 +2195,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
     let activeInFlight = 0;
     let maxInFlight = 0;
 
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (_path, _params) => {
       activeInFlight++;
       maxInFlight = Math.max(maxInFlight, activeInFlight);
       await new Promise((r) => setTimeout(r, 15));
@@ -2212,7 +2207,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
       };
     };
 
-    const result = await replenishCandidatePool({
+    await replenishCandidatePool({
       profileId: "profile-concurrency-test",
       mediaType: "movie",
       savedItems: [],
@@ -2229,7 +2224,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
 
   it("hata alan kaynak tekrar denenebilir (retryable) olarak kuyruğa alınır ve başarılı olunca imleç kesinleştirilir", async () => {
     let popularAttempt = 0;
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (path, _params) => {
       if (path === "/movie/popular") {
         popularAttempt++;
         if (popularAttempt === 1) {
@@ -2275,7 +2270,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
       cursors: { popular: 7, top_rated: 1, recent: 1, exploration: 1, genre_discover: {}, similar: {}, person_credits: {} },
     });
 
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (path, _params) => {
       if (path === "/movie/popular") {
         throw new Error("Persistent 500 error");
       }
@@ -2305,7 +2300,7 @@ describe("Sorun C — Havuz Yenileme İsteği Yönetimi, Sınırlı İş Kuyruğ
   it("yeni havuz 250 yeni adayla (veya 500 kapasiteye) tamamlanana kadar sayfalamaya devam eder", async () => {
     let nextId = 80000;
     let pageCounter = 0;
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (_path, _params) => {
       pageCounter++;
       // Her sayfa 20 benzersiz aday döndürsün
       return {
@@ -3455,7 +3450,7 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
     let currentInFlight = 0;
     let maxInFlightObserved = 0;
 
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (_path, _params) => {
       currentInFlight++;
       maxInFlightObserved = Math.max(maxInFlightObserved, currentInFlight);
       // Kısa bir bekleme simüle et
@@ -3486,7 +3481,7 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
   it("Oyuncu Bazında Durum: Başarılı, boş ve hatalı oyuncuların durumlarını ayrı ayrı takip eder ve bir hata diğerlerini etkilemez", async () => {
     const statusTransitions = [];
 
-    const mockFetch = async (path, params) => {
+    const mockFetch = async (path, _params) => {
       if (path.includes("/person/10/")) {
         // 10: Başarılı, dolu cast
         return { cast: [{ id: 101, title: "Film 10" }, { id: 102, title: "Film 10-2" }] };
@@ -3571,7 +3566,7 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
   it("Eski Yanıtları Engelleme (Stale Response Guard): Ticket geçersizleştiğinde eski istek sonucu sisteme yazılmaz", async () => {
     let activeTicket = 1;
 
-    const mockFetch = async (path) => {
+    const mockFetch = async (_path) => {
       // İstek sürerken kullanıcı yeni bir işlem başlattı (bilet 2'ye geçti)
       await new Promise((r) => setTimeout(r, 30));
       return { cast: [{ id: 888, title: "Eski İstek Yanıtı" }] };
