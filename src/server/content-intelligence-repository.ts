@@ -167,6 +167,19 @@ export class ContentIntelligenceRepository {
         );
       `);
 
+      // Eski sürüm eventId değerleri lib-<profileId>-... biçimindeydi ve
+      // profile/actor kimliklerini ortak event ledger'ına taşıyabiliyordu.
+      // Yeni eventId'ler opak UUID'dir; eski kimlikleri tek yönlü rastgele
+      // değerlerle değiştirerek mevcut dedupe satırlarını koru.
+      instance.exec(`
+        UPDATE content_processed_events
+        SET event_id = 'legacy-' || lower(hex(randomblob(16)))
+        WHERE event_id LIKE 'lib-%';
+        UPDATE content_processing_queue
+        SET trigger_event_id = 'legacy-' || lower(hex(randomblob(16)))
+        WHERE trigger_event_id LIKE 'lib-%';
+      `);
+
       this.db = instance;
       this.lastError = null;
     } catch (error) {
