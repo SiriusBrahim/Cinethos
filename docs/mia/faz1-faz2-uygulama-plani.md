@@ -2,7 +2,7 @@
 
 > **Bu belge Faz 1 ve Content Intelligence Faz 2 için tek yetkili uygulama ve kabul planıdır.** Önceki tarihsel tamamlanma işaretleri başlangıç kabul edilmez. Aşağıdaki durumlar mevcut master kodunun yeniden incelenmesine dayanır.
 >
-> **Denetim tabanı:** master = c59b3e6401844560f5646ea3bcd286ef24a46ae2 (16.11.2026). Geri yüklenen kaynakların temel snapshot'ı = 1c135fea5136fc5039cc0303fa2a9ea9b929936c. Silinen 123 dosya 44aabcd60b9736816c006c383ba8ec80488f2cc2 ile geri eklendi.
+> **Güncel denetim tabanı:** master = f677d51c9732d0b399c5a622b703d38687b9f6ae (16.11.2026). Ajanın PR #19 çalışması `5a6b23d8c235ab0c806194c017f981394751de24` merge commit'iyle alındı. Bakım düzeltmeleri bu merge sonrasında master'a doğrudan işlendi. CI/test doğrulaması henüz ajanın tamamlaması gereken ayrı bir iş paketidir. Geri yüklenen kaynakların temel snapshot'ı = 1c135fea5136fc5039cc0303fa2a9ea9b929936c; silinen 123 dosya 44aabcd60b9736816c006c383ba8ec80488f2cc2 ile geri eklendi.
 >
 > **Kapsam ayrımı:** Ana MIA_TRANSFORMATION_PLAN.md içindeki mimari yol haritasının Faz 2'si Veri Yöneticisi / repository / adaptör / SQLite dönüşümüdür. Bu belge, konuşmada Faz 2 diye adlandırdığımız Content Intelligence ve ortak içerik veritabanı işlerini kapsar. İkisi karıştırılmayacaktır.
 
@@ -19,13 +19,13 @@ Durum etiketleri:
 | Alan | Denetim sonucu | Kanıt / eksik |
 |---|---|---|
 | Ortak sözleşmeler | MEVCUT | src/contracts altında event, data, profile, module ve service sözleşmeleri var. |
-| ProfileContext | MEVCUT / KISMİ | src/app/ProfileContext.ts mevcut; üretim açılışında tek aktif örnek olarak kurulduğu ve tüm asenkron yazımlara verildiği doğrulanmadı. |
-| Runtime ModuleRegistry | MEVCUT / KISMİ | src/app/runtime-module-registry.ts mevcut; server.ts içinde kayıt/başlatma/kapatma akışı yok. |
-| AppEventBus | MEVCUT / KISMİ | src/app/app-event-bus.ts mevcut. Abone hataları catch edilip warn yazılıyor; publish() kritik abone başarısızlığında da resolve olabiliyor. |
-| PrimaryDataRepository | MEVCUT / KISMİ | Adaptör mevcut; src/server/app.ts içinde doğrudan storage.readDataAsync() kullanan birden fazla birincil veri yolu sürüyor. |
+| ProfileContext | KISMİ | Sunucu açılışında ve `/api/data`, arşiv restore/rollback, hibrit birleştirme yazımlarında aktif profil + revision eşitleniyor. Tüm arka plan asenkron görevlerinin profile ref taşıması ve eski profil işlerinin iptali ayrıca doğrulanmalı. |
+| Runtime ModuleRegistry | MEVCUT / KISMİ | PR #19 ile composition root ve start/stop yaşam döngüsü bağlandı. Modül rollback davranışı ve gerçek üretim açılış testi ajan tarafından doğrulanmalı. |
+| AppEventBus | KISMİ | Abone hataları artık tüm handler'lar çalıştıktan sonra AggregateError olarak publish çağrısına dönüyor. Kritik ve best-effort aboneler henüz ayrı sınıflandırılmıyor; ajan test ve davranış uyumluluğunu doğrulamalı. |
+| PrimaryDataRepository | KISMİ | Ana `/api/data` okuma/yazma ve MIA akışları repository üzerinden. Arşiv, rollback ve hibrit birleştirme yazımları da repository kullanıyor; tüm kalan düşük seviye storage erişimleri gerekçeleriyle taranmalı. |
 | TasteStore ve profil güvenliği | MEVCUT / YENİDEN DOĞRULANACAK | Kurtarma/eşzamanlılık testleri geri yüklendi; güncel CI çalıştırılamadığı için yeniden çalıştırılmalı. |
 | OfflineQueue profil referansı | MEVCUT / YENİDEN DOĞRULANACAK | Profil referansı ve çakışma testi var; gerçek tüm enqueue yollarının tek API kullanıp kullanmadığı denetlenmeli. |
-| Gerçek uygulama kablolaması | EKSİK | server.ts ve src/server/app.ts içinde AppEventBus, ProfileContext, RuntimeModuleRegistry ve ContentProcessingCoordinator başlatma zinciri bulunmuyor. |
+| Gerçek uygulama kablolaması | MEVCUT / TEST BEKLİYOR | PR #19 ile registry, coordinator, event subscriber, initial indexer ve route mount uygulamaya bağlandı. Aynı commit üzerinde CI ve üretim smoke test bekliyor. |
 
 ### 1.2 Faz 2 — Content Intelligence
 
@@ -35,19 +35,19 @@ Durum etiketleri:
 | Film / dizi kanonik kimliği | MEVCUT / TEST EDİLECEK | movie:<id> ve tv:<id> ayrımı kod ve testlerde var. |
 | Metadata normalizasyonu | MEVCUT | Metadata processor, feature extractor, mood ve semantic analyzer dosyaları var. |
 | 48 boyutlu feature vector | MEVCUT / TEST EDİLECEK | Kod ve test beklentisi var; gerçek TMDB veri çeşitliliğiyle kabul testi gerekli. |
-| Görsel / kişisel veri temizliği | KISMİ — P0 | STRIPPED_PERSONAL_KEYS içinde notes / note / user_note alanları yok. Faz 2 test verisi 'Özel kişisel notum' değerini içeriyor ve ortak tabloda bulunmamasını bekliyor. Bu test CI'da çalıştırılamadı. Denylist yaklaşımı da bilinmeyen kişisel alanları garantiyle engellemez; allowlist zorunlu. |
-| Event tekilleştirme ve enqueue | HATALI — P1 | ContentEventSubscriber önce markEventProcessed() yazıyor, sonra queue.enqueue() çağırıyor. Kuyruk ekleme reddedilirse veya hata verirse event kalıcı olarak işlenmiş sayılabilir. enqueue() sonucu da kontrol edilmiyor. |
-| Kalıcı kuyruk / retry / recovery | MEVCUT / KISMİ | SQLite kuyruğu, yeniden başlatma kurtarması, retry ve backoff kodu var; gerçek sunucu açılışında coordinator başlatılmadığı için uygulama trafiğinde çalışmıyor. |
-| Gerçek liste olayları | EKSİK | Subscriber sınıfı var; gerçek liste ekleme/güncelleme/silme/durum/puan/favori akışlarına bağlı değil. |
-| Metadata çözümleme | KISMİ | Resolver ve metadata source var; gerçek event yalnızca mediaKey taşıdığında uygulama kataloğu/cache/TMDB zincirinin tamamı bağlanmalı. |
-| Başlangıç indekslemesi | EKSİK | Coordinator batch metodu var; server açılışında tüm profillerin izledim/izleyeceğim/izliyorum/ilgilenmiyorum/gizlenen kayıtlarını bu kuyruğa veren akış yok. |
-| HTTP API | MEVCUT / BAĞLANTISIZ | content-intelligence-routes.ts var; src/server/app.ts içinde router mount edilmemiş. |
+| Görsel / kişisel veri temizliği | KISMİ — P0 | PR #19 ile açık allowlist ve notes/note/user_note temizliği eklendi. Bakım düzeltmesi derinlik sınırı aşılınca ham alt ağacı döndürmek yerine atıyor. Test/CI doğrulaması ajanda; eski ortak SQLite kayıtları için migration/temizlik kararı da gerekli. |
+| Event tekilleştirme ve enqueue | KISMİ — P0 | PR #19 event kabulini ve queue kaydını aynı SQLite transaction'a aldı. Bakım düzeltmesi processing durumundaki işin payload'ı değiştiğinde eski worker'ın yeni revizyonu tamamlandı saymasını engelliyor; güncel payload sonraki tur için pending'e döner. Test/CI doğrulaması ajanda. |
+| Kalıcı kuyruk / retry / recovery | MEVCUT / TEST BEKLİYOR | Coordinator sunucu ModuleRegistry yaşam döngüsüne bağlandı. Worker yarış koşulu için completion/retry/failure güncellemeleri snapshot revision ile korunuyor. Restart, concurrency ve retry testleri ajan tarafından çalıştırılmalı. |
+| Gerçek liste olayları | KISMİ | `/api/data` diff'i gerçek typed event üretiyor. Olaylar artık HTTP yanıtından önce await ediliyor; teslimat hatasında ilgili mediaKey key-only fallback kuyruğa alınıyor. FavoriteActorChanged gibi mediaKey'siz olayların hata telafisi ve uçtan uca doğrulaması bekliyor. |
+| Metadata çözümleme | MEVCUT / TEST BEKLİYOR | Coordinator metadata source ve TMDB resolver ile bağlı. Film/TV gerçek yanıtları, cache, rate limit ve offline retry davranışı ajanın entegrasyon testlerinde doğrulanmalı. |
+| Başlangıç indekslemesi | KISMİ | Açılış modülü beş liste kapsamını tarıyor. Reddedilen kayıt varsa durum artık `partial` olarak raporlanıyor; indeksin kaldığı yerden devam etmesi ve health endpoint sayımlarının doğrulanması bekliyor. |
+| HTTP API | KISMİ | Router uygulamaya mount edilmiş. Auth/origin, yönetim endpoint'leri, pagination, rate limit ve veri sızıntısı kontrollerinin tam denetimi ajanın kabul testinde yapılmalı. |
 | Arşiv / migration | YENİDEN TASARLANACAK | Ayrı Content Intelligence SQLite verisinin arşivlenmesi veya deterministik yeniden kurulması, migration ve kuyruk kurtarma politikası tek karara bağlanmalı. |
-| Test paketi | MEVCUT / BLOKE | Faz 1 ve Faz 2 test dosyaları geri geldi; CI npm ci aşamasında lockfile hatasıyla duruyor. |
+| Test paketi | BLOKE — AJAN SORUMLULUĞU | PR #19'un beş yeni testi `npm test` ana komutuna dahil edilmeli. Lockfile/npm ci, lint, test, taste, build, E2E ve smoke aynı SHA üzerinde ajan tarafından tamamlanmalı. |
 
 ### 1.3 CI / bağımlılık engeli
 
-Son doğrulanabilen GitHub Actions çalıştırmalarında Lint, Test, Build ve Production Smoke Test işine geçilemeden npm ci başarısız oluyor. Loglarda Vite 8 / Rolldown ve Rollup için çok sayıda platforma özgü optional dependency kaydının package-lock.json içinde bulunmadığı bildiriliyor. Bu nedenle şu an testlerin geçtiği veya kaldığı söylenemez; önce package.json ile lockfile aynı bağımlılık ağacından yeniden üretilmelidir.
+PR #19 ve bakım commit'leri sonrasında GitHub Actions çalıştırmaları tetiklenmiştir; şu an testlerin geçtiği söylenemez. Önceki PR CI loglarında Vite 8 / Rolldown / Rollup platform optional dependency kayıtlarının lockfile'da eksik olduğu için `npm ci` başarısız olmuştu. Güncel lockfile onarımı, temiz runner `npm ci`, lint, test ve build doğrulaması ajanın sorumluluğundadır. Ajan aynı son commit SHA üzerinde yeşil CI kanıtı sunmadan kabul kapısı kapatılmayacaktır.
 
 ---
 
@@ -66,6 +66,21 @@ Her adım tamamlandığında kod, test ve commit birlikte doğrulanır. Dosyanı
 - [ ] npm ci sonrası npm run lint, npm test, npm run test:taste, npm run build komutları ayrı ayrı çalıştırılsın; ilk hata düzeltilmeden sonraki aşamaya geçilmesin.
 
 **Kabul:** npm ci temiz ortamda başarılı; lockfile güncel; test komutları gerçekten çalışmaya başlıyor.
+
+**Sorumlu:** Bu bölümün uygulayıcısı AJAN'dır. Bakım kodu tamamlandıktan sonra ajan aşağıdaki işleri yapacak; kullanıcıya yalnızca yerel test beyanı değil, GitHub Actions run URL'leri ve commit SHA sunacaktır.
+
+### 0.2 Test ve CI doğrulaması — AJAN SORUMLULUĞU
+- [ ] PR #19 ile eklenen `content-event-outbox.test.mjs`, `content-privacy-allowlist.test.mjs`, `initial-indexing.test.mjs`, `library-events-e2e.test.mjs`, `server-lifecycle.test.mjs` testlerinin tamamını `npm test` ana komutuna dahil et.
+- [ ] package.json ile package-lock.json bağımlılık ağacını yeniden üret; lockfile'a platform optional dependency kayıtlarını eksiksiz dahil et.
+- [ ] Node sürümünü `engines`, CI workflow ve yerel test ortamında aynı desteklenen sürümde sabitle.
+- [ ] Temiz runner/container ortamında `npm ci` çalıştır; kurulum tamamlanmadan test adımına geçildiğini varsayma.
+- [ ] `npm run lint`, `npm test`, `npm run test:taste`, `npm run build`, ilgili E2E ve production smoke testlerini ayrı ayrı çalıştır.
+- [ ] Başarısız testleri kodu düzelterek çöz; test silme, test kapsamını azaltma, assertion gevşetme veya CI adımını atlama.
+- [ ] Bu bakım commit'lerindeki allowlist derinlik, opak event ID, worker/payload yarışı, EventBus hata yayılımı, ProfileContext senkronizasyonu ve indeksleme partial-state davranışları için regresyon testleri ekle.
+- [ ] İki profil izolasyonu, event retry/idempotency, aynı mediaKey üzerinde processing sırasında yeni metadata gelmesi ve profil değişiminde stale write senaryolarını test et.
+- [ ] Sonuçları aynı commit SHA için GitHub Actions linkleriyle raporla; yeşil olmayan adım varsa plan maddesini tamamlandı işaretleme.
+
+**Kabul:** Temiz kurulum ve tüm zorunlu doğrulamalar aynı commit SHA üzerinde başarılı; test listesi ve CI run URL'leri belgelenmiş.
 
 ## FAZ 1 — Mimari sözleşmeler ve gerçek çalışma zamanı
 
@@ -113,6 +128,20 @@ Her adım tamamlandığında kod, test ve commit birlikte doğrulanır. Dosyanı
 - [ ] OfflineQueue eski/yeni enqueue API'leri envanterlensin; tek kanonik giriş noktası belirlensin.
 - [ ] OfflineQueue profil çakışmasında yazımı durdursun, işi kaybetmesin ve doğru profil/revision geldiğinde güvenle devam etsin.
 - [ ] TasteEvent / TasteStore / TasteEventProjector akışında çift olay ve çift kanıt oluşmadığı doğrulansın.
+
+### 1.6 Bakım düzeltmeleri — KOD DEĞİŞİKLİKLERİ YAPILDI, AJAN TESTİ BEKLİYOR
+- [x] Allowlist derinlik sınırında ham nesnenin olduğu gibi döndürülmesi kaldırıldı; derinlik limiti aşılınca alt ağaç düşürülüyor.
+- [x] Liste olay kimliklerinden profileId, mediaKey ve favori oyuncu ID listesi çıkarıldı; eventId opak UUID.
+- [x] Content queue, çalışan iş sırasında gelen yeni metadata payload'ını daha ileri timestamp ile saklıyor; eski worker tamamlandığında yeni revizyonu pending'e geri bırakıyor.
+- [x] Completion, retry ve failure güncellemeleri çalışan worker'ın aldığı updated_at snapshot'ına koşullandı.
+- [x] Aynı mediaKey için ikinci in-flight claim'in mevcut işi yanlışlıkla completed işaretlemesi engellendi.
+- [x] AppEventBus tüm aboneleri çalıştırıp handler hatalarını AggregateError olarak çağırana iletiyor.
+- [x] `/api/data` domain event teslimatını HTTP yanıtından önce bekliyor; ilgili mediaKey için key-only fallback eklendi.
+- [x] ProfileContext sunucu açılışında ve ana veri, archive restore/rollback, hibrit merge yazımlarında aktif profileId/revision ile senkronize ediliyor.
+- [x] Başlangıç indekslemesi reddedilen kayıt varsa `partial` durumunu raporluyor.
+- [ ] Ajan bu kod değişiklikleri için regresyon testlerini ekleyip CI'da doğrulasın.
+
+**Kod commit'leri:** `e91f10d`, `42e0d75`, `d23067a`, `d12fd94`, `40875a1`, `7b41244`, `65da513`, `62b381b`, `1028a6c`, `f677d51`, `85e4557`, `57bcb52`.
 
 ### Faz 1 kabul kapısı
 - [ ] npm run lint başarılı.
