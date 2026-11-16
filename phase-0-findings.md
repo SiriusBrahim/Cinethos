@@ -154,12 +154,16 @@ CI (PR #9, run `43777139705`): `Playwright E2E: FAILURE` — **gerçek test hata
 1. **`app-smoke.spec.ts:20` — strict mode violation:** `.brand-title` locator'ı **2 element** çözüyor: (1) `AppSidebar.tsx:78` markası ("Cinethos Keşfet sayfasına dön" butonu), (2) `Header.tsx:242` markası (`aria-label="Ana sayfa"`). İki bileşen de her viewport'ta DOM'da; CSS yalnızca birini gizler (≥1024px header brand gizli, ≤768px header'ın tamamı gizli). Çift marka, `ef031af`'teki sidebar kabuğunun Header ile birlikte mount edilmesinden gelen **bilinçli kabuk tasarımıdır** — üretim hatası değil, spec'in eski tek-marka varsayımı hata.
 2. **`responsive.spec.ts:31` — `.app-header` mobilde gizli:** `design-system.css:170` kuralı (`≤768px` → `.mobile-frame .app-header { display: none }`) mobil kabukta header'ı MobileTopBar'a devreder; spec tüm viewport'larda header görünürlüğü bekliyordu. Tablet (768px) tam sınırda olduğundan 10 sn timeout ile düşüyordu.
 
-**Uygulanan düzeltme (yalnızca test katmanı, üretim kodu değişmedi):** `app-smoke` → `.brand-title:visible`; `responsive` → viewport koşullu beklenti (≤768px: `.mobile-topbar` görünür + `.app-header` gizli; aksi: `.app-header` görünür). JS eşiği (`useMediaQuery('(max-width: 768px)')`) CSS ile birebir uyumlu doğrulandı. Yerelde chromium sistem kütüphanesi eksik olduğundan (sandbox) doğrulama CI üzerinden yapılacak.
+**Uygulanan düzeltme (yalnızca test katmanı, üretim kodu değişmedi):** `app-smoke` → `.brand-title:visible`; `responsive` → ef031af kabuğuna uyarlanan viewport koşullu beklentiler: ≤768px'te `.mobile-topbar` + `.mobile-dock` görünür ve `.app-header` gizli; 769–1023px'te `.header-nav-tabs` görünür; ≥1024px'te `.sidebar-nav-list` görünür (header nav CSS ile gizlenir). `.mobile-tab-bar` (FloatingGlassDock) artık render edilmediğinden spec'ten çıkarıldı; dockta 'Listem' etiketi 'Kütüphane' olarak değişti. JS eşiği (`useMediaQuery('(max-width: 768px)')`) CSS ile birebir uyumlu doğrulandı.
 
-### Q. Faz 0'ı gerçekten kapatacak iki adım
+**Sonuç (commit `c9da060`, CI run `43778497153`):** `Playwright E2E: PASS` ✅ — Lint/Typecheck/Test/Build PASS, Production dependency audit PASS, Production server smoke PASS. Kalan tek kırmızı: `Full dependency audit (informational)` — Glob GHSA-3g3m-2fjr-6pw4 (moderate); kök: `exceljs → archiver → glob@7.2.3` geçişli zinciri. Kör override archiver/exceljs'i kırma riski taşıdığından **kabul edilmiş risk** olarak belgelendi; exceljs güncellemesiyle izlenir (job bloklamaz).
 
-1. Bu düzeltmenin CI'da E2E'yi yeşile çevirdiğinin doğrulanması (push sonrası otomatik).
-2. Canlı `data/cinetrack-data.json` salt okunur denetiminin kullanıcı onayıyla yapılması (v1'deki şema doğrulaması `ef031af` verisiyle yapılmıştı; güncel şema değişmedi, teyit niteliğinde).
+### Q. Faz 0 kapanış durumu
+
+1. ~~E2E'nin CI'da yeşile dönmesi~~ ✅ tamamlandı (`c9da060`).
+2. Canlı `data/cinetrack-data.json` salt okunur denetimi — kullanıcı onayı bekliyor (v1'deki şema doğrulaması `ef031af` verisiyle yapılmıştı; şema değişmedi, teyit niteliğinde).
+
+Bu tek madde dışında Faz 0 kapanmıştır; Faz 1'e (sözleşmeler — MIA planı §7.1) geçilebilir.
 
 Bu iki adım sonrası Faz 0 **kapalı** sayılır ve Faz 1'e (sözleşmeler — aşağıda MIA planı §7.1) geçilir.
 
