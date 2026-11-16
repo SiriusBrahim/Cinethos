@@ -1619,8 +1619,38 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       } else {
         profileContext.commitRevision(rev, nextActiveProfileId);
       }
-      res.setHeader('ETag', `"rev-${rev}"`);
-      res.json({
+      notifyLocalMutation('user-data-save');
+
+      // Kritik domain olaylarını HTTP yanıtından önce teslim et. EventBus artık
+      // abone hatalarını publish() çağrısına döndürür; içerik kuyruğu abonesi
+      // başarısızsa yalnızca ilgili mediaKey için güvenli bir key-only fallback
+      // enqueue edilir (tüm kütüphaneyi her PUT'ta yeniden kuyruğa almıyoruz).
+      const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
+      for (const ev of libraryEvents) {
+        try {
+          await eventBus.publish(ev);
+        } catch (pubErr) {
+          const payload = (ev.payload ?? {}) as Record<string, unknown>;
+          const mediaKey =
+            typeof payload.mediaKey === 'string'
+              ? payload.mediaKey
+              : typeof ev.entityId === 'string' && /^(movie|tv):\\d+$/.test(ev.entityId)
+                ? ev.entityId
+                : null;
+          if (mediaKey) {
+            // Key-only enqueue kişisel alan taşımaz; metadata worker tarafından
+            // lisanslı kaynaktan çözülür. Bu çağrı başarısızsa dış catch 500 döner.
+            contentIntelligence.enqueueHiddenOrDislikedItem(mediaKey);
+          } else {
+            console.warn(
+              `[Olay] ${ev.eventType} teslim edilemedi (${ev.eventId}):`,
+              pubErr instanceof Error ? pubErr.message : pubErr
+            );
+          }
+        }
+      }
+
+      const responsePayload = {
         ok: true,
         revision: rev,
         updatedAt: result.document.updatedAt,
@@ -1632,52 +1662,9 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
               document: result.document,
             }
           : {}),
-      });
-      notifyLocalMutation('user-data-save');
-
-      // MIA Faz 2 — Adım 2.5 (Dilim F): Gerçek liste işlemleri AppEventBus
-      // üzerinden typed olay olarak yayımlanır (LibraryItemAdded/Updated/
-      // StatusChanged/RatingChanged/Removed + FavoriteActorChanged). Yayım
-      // HTTP yanıtını bekletmez ve bloke etmez; abone (Content Intelligence
-      // transactional outbox) olayları kalıcı kuyruğa alır.
-      try {
-        const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
-        for (const ev of libraryEvents) {
-          void eventBus
-            .publish(ev)
-            .catch((pubErr) => {
-              console.warn(
-                `[Olay] ${ev.eventType} yayımı tamamlanamadı (${ev.eventId}):`,
-                pubErr instanceof Error ? pubErr.message : pubErr
-              );
-            });
-        }
-      } catch (diffErr) {
-        // Olay türetme hatası ana yazma yanıtını bozmamalı.
-        console.warn('Liste olay türetme uyarısı:', diffErr instanceof Error ? diffErr.message : diffErr);
-      }
-
-      // MIA Faz 2: Tüm profil listelerindeki, ilgilenmiyorum ve gizlenenlerdeki
-      // içerikleri (görsel ve kişisel alanlardan arındırarak) arka planda kuyruğa al.
-      if (contentIntelligence.queue.isRunning()) {
-        const batchItems: Record<string, unknown>[] = [];
-        for (const prof of result.document.profiles || []) {
-          if (Array.isArray(prof.items)) {
-            for (const it of prof.items) {
-              batchItems.push(it as unknown as Record<string, unknown>);
-            }
-          }
-          for (const key of prof.preferences?.disliked || []) {
-            contentIntelligence.enqueueHiddenOrDislikedItem(key);
-          }
-          for (const key of prof.preferences?.hidden || []) {
-            contentIntelligence.enqueueHiddenOrDislikedItem(key);
-          }
-        }
-        if (batchItems.length > 0) {
-          void contentIntelligence.enqueueLibraryItemsBatch(batchItems).catch(() => undefined);
-        }
-      }
+      };
+      res.setHeader('ETag', `"rev-${rev}"`);
+      res.json(responsePayload);
     } catch (error: any) {
       if (error instanceof CorruptJsonFileError) {
         res.status(500).json({ status_message: error.message, code: error.code });
