@@ -38,9 +38,32 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 | 12 | Canlı yerel veri denetimi | ✅ | `data/cinetrack-data.json`: `version 3`, `schemaVersion 3`, `engineVersion v3.2.0`, 1 profil |
 | 13 | Testlerin modüllerle eşleştirilmesi | ✅ | `faz0-envanter-veri.md` §9 (25 test dosyası, hedef kaynaklar) |
 | 14 | Lint/TypeScript | ✅ | `npm run lint` temiz (eslint + 2× tsc) |
-| 15 | E2E testleri | ❌ Çalıştırılmadı | `e2e/` + `playwright.config.ts` var; bu turda koşulmadı, sonuç raporlanmadı |
+| 15 | E2E testleri | ⚠️ Çalıştırıldı: **4/11 geçti**, 7 başarısızlık testlerin eski düzene yazılmış olmasından | §0.2 — ayrıntılı senaryo/temel neden tablosu |
 
-**Sonuç:** 12/15 madde tamam, 2 madde kısmi, 1 madde açık (E2E). Faz 1 **sözleşme tasarımı** için engel yok; Faz 2 veri taşıması `SyncStorePort` + profil damgası çözülmeden başlamamalı.
+**Sonuç:** 12/15 madde tamam, 3 madde kısmi (veri akışı diyagramı, profil yarışı, E2E). E2E artık **çalıştırıldı**; 7 başarısızlığın tamamı testlerin sidebar + `MobileDock` öncesi düzene yazılmış seçicilerinden kaynaklanıyor, ürün hatası kanıtlanmadı (§0.2). Faz 1 **sözleşme tasarımı** için engel yok; Faz 2 veri taşıması `SyncStorePort` + profil damgası çözülmeden başlamamalı.
+
+### 0.2 E2E sonuçları — 2026-11-16
+
+**Komut:** `./node_modules/.bin/playwright test --workers=1 --retries=0 --reporter=list` (Chromium headless, `npm run build` + `vite preview` webServer ile)
+**Sonuç:** **11 test · 4 geçti · 7 başarısız · 50,7 sn**
+**Ortam notu:** Bu VM'de Chromium sistem kütüphaneleri ve font paketi yoktu; `libnspr4/libnss3/libatk*/libxkbcommon` + `fonts-liberation`/`dejavu` paketleri `/tmp` altına açılıp `LD_LIBRARY_PATH` ve `FONTCONFIG_FILE` ile verildi. Bu, depoya giren bir değişiklik değildir; ortamın kendi eksiğidir (root/sudo yok).
+
+| # | Senaryo | Sonuç | Temel neden |
+| --- | --- | --- | --- |
+| 1 | `app-smoke` › marka, gezinme ve yerel liste | ❌ | `page.locator('.brand-title')` **strict mode ihlali**: sidebar ve `MobileTopBar` aynı sınıfı taşıyor (2 eşleşme). Test tek görünür öğeye kapsanmalı |
+| 2 | `app-smoke` › ana sekmeler + profil girişi | ✅ | — |
+| 3 | `offline` › API yokken yeniden yükleme listeyi korur | ✅ | — |
+| 4 | `profiles-and-conflict` › hızlı profil değişimi listeleri karıştırmaz | ✅ | — |
+| 5 | `profiles-and-conflict` › revizyon çakışması + kayıpsız birleştirme | ✅ | — |
+| 6–8 | `responsive` › mobil-360x640, mobil-390x844, tablet-768x1024 | ❌ | `.app-header` mobilde artık render edilmiyor (`MobileTopBar` kullanılıyor); test eski header'ı bekliyor |
+| 9–11 | `responsive` › laptop-1024, masaustu-1440, genis-1920 | ❌ | `.app-header` geçiyor, ardından `.header-nav-tabs` / `.mobile-tab-bar` bekleniyor; gezinme artık `AppSidebar` (`role="tablist"`) + `MobileDock` |
+
+**Değerlendirme:** Başarısızlıkların 7'si de **seçici/düzen beklentisi** kaynaklı; hiçbiri DOM'da hata, API regresyonu veya konsol hatası göstermedi (diğer 4 senaryo, aynı uygulamada geçti). Ancak bu nedenle şu ürün davranışları E2E ile **doğrulanmış sayılmaz**: yatay taşma kontrolü (nav assert'ından sonra geliyor), sekmeye tıklayıp listeyi görme (aynı testte), mobil gezinme davranışı.
+
+**Düzeltme için gereken (Faz 8 kapsamı, bu turda yapılmadı):**
+1. `e2e/responsive.spec.ts` — `.app-header` yerine `AppSidebar` + `MobileTopBar` koşulları; `≤768px` için `MobileDock` (`nav.mobile-dock`), `>768px` için sidebar tablist görünürlüğü.
+2. `e2e/app-smoke.spec.ts` — `.brand-title` seçicisini görünür öğeye kapsamak (ör. `page.locator('.app-sidebar .brand-title')`).
+3. Testleri güncelledikten sonra `--workers=1 --retries=0` ile tekrar koşup 11/11 hedeflenmeli.
 
 **Baseline:** `npm run lint` temiz · `npm test` 422/422 · `npm run test:taste` 362/362 · `npm run build` başarılı (ana JS 427,76 kB).
 
