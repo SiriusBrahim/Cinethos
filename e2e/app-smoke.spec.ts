@@ -17,7 +17,8 @@ test.describe('Cinethos smoke', () => {
 
     await page.goto('/');
 
-    await expect(page.locator('.brand-title')).toHaveText('Cinethos');
+    // Marka basligi hem AppSidebar'da hem Header'da DOM'da bulunur; ayni anda yalnizca biri gorunurdur.
+    await expect(page.locator('.brand-title:visible')).toHaveText('Cinethos');
     await expect(page.getByRole('tab', { name: 'Listem' })).toBeVisible();
 
     await page.getByRole('tab', { name: 'Listem' }).click();

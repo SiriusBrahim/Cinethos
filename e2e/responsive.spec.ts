@@ -28,7 +28,14 @@ for (const viewport of VIEWPORTS) {
     await mockApi(page);
 
     await page.goto('/');
-    await expect(page.locator('.app-header')).toBeVisible();
+
+    // Mobil kabuk (<=768px) masaustu header'ini gizler ve MobileTopBar'a devreder (design-system.css).
+    if (viewport.width <= 768) {
+      await expect(page.locator('.mobile-topbar')).toBeVisible();
+      await expect(page.locator('.app-header')).toBeHidden();
+    } else {
+      await expect(page.locator('.app-header')).toBeVisible();
+    }
     await expect(page.locator('main.shell')).toBeVisible();
 
     const desktopNavVisible = await page.locator('.header-nav-tabs').isVisible();

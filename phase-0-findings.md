@@ -1,12 +1,172 @@
 # CineTrack — FAZ 0 Envanter ve Kod/Veri Denetim Raporu (`phase-0-findings.md`)
 
-**Durum:** v2 — Güncel (statik + dinamik denetim tamamlandı)  
-**v2 Denetim Tarihi:** `2026-11-16` · **Denetlenen dal:** `vibe/modular-shell-m1-b66b9a` @ `83016f5` (M1 üstünde)  
-**v1 (aşağıda arşiv):** `2026-11-01` @ `ef031af` — salt okunur denetim
+**Durum:** v3 — FAZ 0 KAPANIŞ DENETİMİ (kullanıcı kapanış denetimi sonrası; **"Tamamlandı" ibaresi kaldırıldı**)  
+**v3 Denetim Tarihi:** `2026-11-16` · **Denetlenen dal:** `vibe/modular-shell-m1-b66b9a` @ `93d46b8` (PR #9)  
+**v2 (aşağıda arşiv):** `2026-11-16` @ `83016f5` · **v1:** `2026-11-01` @ `ef031af`
 
 ---
 
-## v2 — Faz 0 Tamamlama Raporu
+## v3 — Faz 0 Kapanış Denetimi (kullanıcı denetimine yanıt)
+
+### K. Önemli not: iki denetim farklı kod görüyor
+
+Kapanış denetimi **`master @ ef031af`** üzerinden yapıldı. Faz 0'ın tüm dinamik çalışması (madge taraması, katman ihlal analizi, M1 modül kayıt defteri, shell-events) **`vibe/modular-shell-m1-b66b9a`** dalında ve **PR #9**'dadır; `master`'a henüz merge edilmedi. Bu yüzden denetim, Faz 0 v2'de yapılmış işleri göremedi. Aşağıdaki tablo, denetimin madde madde güncel dal üzerinden durumudur.
+
+### L. Dürüst durum tablosu (denetim maddeleriyle birebir)
+
+| Faz 0 adımı | Durum | Kanıt |
+| --- | --- | --- |
+| Kaynak dosya envanteri | ✅ | 208 dosya (madge), `docs/mia/faz0-envanter.md` |
+| Büyük modüllerin belirlenmesi | ✅ | App.tsx 4.654 / cinetrack-core 4.690 / persistent-store 4.230 / app.ts 2.281 |
+| Ana modül sınıflandırması | ✅ | v2 §E, 117+ sembol 5 kovaya ayrıldı |
+| Mimari dokümanının incelenmesi | ✅ | v2 §I — `ARCHITECTURE.md` Faz 2'de güncellenecek |
+| **Import bağımlılık grafiği** | ✅ **v3'te tamamlandı** | aşağıda §M — dizin matrisi + dosya bazlı kritik kenarlar |
+| Döngüsel bağımlılık analizi | ✅ | v2 §C — 7 döngü (4'ü `import type`, 1 gerçek değer döngüsü) |
+| **Fonksiyon bazında sorumluluk haritası** | ✅ **v3'te tamamlandı** | aşağıda §N — taşıma tablosu (cinetrack-core 126 export bildirimi + persistent-store 21 export + app.ts 41 endpoint + App.tsx 42 handler) |
+| **Veri sahipliği haritası** | ✅ **v3'te tamamlandı** | aşağıda §O — R/W matrisi (13 idb deposu + localStorage anahtarları × 8 yönetici) |
+| Modüller arası veri akışı | ✅ | v2 §F + v3 §O |
+| Profil değiştirme yarışları | ✅ | v2 §G — `requestGateRef` (5 nokta), `applyingRemoteSnapshotRef` (4 nokta), `*_ref` senkronu |
+| SQLite/JSON veri bütünlüğü | ⚠️ Kısmi | `sqlite-*` testleri yeşil (422 içinde); **canlı disk verisiyle çalıştırma yok** |
+| Canlı yerel veri denetimi | ⏳ Bekliyor | `data/cinetrack-data.json` mevcut; salt okunur denetim için kullanıcı onayı bekleniyor |
+| Testlerin modüllerle eşleştirilmesi | ✅ | v2 §H — 25 test dosyası risk sıralı |
+| Lint ve TypeScript kontrolü | ✅ | 0 hata / 0 uyarı (`--max-warnings 0` + 2× tsc) |
+| Unit testleri | ✅ | 422/422 + 362/362 (taste) — CI: `Lint · Typecheck · Test · Build: SUCCESS` |
+| **E2E testleri** | ❌ **CI'DA KIRMIZI** | aşağıda §P — gerçek hata bulundu, düzeltme uygulandı, CI doğrulaması bekleniyor |
+| Güncel Faz 0 raporu | ✅ | bu dosya (v3) |
+
+**Güncel tamamlanma tahmini: ~%85.** Kalan: E2E'nin CI'da yeşile dönmesi (düzeltme pushlandı) + canlı veri denetimi onayı. Denetimin %45-50 tahmini, `master`'daki eski görüntüye dayanıyordu.
+
+### M. Çıktı (a) — Gerçek import grafiği: dizin matrisi + kritik kenarlar
+
+madge ile 208 dosya tarandı (`npx madge --extensions ts,tsx --json src`). Dizinler arası import sayıları:
+
+| Kaynak ↓ / Hedef → | app | app/mobile | components | core | core/taste | design-system | hooks | i18n | modules/* | server | services | shared | types | utils | workers |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **App.tsx (kök)** | 8 | 3 | 5 | 9 | — | — | 7 | — | — | — | 15 | 1 | — | 3 | — |
+| **app/** | — | — | 10 | 4 | — | — | — | — | 4 | — | 1 | 2 | 1 | 3 | — |
+| **app/mobile/** | 3 | — | 1 | 1 | 2 | 6 | 1 | — | — | — | — | 1 | — | 1 | — |
+| **components/** | 3 | — | 4 | 50 | 2 | — | 4 | 6 | — | 0 | 36 | 4 | 8 | 30 | 0 |
+| **core/** | 0 | 0 | 0 | — | — | 0 | 0 | 0 | 0 | 0 | **4** | **3** | **1** | 0 | 0 |
+| **hooks/** | 1 | — | — | 4 | 2 | — | — | — | — | — | 9 | — | — | 1 | — |
+| **modules/** | 3 | — | 7 | 3 | — | — | — | — | 0 | — | — | — | — | — | — |
+| **server/** | — | — | — | 29 | 11 | — | — | — | — | — | — | 5 | — | — | — |
+| **services/** | — | — | — | 21 | 2 | — | — | — | — | — | — | — | 11 | 3 | — |
+| **workers/** | — | — | — | 1 | 4 | — | — | — | — | — | — | — | — | — | — |
+
+Genel yön sağlamı: `modules → components → services → core` zinciri hâkim; `server → core` (40) ve `components → core` (50) beklenen yoğunluklar. **Kural ihlali yalnızca `core → services` (4 import, 2 dosya) hattıdır.**
+
+**Dosya bazlı kritik kenarlar (mimari sınır testlerinin yakalayacağı tam liste):**
+
+| Kenar | Dosyalar | Nitelik | Faz 1 kararı |
+| --- | --- | --- | --- |
+| `core → services` (4) | `core/actor-recommendations.ts → services/api-client.ts` · `core/relationship-explorer.ts → services/{encoding-service,storage-idb,series-tv-seeds}.ts` | ❌ katman ihlali | Faz 5: port/enjeksiyon desenine çevrilir |
+| `core → shared` (3) | `cinetrack-core.ts`, `exporters.ts`, `relationship-explorer.ts` → `shared/brand.ts` | ⚠️ marka adı sabiti | Zararsız; `shared` her katmana açıktır |
+| `core → types` (1) | `core/person-insights.ts → types/tmdb.ts` | ⚠️ tip importu | Zararsız |
+| `modules → app` (3) | `TasteMapSection.tsx → {shell-context,lazy-with-retry}` · `RelationshipsSection.tsx → shell-context` | ⚠️ M1 bilinçli bağ | Faz 7'de ShellContext sözleşmesine bağlanır |
+| `app → modules` (4) | `module-registry.ts → 4 Section bileşeni` | ⚠️ M1 bilinçli bağ | Registry kayıt noktası; yasak listesinde değil |
+| `components → app` (3) | `CommandPalette.tsx`, `Header.tsx → module-registry/navigation` | ⚠️ M1 bilinçli bağ | Aynı şekilde |
+| `hooks → app` (1) | `useKeyboardShortcuts.ts → module-registry.ts` | ⚠️ M1 bilinçli bağ | Aynı şekilde |
+| `components → server` / `workers` | — | ✅ sıfır | — |
+
+### N. Çıktı (b) — Fonksiyon bazlı taşıma tablosu
+
+**N.1 `src/core/cinetrack-core.ts` (4.690 satır, 126 export bildirimi) → 8 yönetici:**
+
+| Sembol grubu (temsilciler) | Export sayısı ~ | Hedef yönetici | Hedef dosya (öneri) |
+| --- | --- | --- | --- |
+| Veri modeli + normalizasyon: `SavedItem`, `DataDocument`, `Profile`, `Preferences`, `FavoriteActorInfo`, `NextEpisode`, `normalizeSavedItem`, `normalizeProfile`, `normalizeDataDocument`, `normalizePreferences`, `normalize{FavoriteActor(s),DeletedKeys}`, `findSavedItem`, `buildSavedItemsIndex`, `findSavedIndexed`, `isItemSaved`, `dedupeItems`, `parseBackupText`, `CURRENT_SCHEMA_VERSION`, `PROFILE_ID_PATTERN`, `DISLIKED_KEY_PATTERN` | ~24 | **Veri Yöneticisi** (+ ortak tipler) | `core/media/types.ts` (Faz 1) + `modules/data/` |
+| Liste/durum yardımcıları: `filterHistoryByType`, `filterDislikedByType`, season sanitizer'ları (`sanitizeSeasonMap/Progress/Counts`, `buildSeasonCounts`, `defaultCurrentSeason`, `sanitizeNextEpisode`), `resolveAirDate`, `reminderDaysUntil`, `REMINDER_WINDOW_DAYS` | ~14 | **Kütüphane Yöneticisi** | `modules/library/operations/` |
+| Zevk profili hesabı: `buildTasteProfileV3`, `TasteProfileV3`, `calculateTastePillars`, `TastePillarsSummary`, `getUserSignalV3`, `signalDecay`, `normalizeUserRating`, `computeTasteProfileSignature`, `buildTasteProfileSummary`, `TasteProfileSnapshot`, `ALGORITHM_VERSION`, `ENGINE_VERSION` | ~14 | **Zevk ve Hafıza Yöneticisi** | `modules/intelligence/taste/` |
+| Zevk Haritası kalıcılığı: `TasteMapEntry/Impression`, `PersistentTasteMapData`, `getTasteMapStorageKey`, `createDefaultTasteMapData`, `appendBoundedImpression`, `sanitizeTasteMapEntryImpressions`, `getImpressionSummary`, `markTasteMapItemStatus`, `updateTasteMapWithBatch`, `recordDisplayedRecommendations`, `getTasteMap*`, `archive/restoreTasteMapEntry`, `pruneArchivedTasteEntries`, `recordTasteMapPoolScores`, `isTasteMapCacheValid`, `syncPoolCandidatesWithTasteMap`, `MAX_IMPRESSION_HISTORY_PER_ENTRY`, `MAX_ARCHIVED_TASTE_ENTRIES` | ~26 | **Zevk ve Hafıza Yöneticisi** (anahtarlar Veri'nin) | `modules/intelligence/taste/` |
+| Öneri puanlama: `scoreCandidatesV3`, `RECOMMENDATION_WEIGHTS_V3`, `actorFrequency`, `pairMatchScore`, `castHarmonyScore`, `extractOverviewTokens`, `computeWeightsSignature`, `clamp01/clamp11/bayesianRating/billingWeight` (re-export) | ~10 | **Öneri ve Keşif Yöneticisi** | `modules/recommendations/` |
+| Aday havuzu: `PoolCandidateItem`, `CandidatePoolCursors`, `PersistentCandidatePoolData`, `POOL_*` sabitleri, `createDefaultPool*`, `determineItemEra`, `determineItemPopularityTier`, `normalizePoolCandidate`, `isCandidateEligibleInPool`, `filterEligiblePoolItems`, `isMediaRegisteredInUserProfile`, `filterHiddenUserRegisteredItems`, `balanceCandidatePool`, `multiDimensionalDiversify`, `selectBalancedRecommendations`, `PoolReplenishmentLock`, `hydratePoolFromCatalog`, `topUpFilteredCandidates`, `replenishCandidatePool`, `HIDE_LISTED_CATEGORIES`, `filterOutLastRecommendedCandidates`, `TARGET_RECOMMENDATION_COUNT` | ~28 | **Öneri ve Keşif Yöneticisi** | `modules/recommendations/pool/` |
+| Altyapı yardımcıları: `createRequestGate`, `escapeHTML`, `safeHttpsUrl`, `validItemId`, `matchesSelectedGenre`, `resolveDiscoverGenreParam` | ~6 | **paylaşılan yardımcılar** | `shared/` (Faz 8) |
+
+**N.2 `src/server/persistent-store.ts` (4.230 satır, 21 export) → yöneticiler:**
+
+| Semboller | Hedef yönetici | Not |
+| --- | --- | --- |
+| `CatalogRecord`, `CatalogManifest`, `mergeCatalogItem`, `toCanonicalKey` | **İçerik Yöneticisi** | Katalog sorumluluğu `data/synchronization/`'dan ayrılır |
+| `DerivedProfileItem`, `DerivedProfileDocument` | **Zevk ve Hafıza Yöneticisi** | Türetilmiş profil önbelleği |
+| `TokenSourceKind`, `TokenFormatKind`, `GitHubTokenCandidateInfo`, `redactSecrets` | **Veri Yöneticisi** (gizlilik) | `redactSecrets` `shared/`'a da taşınabilir |
+| `PersistentStoreOptions`, `PersistentDataStore` (sınıf) | **Veri Yöneticisi** | Faz 2: `PrimaryDataRepository` arkasına alınır |
+| `SyncFileStage`, `GitHubSyncErrorCategory`, `RemoteRepoAccessCheck`, `SyncFileStateRecord`, `SyncStatus`, `SyncResult`, `StagedFileOutcome`, `StagedSyncReport`, `stringifyDeterministic`, `hashContent`, `sanitizeProfileId` | **Arka Plan Yöneticisi** (senkron) | Faz 2 ön koşulu: `SyncStorePort` — sınıf döngüsünü koparır |
+
+**N.3 `src/server/app.ts` (2.281 satır, 41 HTTP endpoint) → API grupları:**
+
+| Grup | Endpoint'ler | Hedef yönetici |
+| --- | --- | --- |
+| Sağlık + arşiv | `GET /api/health`, `GET /api/archive/sqlite/status`, `POST /api/archive/sqlite{,/prepare,/restore,/finalize,/rollback}` | Veri Yöneticisi |
+| Veri | `GET/PUT /api/data`, `GET /api/isolated/{profile,user-lists}`, `GET /api/data/backups`, `POST /api/data/{backup-now,restore}` | Veri Yöneticisi |
+| TMDB proxy | `GET /api/tmdb-status`, `GET /api/tmdb`, `GET /api/tmdb-image` | İçerik Yöneticisi |
+| Stok + künye | `GET /api/stock`, `POST /api/stock/upload`, `GET/POST /api/cinema-kunye` | İçerik Yöneticisi |
+| Senkron (11) | `/api/sync/{status,inspect,pull,push,reconcile,trigger,test-connection,token,public-consent,public-catalog-consent,staged}` | Arka Plan Yöneticisi |
+| Katalog + türetilmiş profil | `GET/POST /api/catalog{,/upsert}`, `GET/POST /api/profiles/derived{,/upsert}` | İçerik / Zevk-Hafıza |
+| Yedek (6) | `POST /api/backup/{hybrid-merge,profile-export,profile-export/stream,excel/preview}`, `GET /api/backup/exports/:fileName` | Veri Yöneticisi |
+
+**N.4 `src/App.tsx` (4.654 satır, 42 handler) → handler grupları:**
+
+| Grup | Handler'lar | Hedef |
+| --- | --- | --- |
+| Kütüphane işlemleri | `handleSaveItem`, `handleRemoveItem`, `handleSetStatus`, `handleMarkCompleted`, `handleIncrementTvEpisode`, `handleToggleDislike`, `handleToggleFavoriteActor`, `handleQuickAdd`, `handleMergeDuplicates` | Kütüphane Yöneticisi (Faz 3) |
+| Profil + tercih | `handleSwitchProfile`, `handleCreateProfile`, `handleSaveProfileName`, `handleSavePreferences`, `handleToggleReminders`, `handleToggleDemoMode` | Uygulama Yöneticisi (ProfileContext) |
+| Keşif + öneri | `handleSearchSubmit`, `handleSearchClear`, `handleSelectGenre`, `handleSelectType`, `handleRefreshForYou`, `handleLoadMore`, `handleManualStockReplenish` | Öneri ve Keşif Yöneticisi |
+| Zevk Haritası | `handleRefreshTasteMap`, `handleLoadRelationshipCandidates` | Zevk ve Hafıza Yöneticisi |
+| Senkron + çakışma | `handleMergedServerDocument`, `handleMergeSyncedDocument`, `handleServerConflict`, `handleKeepLocalOnConflict`, `handleUseServerOnConflict`, `handleMergeBothOnConflict`, `handleVisibilitySync` | Arka Plan Yöneticisi (senkron) |
+| Yedek/arma | `handleExportBackup`, `handleImportBackupFile`, `handleConfirmImport`, `handleCreateSqliteArchive`, `handleRestoreSqliteArchive` | Veri Yöneticisi |
+| Arayüz durumu | `handleEmptyAction`, `handleToggleHide` vb. | Uygulama/Deneyim Yöneticisi |
+
+### O. Çıktı (c) — Veri sahipliği R/W matrisi (13 idb deposu + localStorage × 8 yönetici)
+
+**Kural:** her satırın **tek W sahibi** vardır. R = okuma, W = yazma, — = erişim yok.
+
+| Depo / anahtar | Uygulama | Deneyim | İçerik | Kütüphane | Zevk-Hafıza | Öneri-Keşif | Veri | Arka Plan |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ct:profile` (cinetrack-profile-db) | R | — | — | R | — | — | **W** | — |
+| `ct:user-lists` (cinetrack-user-lists-db) | — | — | — | R | R | R | **W** | — |
+| `ct:stock` (cinetrack-stock-db) | — | — | R | — | — | **W** | — | W (dolum job'ı) |
+| `ct:surfaced` (cinetrack-surfaced-db) | — | — | — | — | — | **W** | — | — |
+| `ct:series-index` (cinetrack-series-index-db) | — | — | **W** | — | R | R | — | — |
+| `ct:actor-credits` (7 gün TTL) | — | — | **W** | — | R | R | — | — |
+| `ct:encodings` (48 boyutlu vektörler) | — | — | — | — | **W** | R | — | — |
+| `cinetrack-discovery-history-db` (Zevk Haritası) | — | — | — | — | **W** | R | — | — |
+| `cinetrack-candidate-pool-db` | — | — | — | — | — | **W** | — | — |
+| `ct:skip-log` | — | — | — | — | — | **W** | — | — |
+| `ct:graph-cache` (relationship-cache: graphs/features/edges) | — | — | — | — | **W** | R | — | — |
+| `ct:offline-queue` (offline-queue-db) | — | — | — | — | — | — | R | **W** |
+| `ct:ui-prefs` | R | **W** | — | — | — | — | — | — |
+| Poster LRU (`ct_poster_lru` + SW Cache Storage) | — | — | **W** | — | — | — | — | — |
+| `cinetrack.profiles.v1`, `cinetrack.activeProfile.v1`, `cinetrack.profile.v1` | R | — | — | — | — | — | **W** | — |
+| `cinetrack.profile.<id>.{preferences,watchlist}.v1`, `cinetrack_fav_actors_<id>`, `cinetrack_deleted_keys_<id>` | — | — | — | R | — | — | **W** | — |
+| `cinetrack.dirty.v2`, `cinetrack_offline_sync_queue_v1` | — | — | — | — | — | — | R | **W** |
+| `cinetrack_disliked_cache`, `cinetrack_evidence_objections` | — | — | — | — | **W** | R | — | — |
+| `ct:library-view` (MediaGrid) | — | **W** | — | R | — | — | — | — |
+| `ct:mobile-dashboard:*` (MobileDashboard ham localStorage) | — | **W** | — | — | — | — | — | — |
+| `ct:theme` (theme.ts) | R | **W** | — | — | — | — | — | — |
+| `ct:auto-backup-meta`, `ct:poster-hydration`, `ct:stock-poster-hydration`, `ct:idle-enrichment-quota`, `ct:cinema-kunye` | — | — | R/W | — | — | — | R | **W** |
+
+**Matristen çıkan Faz 1 kuralları:** (1) `ct:stock`'un iki W sahibi var (Öneri dolum + Arka Plan job'ı) → Faz 4'te tek job'a indirilir; (2) `ct:mobile-dashboard:*` ham localStorage → Faz 7'de DashboardRepository'ye taşınır (MIA planı §6); (3) sunucu tarafında JSON (varsayılan) / SQLite (opt-in) / GitHub yedek yalnızca **Veri Yöneticisi** W sahibidir; (4) kayıtsız anahtar yazımı Faz 8'de ESLint kuralıyla engellenir.
+
+### P. E2E kırmızısının kök nedeni ve uygulanan düzeltme
+
+CI (PR #9, run `43777139705`): `Playwright E2E: FAILURE` — **gerçek test hatası**, ortam sorunu değil. İki ayrı kök neden:
+
+1. **`app-smoke.spec.ts:20` — strict mode violation:** `.brand-title` locator'ı **2 element** çözüyor: (1) `AppSidebar.tsx:78` markası ("Cinethos Keşfet sayfasına dön" butonu), (2) `Header.tsx:242` markası (`aria-label="Ana sayfa"`). İki bileşen de her viewport'ta DOM'da; CSS yalnızca birini gizler (≥1024px header brand gizli, ≤768px header'ın tamamı gizli). Çift marka, `ef031af`'teki sidebar kabuğunun Header ile birlikte mount edilmesinden gelen **bilinçli kabuk tasarımıdır** — üretim hatası değil, spec'in eski tek-marka varsayımı hata.
+2. **`responsive.spec.ts:31` — `.app-header` mobilde gizli:** `design-system.css:170` kuralı (`≤768px` → `.mobile-frame .app-header { display: none }`) mobil kabukta header'ı MobileTopBar'a devreder; spec tüm viewport'larda header görünürlüğü bekliyordu. Tablet (768px) tam sınırda olduğundan 10 sn timeout ile düşüyordu.
+
+**Uygulanan düzeltme (yalnızca test katmanı, üretim kodu değişmedi):** `app-smoke` → `.brand-title:visible`; `responsive` → viewport koşullu beklenti (≤768px: `.mobile-topbar` görünür + `.app-header` gizli; aksi: `.app-header` görünür). JS eşiği (`useMediaQuery('(max-width: 768px)')`) CSS ile birebir uyumlu doğrulandı. Yerelde chromium sistem kütüphanesi eksik olduğundan (sandbox) doğrulama CI üzerinden yapılacak.
+
+### Q. Faz 0'ı gerçekten kapatacak iki adım
+
+1. Bu düzeltmenin CI'da E2E'yi yeşile çevirdiğinin doğrulanması (push sonrası otomatik).
+2. Canlı `data/cinetrack-data.json` salt okunur denetiminin kullanıcı onayıyla yapılması (v1'deki şema doğrulaması `ef031af` verisiyle yapılmıştı; güncel şema değişmedi, teyit niteliğinde).
+
+Bu iki adım sonrası Faz 0 **kapalı** sayılır ve Faz 1'e (sözleşmeler — aşağıda MIA planı §7.1) geçilir.
+
+---
+---
+
+## v2 — Faz 0 Tamamlama Raporu (arşiv — v3'teki §M/§N/§O tabloları bu bölümün §C/§E/§F maddelerini genişletir)
 
 ### A. Düzeltmeler (v1'e ve önceki planlara göre)
 

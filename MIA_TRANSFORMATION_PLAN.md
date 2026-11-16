@@ -239,7 +239,8 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 | Faz | Yapılacak iş | Öncelik | Bu plandaki karşılık |
 | --- | --- | --- | --- |
 | 0 | Mimari envanter + bağımlılık haritası (import grafiği, çoklu-kullanım fonksiyonları, test kapsamı; taşıma/dokunulmaz işaretleme) | P0 | §1 tabloları başlangıç noktası; `madge`/dependency-cruiser raporu |
-| 1 | Modül sözleşmeleri: `LibraryManager`, `TasteManager`, `MemoryManager`, `RecommendationManager` arayüzleri (gerçek tipler kod incelemesinden) | P1 | §1 service.ts sözleşmeleri |
+| 1 | Modül sözleşmeleri: **12 sözleşme + IApplicationModule yaşam döngüsü + PrimaryDataRepository + ProfileContext kuralları (bkz. §7.1)** | P1 | §1 service.ts sözleşmeleri + §7.1 |
+
 | 2 | Veri Yöneticisi: repository'ler, adaptörler, revision, transaction, profil izolasyonu, migration, kurtarma + **SQLite çalışma modu (§5.1)** | P1 | Outbox üretim verisi üzerinde ancak bundan sonra |
 | 3 | Kütüphane + İçerik Yöneticileri: tek işlem hattı | P1 | `library/operations/*` |
 | 4 | Arka Plan Yöneticisi: kalıcı kuyruk, abonelik, retry, idempotency, izolasyon, durumlar — **önce yalnız `LibraryItemAdded` + `LibraryRatingChanged`** | P1 | §2–3 |
@@ -247,6 +248,58 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 | 6 | Öneri motoru: önce/sonra aynı veri setinde **puan karşılaştırma testi** — puanlar değişmemeli | P1 | §1 Yönetici 6 |
 | 7 | Uygulama + Arayüz: mobil kart sistemi ve masaüstü yöneticilere bağlanır; tüm veri işlemleri yönetici servisleri üzerinden | P1 | §1 Yönetici 1–2 |
 | 8 | Temizlik: eski export katmanları, ölü kod, döngüsel import, **mimari yasak testleri**, performans + E2E regresyon | P2 | §4 |
+
+### 7.1 Faz 1 Sözleşme Kesinleştirmesi (kullanıcı Faz 1 hazırlık denetimiyle entegre)
+
+Faz 1'de yazılacak sözleşmelerin **tam listesi** (kullanıcı denetiminden; 4 yönetici sözleşmesi bu listenin alt kümesidir):
+
+| Sözleşme | Görevi | Not |
+| --- | --- | --- |
+| `IApplicationModule` | Yönetici seviyesinde ortak yaşam döngüsü | `initialize(context)` / `start()` / `stop()` / `healthCheck()` — yalnızca 8 yönetici uygular; alt modüller uygulamaz |
+| `IModuleRegistry` | Yöneticilerin kaydı ve bulunması | M1'deki `module-registry.ts` UI kayıt defterinden AYRIdır; yönetici kaydı Faz 1'de kurulur |
+| `IProfileContext` | Aktif profil + profil değişimleri | `profileId` **zorunlu** bağlam; asenkron sonuçlar `profileId + revision` taşımazsa yazılmaz |
+| `IEventPublisher` / `IEventSubscriber` | Olay yayın/dinleme | §2'deki tipli olay modeli üzerinden |
+| `IDataRepository` / `PrimaryDataRepository` | Ortak veri erişimi | Aşağıdaki sözleşme; SQLite ve JSON aynı arayüzü sunar |
+| `ILibraryService` | Liste işlemleri | Faz 3'te `modules/library/service.ts` |
+| `IContentService` | İçerik + metaveri erişimi | TMDB puanı kullanıcı puanının üzerine yazamaz |
+| `ITasteService` | Zevk profili erişimi | Mevcut `TasteEvent` modeline referanslı |
+| `IMemoryService` | Hafıza işlemleri | `evidence-ledger` üstüne; profilden ayrı katman |
+| `IRelationshipService` | İlişki grafiği | `relationship-explorer` bağımsızlaştırılır |
+| `IRecommendationService` | Öneri üretimi | Hafızaya doğrudan yazamaz |
+
+**Modül yaşam döngüsü sözleşmesi:**
+
+```typescript
+interface IApplicationModule {
+  readonly id: string;
+  readonly version: string;
+  initialize(context: ModuleContext): Promise<void>;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  healthCheck(): Promise<ModuleHealth>;
+}
+```
+
+**PrimaryDataRepository sözleşmesi (Faz 2'nin ön imzası — SQLite/JSON adaptör bağımsızlığı):**
+
+```typescript
+interface PrimaryDataRepository {
+  read(): Promise<DataDocument>;
+  save(document: DataDocument, options?: SaveDataOptions): Promise<SaveDataResult>;
+  getRevision(): Promise<number>;
+  getHealth(): Promise<StorageHealth>; // aktif sürücü + revision farkı + lastError
+}
+```
+
+Not: Bu arayüz, mevcut `storage.ts`/`sqlite-primary-store.ts` senkron/async davranışları ve hata sözleşmeleri incelenmeden nihai kabul edilmez; Faz 2'de `SyncStorePort` ile birlikte kesinleşir.
+
+**Faz 1 öncesi 5 P1 konu (sahiplik eşlemesi):**
+
+1. **Veri sahipliği:** tek W sahibi kuralı — `phase-0-findings.md` v3 §O matrisi bağlayıcıdır (kullanıcı listeleri → Kütüphane; TMDB metaverisi → İçerik; zevk profili → Zevk; kanıtlar → Hafıza; ilişki grafiği → İlişki; öneri sonuçları → Öneri).
+2. **Profil izolasyonu:** her asenkron görev `profileId` (+ mümkünse kaynak revision) taşır; `ProfileSwitched` sonrası eski profilin tamamlanmamış sonuçları yeni profile yazılmaz (mevcut `requestGateRef`/`applyingRemoteSnapshotRef` korumaları v2 §G'de belgelendi — davranış değiştirilmez, sözleşmeye bağlanır).
+3. **Modül yaşam döngüsü:** `IApplicationModule` ile başlat/durdur/sağlık standardı; Sistem Yönetimi paneli (§6) bu arayüzden beslenir.
+4. **Veri erişim sözleşmeleri:** SQLite, JSON, IndexedDB bağımsız adaptörler; iş mantığı dosya/veritabanı ayrıntısına erişemez.
+5. **Mimari sınır testleri:** v3 §M'deki kritik kenar listesi (özellikle `core → services` 4 ihlal) dependency-cruiser/ESLint kurallarına dökülür; Faz 8'de zorunlu test.
 
 **Faz kabul kriterleri (her faz için zorunlu):**
 
