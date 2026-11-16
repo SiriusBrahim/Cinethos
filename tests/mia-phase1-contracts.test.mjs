@@ -636,19 +636,31 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
       },
     });
 
-    await bus.publish(
-      createAppEvent({
-        eventType: 'LibraryRatingChanged',
-        ref: profileCtx.getCurrent(),
-        entityId: 'movie:603',
-        payload: {
-          mediaKey: 'movie:603',
-          mediaType: 'movie',
-          rating: 8,
-          previousRating: null,
-        },
-      })
+    // Plan 2.3 — EventBus hata yayılımı: abone hatası publish() çağrısına
+    // AggregateError olarak bildirilmeli; diğer aboneler yine de çalışmalı.
+    let publishError = null;
+    try {
+      await bus.publish(
+        createAppEvent({
+          eventType: 'LibraryRatingChanged',
+          ref: profileCtx.getCurrent(),
+          entityId: 'movie:603',
+          payload: {
+            mediaKey: 'movie:603',
+            mediaType: 'movie',
+            rating: 8,
+            previousRating: null,
+          },
+        })
+      );
+    } catch (err) {
+      publishError = err;
+    }
+    assert.ok(
+      publishError instanceof AggregateError,
+      'kritik abone hatası publish() çağrısına bildirilmeli (plan 2.3)'
     );
+    assert.match(String(publishError?.message ?? ''), /LibraryRatingChanged/);
     await new Promise((resolve) => setTimeout(resolve, 30));
     assert.equal(syncErrors.length, 1);
     assert.match(syncErrors[0], /Sunucu disk hatası/);
