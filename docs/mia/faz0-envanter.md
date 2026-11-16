@@ -20,7 +20,29 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 2. `relationship-explorer` ↔ `relationship-wordlists`: tek `import type` (`RelationshipType`) ile kırılıyor.
 3. `persistent-store` → `github-bidirectional-sync` → `github-catalog-sync` → `persistent-store`: **tek gerçek değer döngüsü**; `SyncStorePort` çıkarılmadan Faz 2 taşıması yapılmamalı.
 
-**Faz 0 kabul durumu:** Envanter, bağımlılık haritası, çoklu-kullanım semboller, depolama mülkiyeti ve taşıma/dokunulmaz işaretleme tamam. Baseline: `npm run lint` temiz, `npm test` 422/422, `npm run test:taste` 362/362, `npm run build` başarılı (ana JS 427,76 kB). Faz 1'e (sözleşmeler + `core/media/types.ts`) geçilebilir.
+### 0.1 Faz 0 kapanış tablosu (13 madde)
+
+| # | Madde | Durum | Kanıt |
+| --- | --- | --- | --- |
+| 1 | Kaynak dosya envanteri | ✅ | §0, `faz0-envanter-veri.md` §2–3 (202 dosya, 82.134 satır) |
+| 2 | Büyük modüllerin belirlenmesi | ✅ | `faz0-envanter-veri.md` §3 (en büyük 25) |
+| 3 | Ana modül sınıflandırması | ✅ | `faz0-fonksiyon-sahipligi.md` §1–10 |
+| 4 | `ARCHITECTURE.md` incelemesi | ✅ | 75 satır; veri katmanı/önbellek ayrımı ve migrasyon kuralları okundu, bu tablolarla çelişki yok |
+| 5 | Import bağımlılık grafiği | ✅ | [`faz0-bagimlilik-grafigi.md`](./faz0-bagimlilik-grafigi.md) — 640 dosya kenarı, 407 modül kenarı, tam liste §13 |
+| 6 | Döngüsel bağımlılık analizi | ✅ | `faz0-bagimlilik-grafigi.md` §2 — 3 SCC, 1 gerçek değer döngüsü |
+| 7 | Fonksiyon bazında sorumluluk haritası | ✅ | [`faz0-fonksiyon-sahipligi.md`](./faz0-fonksiyon-sahipligi.md) — 15 büyük dosya, blok + satır aralığı |
+| 8 | Veri sahipliği haritası | ✅ | [`faz0-veri-sahipligi.md`](./faz0-veri-sahipligi.md) §2–4 — sunucu dosyaları, 14 IDB deposu, localStorage anahtarları |
+| 9 | Modüller arası veri akışı | ⚠️ Kısmi | Sahiplik ve R/W yönleri var; uçtan uca akış diyagramı Faz 1 sözleşmeleriyle kesinleşecek |
+| 10 | Profil değiştirme yarışları | ⚠️ Analiz var, çalıştırma yok | `faz0-veri-sahipligi.md` §6 — `profileId` damgası eksikliği tespit edildi |
+| 11 | SQLite/JSON veri bütünlüğü | ✅ | `sqlite-primary-store.test.mjs` 4/4 (migration, bozuk JSON kurtarma, revizyon seçimi) + canlı `CINETRACK_STORAGE=sqlite` açılışında migration doğrulandı |
+| 12 | Canlı yerel veri denetimi | ✅ | `data/cinetrack-data.json`: `version 3`, `schemaVersion 3`, `engineVersion v3.2.0`, 1 profil |
+| 13 | Testlerin modüllerle eşleştirilmesi | ✅ | `faz0-envanter-veri.md` §9 (25 test dosyası, hedef kaynaklar) |
+| 14 | Lint/TypeScript | ✅ | `npm run lint` temiz (eslint + 2× tsc) |
+| 15 | E2E testleri | ❌ Çalıştırılmadı | `e2e/` + `playwright.config.ts` var; bu turda koşulmadı, sonuç raporlanmadı |
+
+**Sonuç:** 12/15 madde tamam, 2 madde kısmi, 1 madde açık (E2E). Faz 1 **sözleşme tasarımı** için engel yok; Faz 2 veri taşıması `SyncStorePort` + profil damgası çözülmeden başlamamalı.
+
+**Baseline:** `npm run lint` temiz · `npm test` 422/422 · `npm run test:taste` 362/362 · `npm run build` başarılı (ana JS 427,76 kB).
 
 
 > **Kapsam:** `src/` + `server.ts` — madge 208 dosya; doğrulanmış TS kaynak sayısı **202** (§0), 25 test dosyası, 12 idb deposu, 36 localStorage anahtarı (§0).

@@ -227,6 +227,100 @@ function storageInventory(files) {
   return { idb, local };
 }
 
+function moduleOf(relPath) {
+  if (relPath === 'server.ts') return 'entry';
+  const parts = relPath.split('/');
+  if (parts[0] !== 'src') return 'other';
+  if (parts.length === 2) return 'src-root';
+  if (parts[1] === 'modules') return parts[2] ? `modules/${parts[2]}` : 'modules';
+  return parts[1];
+}
+
+const DECL_RE =
+  /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(function\*?|const|let|class|interface|type|enum)\s+([A-Za-z0-9_$]+)/;
+
+function declarationsOf(code) {
+  const result = [];
+  const lines = code.split('\n');
+  let depth = 0;
+  let inBlockComment = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (depth === 0 && !inBlockComment) {
+      if (trimmed.startsWith('/*')) inBlockComment = !trimmed.includes('*/');
+      else {
+        const match = line.match(DECL_RE);
+        if (match && !trimmed.startsWith('*')) {
+          result.push({
+            line: i + 1,
+            kind: match[1],
+            name: match[2],
+            exported: trimmed.startsWith('export'),
+          });
+        }
+      }
+    } else if (inBlockComment && trimmed.includes('*/')) {
+      inBlockComment = false;
+    }
+    for (const char of line) {
+      if (char === '{') depth += 1;
+      else if (char === '}') depth = Math.max(0, depth - 1);
+    }
+  }
+  return result;
+}
+
+function dataAccessInventory(files) {
+  const access = new Map();
+  const keyRe = /['"`]((?:ct:|cinetrack[._])[a-zA-Z0-9_.${}*-]*)['"`]/g;
+  const dbRe = /['"`](cinetrack-[a-z-]+(?:-db|-cache))['"`]/g;
+  const isNoise = (name) => /\.(json|sqlite|db)$/.test(name) || name.includes('@cinetrack.local');
+  const classifyFile = (code, name) => {
+    let read = false;
+    let write = false;
+    const occurrences = [];
+    const re = new RegExp(`['"\`]${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^\'"\`]*')}['"\`]`, 'g');
+    for (const match of code.matchAll(re)) occurrences.push(match.index ?? 0);
+    if (occurrences.length === 0) return 'sabit';
+    for (const index of occurrences) {
+      const snippet = code.slice(Math.max(0, index - 240), index + 260);
+      if (/setItem|removeItem/.test(snippet)) write = true;
+      if (/getItem/.test(snippet)) read = true;
+      if (/\.(put|set|delete|add|clear)\(/.test(snippet)) write = true;
+      if (/\.(get|getAll|getAllKeys|has)\(/.test(snippet)) read = true;
+    }
+    if (read && write) return 'R/W';
+    if (write) return 'W';
+    if (read) return 'R';
+    return 'sabit';
+  };
+  for (const file of files) {
+    for (const re of [keyRe, dbRe]) {
+      for (const match of file.code.matchAll(re)) {
+        const name = match[1].replace(/\$\{[^}]*\}|\{[^}]*\}/g, '*');
+        if (isNoise(name)) continue;
+        if (!access.has(name)) access.set(name, new Map());
+        const modes = access.get(name);
+        const isDb = dbRe.test(`'${name}'`);
+        const mode = isDb ? 'R/W' : classifyFile(file.code, name);
+        const previous = modes.get(file.rel);
+        if (!previous) modes.set(file.rel, mode);
+        else if (previous !== mode) {
+          const pair = new Set([previous, mode]);
+          modes.set(file.rel, pair.has('R/W') || (pair.has('R') && pair.has('W')) ? 'R/W' : [...pair][0]);
+        }
+      }
+    }
+  }
+  return [...access.entries()]
+    .map(([name, modes]) => ({
+      name,
+      access: [...modes.entries()].map(([file, mode]) => ({ file, mode })).sort((a, b) => a.file.localeCompare(b.file)),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function testInventory() {
   const dir = path.join(ROOT, 'tests');
   if (!fs.existsSync(dir)) return [];
@@ -354,6 +448,28 @@ function build() {
 
   const stores = storageInventory([...parsed.values()]);
   const tests = testInventory();
+  const moduleEdges = new Map();
+  for (const edge of edges) {
+    const from = moduleOf(parsed.get(edge.from).rel);
+    const to = moduleOf(parsed.get(edge.to).rel);
+    if (from === to) continue;
+    const key = `${from} -> ${to}`;
+    const entry = moduleEdges.get(key) ?? { from, to, count: 0, typeOnly: 0, samples: [] };
+    entry.count += 1;
+    if (edge.typeOnly) entry.typeOnly += 1;
+    if (entry.samples.length < 3) {
+      entry.samples.push(`${parsed.get(edge.from).rel} → ${parsed.get(edge.to).rel}`);
+    }
+    moduleEdges.set(key, entry);
+  }
+  const moduleGraph = [...moduleEdges.values()].sort((a, b) => b.count - a.count);
+  const modules = [...new Set(moduleGraph.flatMap((edge) => [edge.from, edge.to]))].sort();
+  const declarations = {};
+  for (const file of parsed.values()) {
+    if (file.lines < 500) continue;
+    declarations[file.rel] = declarationsOf(file.code);
+  }
+  const dataAccess = dataAccessInventory([...parsed.values()]);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -396,6 +512,17 @@ function build() {
       local: [...stores.local.entries()].map(([name, owners]) => ({ name, owners: [...owners].sort() })),
     },
     tests,
+    moduleGraph,
+    modules,
+    declarations,
+    dataAccess,
+    fileEdges: edges
+      .map((edge) => ({
+        from: parsed.get(edge.from).rel,
+        to: parsed.get(edge.to).rel,
+        typeOnly: edge.typeOnly,
+      }))
+      .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)),
     entryPoints: files.filter((file) => file.fanIn === 0).map((file) => file.path),
   };
 }
@@ -565,7 +692,99 @@ function renderMarkdown(report) {
     )
   );
   out.push('');
-  out.push('## 10. Giriş Noktaları (fan-in = 0)');
+  out.push('## 10. Modül Bağımlılık Grafiği');
+  out.push('');
+  out.push(
+    `Modüller arası ${report.moduleGraph.reduce((sum, edge) => sum + edge.count, 0)} import kenarı, ${report.moduleGraph.length} yönlü modül çifti (modül içi kenarlar hariç). Mermaid grafiği yalnızca ≥2 kenarlı bağımlılıkları gösterir.`
+  );
+  out.push('');
+  out.push('```mermaid');
+  out.push('flowchart LR');
+  for (const edge of report.moduleGraph.filter((edge) => edge.count >= 2)) {
+    out.push(`  ${edge.from.replace(/[^a-zA-Z0-9_]/g, '_')}["${edge.from}"] -->|${edge.count}| ${edge.to.replace(/[^a-zA-Z0-9_]/g, '_')}["${edge.to}"]`);
+  }
+  out.push('```');
+  out.push('');
+  const matrixModules = report.modules;
+  const matrixCells = new Map(report.moduleGraph.map((edge) => [`${edge.from}|${edge.to}`, edge.count]));
+  out.push(
+    table(
+      ['Kaynak \\ Hedef', ...matrixModules],
+      matrixModules.map((from) => [from, ...matrixModules.map((to) => matrixCells.get(`${from}|${to}`) ?? '·')])
+    )
+  );
+  out.push('');
+  out.push('### Modül → bağımlı olduğu modüller');
+  out.push('');
+  out.push(
+    table(
+      ['Modül', 'Hedef modüller (kenar sayısı)', 'Örnek dosya kenarları'],
+      matrixModules
+        .filter((module) => report.moduleGraph.some((edge) => edge.from === module))
+        .map((module) => {
+          const edges = report.moduleGraph.filter((edge) => edge.from === module);
+          return [
+            `\`${module}\``,
+            edges.map((edge) => `${edge.to} (${edge.count})`).join('<br>'),
+            edges.flatMap((edge) => edge.samples).slice(0, 4).map((sample) => `\`${sample}\``).join('<br>'),
+          ];
+        })
+    )
+  );
+  out.push('');
+  out.push('## 11. Veri Erişim Envanteri (R/W)');
+  out.push('');
+  out.push(
+    table(
+      ['Anahtar / depo', 'Erişim'],
+      report.dataAccess.map((entry) => [
+        `\`${entry.name}\``,
+        entry.access.map((access) => `\`${access.file}\` (${access.mode})`).join('<br>'),
+      ])
+    )
+  );
+  out.push('');
+  out.push('## 12. Büyük Dosya Bildirimleri (≥900 satır)');
+  out.push('');
+  const bigDeclFiles = Object.entries(report.declarations)
+    .filter(([, declarations]) => declarations.length > 0)
+    .map(([file, declarations]) => ({
+      file,
+      declarations,
+      lines: report.files.find((entry) => entry.path === file)?.lines ?? 0,
+    }))
+    .filter((entry) => entry.lines >= 900)
+    .sort((a, b) => b.lines - a.lines);
+  for (const entry of bigDeclFiles) {
+    out.push(`### \`${entry.file}\` — ${entry.lines} satır, ${entry.declarations.length} üst düzey bildirim`);
+    out.push('');
+    out.push(
+      table(
+        ['Satır', 'Tür', 'Sembol', 'Export'],
+        entry.declarations.map((declaration) => [
+          declaration.line,
+          declaration.kind,
+          `\`${declaration.name}\``,
+          declaration.exported ? '✓' : '—',
+        ])
+      )
+    );
+    out.push('');
+  }
+  out.push('## 13. Ek — Dosya Düzeyinde Import Kenarları');
+  out.push('');
+  let currentFrom = '';
+  for (const edge of report.fileEdges) {
+    if (edge.from !== currentFrom) {
+      currentFrom = edge.from;
+      out.push('');
+      out.push(`**\`${edge.from}\`**`);
+      out.push('');
+    }
+    out.push(`- → \`${edge.to}\`${edge.typeOnly ? ' *(tip)*' : ''}`);
+  }
+  out.push('');
+  out.push('## 14. Giriş Noktaları (fan-in = 0)');
   out.push('');
   out.push(
     report.entryPoints.length === 0
