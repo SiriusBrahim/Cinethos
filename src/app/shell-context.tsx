@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from 'react';
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 import type { TmdbItem } from '../types/tmdb.ts';
 
 /**

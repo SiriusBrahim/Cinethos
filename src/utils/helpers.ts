@@ -1,4 +1,4 @@
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 import type { TmdbItem } from '../types/tmdb.ts';
 import { resolvePoster } from '../core/media/poster.ts';
 

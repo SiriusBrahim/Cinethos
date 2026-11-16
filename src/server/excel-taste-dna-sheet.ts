@@ -1,5 +1,5 @@
 import type ExcelJS from 'exceljs';
-import type { Profile, SavedItem } from '../core/cinetrack-core.ts';
+import type { Profile, SavedItem } from '../core/cinethos-core.ts';
 import { buildTasteDnaProfile, type TasteDnaProfile } from '../core/exporters.ts';
 import { BRAND_NAME } from '../shared/brand.ts';
 import {

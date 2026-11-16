@@ -24,7 +24,7 @@ import {
   type DataDocument,
   type Profile,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { canonicalizeMediaKeyList } from '../core/keys.ts';
 import {
   enrichSavedItemsFromCinemaKunye,

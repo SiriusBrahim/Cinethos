@@ -13,7 +13,7 @@ import {
   type DataDocument,
   type Profile,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { createDataStorage, countTotalItems, type StorageOptions } from './storage.ts';
 import { resolveStorageDriver } from './sqlite-primary-store.ts';
 import { brandProfileFileName } from '../shared/brand.ts';

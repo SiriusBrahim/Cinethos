@@ -16,7 +16,7 @@ import {
   validItemId,
   type DataDocument,
   type Profile,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { BRAND_NAME, BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
 import {
   mergeTwoSavedItemsLossless,

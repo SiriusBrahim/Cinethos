@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { DataDocument, Profile } from '../core/cinetrack-core.ts';
+import type { DataDocument, Profile } from '../core/cinethos-core.ts';
 
 export const SQLITE_ARCHIVE_SCHEMA_VERSION = 1;
 export const SQLITE_ARCHIVE_EXTENSION = 'sqlite';

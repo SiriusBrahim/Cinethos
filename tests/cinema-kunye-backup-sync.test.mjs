@@ -16,7 +16,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
   parseBackupText,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import { mergeSavedItemListsLossless } from '../src/core/user-data-merge.ts';
 import { exportItemsToCsv, importItemsFromCsv } from '../src/core/exporters.ts';
 import { buildYearlyWrappedSummary } from '../src/core/wrapped-summary.ts';

@@ -22,7 +22,7 @@ import {
 } from '../src/server/excel-profile-backup.ts';
 import { resolveMediaType, makeMediaKey } from '../src/core/keys.ts';
 import { enforceStrictMediaTypePool } from '../src/core/recommendation-orchestrator.ts';
-import { normalizeProfile } from '../src/core/cinetrack-core.ts';
+import { normalizeProfile } from '../src/core/cinethos-core.ts';
 import {
   enqueueOfflineSyncSnapshotDurable,
   loadOfflineSyncSnapshot,

@@ -1,4 +1,4 @@
-import type { DataDocument } from './cinetrack-core.ts';
+import type { DataDocument } from './cinethos-core.ts';
 
 export type SyncOperationKind = 'inspect' | 'pull' | 'push' | 'reconcile';
 

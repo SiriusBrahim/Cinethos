@@ -3,7 +3,7 @@ import {
   type Preferences,
   type SavedItem,
   makeMediaKey,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import { ENCODING_LAYOUT_VERSION } from './encoding.ts';
 import { STOP_WORDS, GENERIC_PLOT_WORDS } from './relationship-wordlists.ts';
 

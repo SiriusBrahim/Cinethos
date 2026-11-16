@@ -11,11 +11,11 @@ import type {
   PoolCandidateItem,
   Preferences,
   SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   isCandidateEligibleInPool,
   makeMediaKey,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import type { TmdbItem } from '../types/tmdb.ts';
 import { TAXONOMY_V01 } from '../core/taste/taxonomy.ts';
 import {

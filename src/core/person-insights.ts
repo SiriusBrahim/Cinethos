@@ -1,4 +1,4 @@
-import { makeMediaKey, type SavedItem } from './cinetrack-core.ts';
+import { makeMediaKey, type SavedItem } from './cinethos-core.ts';
 import { computeProfileCentroid, cosineSimilarity, encodeItemContent } from './encoding.ts';
 import type { TmdbPersonCreditItem } from '../types/tmdb.ts';
 

@@ -12,7 +12,7 @@ import {
   updateTasteMapWithBatch,
   type PersistentTasteMapData,
   type Profile,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 
 export interface EvaluationBatchMetrics {
   batchIndex: number;

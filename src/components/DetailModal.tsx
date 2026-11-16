@@ -7,7 +7,7 @@ import {
   findSavedItem,
   makeMediaKey,
   getTasteRingLabel,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { getItemSeriesInfo, indexMovieCollection } from '../services/series-service.ts';
 import { subscribeSeriesIndex } from '../services/storage-idb.ts';

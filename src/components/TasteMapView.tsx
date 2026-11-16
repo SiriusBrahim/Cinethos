@@ -9,7 +9,7 @@ import {
   normalizeTasteRing,
   makeMediaKey,
   matchesSelectedGenre,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { MediaCard } from './MediaCard.tsx';
 
 interface TasteMapViewProps {

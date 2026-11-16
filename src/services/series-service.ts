@@ -9,7 +9,7 @@ import {
 import {
   RECOMMENDATION_WEIGHTS_V3, determineItemEra, determineItemPopularityTier,
   scoreCandidatesV3, type PoolCandidateItem, type SavedItem, type TasteProfileV3,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import type { TmdbCollectionInfo, TmdbGenre, TmdbItem } from '../types/tmdb.ts';
 import { compareMediaDatesAscending, isWithinReleaseWindow } from '../utils/release-window.ts';
 import {

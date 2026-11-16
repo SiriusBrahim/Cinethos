@@ -6,7 +6,7 @@ import type {
   Profile,
   Preferences,
   SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import type { CinemaKunyeDocument } from '../core/cinema-kunye.ts';
 import type { CsvProfileBlock } from '../core/exporters.ts';
 import {

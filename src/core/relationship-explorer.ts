@@ -8,7 +8,7 @@ import {
   type PoolCandidateItem,
   type Preferences,
   type SavedItem,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import { BRAND_NAME } from '../shared/brand.ts';
 import { cosineSimilarity, type ItemFeatureEncoding } from './encoding.ts';
 import { buildProfileCentroid, profileSimilarityScore } from './scoring.ts';

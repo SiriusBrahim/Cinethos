@@ -1,6 +1,6 @@
 /**
  * MIA Faz 1A ① — LifecycleRing/TasteRing tanımları `media/types.ts`'e taşındı;
- * burada yeniden export edilir (uyumluluk). Bu dosya artık cinetrack-core'a
+ * burada yeniden export edilir (uyumluluk). Bu dosya artık cinethos-core'a
  * dönmez → 4. tip döngüsü koparıldı.
  */
 import type { PersistentTasteMapData, TasteMapEntry } from './media/types.ts';

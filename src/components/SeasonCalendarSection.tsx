@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { type SavedItem } from '../core/cinetrack-core.ts';
+import { type SavedItem } from '../core/cinethos-core.ts';
 import { extractUpcomingReleaseEvents, generateIcsCalendar } from '../core/exporters.ts';
 import { deriveTvProgressSummary } from '../core/tv-progress.ts';
 import { t } from '../i18n/index.ts';

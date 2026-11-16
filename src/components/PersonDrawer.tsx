@@ -5,7 +5,7 @@ import {
   type SavedItem,
   findSavedItem,
   makeMediaKey,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { loadPersistentPoolData } from '../services/discovery-storage.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { loadStockIdb } from '../services/storage-idb.ts';

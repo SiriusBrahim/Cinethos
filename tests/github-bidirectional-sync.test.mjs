@@ -18,7 +18,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
   computeTasteProfileSignature,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   DERIVED_PROFILE_SCHEMA_VERSION,
   computeDerivedProfileContentHash,

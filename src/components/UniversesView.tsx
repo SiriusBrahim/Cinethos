@@ -5,7 +5,7 @@ import {
   Preferences,
   FavoriteActorInfo,
   PoolCandidateItem,
-} from '../core/cinetrack-core';
+} from '../core/cinethos-core';
 import {
   computeUserSeriesUniverses,
   UserSeriesUniverse,

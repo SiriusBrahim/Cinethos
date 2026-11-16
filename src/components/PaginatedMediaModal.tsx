@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { findSavedItem, makeMediaKey, type SavedItem } from '../core/cinetrack-core.ts';
+import { findSavedItem, makeMediaKey, type SavedItem } from '../core/cinethos-core.ts';
 import type { TmdbItem } from '../types/tmdb.ts';
 import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
 import { MediaCard } from './MediaCard.tsx';

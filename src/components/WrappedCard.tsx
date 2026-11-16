@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import type { FavoriteActorInfo, Profile, SavedItem } from '../core/cinetrack-core.ts';
+import type { FavoriteActorInfo, Profile, SavedItem } from '../core/cinethos-core.ts';
 import type { CinemaKunyeDocument } from '../core/cinema-kunye.ts';
 import {
   buildYearlyWrappedSummary,

@@ -16,7 +16,7 @@ import {
   hydratePoolFromCatalog,
   type Preferences,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   loadPersistentPoolData,
   savePersistentPoolData,
@@ -343,7 +343,7 @@ export function getStockRecommendationsForActor(
 }
 
 /**
- * Hydrates cinetrack-core's candidate pool directly from ct:stock as the primary Discover source
+ * Hydrates cinethos-core's candidate pool directly from ct:stock as the primary Discover source
  * before hitting TMDB network (FEAT-02 Section 4.1).
  */
 export async function seedCandidatePoolFromStock(

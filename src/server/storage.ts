@@ -13,7 +13,7 @@ import {
   ENGINE_VERSION,
   type DataDocument,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   areUserDataDocumentsSemanticallyEqual,
   reconcileUserDataDocumentsLossless,

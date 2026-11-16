@@ -4,7 +4,7 @@ import {
   type FavoriteActorInfo,
   type SavedItem,
   scoreActorRecommendations,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { fetchTmdb, fetchTmdbCached } from './api.ts';
 import {
   loadActorCreditsIdb,

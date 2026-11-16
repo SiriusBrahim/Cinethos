@@ -1,4 +1,4 @@
-import type { SavedItem } from './cinetrack-core.ts';
+import type { SavedItem } from './cinethos-core.ts';
 
 export interface TvProgressSummary {
   currentSeason: number;

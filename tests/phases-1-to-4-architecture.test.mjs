@@ -58,7 +58,7 @@ import {
 import {
   createDefaultTasteMapData,
   createDefaultPoolData,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   savePersistentTasteMap,
   hydrateDiscoveryHistoryIdb,

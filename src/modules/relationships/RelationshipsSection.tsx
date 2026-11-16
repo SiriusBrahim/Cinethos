@@ -6,7 +6,7 @@ import type {
   PoolCandidateItem,
   Preferences,
   SavedItem,
-} from '../../core/cinetrack-core.ts';
+} from '../../core/cinethos-core.ts';
 import type { MediaFilter } from '../../core/relationship-semantics.ts';
 import { useShell } from '../../app/shell-context.tsx';
 

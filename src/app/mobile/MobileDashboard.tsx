@@ -27,8 +27,8 @@ import {
   getPoster,
   getTvShowEpisodesCount,
 } from '../../utils/helpers.ts';
-import type { SavedItem } from '../../core/cinetrack-core.ts';
-import { makeMediaKey } from '../../core/cinetrack-core.ts';
+import type { SavedItem } from '../../core/cinethos-core.ts';
+import { makeMediaKey } from '../../core/cinethos-core.ts';
 import type { MainTab } from '../MobileTabBar.tsx';
 import { HeroCard, type HeroCardItem } from '../../design-system/cards/HeroCard.tsx';
 import { StackDeck, type StackDeckEntry } from '../../design-system/cards/StackDeck.tsx';

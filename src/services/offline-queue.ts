@@ -1,4 +1,4 @@
-import { type DataDocument } from '../core/cinetrack-core.ts';
+import { type DataDocument } from '../core/cinethos-core.ts';
 import { get, set, del, createStore } from 'idb-keyval';
 
 const OFFLINE_QUEUE_STORAGE_KEY = 'cinetrack_offline_sync_queue_v1';

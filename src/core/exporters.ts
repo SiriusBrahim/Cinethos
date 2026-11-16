@@ -3,7 +3,7 @@ import {
   safeHttpsUrl,
   type Profile,
   type SavedItem,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import {
   buildCinemaKunyeContentId,
   createEmptyCinemaKunyeDocument,

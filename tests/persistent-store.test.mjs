@@ -755,7 +755,7 @@ test('Sır İzolasyonu: İstemci kodu ve .env.example içinde hiçbir GitHub tok
   const clientFiles = [
     'src/services/api.ts',
     'src/App.tsx',
-    'src/core/cinetrack-core.ts',
+    'src/core/cinethos-core.ts',
     'src/core/recommendation-orchestrator.ts',
     'src/core/derived-profile-cache.ts',
   ];

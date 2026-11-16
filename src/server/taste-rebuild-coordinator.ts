@@ -50,7 +50,7 @@ import type {
   TasteMetric,
   TasteProfile,
 } from "../core/taste/types.ts";
-import type { DataDocument } from "../core/cinetrack-core.ts";
+import type { DataDocument } from "../core/cinethos-core.ts";
 
 export interface RebuildCoordinatorResult {
   generationId: string;

@@ -76,7 +76,7 @@ import {
   HIDE_LISTED_CATEGORIES,
   filterHiddenUserRegisteredItems,
   normalizeDeletedKeys,
-} from './core/cinetrack-core.ts';
+} from './core/cinethos-core.ts';
 import {
   deletePersistentTasteMap,
   flushCoreIdbWrites,

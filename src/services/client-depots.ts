@@ -1,6 +1,6 @@
 import { get, set, del, clear, createStore, entries, delMany, type UseStore } from 'idb-keyval';
 import type { TmdbPersonCreditItem } from '../types/tmdb.ts';
-import type { ActorFetchStatus } from '../core/cinetrack-core.ts';
+import type { ActorFetchStatus } from '../core/cinethos-core.ts';
 
 export interface IdbWriteResult {
   persisted: boolean;

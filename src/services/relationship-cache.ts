@@ -1,4 +1,4 @@
-import type { PoolCandidateItem, SavedItem } from '../core/cinetrack-core.ts';
+import type { PoolCandidateItem, SavedItem } from '../core/cinethos-core.ts';
 import type {
   MediaFilter,
   RelationshipGraphData,

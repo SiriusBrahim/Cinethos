@@ -1,6 +1,6 @@
 import { get, set, del, createStore, type UseStore } from 'idb-keyval';
 import type { TmdbItem } from '../types/tmdb.ts';
-import type { SavedItem, Preferences, FavoriteActorInfo } from '../core/cinetrack-core.ts';
+import type { SavedItem, Preferences, FavoriteActorInfo } from '../core/cinethos-core.ts';
 import { sanitizeStockPosterDepot } from './stock-poster-utils.ts';
 import {
   type IdbWriteResult,

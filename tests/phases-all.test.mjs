@@ -36,7 +36,7 @@ import {
   selectBalancedRecommendations,
   topUpFilteredCandidates,
   updateTasteMapWithBatch,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   loadPersistentPoolData,
   loadPersistentTasteMap,

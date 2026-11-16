@@ -5,7 +5,7 @@ import type {
 } from '../core/relationship-explorer.ts';
 import { getRelationshipTypeLabel } from '../core/relationship-wordlists.ts';
 import { relationshipNodeKey } from '../core/relationship-explorer.ts';
-import type { PoolCandidateItem, SavedItem } from '../core/cinetrack-core.ts';
+import type { PoolCandidateItem, SavedItem } from '../core/cinethos-core.ts';
 
 interface RelationshipListViewProps {
   listNodes: Array<{

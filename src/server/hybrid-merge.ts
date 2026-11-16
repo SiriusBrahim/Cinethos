@@ -1,7 +1,7 @@
 // Hibrit yedek birleştirme motoru
 // CSV dışa aktarımı (Title,Year,Rating10,WatchedDate,Status,MediaType,tmdbID + kullanıcı verisi
 // sütunları) ile mevcut uygulama verisini (GitHub ile senkron durumdaki) birleştirir ve çakışmaları temizler.
-import type { DataDocument, Profile, SavedItem } from '../core/cinetrack-core.ts';
+import type { DataDocument, Profile, SavedItem } from '../core/cinethos-core.ts';
 import {
   detectDuplicateSavedItems,
   normalizeWorkTitle,

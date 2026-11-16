@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type DataDocument } from '../core/cinetrack-core.ts';
+import { type DataDocument } from '../core/cinethos-core.ts';
 import {
   getLastKnownServerRevision,
   pushServerDataDetailed,

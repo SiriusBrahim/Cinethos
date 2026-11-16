@@ -9,7 +9,7 @@ import {
   type ActorFetchStatus,
   normalizeFavoriteActors,
   describeActorFetchChipState,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   buildMergedActorCreditsWithStock,
   loadOpenActorCreditsLazy,

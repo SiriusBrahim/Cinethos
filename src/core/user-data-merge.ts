@@ -12,7 +12,7 @@ import {
   type Preferences,
   type Profile,
   type SavedItem,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import {
   buildCinemaKunyeContentId,
   extractItemReleaseYear,

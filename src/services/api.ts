@@ -1,4 +1,4 @@
-import { type DataDocument } from '../core/cinetrack-core.ts';
+import { type DataDocument } from '../core/cinethos-core.ts';
 import {
   normalizeCinemaKunyeDocument,
   type CinemaKunyeDocument,

@@ -4,7 +4,7 @@ import {
   getPoster,
   releaseYear,
   handleImageError,
-} from '../utils/helpers.ts';import { SavedItem, makeMediaKey } from '../core/cinetrack-core.ts';
+} from '../utils/helpers.ts';import { SavedItem, makeMediaKey } from '../core/cinethos-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';

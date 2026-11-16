@@ -8,7 +8,7 @@ import {
   DEFAULT_MAX_ITEMS_PER_PROFILE,
   DEFAULT_MAX_PROFILES,
 } from './src/core/limits.ts';
-import type { SavedItem } from './src/core/cinetrack-core.ts';
+import type { SavedItem } from './src/core/cinethos-core.ts';
 import { createCineTrackApp, createSpaFallbackMiddleware } from './src/server/app.ts';
 import { isAiStudioContainerEnv, resolveConfig } from './src/server/config.ts';
 import { refreshEnvGitHubPat } from './src/server/github-token-refresh.ts';

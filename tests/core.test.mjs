@@ -32,7 +32,7 @@ import {
   MAX_IMPRESSION_HISTORY_PER_ENTRY, 
   sanitizeTasteMapEntryImpressions, getImpressionSummary,
   ENGINE_VERSION, ALGORITHM_VERSION
-} from "../src/core/cinetrack-core.ts";
+} from "../src/core/cinethos-core.ts";
 import {
   loadPersistentTasteMap,
   savePersistentPoolData,
@@ -4694,7 +4694,7 @@ describe("Faz 1: CI ve üretim başlatma zinciri güvenceleri", () => {
       "vite yalnızca geliştirme dalında dinamik import edilmeli"
     );
     assert.equal(
-      serverSource.includes("./src/core/cinetrack-core.ts"),
+      serverSource.includes("./src/core/cinethos-core.ts"),
       true,
       "Node 22 yerel TS çalıştırması için açık .ts uzantısı kullanılmalı"
     );

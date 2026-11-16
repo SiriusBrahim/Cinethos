@@ -5,7 +5,7 @@ import {
   makeMediaKey,
   matchesSelectedGenre,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   backfillSavedSeriesLazy,
   computeUserSeriesUniverses,

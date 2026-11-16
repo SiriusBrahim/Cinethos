@@ -5,8 +5,8 @@ import { lazyWithRetry } from '../../app/lazy-with-retry.ts';
 import type {
   PersistentTasteMapData,
   TasteProfileSummary,
-} from '../../core/cinetrack-core.ts';
-import type { SavedItem } from '../../core/cinetrack-core.ts';
+} from '../../core/cinethos-core.ts';
+import type { SavedItem } from '../../core/cinethos-core.ts';
 import { useShell } from '../../app/shell-context.tsx';
 
 // Kod bölünmesi korunur: dashboard/minimal görünümleri kendi chunk'larında kalır.

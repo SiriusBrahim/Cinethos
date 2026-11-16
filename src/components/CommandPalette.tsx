@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from 'cmdk';
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { displayTitle, getPoster, releaseYear } from '../utils/helpers.ts';
 import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';

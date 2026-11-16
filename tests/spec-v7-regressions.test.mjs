@@ -86,7 +86,7 @@ import {
 import {
   filterHiddenUserRegisteredItems,
   isMediaRegisteredInUserProfile,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   updateStockItemsMetadata,
 } from '../src/services/stock-engine.ts';

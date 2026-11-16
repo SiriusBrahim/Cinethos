@@ -7,7 +7,7 @@
 
 import { fetchTmdbCached } from './api.ts';
 import { makeMediaKey } from '../core/keys.ts';
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 
 export type PosterHydrationFetcher = (
   path: string,

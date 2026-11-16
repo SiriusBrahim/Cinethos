@@ -26,7 +26,7 @@ import type {
   TasteMetadataInput,
   TasteProfile,
 } from "../core/taste/types.ts";
-import type { DataDocument } from "../core/cinetrack-core.ts";
+import type { DataDocument } from "../core/cinethos-core.ts";
 import {
   coerceItemToTasteMetadata,
   configureTasteHydration,

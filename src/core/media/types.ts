@@ -1,13 +1,13 @@
 /**
  * MIA Faz 1A ① — Ortak medya/veri tip modülü.
  *
- * Amaç: `cinetrack-core.ts` ile alt modüller (actor-recommendations,
+ * Amaç: `cinethos-core.ts` ile alt modüller (actor-recommendations,
  * candidate-pool-store-port, cinema-kunye, ring-lifecycle) arasındaki
  * 4 tip-döngüsünü koparmak. Bu dosya YALNIZCA tip içerir; çalışma
  * zamanı davranışı yoktur ve yalnızca döngüsüz alt modüllere
  * (keys, loved-similarity, mood-affinity) referans verir.
  *
- * Uyumluluk: `cinetrack-core.ts` bu tipleri yeniden export etmeye
+ * Uyumluluk: `cinethos-core.ts` bu tipleri yeniden export etmeye
  * devam eder; mevcut import yolları bozulmaz.
  */
 

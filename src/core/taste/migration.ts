@@ -5,7 +5,7 @@
 // ===========================================================================
 
 import type { TasteEvent, MigrationResult, TimeSource, TimePrecision } from "./types.ts";
-import type { DataDocument, SavedItem } from "../cinetrack-core.ts";
+import type { DataDocument, SavedItem } from "../cinethos-core.ts";
 import { resolveExperiencedAt } from "./temporal-analyzer.ts";
 
 export interface MigrationInput {

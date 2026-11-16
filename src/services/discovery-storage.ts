@@ -10,7 +10,7 @@ import type {
   PersistentTasteMapData,
   TasteMapEntry,
   PersistentCandidatePoolData,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   getTasteMapStorageKey,
   createDefaultTasteMapData,
@@ -24,7 +24,7 @@ import {
   syncPoolCandidatesWithTasteMap,
   MAX_IMPRESSION_HISTORY_PER_ENTRY,
   POOL_TARGET_CAPACITY,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { migratePersistentTasteMapData } from '../core/keys.ts';
 import { registerCandidatePoolStorePort } from '../core/candidate-pool-store-port.ts';
 
