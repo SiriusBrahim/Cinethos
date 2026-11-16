@@ -25,22 +25,24 @@ import {
   hydratePoolFromCatalog,
   isMediaRegisteredInUserProfile,
   isTasteMapCacheValid,
-  loadPersistentPoolData,
-  loadPersistentTasteMap,
   matchesSelectedGenre,
   normalizeDataDocument,
   parseBackupText,
   recordDisplayedRecommendations,
   recordTasteMapPoolScores,
   resolveDiscoverGenreParam,
-  savePersistentPoolData,
-  savePersistentTasteMap,
   scoreActorRecommendations,
   scoreCandidatesV3,
   selectBalancedRecommendations,
   topUpFilteredCandidates,
   updateTasteMapWithBatch,
 } from '../src/core/cinetrack-core.ts';
+import {
+  loadPersistentPoolData,
+  loadPersistentTasteMap,
+  savePersistentPoolData,
+  savePersistentTasteMap,
+} from '../src/services/discovery-storage.ts';
 import {
   RELATIONSHIP_MODEL_VERSION,
   buildRelationshipGraph,
@@ -61,7 +63,7 @@ import { validateTmdbResponseShape } from '../src/services/api.ts';
 import { formatMatchBadge } from '../src/i18n/index.ts';
 import {
   clearOfflineSyncSnapshot,
-  enqueueOfflineSyncSnapshot,
+  enqueueOfflineSyncSnapshotDurable,
   hasPendingOfflineSync,
   loadOfflineSyncSnapshot,
 } from '../src/services/offline-queue.ts';
@@ -684,7 +686,7 @@ test('Faz 6: atmosphere ve contrast ilişki türleri deterministik kanıt üreti
 // ============================================================================
 // FAZ 7, FAZ 9 & FAZ 10: UX Formatı, Offline Kuyruk, Değerlendirme, CSV, ICS, DNA
 // ============================================================================
-test('Faz 7 & 9: Uyum: X/100 rozeti ve çevrimdışı senkronizasyon kuyruğu doğru çalışır', () => {
+test('Faz 7 & 9: Uyum: X/100 rozeti ve çevrimdışı senkronizasyon kuyruğu doğru çalışır', async () => {
   assert.equal(formatMatchBadge(87.4), 'Uyum: 87/100');
   assert.equal(formatMatchBadge(120), 'Uyum: 100/100');
   assert.equal(formatMatchBadge(0), 'Uyum: 1/100');
@@ -699,12 +701,12 @@ test('Faz 7 & 9: Uyum: X/100 rozeti ve çevrimdışı senkronizasyon kuyruğu do
       activeProfileId: 'profile-1',
       profiles: [makeSampleProfile('profile-1', [])],
     };
-    enqueueOfflineSyncSnapshot(sampleDoc, 4);
+    await enqueueOfflineSyncSnapshotDurable(sampleDoc, 4);
     assert.equal(hasPendingOfflineSync(), true);
     const loaded = loadOfflineSyncSnapshot();
     assert.equal(loaded.baseRevision, 4);
     assert.equal(loaded.payload.activeProfileId, 'profile-1');
-    clearOfflineSyncSnapshot();
+    await clearOfflineSyncSnapshot();
     assert.equal(hasPendingOfflineSync(), false);
   } finally {
     globalThis.localStorage = prevStorage;
@@ -764,17 +766,38 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
   ]);
 
   // 1. Offline öneri değerlendirme motoru
-  const evalReport = evaluateRecommendationEngine({
+  const evalInput = {
     profile: profileA,
     candidatePool: [...moviePool, ...tvPool],
     batchesCount: 3,
     batchSize: 8,
     targetType: 'all',
-  });
+    now: new Date('2026-11-09T00:00:00.000Z'),
+  };
+  const evalReport = evaluateRecommendationEngine(evalInput);
   assert.equal(evalReport.ring1RepeatRate, 0);
   assert.equal(evalReport.ring0Utilization, 1);
   assert.equal(evalReport.typeBalanceAccuracy, 1);
   assert.ok(evalReport.genreEntropy > 0);
+  assert.equal(evalReport.k, 8);
+  assert.equal(evalReport.saveAtK, null);
+  assert.equal(evalReport.ndcgAtK, null);
+  assert.ok(evalReport.novelty >= 0 && evalReport.novelty <= 1);
+  assert.ok(evalReport.diversity >= 0 && evalReport.diversity <= 1);
+
+  // Deterministik now: aynı girdi aynı raporu üretmeli
+  const evalRepeat = evaluateRecommendationEngine(evalInput);
+  assert.deepEqual(evalRepeat, evalReport);
+
+  // Etiketli değerlendirme: tüm havuz "kaydedildi" varsayılırsa Save@K ve NDCG@K 1.0 olur
+  const evalLabeled = evaluateRecommendationEngine({
+    ...evalInput,
+    groundTruthKeys: [...moviePool, ...tvPool].map((c) =>
+      c.media_type === 'tv' ? `tv:${c.id}` : `movie:${c.id}`
+    ),
+  });
+  assert.equal(evalLabeled.saveAtK, 1);
+  assert.equal(evalLabeled.ndcgAtK, 1);
 
   // 2. Zevk DNA Özeti
   const dna = buildTasteDnaProfile(profileA, { 878: 'Bilim Kurgu', 18: 'Dram', 10765: 'Bilim Kurgu & Fantazi', 9648: 'Gizem' });
@@ -985,10 +1008,10 @@ test('Golden Skorlama Testi: sabit referans profil ve adaylar üzerinde scoreCan
   );
 
   const byId = Object.fromEntries(run1.map((r) => [r.candidate.id, r]));
-  // Sabit golden referans değerleri (72 > 64 > 52)
-  assert.equal(byId[329865].tasteScore, 72);
-  assert.equal(byId[872585].tasteScore, 64);
-  assert.equal(byId[44444].tasteScore, 52);
+  // Sabit golden referans değerleri (70 > 61 > 49) — gerçek çok boyutlu sevilen içerik benzerliği ile
+  assert.equal(byId[329865].tasteScore, 70);
+  assert.equal(byId[872585].tasteScore, 61);
+  assert.equal(byId[44444].tasteScore, 49);
   assert.ok(byId[872585].parts.director > 0.85, 'Christopher Nolan yönetmen sinyali yüksek olmalı');
   assert.ok(byId[329865].parts.genre > 0.85, 'Bilim Kurgu + Dram tür sinyali yüksek olmalı');
 });

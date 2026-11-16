@@ -1,5 +1,6 @@
 import type { TmdbGenre, TmdbItem } from '../types/tmdb.ts';
 import { loadStockIdb, saveStockIdb, type StockDepot } from './storage-idb.ts';
+import { apiFetch, readApiErrorMessage } from './api-client.ts';
 
 export type StockSourceFilter = 'all' | 'tvdb' | 'tmdb';
 export type StockExportFormat = 'json' | 'csv';
@@ -49,6 +50,8 @@ export interface StockImportResult {
   totalMovies: number;
   totalTv: number;
   message: string;
+  serverSynced: boolean;
+  serverMessage?: string;
 }
 
 /**
@@ -558,9 +561,11 @@ export async function applyStockImport(
 
   await saveStockIdb(updatedDepot);
 
-  // Sync to server storage
+  // Sunucu depolamasına senkron — P0-02: ortak istemci + gerçek hata kontrolü.
+  let serverSynced = false;
+  let serverMessage: string | undefined;
   try {
-    await fetch('/api/stock/upload', {
+    const res = await apiFetch('/api/stock/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -568,15 +573,25 @@ export async function applyStockImport(
         tv: tv.slice(-300),
       }),
     });
-  } catch {
-    // ignore server snapshot failure
+    if (res.ok) {
+      serverSynced = true;
+    } else {
+      const detail = await readApiErrorMessage(res, `Sunucu stoğu güncellenemedi (HTTP ${res.status})`);
+      serverMessage = detail.message;
+    }
+  } catch (error: any) {
+    serverMessage = error?.message || 'Sunucu stoğu güncellenemedi (ağ hatası).';
   }
 
   const filterNotice = userFilteredCount > 0 ? ` (${userFilteredCount} kullanıcı listesindeki içerik elendi)` : '';
-  const message =
+  const baseMessage =
     strategy === 'restore'
       ? `${imported} yapım yedekten başarıyla geri yüklendi${filterNotice} (Toplam ${movies.length} film, ${tv.length} dizi).`
       : `${imported} yeni yapım stoğa eklendi, ${updated} yapım güncellendi, ${skipped} kopya atlandı${filterNotice}.`;
+  // Yerel import başarılıysa ok=true; sunucu senkron durumu ayrı alanlarda raporlanır.
+  const message = serverSynced
+    ? baseMessage
+    : `${baseMessage} Uyarı: sunucu kopyası yazılamadı (${serverMessage}). Yerel stok korunuyor.`;
 
   return {
     ok: true,
@@ -586,5 +601,7 @@ export async function applyStockImport(
     totalMovies: movies.length,
     totalTv: tv.length,
     message,
+    serverSynced,
+    ...(serverMessage ? { serverMessage } : {}),
   };
 }

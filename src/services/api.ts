@@ -4,6 +4,7 @@ import {
   type CinemaKunyeDocument,
 } from '../core/cinema-kunye.ts';
 import type { BidirectionalSyncReport, SyncOperationKind } from '../core/sync-display.ts';
+import { ApiError, apiFetch, readApiErrorMessage } from './api-client.ts';
 
 export type TmdbDataSource = 'live' | 'demo' | 'stale-cache' | 'error' | 'unknown';
 
@@ -26,7 +27,7 @@ export interface ServerBackupMetadata {
 }
 
 export interface ServerConflictDetail {
-  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop';
+  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop' | 'profile_conflict';
   message: string;
   currentRevision?: number;
   expectedRevision?: number;
@@ -190,7 +191,7 @@ export async function fetchTmdb(path: string, params: Record<string, string> = {
   let response: globalThis.Response;
   try {
     const signals = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
-    response = await fetch(`/api/tmdb?${query.toString()}`, { signal: signals });
+    response = await apiFetch(`/api/tmdb?${query.toString()}`, { signal: signals });
   } catch (error: any) {
     if (signal?.aborted) throw error;
     setTmdbSourceState({ source: 'error', cacheStatus: 'none', staleReason: error.message });
@@ -355,7 +356,7 @@ export async function fetchServerData(): Promise<DataDocument | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch('/api/data', {
+    const response = await apiFetch('/api/data', {
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -383,12 +384,28 @@ export async function pushServerDataDetailed(
   payload: DataDocument,
   options: {
     baseRevision?: number | null;
+    expectedProfileId?: string;
     confirmBulkDelete?: boolean;
     forceOverwrite?: boolean;
     mergeStrategy?: 'lossless';
     foldUnhydratedDefaultProfile?: boolean;
   } = {}
 ): Promise<PushServerDataResult> {
+  if (options.expectedProfileId && payload.activeProfileId !== options.expectedProfileId) {
+    return {
+      ok: false,
+      status: 409,
+      conflict: {
+        code: 'profile_conflict',
+        message: `Profil uyuşmazlığı: beklenen '${options.expectedProfileId}', gelen '${payload.activeProfileId}'.`,
+        currentRevision: getLastKnownServerRevision() ?? undefined,
+        expectedRevision: options.baseRevision ?? undefined,
+        localPayload: payload,
+      },
+      errorMessage: 'Profil uyuşmazlığı nedeniyle yazma reddedildi.',
+    };
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -398,6 +415,9 @@ export async function pushServerDataDetailed(
     headers['X-CineTrack-Force-Write'] = '1';
   } else if (typeof revToCheck === 'number' && Number.isSafeInteger(revToCheck) && revToCheck >= 0) {
     headers['If-Match'] = `"rev-${revToCheck}"`;
+  }
+  if (options.expectedProfileId) {
+    headers['X-CineTrack-Profile-Id'] = options.expectedProfileId;
   }
   if (options.confirmBulkDelete) {
     headers['X-CineTrack-Confirm-Drop'] = '1';
@@ -410,7 +430,7 @@ export async function pushServerDataDetailed(
   }
 
   try {
-    const response = await fetch('/api/data', {
+    const response = await apiFetch('/api/data', {
       method: 'PUT',
       headers,
       body: JSON.stringify(payload),
@@ -440,6 +460,7 @@ export async function pushServerDataDetailed(
     if (
       (response.status === 409 || response.status === 412 || response.status === 428) &&
       (bodyJson?.code === 'revision_conflict' ||
+        bodyJson?.code === 'profile_conflict' ||
         bodyJson?.code === 'precondition_required' ||
         bodyJson?.code === 'sudden_item_drop' ||
         response.status === 412 ||
@@ -478,13 +499,21 @@ export async function pushServerDataDetailed(
 }
 
 export async function pushServerData(payload: DataDocument): Promise<boolean> {
-  const res = await pushServerDataDetailed(payload);
+  const knownRevision =
+    getLastKnownServerRevision() ??
+    (typeof payload?.revision === 'number' && Number.isSafeInteger(payload.revision)
+      ? payload.revision
+      : null);
+  const res = await pushServerDataDetailed(payload, {
+    baseRevision: knownRevision,
+    expectedProfileId: payload?.activeProfileId || undefined,
+  });
   return res.ok;
 }
 
 export async function fetchServerBackups(): Promise<ServerBackupMetadata[]> {
   try {
-    const res = await fetch('/api/data/backups', {
+    const res = await apiFetch('/api/data/backups', {
       cache: 'no-store',
     });
     if (!res.ok) return [];
@@ -497,7 +526,7 @@ export async function fetchServerBackups(): Promise<ServerBackupMetadata[]> {
 
 export async function triggerImmediateServerBackup(): Promise<{ ok: boolean; message: string; backups?: ServerBackupMetadata[] }> {
   try {
-    const res = await fetch('/api/data/backup-now', {
+    const res = await apiFetch('/api/data/backup-now', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -515,7 +544,7 @@ export async function triggerImmediateServerBackup(): Promise<{ ok: boolean; mes
 
 export async function restoreServerBackup(backupId: string): Promise<DataDocument | null> {
   try {
-    const res = await fetch('/api/data/restore', {
+    const res = await apiFetch('/api/data/restore', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -539,7 +568,7 @@ export async function checkServerTmdbStatus(): Promise<{
   cacheEntries: number;
 } | null> {
   try {
-    const res = await fetch('/api/tmdb-status', { cache: 'no-store' });
+    const res = await apiFetch('/api/tmdb-status', { cache: 'no-store' });
     if (!res.ok) return null;
     const json = await res.json();
     setTmdbSourceState({ source: json.source as TmdbDataSource });
@@ -583,7 +612,7 @@ export function getTmdbSourceDescription(source: TmdbDataSource, staleReason?: s
 
 export async function fetchSyncStatus(): Promise<any> {
   try {
-    const res = await fetch('/api/sync/status', { cache: 'no-store' });
+    const res = await apiFetch('/api/sync/status', { cache: 'no-store' });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -611,7 +640,7 @@ export async function uploadStockSnapshot(payload: {
   tv?: unknown[];
 }): Promise<StockUploadResult> {
   try {
-    const res = await fetch('/api/stock/upload', {
+    const res = await apiFetch('/api/stock/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -654,7 +683,7 @@ export async function hybridMergeCsv(
   dryRun: boolean
 ): Promise<HybridMergeResult> {
   try {
-    const res = await fetch('/api/backup/hybrid-merge', {
+    const res = await apiFetch('/api/backup/hybrid-merge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ csvText, dryRun }),
@@ -731,7 +760,7 @@ function buildClientNetworkErrorReport(
 
 export async function inspectGitHubSync(): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/inspect', {
+    const res = await apiFetch('/api/sync/inspect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -749,7 +778,7 @@ export async function pullGitHubSync(
   conflictStrategy: 'ask' | 'merge' | 'overwrite_with_remote' = 'ask'
 ): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/pull', {
+    const res = await apiFetch('/api/sync/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conflictStrategy }),
@@ -769,7 +798,7 @@ export async function pullGitHubSync(
 
 export async function pushGitHubSync(): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/push', {
+    const res = await apiFetch('/api/sync/push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -789,7 +818,7 @@ export async function pushGitHubSync(): Promise<BidirectionalSyncReport> {
 
 export async function reconcileGitHubSync(): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/reconcile', {
+    const res = await apiFetch('/api/sync/reconcile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -809,7 +838,7 @@ export async function reconcileGitHubSync(): Promise<BidirectionalSyncReport> {
 
 export async function triggerGitHubSync(): Promise<any> {
   try {
-    const res = await fetch('/api/sync/trigger', {
+    const res = await apiFetch('/api/sync/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -821,7 +850,7 @@ export async function triggerGitHubSync(): Promise<any> {
 
 export async function testGitHubConnection(forceWriteProbe = true): Promise<any> {
   try {
-    const res = await fetch('/api/sync/test-connection', {
+    const res = await apiFetch('/api/sync/test-connection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ forceWriteProbe }),
@@ -836,11 +865,27 @@ export async function testGitHubConnection(forceWriteProbe = true): Promise<any>
   }
 }
 
+export async function updateGitHubSyncToken(token: string): Promise<any> {
+  try {
+    const res = await apiFetch('/api/sync/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return await res.json();
+  } catch (e: any) {
+    return {
+      ok: false,
+      error: e?.message || 'GitHub token güncelleme isteği başarısız oldu.',
+    };
+  }
+}
+
 export async function setPublicRepoPersonalSyncConsent(
   allowPersonalDataInPublicRepo: boolean
 ): Promise<any> {
   try {
-    const res = await fetch('/api/sync/public-consent', {
+    const res = await apiFetch('/api/sync/public-consent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -859,7 +904,7 @@ export async function setPublicRepoPersonalSyncConsent(
 
 export async function runStagedGitHubSync(forceWriteProbe = true): Promise<any> {
   try {
-    const res = await fetch('/api/sync/staged', {
+    const res = await apiFetch('/api/sync/staged', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ forceWriteProbe }),
@@ -880,7 +925,7 @@ export async function runStagedGitHubSync(forceWriteProbe = true): Promise<any> 
 export async function fetchCatalogItems(type?: 'movie' | 'tv'): Promise<any> {
   try {
     const query = type ? `?type=${encodeURIComponent(type)}` : '';
-    const res = await fetch(`/api/catalog${query}`, { cache: 'no-store' });
+    const res = await apiFetch(`/api/catalog${query}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -891,7 +936,7 @@ export async function fetchCatalogItems(type?: 'movie' | 'tv'): Promise<any> {
 export async function pushCatalogItems(items: any[]): Promise<any> {
   if (!Array.isArray(items) || items.length === 0) return null;
   try {
-    const res = await fetch('/api/catalog/upsert', {
+    const res = await apiFetch('/api/catalog/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
@@ -918,7 +963,7 @@ export async function fetchDerivedProfileData(
     if (expected?.algorithmVersion) params.set('algorithmVersion', expected.algorithmVersion);
     if (expected?.sourceCatalogHash) params.set('sourceCatalogHash', expected.sourceCatalogHash);
     const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/profiles/derived/${encodeURIComponent(profileId)}${query}`,
       { cache: 'no-store' }
     );
@@ -938,7 +983,7 @@ export async function pushDerivedProfileData(data: {
   items: Record<string, any>;
 }): Promise<any> {
   try {
-    const res = await fetch('/api/profiles/derived/upsert', {
+    const res = await apiFetch('/api/profiles/derived/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -1018,7 +1063,7 @@ export async function createProfileBackupExport(params: {
   allowPersonalDataInPublicRepo?: boolean;
 }): Promise<ProfileBackupExportReportClient> {
   try {
-    const res = await fetch('/api/backup/profile-export', {
+    const res = await apiFetch('/api/backup/profile-export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -1307,37 +1352,464 @@ export async function downloadVerifiedBackupBinary(params: {
   };
 }
 
-export async function fetchServerCinemaKunye(): Promise<CinemaKunyeDocument | null> {
+export type CinemaKunyeServerSyncStatus =
+  | 'ok'
+  | 'offline'
+  | 'auth'
+  | 'conflict'
+  | 'validation'
+  | 'server'
+  | 'unexpected';
+
+/**
+ * P1-01: Sinema KünYESİ senkronunun sonucu. `null` yerine ayrıştırılmış durum
+ * döner; böylece beklenen çevrimdışı durumu gerçek sunucu arızasından ayrılır.
+ */
+export interface CinemaKunyeServerSyncResult {
+  status: CinemaKunyeServerSyncStatus;
+  document?: CinemaKunyeDocument;
+  message?: string;
+  code?: string;
+}
+
+function classifyCinemaKunyeFailure(status: number): CinemaKunyeServerSyncStatus {
+  if (status === 0) return 'offline';
+  if (status === 401 || status === 403 || status === 503) return 'auth';
+  if (status === 409) return 'conflict';
+  if (status === 400 || status === 413 || status === 415 || status === 422) return 'validation';
+  if (status >= 500) return 'server';
+  return 'unexpected';
+}
+
+export async function fetchServerCinemaKunye(): Promise<CinemaKunyeServerSyncResult> {
   try {
-    const res = await fetch('/api/cinema-kunye', { cache: 'no-store' });
-    if (!res.ok) return null;
-    const json = await res.json();
+    const res = await apiFetch('/api/cinema-kunye', { cache: 'no-store' });
+    if (!res.ok) {
+      const { message, code } = await readApiErrorMessage(
+        res,
+        'Sinema künYESİ sunucudan okunamadı.'
+      );
+      return { status: classifyCinemaKunyeFailure(res.status), message, code };
+    }
+    const json = await res.json().catch(() => null);
     const rawDoc = json?.cinemaKunye ?? json;
-    if (!rawDoc || typeof rawDoc !== 'object') return null;
-    return normalizeCinemaKunyeDocument(rawDoc);
-  } catch {
-    return null;
+    if (!rawDoc || typeof rawDoc !== 'object') {
+      return {
+        status: 'validation',
+        message: 'Sunucu sinema künYESİ belgesini geçersiz biçimde döndü.',
+      };
+    }
+    return { status: 'ok', document: normalizeCinemaKunyeDocument(rawDoc) };
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return {
+        status: classifyCinemaKunyeFailure(error.status),
+        message: error.message,
+        code: error.code,
+      };
+    }
+    return { status: 'unexpected', message: error?.message || 'Beklenmeyen istemci hatası.' };
   }
 }
 
 export async function saveServerCinemaKunye(
   doc: CinemaKunyeDocument,
   mode: 'merge' | 'overwrite' = 'merge'
-): Promise<CinemaKunyeDocument | null> {
+): Promise<CinemaKunyeServerSyncResult> {
   try {
-    const res = await fetch('/api/cinema-kunye', {
+    const res = await apiFetch('/api/cinema-kunye', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cinemaKunye: doc, mode }),
     });
+    if (!res.ok) {
+      const { message, code } = await readApiErrorMessage(
+        res,
+        'Sinema künYESİ sunucuya kaydedilemedi.'
+      );
+      return { status: classifyCinemaKunyeFailure(res.status), message, code };
+    }
+    const json = await res.json().catch(() => null);
+    if (!json?.cinemaKunye || typeof json.cinemaKunye !== 'object') {
+      return {
+        status: 'validation',
+        message: 'Sunucu kaydettiği sinema künYESİ belgesini geçersiz biçimde döndü.',
+      };
+    }
+    return { status: 'ok', document: normalizeCinemaKunyeDocument(json.cinemaKunye) };
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return {
+        status: classifyCinemaKunyeFailure(error.status),
+        message: error.message,
+        code: error.code,
+      };
+    }
+    return { status: 'unexpected', message: error?.message || 'Beklenmeyen istemci hatası.' };
+  }
+}
+
+// ---------------------------------------------------------
+// SQLite arşivi — profil + stok + stok görsellerinin tam yedeği
+// ---------------------------------------------------------
+
+export interface SqliteArchiveStatus {
+  available: boolean;
+  schemaVersion: number;
+  maxPosters: number;
+}
+
+export interface SqliteArchiveSnapshotPayload {
+  dataDocument: DataDocument;
+  tasteMaps?: Record<string, unknown>;
+  stock?: {
+    movies?: unknown[];
+    tv?: unknown[];
+    updatedAt?: string;
+    cursors?: Record<string, unknown>;
+  };
+  posterUrls?: string[];
+  appVersion?: string;
+}
+
+export interface SqliteArchiveStats {
+  profiles?: number;
+  items?: number;
+  tasteMaps?: number;
+  stockMovies?: number;
+  stockTv?: number;
+  postersStored?: number;
+  postersFailed?: number;
+  posterBytes?: number;
+  byteLength?: number;
+}
+
+export interface SqliteArchiveDownload {
+  ok: boolean;
+  blob?: Blob;
+  fileName?: string;
+  stats?: SqliteArchiveStats;
+  message?: string;
+}
+
+export interface SqliteArchiveProfileSummary {
+  id: string;
+  name: string;
+  items: number;
+}
+
+/** P1-04: Geri yükleme başlamadan önce gösterilen arşiv özeti. */
+export interface SqliteArchiveInspect {
+  schemaVersion: number;
+  createdAt: string;
+  appVersion: string;
+  counts: {
+    profiles: number;
+    items: number;
+    tasteMaps: number;
+    stockMovies: number;
+    stockTv: number;
+    posters: number;
+  };
+  documentHash: string;
+  byteLength: number;
+  profiles: SqliteArchiveProfileSummary[];
+}
+
+export interface SqliteArchivePrepareResult {
+  ok: boolean;
+  message?: string;
+  code?: string;
+  restoreId?: string;
+  expiresAt?: string;
+  inspect?: SqliteArchiveInspect;
+  current?: {
+    counts: { profiles: number; items: number; revision: number };
+    documentHash: string;
+  };
+}
+
+export interface SqliteArchiveRestoreResult {
+  ok: boolean;
+  message?: string;
+  code?: string;
+  /** Sunucudaki önceki belgeye dönüş ve finalize için kullanılır (P0-01). */
+  restoreId?: string;
+  rollbackId?: string;
+  documentHash?: string;
+  postersComplete?: boolean;
+  rolledBack?: boolean;
+  dataDocument?: DataDocument;
+  tasteMaps?: Record<string, unknown>;
+  stock?: {
+    movies?: unknown[];
+    tv?: unknown[];
+    updatedAt?: string;
+    cursors?: Record<string, unknown>;
+  };
+  counts?: {
+    profiles: number;
+    items: number;
+    tasteMaps: number;
+    stockMovies: number;
+    stockTv: number;
+    posters: number;
+  };
+  postersWritten?: number;
+  postersSkipped?: number;
+  createdAt?: string;
+}
+
+/**
+ * P1-04: Arşivi yüklemeden önce içeriğini okur. Hiçbir veri değiştirmez.
+ * Sunucu dosyayı kısa süreliğine saklar ve `restoreId` döner; onay sonrası
+ * ikinci yükleme gerekmez.
+ */
+export async function prepareSqliteArchiveRestore(file: Blob): Promise<SqliteArchivePrepareResult> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/prepare', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        code: typeof data?.code === 'string' ? data.code : undefined,
+        message:
+          data?.status_message ||
+          `SQLite arşivi incelenemedi (HTTP ${res.status})`,
+      };
+    }
+    return {
+      ok: true,
+      restoreId: String(data?.restoreId || ''),
+      expiresAt: data?.expiresAt,
+      inspect: data?.inspect,
+      current: data?.current,
+    };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'SQLite arşivi incelenemedi (ağ hatası).' };
+  }
+}
+
+/** Onaylanan hazırlığı uygular; dosya yeniden gönderilmez. */
+export async function restorePreparedSqliteArchive(
+  restoreId: string
+): Promise<SqliteArchiveRestoreResult> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId }),
+    });
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        code: typeof data?.code === 'string' ? data.code : undefined,
+        rolledBack: Boolean(data?.rolledBack),
+        message:
+          data?.status_message ||
+          `SQLite arşivi geri yüklenemedi (HTTP ${res.status})`,
+      };
+    }
+    if (data?.dataDocument?.revision !== undefined) {
+      setLastKnownServerRevision(Number(data.dataDocument.revision) || 0);
+    }
+    return {
+      ok: true,
+      dataDocument: data?.dataDocument,
+      tasteMaps: data?.tasteMaps || {},
+      stock: data?.stock || { movies: [], tv: [] },
+      counts: data?.counts,
+      postersWritten: Number(data?.postersWritten) || 0,
+      postersSkipped: Number(data?.postersSkipped) || 0,
+      postersComplete: data?.postersComplete !== false,
+      documentHash: typeof data?.documentHash === 'string' ? data.documentHash : undefined,
+      restoreId: typeof data?.restoreId === 'string' ? data.restoreId : undefined,
+      createdAt: data?.createdAt,
+    };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'SQLite arşivi geri yüklenemedi (ağ hatası).' };
+  }
+}
+
+/** Yan veri yazımı başarısız olursa sunucudaki önceki belgeyi geri yükler (P0-01). */
+export async function rollbackSqliteArchiveRestore(
+  rollbackId: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/rollback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rollbackId }),
+    });
+    if (!res.ok) {
+      let message = `Geri alma başarısız (HTTP ${res.status})`;
+      try {
+        const data = await res.json();
+        if (data?.status_message) message = String(data.status_message);
+      } catch {
+        // gövde JSON değil
+      }
+      return { ok: false, message };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'Geri alma isteği gönderilemedi.' };
+  }
+}
+
+/**
+ * P0-01-D: İstemci stok ve zevk haritalarını doğruladıktan sonra journal kaydını
+ * kapatır. Başarısız olursa sunucu bir sonraki açılışta restore'u geri alabilir;
+ * bu yüzden çağıran bunu kullanıcıya bildirmelidir.
+ */
+export async function finalizeSqliteArchiveRestore(
+  restoreId: string
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/finalize', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreId }),
+    });
+    if (!res.ok) {
+      const detail = await readApiErrorMessage(res, `Finalize başarısız (HTTP ${res.status})`);
+      return { ok: false, message: detail.message };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, message: error?.message || 'Finalize isteği gönderilemedi.' };
+  }
+}
+
+export async function fetchSqliteArchiveStatus(): Promise<SqliteArchiveStatus | null> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/status', { cache: 'no-store' });
     if (!res.ok) return null;
-    const json = await res.json();
-    if (!json?.cinemaKunye || typeof json.cinemaKunye !== 'object') return null;
-    return normalizeCinemaKunyeDocument(json.cinemaKunye);
+    const data = await res.json();
+    return {
+      available: Boolean(data?.available),
+      schemaVersion: Number(data?.schemaVersion) || 1,
+      maxPosters: Number(data?.maxPosters) || 0,
+    };
   } catch {
     return null;
   }
 }
 
+/** Profil + stok + posterleri tek `.sqlite` dosyası olarak indirir. */
+export async function downloadSqliteArchive(
+  payload: SqliteArchiveSnapshotPayload
+): Promise<SqliteArchiveDownload> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
+    if (!res.ok) {
+      let message = `SQLite arşivi oluşturulamadı (HTTP ${res.status})`;
+      try {
+        const data = await res.json();
+        if (data?.status_message) message = String(data.status_message);
+      } catch {
+        // gövde JSON değilse varsayılan mesaj kullanılır
+      }
+      return { ok: false, message };
+    }
 
+    const rawStats = res.headers.get('X-Archive-Stats');
+    let stats: SqliteArchiveStats | undefined;
+    if (rawStats) {
+      try {
+        stats = JSON.parse(rawStats);
+      } catch {
+        stats = undefined;
+      }
+    }
+
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = /filename="([^"]+)"/.exec(disposition);
+    const blob = await res.blob();
+
+    return {
+      ok: true,
+      blob,
+      fileName: match?.[1] || `cinetrack-archive-${Date.now()}.sqlite`,
+      ...(stats ? { stats } : {}),
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      message: error?.message || 'SQLite arşivi indirilemedi (ağ hatası).',
+    };
+  }
+}
+
+/** `.sqlite` arşivinden tüm verileri geri yükler (profil, stok, zevk haritaları, posterler). */
+export async function restoreSqliteArchive(file: Blob): Promise<SqliteArchiveRestoreResult> {
+  try {
+    const res = await apiFetch('/api/archive/sqlite/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        message:
+          data?.status_message ||
+          `SQLite arşivi geri yüklenemedi (HTTP ${res.status})`,
+      };
+    }
+
+    if (data?.dataDocument?.revision !== undefined) {
+      setLastKnownServerRevision(Number(data.dataDocument.revision) || 0);
+    }
+
+    return {
+      ok: true,
+      dataDocument: data?.dataDocument,
+      tasteMaps: data?.tasteMaps || {},
+      stock: data?.stock || { movies: [], tv: [] },
+      counts: data?.counts,
+      postersWritten: Number(data?.postersWritten) || 0,
+      postersSkipped: Number(data?.postersSkipped) || 0,
+      createdAt: data?.createdAt,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      message: error?.message || 'SQLite arşivi geri yüklenemedi (ağ hatası).',
+    };
+  }
+}

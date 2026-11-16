@@ -4,13 +4,13 @@
 // ===========================================================================
 
 import path from "node:path";
-import { Router } from "express";
-import { readJsonFileWithRecoveryAsync } from "./atomic-json.ts";
+import { Router, type Response } from "express";
+import { CorruptJsonFileError, readJsonFileWithRecoveryAsync } from "./atomic-json.ts";
 import {
   readTasteProfile,
   writeTasteProfile,
   readTasteEvents,
-  appendTasteEvent,
+  appendTasteEventIdempotent,
   readTasteManifest,
   readTasteIndex,
   writeTasteIndex,
@@ -26,9 +26,17 @@ import type {
   TasteMetadataInput,
   TasteProfile,
 } from "../core/taste/types.ts";
+import type { TypedAppEvent } from "../contracts/index.ts";
 import type { DataDocument } from "../core/cinetrack-core.ts";
+import { createAppEventBus, type AppEventBus } from "../app/app-event-bus.ts";
+import {
+  createServerTasteServiceAdapter,
+  subscribeTasteAdapterToEventBus,
+  type ServerTasteServiceAdapter,
+} from "./taste-service-adapter.ts";
 import {
   coerceItemToTasteMetadata,
+  configureTasteHydration,
   ensureInitialTasteBootstrap,
   triggerTasteProfileRebuild,
   upsertTasteMetadataInputs,
@@ -257,8 +265,38 @@ function enrichEvidenceList(
   });
 }
 
-export function createTasteRouter(dataDir: string = "data"): Router {
+function handleTasteRouteError(res: Response, err: unknown, fallbackError: string) {
+  if (err instanceof CorruptJsonFileError) {
+    return res.status(500).json({ error: err.message, code: err.code });
+  }
+  return res.status(500).json({ error: fallbackError });
+}
+
+export function createTasteRouter(
+  dataDir: string = "data",
+  options: {
+    tmdbApiKey?: string;
+    eventBus?: AppEventBus;
+    tasteAdapter?: ServerTasteServiceAdapter;
+    deferAdapterSubscription?: boolean;
+    onDomainEvent?: (
+      event: TypedAppEvent,
+      rawMetadata?: Record<string, unknown>
+    ) => Promise<void> | void;
+    onRawTasteEvent?: (
+      event: TasteEvent,
+      rawMetadata?: Record<string, unknown>
+    ) => Promise<void> | void;
+  } = {}
+): Router {
   const router = Router();
+  configureTasteHydration(dataDir, options.tmdbApiKey || process.env.TMDB_API_KEY);
+  const tasteAdapter =
+    options.tasteAdapter ?? createServerTasteServiceAdapter({ dataDir, rebuildOnEvent: true });
+  const eventBus = options.eventBus ?? createAppEventBus();
+  if (!options.deferAdapterSubscription) {
+    subscribeTasteAdapterToEventBus(eventBus, tasteAdapter);
+  }
 
   // GET /api/taste/profile
   router.get("/profile", async (_req, res) => {
@@ -269,8 +307,8 @@ export function createTasteRouter(dataDir: string = "data"): Router {
         return res.status(404).json({ error: "Profil bulunamadı" });
       }
       res.json(profile);
-    } catch {
-      res.status(500).json({ error: "Profil okunamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Profil okunamadı");
     }
   });
 
@@ -344,8 +382,8 @@ export function createTasteRouter(dataDir: string = "data"): Router {
         drifts,
       };
       res.json(payload);
-    } catch {
-      res.status(500).json({ error: "Genel bakış verisi okunamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Genel bakış verisi okunamadı");
     }
   });
 
@@ -434,8 +472,8 @@ export function createTasteRouter(dataDir: string = "data"): Router {
     try {
       const events = await readTasteEvents(dataDir);
       res.json({ events, count: events.length });
-    } catch {
-      res.status(500).json({ error: "Olaylar okunamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Olaylar okunamadı");
     }
   });
 
@@ -608,16 +646,85 @@ export function createTasteRouter(dataDir: string = "data"): Router {
         }
       }
 
-      await appendTasteEvent(event, dataDir);
-      const rebuildResult = await triggerTasteProfileRebuild(dataDir);
+      const rawMeta =
+        body && "rawMetadata" in body && body.rawMetadata && typeof body.rawMetadata === "object"
+          ? (body.rawMetadata as Record<string, unknown>)
+          : body && "metadata" in body && body.metadata && typeof body.metadata === "object"
+            ? (body.metadata as Record<string, unknown>)
+            : undefined;
+
+      const { added } = await appendTasteEventIdempotent(event, dataDir);
+      const rebuildResult = added
+        ? await triggerTasteProfileRebuild(dataDir)
+        : { generationId: undefined };
+
+      if (options.onRawTasteEvent) {
+        await options.onRawTasteEvent(event, rawMeta);
+      }
 
       res.json({
         success: true,
         eventId: event.eventId,
-        generationId: rebuildResult.generationId,
+        added,
+        deduplicated: !added,
+        ...(rebuildResult.generationId ? { generationId: rebuildResult.generationId } : {}),
       });
-    } catch {
-      res.status(500).json({ error: "Olay eklenemedi" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Olay eklenemedi");
+    }
+  });
+
+  // POST /api/taste/domain-event — TypedAppEvent'i EventBus/TasteServiceAdapter üzerinden idempotent işle
+  router.post("/domain-event", async (req, res) => {
+    try {
+      const body = req.body as
+        | TypedAppEvent
+        | {
+            event?: TypedAppEvent;
+            metadata?: TasteMetadataInput | Record<string, unknown>;
+            rawMetadata?: Record<string, unknown>;
+          };
+      const event: TypedAppEvent | undefined =
+        body && "event" in body && body.event
+          ? body.event
+          : (body as TypedAppEvent);
+
+      if (!event || !event.eventId || !event.eventType || !event.profileId) {
+        return res.status(400).json({ error: "Geçersiz domain olayı" });
+      }
+
+      await ensureInitialTasteBootstrap(dataDir);
+      const rawMeta =
+        body && "rawMetadata" in body && body.rawMetadata && typeof body.rawMetadata === "object"
+          ? (body.rawMetadata as Record<string, unknown>)
+          : body && "metadata" in body && body.metadata && typeof body.metadata === "object"
+            ? (body.metadata as Record<string, unknown>)
+            : undefined;
+
+      if (body && "metadata" in body && body.metadata) {
+        const meta = coerceItemToTasteMetadata(body.metadata as Record<string, unknown>);
+        if (meta) {
+          await upsertTasteMetadataInputs([meta], dataDir);
+        }
+      }
+
+      const outcome = await tasteAdapter.processEvent(event);
+      if (!outcome.ok) {
+        return res.status(outcome.retryable ? 500 : 409).json({
+          error: outcome.error || "Domain olayı işlenemedi",
+        });
+      }
+
+      if (options.onDomainEvent) {
+        await options.onDomainEvent(event, rawMeta);
+      }
+
+      res.json({
+        success: true,
+        eventId: event.eventId,
+      });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Domain olayı işlenemedi");
     }
   });
 
@@ -632,8 +739,8 @@ export function createTasteRouter(dataDir: string = "data"): Router {
         eventsCount: rebuildResult.eventsCount,
         indexedItemsCount: rebuildResult.indexedItemsCount,
       });
-    } catch {
-      res.status(500).json({ error: "Profil yeniden hesaplanamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Profil yeniden hesaplanamadı");
     }
   });
 
