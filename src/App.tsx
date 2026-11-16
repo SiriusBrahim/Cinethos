@@ -13,7 +13,22 @@ import { lazyWithRetry } from './app/lazy-with-retry.ts';
 import { ShellProvider, type ShellActions } from './app/shell-context.tsx';
 import { emitShellEvent } from './app/shell-events.ts';
 import { createProfileContext } from './app/ProfileContext.ts';
-import { createAppEventBus } from './app/app-event-bus.ts';
+import {
+  bridgeAppEventsToShellEvents,
+  createAppEvent,
+  createAppEventBus,
+} from './app/app-event-bus.ts';
+import { createModuleRegistry } from './app/runtime-module-registry.ts';
+import type {
+  EventSubscription,
+  IApplicationModule,
+  ModuleContext,
+  ModuleHealth,
+} from './contracts/index.ts';
+import {
+  extractTasteMetadataFromItem,
+  subscribeClientTasteSyncToEventBus,
+} from './services/taste-api.ts';
 import { MobileDock } from './app/mobile/MobileDock.tsx';
 import { MobileTopBar } from './app/mobile/MobileTopBar.tsx';
 import { AppModals } from './app/AppModals.tsx';
@@ -135,7 +150,10 @@ import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
-import { useItemActions } from './hooks/useItemActions.ts';
+import {
+  mapWatchStatusToLibraryList,
+  useItemActions,
+} from './hooks/useItemActions.ts';
 import { useMediaQuery } from './hooks/useMediaQuery.ts';
 import { hasPendingOfflineSync } from './services/offline-queue.ts';
 import { AUTH_REQUIRED_EVENT } from './services/api-client.ts';
@@ -335,6 +353,7 @@ export function App() {
       onInvalidateInFlight: () => requestGateRef.current.invalidate(),
     });
   }
+  const clientModuleRegistryRef = useRef<ReturnType<typeof createModuleRegistry> | null>(null);
   const lastForYouQueryKeyRef = useRef<string>('');
   const confirmNextBulkSyncRef = useRef<boolean>(false);
   const selectedTypeRef = useRef<string>(selectedType);
@@ -835,12 +854,17 @@ export function App() {
 
       profilesRef.current = mergedDoc.profiles;
       activeProfileIdRef.current = mergedDoc.activeProfileId;
-      void profileContextRef.current?.switchProfile(
-        mergedDoc.activeProfileId,
-        typeof mergedDoc.revision === 'number' && mergedDoc.revision >= 0
-          ? mergedDoc.revision
-          : (getLastKnownServerRevision() ?? 0)
-      );
+      {
+        const targetRev =
+          typeof mergedDoc.revision === 'number' && mergedDoc.revision >= 0
+            ? mergedDoc.revision
+            : (getLastKnownServerRevision() ?? 0);
+        if (profileContextRef.current?.getCurrent().profileId === mergedDoc.activeProfileId) {
+          profileContextRef.current.commitRevision(targetRev, mergedDoc.activeProfileId);
+        } else {
+          void profileContextRef.current?.switchProfile(mergedDoc.activeProfileId, targetRev);
+        }
+      }
       profileNameRef.current = active.name;
       preferencesRef.current = active.preferences;
       savedItemsRef.current = active.items;
@@ -913,7 +937,109 @@ export function App() {
     syncDocument,
     flushQueue,
     resolveQueuedConflict,
-  } = useOfflineSync(handleServerConflict, handleMergedServerDocument);
+  } = useOfflineSync(
+    handleServerConflict,
+    handleMergedServerDocument,
+    profileContextRef.current ?? undefined
+  );
+
+  // MIA Faz 1 Son Kabul — Adım 2 & 5: İstemci ModuleRegistry (shell-event-bridge + taste-event-sync)
+  useEffect(() => {
+    const profileCtx = profileContextRef.current;
+    if (!profileCtx) return;
+
+    const registry = createModuleRegistry();
+    clientModuleRegistryRef.current = registry;
+
+    let shellBridgeSub: EventSubscription | null = null;
+    let tasteSyncSub: EventSubscription | null = null;
+    let lastSyncError: string | null = null;
+
+    const shellBridgeModule: IApplicationModule = {
+      id: 'shell-event-bridge',
+      version: '1.0.0',
+      layer: 'foreground',
+      async initialize() {},
+      async start() {
+        if (!shellBridgeSub) {
+          shellBridgeSub = bridgeAppEventsToShellEvents(appEventBusRef.current);
+        }
+      },
+      async stop() {
+        shellBridgeSub?.unsubscribe();
+        shellBridgeSub = null;
+      },
+      async healthCheck(): Promise<ModuleHealth> {
+        return {
+          moduleId: 'shell-event-bridge',
+          status: shellBridgeSub ? 'healthy' : 'degraded',
+          detail: shellBridgeSub ? 'bridged' : 'stopped',
+        };
+      },
+    };
+
+    const tasteSyncModule: IApplicationModule = {
+      id: 'taste-event-sync',
+      version: '1.0.0',
+      layer: 'background',
+      async initialize() {},
+      async start() {
+        if (!tasteSyncSub) {
+          tasteSyncSub = subscribeClientTasteSyncToEventBus(appEventBusRef.current, {
+            resolveMetadata: (mediaKey) => {
+              const found = savedItemsRef.current.find((entry) => makeMediaKey(entry) === mediaKey);
+              return found
+                ? extractTasteMetadataFromItem(found as unknown as Record<string, unknown>)
+                : undefined;
+            },
+            onError: (error) => {
+              const msg = error instanceof Error ? error.message : String(error);
+              lastSyncError = msg;
+              showToast(`Zevk olayı sunucuya kaydedilemedi: ${msg}`, 'error');
+            },
+          });
+        }
+      },
+      async stop() {
+        tasteSyncSub?.unsubscribe();
+        tasteSyncSub = null;
+      },
+      async healthCheck(): Promise<ModuleHealth> {
+        return {
+          moduleId: 'taste-event-sync',
+          status: lastSyncError ? 'degraded' : tasteSyncSub ? 'healthy' : 'degraded',
+          detail: lastSyncError || (typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online'),
+        };
+      },
+    };
+
+    registry.register(shellBridgeModule);
+    registry.register(tasteSyncModule);
+
+    const moduleCtx: ModuleContext = {
+      profile: profileCtx,
+      events: appEventBusRef.current,
+      subscribe: appEventBusRef.current,
+      logger: {
+        info() {},
+        warn(moduleId, message, data) {
+          console.warn(`[ClientModule:${moduleId}] ${message}`, data || '');
+        },
+        error(moduleId, message, data) {
+          console.error(`[ClientModule:${moduleId}] ${message}`, data || '');
+        },
+      },
+    };
+
+    void registry.startAll(moduleCtx).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`İstemci modülleri başlatılamadı: ${msg}`, 'error');
+    });
+
+    return () => {
+      void registry.stopAll().catch(() => undefined);
+    };
+  }, [showToast]);
 
   // SEC-02: yakalanmamış async hatalar sessizce kaybolmasın.
   useEffect(() => {
@@ -1035,12 +1161,17 @@ export function App() {
       setProfiles(doc.profiles);
       setActiveProfileId(doc.activeProfileId);
       activeProfileIdRef.current = doc.activeProfileId;
-      void profileContextRef.current?.switchProfile(
-        doc.activeProfileId,
-        typeof doc.revision === 'number' && doc.revision >= 0
-          ? doc.revision
-          : (getLastKnownServerRevision() ?? 0)
-      );
+      {
+        const targetRev =
+          typeof doc.revision === 'number' && doc.revision >= 0
+            ? doc.revision
+            : (getLastKnownServerRevision() ?? 0);
+        if (profileContextRef.current?.getCurrent().profileId === doc.activeProfileId) {
+          profileContextRef.current.commitRevision(targetRev, doc.activeProfileId);
+        } else {
+          void profileContextRef.current?.switchProfile(doc.activeProfileId, targetRev);
+        }
+      }
       const active = doc.profiles.find((p) => p.id === doc.activeProfileId) || doc.profiles[0];
       profileNameRef.current = active.name;
       setProfileName(active.name);
@@ -2839,9 +2970,6 @@ export function App() {
       prev.filter((i) => makeMediaKey(i) !== itemKey)
     );
 
-    // M1: kaydetme olayını modüllere bildir (çapraz-modül olay yolu)
-    emitShellEvent('item:saved', { key: itemKey, title: displayTitle(rawItem) });
-
     // Sorun D: Kalıcı Zevk Haritasında yapımı 'saved' olarak işaretle
     try {
       const currentTasteMap = loadPersistentTasteMap(activeProfileIdRef.current);
@@ -2871,24 +2999,31 @@ export function App() {
     // Auto-enrich TV show metadata if episode count or runtime is missing
     if (normalized.media_type === 'tv' && !normalized.custom && !normalized.number_of_episodes) {
       const tvId = normalized.id;
+      const capturedProfileId =
+        profileContextRef.current?.getCurrent().profileId ?? activeProfileIdRef.current;
       fetchTmdb(`/tv/${tvId}`)
         .then((tvDetails) => {
-          if (tvDetails) {
-            setSavedItems((currentList) =>
-              currentList.map((entry) => {
-                if (entry.id === tvId && entry.media_type === 'tv') {
-                  return {
-                    ...entry,
-                    number_of_episodes: Number(tvDetails.number_of_episodes) || 10,
-                    number_of_seasons: Number(tvDetails.number_of_seasons) || 1,
-                    episode_run_time: tvDetails.episode_run_time || [45],
-                    runtime: tvDetails.episode_run_time?.[0] || 45,
-                  };
-                }
-                return entry;
-              })
-            );
+          if (!tvDetails) return;
+          try {
+            profileContextRef.current?.assertCurrent({ profileId: capturedProfileId });
+          } catch {
+            return;
           }
+          if (activeProfileIdRef.current !== capturedProfileId) return;
+          setSavedItems((currentList) =>
+            currentList.map((entry) => {
+              if (entry.id === tvId && entry.media_type === 'tv') {
+                return {
+                  ...entry,
+                  number_of_episodes: Number(tvDetails.number_of_episodes) || 10,
+                  number_of_seasons: Number(tvDetails.number_of_seasons) || 1,
+                  episode_run_time: tvDetails.episode_run_time || [45],
+                  runtime: tvDetails.episode_run_time?.[0] || 45,
+                };
+              }
+              return entry;
+            })
+          );
         })
         .catch(() => {});
     }
@@ -2897,6 +3032,12 @@ export function App() {
   const { saveItem, setItemStatus, markCompleted, dislikeItem, hideItem } = useItemActions({
     getSavedItems: () => savedItemsRef.current,
     onCommitSavedItem: commitSavedItem,
+    profileContext: profileContextRef.current,
+    eventPublisher: appEventBusRef.current,
+    onEventPersistError: (error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      showToast(`Olay kalıcılığı hatası: ${msg}`, 'error');
+    },
   });
 
   const handleSaveItem = (
@@ -2933,6 +3074,9 @@ export function App() {
   const handleToggleFavoriteActor = (actor: any) => {
     const actorId = Number(actor?.id);
     if (!Number.isInteger(actorId) || actorId <= 0) return;
+    const existed = normalizeFavoriteActors(favoriteActorsRef.current || []).some(
+      (a) => a.id === actorId
+    );
     setFavoriteActors((prev) => {
       const normalizedPrev = normalizeFavoriteActors(prev);
       const exists = normalizedPrev.some((a) => a.id === actorId);
@@ -2952,6 +3096,27 @@ export function App() {
         ]);
       }
     });
+    const profRef = profileContextRef.current?.getCurrent();
+    if (profRef) {
+      void appEventBusRef.current
+        .publish(
+          createAppEvent({
+            eventType: 'FavoriteActorChanged',
+            ref: profRef,
+            entityId: String(actorId),
+            payload: {
+              change: existed ? 'removed' : 'added',
+              actorId,
+            },
+          })
+        )
+        .catch((err) => {
+          showToast(
+            `Favori oyuncu olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
+            'error'
+          );
+        });
+    }
     void recordProfileChangeAndMaybeBackup();
   };
 
@@ -2970,6 +3135,57 @@ export function App() {
       savedItemsRef.current = next;
       return next;
     });
+    const profRef = profileContextRef.current?.getCurrent();
+    const mediaKey = makeMediaKey(targetItem);
+    if (profRef && (mediaKey.startsWith('movie:') || mediaKey.startsWith('tv:'))) {
+      void appEventBusRef.current
+        .publish(
+          createAppEvent({
+            eventType: 'LibraryItemUpdated',
+            ref: profRef,
+            entityId: mediaKey,
+            occurredAt: nowIso,
+            payload: {
+              mediaKey,
+              mediaType: 'tv',
+              changedFields: [
+                'current_season',
+                'season_progress',
+                ...(transitionedToCompleted ? ['status', 'completedAt'] : []),
+              ],
+            },
+          })
+        )
+        .catch((err) => {
+          showToast(
+            `Bölüm ilerlemesi olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
+            'error'
+          );
+        });
+      if (transitionedToCompleted) {
+        void appEventBusRef.current
+          .publish(
+            createAppEvent({
+              eventType: 'LibraryStatusChanged',
+              ref: profRef,
+              entityId: mediaKey,
+              occurredAt: nowIso,
+              payload: {
+                mediaKey,
+                mediaType: 'tv',
+                from: mapWatchStatusToLibraryList(targetItem.status),
+                to: 'watched',
+              },
+            })
+          )
+          .catch((err) => {
+            showToast(
+              `Durum değişimi olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
+              'error'
+            );
+          });
+      }
+    }
     void recordProfileChangeAndMaybeBackup();
     const seriesTitle = displayTitle(updatedItem);
     if (transitionedToCompleted) {
@@ -3015,10 +3231,11 @@ export function App() {
 
   const handleRemoveItem = (item: any) => {
     const itemKey = makeMediaKey(item);
-    const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
+    const mediaType: 'movie' | 'tv' =
+      (item.media_type || (item.title ? 'movie' : 'tv')) === 'tv' ? 'tv' : 'movie';
     const targetTitle = (item.title || item.name || '').trim().toLowerCase();
+    const deletedAtIso = new Date().toISOString();
     if (itemKey.startsWith('movie:') || itemKey.startsWith('tv:')) {
-      const deletedAtIso = new Date().toISOString();
       setDeletedKeys((prev) => {
         const nextDeleted = normalizeDeletedKeys({ ...prev, [itemKey]: deletedAtIso });
         deletedKeysRef.current = nextDeleted;
@@ -3036,6 +3253,30 @@ export function App() {
       savedItemsRef.current = next;
       return next;
     });
+
+    const profRef = profileContextRef.current?.getCurrent();
+    if (profRef && (itemKey.startsWith('movie:') || itemKey.startsWith('tv:'))) {
+      void appEventBusRef.current
+        .publish(
+          createAppEvent({
+            eventType: 'LibraryItemRemoved',
+            ref: profRef,
+            entityId: itemKey,
+            occurredAt: deletedAtIso,
+            payload: {
+              mediaKey: itemKey,
+              mediaType,
+              previousList: mapWatchStatusToLibraryList(item.status),
+            },
+          })
+        )
+        .catch((err) => {
+          showToast(
+            `Silme olayı kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
+            'error'
+          );
+        });
+    }
 
     try {
       const currentTasteMap = loadPersistentTasteMap(activeProfileIdRef.current);
@@ -3858,8 +4099,6 @@ export function App() {
     setActiveProfileId(newId);
     activeProfileIdRef.current = newId;
     void profileContextRef.current?.switchProfile(newId, getLastKnownServerRevision() ?? 0);
-    // M1: modüllere profil değişimini bildir (çapraz-modül olay yolu)
-    emitShellEvent('profile:changed', { profileId: newId });
     const target = updatedProfiles.find((p) => p.id === newId);
     const nextName = target?.name || 'Profilim';
     profileNameRef.current = nextName;
@@ -3895,6 +4134,10 @@ export function App() {
   };
 
   const handleCreateProfile = (name: string, isDemo = false) => {
+    requestGateRef.current.invalidate();
+    setIsLoading(false);
+    setLoadingMore(false);
+    setForYouProgressStep('');
     const outgoingId = activeProfileId;
     const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
     const newId = `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

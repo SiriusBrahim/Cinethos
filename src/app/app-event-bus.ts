@@ -110,14 +110,16 @@ export class AppEventBus implements IEventPublisher, IEventSubscriber {
     const set = this.handlers.get(event.eventType);
     if (!set || set.size === 0) return;
 
-    for (const handler of [...set]) {
-      try {
-        await handler(event);
-      } catch (error) {
-        // Bireysel abone hatası diğer aboneleri düşürmemeli, ancak sessiz yutulmaz.
-        console.warn(`[AppEventBus] ${String(event.eventType)} işleyicisi hata fırlattı:`, error);
-      }
-    }
+    await Promise.all(
+      [...set].map(async (handler) => {
+        try {
+          await handler(event);
+        } catch (error) {
+          // Bireysel abone hatası diğer aboneleri düşürmemeli, ancak sessiz yutulmaz.
+          console.warn(`[AppEventBus] ${String(event.eventType)} işleyicisi hata fırlattı:`, error);
+        }
+      })
+    );
   }
 
   subscribe<K extends keyof AppEventMap>(

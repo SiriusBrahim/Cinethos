@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { IProfileContext, WriteProfileRef } from '../contracts/index.ts';
 import { type DataDocument } from '../core/cinetrack-core.ts';
 import {
   getLastKnownServerRevision,
-  pushServerDataDetailed,
   type ServerConflictDetail,
 } from '../services/api.ts';
+import { createHttpPrimaryDataRepository } from '../services/client-primary-repository.ts';
 import {
   OFFLINE_QUEUE_MAX_ATTEMPTS,
   clearOfflineSyncSnapshot,
-  enqueueOfflineSyncSnapshotDurable,
+  enqueueOfflineSyncForProfile,
+  flushOfflineQueueWithRepository,
   hasPendingOfflineSync,
   hasUnpersistedOfflineFallback,
   loadOfflineSyncSnapshot,
   loadOfflineSyncSnapshotAsync,
-  recordOfflineQueueAttempt,
+  offlineQueueBackoffMs,
 } from '../services/offline-queue.ts';
 import {
   hasUnpersistedIdbFallback,
@@ -28,7 +30,8 @@ export interface OfflineQueueFailure {
 
 export function useOfflineSync(
   onConflict?: (conflict: ServerConflictDetail, localDoc: DataDocument) => void,
-  onMergedServerDocument?: (serverDoc: DataDocument, sentPayload: DataDocument) => void
+  onMergedServerDocument?: (serverDoc: DataDocument, sentPayload: DataDocument) => void,
+  profileContext?: IProfileContext
 ) {
   const isOnline = useOnlineStatus();
   const [pendingSync, setPendingSync] = useState<boolean>(() => hasPendingOfflineSync());
@@ -38,6 +41,33 @@ export function useOfflineSync(
   const [queueFailure, setQueueFailure] = useState<OfflineQueueFailure | null>(null);
   const conflictPausedRef = useRef<boolean>(false);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repositoryRef = useRef<ReturnType<typeof createHttpPrimaryDataRepository> | null>(null);
+  if (repositoryRef.current === null) {
+    repositoryRef.current = createHttpPrimaryDataRepository();
+  }
+
+  const resolveWriteProfileRef = useCallback(
+    (payload: DataDocument, explicitRevision?: number | null): WriteProfileRef => {
+      const ctxRef = profileContext?.getCurrent();
+      const profileId =
+        ctxRef?.profileId ||
+        (typeof payload?.activeProfileId === 'string' && payload.activeProfileId.trim()
+          ? payload.activeProfileId.trim()
+          : 'default');
+      const revCandidate =
+        explicitRevision !== undefined && explicitRevision !== null
+          ? explicitRevision
+          : ctxRef?.revision ??
+            getLastKnownServerRevision() ??
+            (typeof payload?.revision === 'number' ? payload.revision : 0);
+      const revision =
+        typeof revCandidate === 'number' && Number.isSafeInteger(revCandidate) && revCandidate >= 0
+          ? revCandidate
+          : 0;
+      return Object.freeze({ profileId, revision });
+    },
+    [profileContext]
+  );
 
   const clearRetryTimer = useCallback(() => {
     if (retryTimerRef.current) {
@@ -89,44 +119,69 @@ export function useOfflineSync(
       return;
     }
 
-    const res = await pushServerDataDetailed(queued.payload, {
-      baseRevision: queued.baseRevision,
-      mergeStrategy: 'lossless',
+    const result = await flushOfflineQueueWithRepository(repositoryRef.current!, {
+      profileContext,
     });
 
-    if (res.ok) {
+    if (result.status === 'empty') {
+      setPendingSync(false);
+      setUnpersistedWarning(hasUnpersistedIdbFallback());
+      return;
+    }
+
+    if (result.status === 'synced') {
       conflictPausedRef.current = false;
-      await clearOfflineSyncSnapshot();
       setPendingSync(false);
       setQueueFailure(null);
       setUnpersistedWarning(hasUnpersistedIdbFallback());
-      if (res.document && res.merged) {
-        onMergedServerDocument?.(res.document, queued.payload);
+      if (result.document && result.merged) {
+        onMergedServerDocument?.(result.document, queued.payload);
       }
       return;
     }
 
-    if ((res.status === 409 || res.status === 412 || res.status === 428) && res.conflict) {
+    if (result.status === 'profile-conflict') {
+      // Başka bir profile geçildiyse eski profilin bekleyen değişikliği yeni profili ezemez;
+      // kuyruk korunur ve otomatik deneme duraklatılır.
+      setPendingSync(true);
+      return;
+    }
+
+    if (result.status === 'conflict' && result.conflict) {
       // BUG-07: Çakışma çözülene kadar çevrimdışı kuyruk kaydını silme!
-      // Sayfa yenilense bile bekleyen yerel değişiklikler korunur.
       conflictPausedRef.current = true;
       setPendingSync(true);
-      onConflict?.({ ...res.conflict, localPayload: queued.payload }, queued.payload);
+      onConflict?.({ ...result.conflict, localPayload: queued.payload }, queued.payload);
       return;
     }
 
     // SEC-04: ağ/5xx hatasında üstel geri çekilmeyle yeniden dene; sayaç kalıcıdır.
     setPendingSync(true);
-    const info = await recordOfflineQueueAttempt();
-    setQueueFailure({ attempts: info.attempts, exhausted: info.exhausted });
-    if (info.nextDelayMs > 0) {
+    const snapAfter = loadOfflineSyncSnapshot();
+    const attempts = snapAfter?.attempts ?? 1;
+    const nextDelayMs = result.nextDelayMs ?? offlineQueueBackoffMs(attempts);
+    const exhausted = result.exhausted ?? attempts >= OFFLINE_QUEUE_MAX_ATTEMPTS;
+    setQueueFailure({ attempts, exhausted });
+    if (!exhausted && nextDelayMs > 0) {
       clearRetryTimer();
       retryTimerRef.current = setTimeout(() => {
         retryTimerRef.current = null;
         void flushQueue();
-      }, info.nextDelayMs);
+      }, nextDelayMs);
     }
-  }, [clearRetryTimer, onConflict, onMergedServerDocument]);
+  }, [clearRetryTimer, onConflict, onMergedServerDocument, profileContext]);
+
+  useEffect(() => {
+    if (!profileContext) return;
+    const sub = profileContext.onProfileChange(() => {
+      if (!conflictPausedRef.current && navigator.onLine) {
+        void flushQueue();
+      }
+    });
+    return () => {
+      sub.unsubscribe();
+    };
+  }, [profileContext, flushQueue]);
 
   useEffect(() => {
     if (isOnline && pendingSync && !conflictPausedRef.current) {
@@ -149,27 +204,41 @@ export function useOfflineSync(
         setQueueFailure(null);
       }
 
+      if (profileContext && !options.forceOverwrite) {
+        try {
+          profileContext.assertCurrent({ profileId: payload.activeProfileId });
+        } catch (err) {
+          return {
+            ok: false,
+            queued: false,
+            conflict: {
+              code: 'profile_conflict',
+              message: err instanceof Error ? err.message : String(err),
+              currentRevision: getLastKnownServerRevision() ?? undefined,
+              localPayload: payload,
+            } satisfies ServerConflictDetail,
+          };
+        }
+      }
+
       if (!navigator.onLine) {
-        // DATA-01: yazma tamamlanmadan "kaydedildi" denmez.
-        const baseRev = getLastKnownServerRevision();
-        const enq = await enqueueOfflineSyncSnapshotDurable(
-          payload,
-          baseRev,
-          payload.activeProfileId
-            ? {
-                profileId: payload.activeProfileId,
-                ...(baseRev !== null ? { revision: baseRev } : {}),
-              }
-            : undefined
-        );
+        // DATA-01 & Adım 11: yazma tamamlanmadan "kaydedildi" denmez; WriteProfileRef zorunludur.
+        const writeRef = resolveWriteProfileRef(payload, getLastKnownServerRevision());
+        const enq = await enqueueOfflineSyncForProfile(payload, writeRef);
         setPendingSync(true);
         setUnpersistedWarning(!enq.persisted || hasUnpersistedIdbFallback());
         return { ok: false, queued: true, persisted: enq.persisted, storage: enq.storage };
       }
 
       const useLossless = !options.forceOverwrite && !options.confirmBulkDelete;
-      const res = await pushServerDataDetailed(payload, {
-        baseRevision: options.forceOverwrite ? null : getLastKnownServerRevision(),
+      const baseRevision = options.forceOverwrite
+        ? null
+        : profileContext?.getCurrent().revision ?? getLastKnownServerRevision();
+      const res = await repositoryRef.current!.saveDetailed(payload, {
+        expectedRevision: baseRevision ?? undefined,
+        expectedProfileId: options.forceOverwrite
+          ? undefined
+          : profileContext?.getCurrent().profileId ?? payload.activeProfileId,
         confirmBulkDelete: options.confirmBulkDelete,
         forceOverwrite: options.forceOverwrite,
         mergeStrategy: useLossless ? 'lossless' : undefined,
@@ -189,17 +258,8 @@ export function useOfflineSync(
       }
 
       if (res.status === 0) {
-        const baseRev = getLastKnownServerRevision();
-        const enq = await enqueueOfflineSyncSnapshotDurable(
-          payload,
-          baseRev,
-          payload.activeProfileId
-            ? {
-                profileId: payload.activeProfileId,
-                ...(baseRev !== null ? { revision: baseRev } : {}),
-              }
-            : undefined
-        );
+        const writeRef = resolveWriteProfileRef(payload, getLastKnownServerRevision());
+        const enq = await enqueueOfflineSyncForProfile(payload, writeRef);
         setPendingSync(true);
         setUnpersistedWarning(!enq.persisted || hasUnpersistedIdbFallback());
         return { ok: false, queued: true, persisted: enq.persisted, storage: enq.storage };
@@ -211,7 +271,13 @@ export function useOfflineSync(
 
       return { ok: false, queued: false, conflict: res.conflict };
     },
-    [clearRetryTimer, onConflict, onMergedServerDocument]
+    [
+      clearRetryTimer,
+      onConflict,
+      onMergedServerDocument,
+      profileContext,
+      resolveWriteProfileRef,
+    ]
   );
 
   return {

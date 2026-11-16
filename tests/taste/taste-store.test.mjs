@@ -7,12 +7,16 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import fs from "node:fs/promises";
+import os from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { CorruptJsonFileError } from "../../src/server/atomic-json.ts";
 import {
   TASTE_PATHS,
   appendTasteEvent,
+  appendTasteEventIdempotent,
   readTasteEvents,
   writeTasteProfile,
   readTasteProfile,
@@ -191,16 +195,83 @@ describe("Taste Store — Atomik yazım", () => {
     assert.ok(read !== null, "Profil okunamadı");
   });
 
-  it("Bozuk events dosyasında readTasteEvents boş dizi döndürmeli", async () => {
-    // Bilerek bozuk içerik yaz (doğrudan, atomik olmadan)
-    writeFileSync(TASTE_PATHS.events, "{ bozuk json }", "utf8");
+  it("Kurtarılamaz bozuk events dosyasında readTasteEvents CorruptJsonFileError fırlatmalı", async () => {
+    const tmpDir = await fs.mkdtemp(join(os.tmpdir(), "taste-store-corrupt-"));
+    try {
+      const tasteDir = join(tmpDir, "taste");
+      await fs.mkdir(tasteDir, { recursive: true });
+      const eventsPath = join(tasteDir, "cinetrack-taste-events.json");
+      writeFileSync(eventsPath, "{ bozuk json }", "utf8");
 
-    const events = await readTasteEvents();
-    assert.ok(Array.isArray(events), "Dizi dönmeli");
-    // Bozuk dosya → boş dizi
-    assert.strictEqual(events.length, 0);
+      await assert.rejects(
+        () => readTasteEvents(tmpDir),
+        (err) => err instanceof CorruptJsonFileError
+      );
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 
-    // Temizle
-    await writeTasteEvents([]);
+  it("Bozulan events dosyası geçerli .bak yedeğinden otomatik kurtarılmalı", async () => {
+    const tmpDir = await fs.mkdtemp(join(os.tmpdir(), "taste-store-bak-"));
+    try {
+      const ev1 = makeEvent({ eventId: "bak-recovery-1" });
+      const ev2 = makeEvent({ eventId: "bak-recovery-2" });
+      await writeTasteEvents([ev1], tmpDir);
+      // İkinci yazım önceki geçerli dosyayı .bak yedeğine kopyalar
+      await appendTasteEventIdempotent(ev2, tmpDir);
+
+      const eventsPath = join(tmpDir, "taste", "cinetrack-taste-events.json");
+      assert.ok(existsSync(`${eventsPath}.bak`), ".bak yedeği oluşturulmalı");
+
+      // Ana dosyayı boz (geçerli .bak sağlam kalsın)
+      writeFileSync(eventsPath, "{ bozuk ana dosya", "utf8");
+
+      const recovered = await readTasteEvents(tmpDir);
+      assert.strictEqual(recovered.length, 1);
+      assert.strictEqual(recovered[0].eventId, "bak-recovery-1");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Taste Store — Eşzamanlılık ve Kilit Güvenliği", () => {
+  it("50 eşzamanlı farklı olay kayıpsız yazılmalı", async () => {
+    const tmpDir = await fs.mkdtemp(join(os.tmpdir(), "taste-store-50-"));
+    try {
+      const tasks = Array.from({ length: 50 }, (_, idx) =>
+        appendTasteEventIdempotent(
+          makeEvent({ eventId: `concurrent-distinct-${idx}` }),
+          tmpDir
+        )
+      );
+      const results = await Promise.all(tasks);
+      assert.strictEqual(results.filter((r) => r.added).length, 50);
+
+      const stored = await readTasteEvents(tmpDir);
+      assert.strictEqual(stored.length, 50);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("Aynı eventId ile 10 paralel çağrı yalnızca 1 olay üretmeli", async () => {
+    const tmpDir = await fs.mkdtemp(join(os.tmpdir(), "taste-store-dup-"));
+    try {
+      const sharedEvent = makeEvent({ eventId: "concurrent-same-id-1" });
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => appendTasteEventIdempotent(sharedEvent, tmpDir))
+      );
+      assert.strictEqual(results.filter((r) => r.added).length, 1);
+
+      const stored = await readTasteEvents(tmpDir);
+      assert.strictEqual(
+        stored.filter((e) => e.eventId === "concurrent-same-id-1").length,
+        1
+      );
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

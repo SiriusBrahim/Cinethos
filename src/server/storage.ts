@@ -60,6 +60,8 @@ export interface BackupMetadata {
 
 export interface SaveDataOptions {
   expectedRevision?: number | null;
+  expectedProfileId?: string;
+  strictProfileMatch?: boolean;
   confirmBulkDelete?: boolean;
   requirePrecondition?: boolean;
   forceOverwrite?: boolean;
@@ -81,6 +83,7 @@ export type SaveDataResult =
       code:
         | 'invalid_document'
         | 'revision_conflict'
+        | 'profile_conflict'
         | 'precondition_required'
         | 'sudden_item_drop'
         | 'payload_too_large'
@@ -399,6 +402,22 @@ export function createDataStorage(options: StorageOptions) {
 
     const currentRevision = current.revision ?? 0;
     const expectedRevision = saveOptions.expectedRevision;
+
+    if (saveOptions.strictProfileMatch || saveOptions.expectedProfileId) {
+      const expectedPid = typeof saveOptions.expectedProfileId === 'string'
+        ? saveOptions.expectedProfileId.trim()
+        : '';
+      if (!expectedPid || normalized.activeProfileId !== expectedPid) {
+        return {
+          ok: false,
+          status: 409,
+          code: 'profile_conflict',
+          message: `Profil uyuşmazlığı: beklenen '${expectedPid || 'bilinmiyor'}', gelen '${normalized.activeProfileId || 'bilinmiyor'}'.`,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
+    }
 
     if (saveOptions.hasInvalidIfMatch) {
       return {

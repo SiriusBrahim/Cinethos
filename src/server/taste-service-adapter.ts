@@ -14,6 +14,8 @@
 
 import {
   ProfileConflictError,
+  type EventSubscription,
+  type IEventSubscriber,
   type IMemoryService,
   type IProfileContext,
   type ITasteService,
@@ -25,6 +27,7 @@ import {
   type WriteProfileRef,
 } from '../contracts/index.ts';
 import type { TasteEvent } from '../core/taste/types.ts';
+import { CorruptJsonFileError } from './atomic-json.ts';
 import {
   appendTasteEventIdempotent,
   readTasteEvents,
@@ -252,6 +255,9 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
       if (error instanceof ProfileConflictError) {
         return { ok: false, error: error.message, retryable: false };
       }
+      if (error instanceof CorruptJsonFileError) {
+        return { ok: false, error: error.message, retryable: false };
+      }
       return {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
@@ -265,4 +271,39 @@ export function createServerTasteServiceAdapter(
   options: TasteServiceAdapterOptions = {}
 ): ServerTasteServiceAdapter {
   return new ServerTasteServiceAdapter(options);
+}
+
+const TASTE_SUBSCRIBED_DOMAIN_EVENTS = [
+  'LibraryItemAdded',
+  'LibraryStatusChanged',
+  'LibraryRatingChanged',
+  'LibraryItemRemoved',
+] as const;
+
+/**
+ * `ServerTasteServiceAdapter` örneğini `AppEventBus` (`IEventSubscriber`) kütüphane
+ * olaylarına bağlar; kalıcılık başarısız olursa sessizce yutmak yerine `onError`
+ * callback'ini tetikler ve hatayı yukarı iletir.
+ */
+export function subscribeTasteAdapterToEventBus(
+  subscriber: IEventSubscriber,
+  adapter: IMemoryService,
+  onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void
+): EventSubscription {
+  const subs: EventSubscription[] = TASTE_SUBSCRIBED_DOMAIN_EVENTS.map((eventType) =>
+    subscriber.subscribe(eventType, async (event) => {
+      const outcome = await adapter.processEvent(event);
+      if (!outcome.ok) {
+        onError?.(event, outcome);
+        throw new Error(outcome.error || `Taste olay kalıcılığı başarısız (${event.eventType})`);
+      }
+    })
+  );
+  return {
+    unsubscribe: () => {
+      for (const sub of subs) {
+        sub.unsubscribe();
+      }
+    },
+  };
 }

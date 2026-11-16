@@ -4,6 +4,11 @@
 // ===========================================================================
 
 import type {
+  EventSubscription,
+  IEventSubscriber,
+  TypedAppEvent,
+} from "../contracts/index.ts";
+import type {
   ManualOverrideMode,
   TasteProfile,
   TasteManifest,
@@ -305,6 +310,20 @@ export interface PostEventResponse {
   generationId?: string;
 }
 
+const pendingEventMetadata = new Map<string, TasteMetadataInput>();
+
+export function registerTasteMetadataForEvent(
+  eventId: string,
+  metadata?: TasteMetadataInput
+): void {
+  if (!eventId || !metadata) return;
+  pendingEventMetadata.set(eventId, metadata);
+  if (pendingEventMetadata.size > 200) {
+    const oldestKey = pendingEventMetadata.keys().next().value;
+    if (oldestKey) pendingEventMetadata.delete(oldestKey);
+  }
+}
+
 /** Yeni taste olayı gönder + sunucu worker yeniden hesaplaması bitince dinleyicileri tetikle */
 export async function postTasteEvent(
   event: TasteEvent,
@@ -321,6 +340,77 @@ export async function postTasteEvent(
     reason: event.eventType,
   });
   return res;
+}
+
+/**
+ * Domain olayını (`TypedAppEvent`) `/api/taste/domain-event` üzerinden sunucu
+ * `TasteServiceAdapter`'ına gönderir (aynı `eventId` korunur -> çift yazım olmaz).
+ * Kalıcılık hatası fırlatılır; sessizce yutulmaz.
+ */
+export async function postTasteDomainEvent(
+  event: TypedAppEvent,
+  metadata?: TasteMetadataInput
+): Promise<PostEventResponse> {
+  const payload = metadata ? { event, metadata } : { event };
+  const res = await requestJson<PostEventResponse>(`${BASE}/domain-event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  notifyTasteProfileUpdated({
+    generationId: res.generationId,
+    reason: event.eventType,
+  });
+  return res;
+}
+
+const CLIENT_TASTE_DOMAIN_EVENTS = [
+  "LibraryItemAdded",
+  "LibraryStatusChanged",
+  "LibraryRatingChanged",
+  "LibraryItemRemoved",
+] as const;
+
+export function subscribeClientTasteSyncToEventBus(
+  subscriber: IEventSubscriber,
+  options: {
+    resolveMetadata?: (mediaKey: string) => TasteMetadataInput | undefined;
+    onError?: (error: unknown, event: TypedAppEvent) => void;
+    sendDomainEvent?: (
+      event: TypedAppEvent,
+      metadata?: TasteMetadataInput
+    ) => Promise<PostEventResponse>;
+  } = {}
+): EventSubscription {
+  const sender = options.sendDomainEvent ?? postTasteDomainEvent;
+  const subs: EventSubscription[] = CLIENT_TASTE_DOMAIN_EVENTS.map((eventType) =>
+    subscriber.subscribe(eventType, async (event) => {
+      const cachedMeta = pendingEventMetadata.get(event.eventId);
+      if (cachedMeta) {
+        pendingEventMetadata.delete(event.eventId);
+      }
+      const mediaKey =
+        typeof (event.payload as { mediaKey?: unknown })?.mediaKey === "string"
+          ? (event.payload as { mediaKey: string }).mediaKey
+          : event.entityId;
+      const meta = cachedMeta ?? (mediaKey ? options.resolveMetadata?.(mediaKey) : undefined);
+
+      try {
+        await sender(event, meta);
+      } catch (error) {
+        options.onError?.(error, event);
+        throw error;
+      }
+    })
+  );
+
+  return {
+    unsubscribe: () => {
+      for (const sub of subs) {
+        sub.unsubscribe();
+      }
+    },
+  };
 }
 
 /** Arka plan profil yeniden hesaplamasını manuel tetikle */

@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { readJsonFileWithRecoveryAsync } from "./atomic-json.ts";
+import { CorruptJsonFileError, readJsonFileWithRecoveryAsync } from "./atomic-json.ts";
 import {
   readTasteEvents,
   writeTasteEvents,
@@ -651,7 +651,10 @@ export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Pro
       scheduleTasteMetadataHydration(dataDir, collectEvidenceContentIds(allEvents));
 
       bootstrapSignatures.set(dataDir, await computeBootstrapSignature(dataDir));
-    } catch {
+    } catch (err) {
+      if (err instanceof CorruptJsonFileError) {
+        throw err;
+      }
       // Soğuk başlatma hatası ana uygulamayı bloklamaz
     } finally {
       bootstrapPromises.delete(dataDir);

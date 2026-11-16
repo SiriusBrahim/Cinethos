@@ -12,14 +12,25 @@ import type {
   RepositoryReadResult,
   SaveDataOptions,
   SaveDataResult,
+  StorageDriverId,
   StorageHealth,
 } from '../contracts/index.ts';
 import type { DataDocument } from '../core/cinetrack-core.ts';
+import { apiFetch } from './api-client.ts';
 import {
   fetchServerData,
   getLastKnownServerRevision,
   pushServerDataDetailed,
+  type PushServerDataResult,
 } from './api.ts';
+
+export interface HttpSaveDataOptions extends SaveDataOptions {
+  expectedProfileId?: string;
+  confirmBulkDelete?: boolean;
+  forceOverwrite?: boolean;
+  mergeStrategy?: 'lossless';
+  foldUnhydratedDefaultProfile?: boolean;
+}
 
 export class HttpPrimaryDataRepository implements PrimaryDataRepository<DataDocument> {
   async read(): Promise<RepositoryReadResult<DataDocument>> {
@@ -33,18 +44,32 @@ export class HttpPrimaryDataRepository implements PrimaryDataRepository<DataDocu
     };
   }
 
-  async save(
+  async saveDetailed(
     document: DataDocument,
-    options: SaveDataOptions = {}
-  ): Promise<SaveDataResult> {
+    options: HttpSaveDataOptions = {}
+  ): Promise<PushServerDataResult> {
     const baseRevision =
       options.expectedRevision !== undefined
         ? options.expectedRevision
         : getLastKnownServerRevision();
 
-    const res = await pushServerDataDetailed(document, {
-      baseRevision,
-      mergeStrategy: 'lossless',
+    return pushServerDataDetailed(document, {
+      baseRevision: options.forceOverwrite ? null : baseRevision,
+      expectedProfileId: options.expectedProfileId,
+      confirmBulkDelete: options.confirmBulkDelete,
+      forceOverwrite: options.forceOverwrite,
+      mergeStrategy: options.mergeStrategy,
+      foldUnhydratedDefaultProfile: options.foldUnhydratedDefaultProfile,
+    });
+  }
+
+  async save(
+    document: DataDocument,
+    options: HttpSaveDataOptions = {}
+  ): Promise<SaveDataResult> {
+    const res = await this.saveDetailed(document, {
+      ...options,
+      mergeStrategy: options.mergeStrategy ?? 'lossless',
     });
 
     if (res.ok) {
@@ -78,6 +103,33 @@ export class HttpPrimaryDataRepository implements PrimaryDataRepository<DataDocu
   }
 
   async getHealth(): Promise<StorageHealth> {
+    if (typeof fetch === 'function') {
+      try {
+        const res = await apiFetch('/api/health', { cache: 'no-store' });
+        if (res.ok) {
+          const json = (await res.json()) as {
+            storage?: Partial<StorageHealth>;
+          };
+          if (json?.storage) {
+            const driver: StorageDriverId =
+              json.storage.driver === 'sqlite' ? 'sqlite' : 'json';
+            return {
+              driver,
+              enabled: Boolean(json.storage.enabled),
+              available: json.storage.available ?? true,
+              revision:
+                typeof json.storage.revision === 'number'
+                  ? json.storage.revision
+                  : getLastKnownServerRevision(),
+              updatedAt: json.storage.updatedAt ?? null,
+              lastError: json.storage.lastError ?? null,
+            };
+          }
+        }
+      } catch {
+        // Ağ yoksa önbellekten dürüst sağlık bilgisi döndürülür
+      }
+    }
     return this.getHealthFromDoc(null, getLastKnownServerRevision());
   }
 

@@ -15,6 +15,10 @@ import {
   type SavedItem,
 } from '../core/cinetrack-core.ts';
 import { createDataStorage, countTotalItems, type StorageOptions } from './storage.ts';
+import {
+  createServerPrimaryDataRepository,
+  type ServerPrimaryDataRepository,
+} from './primary-data-repository.ts';
 import { resolveStorageDriver } from './sqlite-primary-store.ts';
 import { brandProfileFileName } from '../shared/brand.ts';
 import {
@@ -36,6 +40,21 @@ import { CorruptJsonFileError } from './atomic-json.ts';
 import { hashDocument } from './archive-integrity.ts';
 import { RestoreJournal } from './restore-journal.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';
+import { createAppEventBus, type AppEventBus } from '../app/app-event-bus.ts';
+import { createModuleRegistry, type ModuleRegistry } from '../app/runtime-module-registry.ts';
+import { createProfileContext, type ProfileContext } from '../app/ProfileContext.ts';
+import {
+  createServerTasteServiceAdapter,
+  subscribeTasteAdapterToEventBus,
+} from './taste-service-adapter.ts';
+import { readTasteManifest } from './taste-store.ts';
+import { configureTasteHydration } from './taste-rebuild-coordinator.ts';
+import type {
+  EventSubscription,
+  IApplicationModule,
+  ModuleContext,
+  ModuleHealth,
+} from '../contracts/index.ts';
 
 /** SQLite arşivi yüklemesi: gövde diske akıtılır, bellekte tamponlanmaz (SEC-01). */
 export const MAX_SQLITE_ARCHIVE_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -390,6 +409,12 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
 export function createCineTrackApp(options: CineTrackAppOptions): {
   app: Express;
   storage: ReturnType<typeof createDataStorage>;
+  primaryRepository: ServerPrimaryDataRepository;
+  eventBus: AppEventBus;
+  profileContext: ProfileContext;
+  moduleRegistry: ModuleRegistry;
+  startRuntimeModules: () => Promise<void>;
+  stopRuntimeModules: () => Promise<void>;
   tmdbProxy: ReturnType<typeof createTmdbProxyService>;
   persistentStore: PersistentDataStore;
 } {
@@ -400,6 +425,17 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     dataDir: resolvedDataDir,
     maxDataBytes,
     storageDriver: options.storageDriver ?? resolveStorageDriver(),
+  });
+  const primaryRepository = createServerPrimaryDataRepository(storage);
+  const eventBus = createAppEventBus();
+  const profileContext = createProfileContext({
+    initialProfileId: 'default',
+    initialRevision: 0,
+    eventPublisher: eventBus,
+  });
+  const tasteAdapter = createServerTasteServiceAdapter({
+    dataDir: resolvedDataDir,
+    rebuildOnEvent: true,
   });
   const tmdbProxy = createTmdbProxyService(options);
   const persistentStore =
@@ -422,6 +458,152 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       localEnvIsPublicRepo: options.localEnvIsPublicRepo,
     });
   persistentStore.attachDataStorage(storage, maxDataBytes);
+
+  // MIA Faz 1 Son Kabul — Adım 5: Sunucu çalışma zamanı ModuleRegistry yaşam döngüsü
+  const moduleRegistry = createModuleRegistry();
+  let primaryStorageStarted = false;
+  let tasteSub: EventSubscription | null = null;
+  let tasteErrorCount = 0;
+  let lastTasteError: string | null = null;
+  let backupSyncStarted = false;
+
+  const primaryStorageModule: IApplicationModule = {
+    id: 'primary-storage',
+    version: '1.0.0',
+    layer: 'background',
+    async initialize() {
+      await primaryRepository.readRaw();
+    },
+    async start() {
+      primaryStorageStarted = true;
+    },
+    async stop() {
+      primaryStorageStarted = false;
+    },
+    async healthCheck(): Promise<ModuleHealth> {
+      const h = await primaryRepository.getHealth();
+      if (!h.available) {
+        return {
+          moduleId: 'primary-storage',
+          status: 'unhealthy',
+          detail: h.lastError || `driver=${h.driver}`,
+        };
+      }
+      return {
+        moduleId: 'primary-storage',
+        status: primaryStorageStarted ? 'healthy' : 'degraded',
+        detail: `driver=${h.driver} revision=${h.revision ?? 0}`,
+      };
+    },
+  };
+
+  const tasteEngineModule: IApplicationModule = {
+    id: 'taste-engine',
+    version: '1.0.0',
+    layer: 'background',
+    async initialize() {
+      configureTasteHydration(resolvedDataDir, options.tmdbApiKey || process.env.TMDB_API_KEY);
+    },
+    async start() {
+      if (!tasteSub) {
+        tasteSub = subscribeTasteAdapterToEventBus(eventBus, tasteAdapter, (ev, outcome) => {
+          tasteErrorCount += 1;
+          lastTasteError =
+            (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
+        });
+      }
+    },
+    async stop() {
+      tasteSub?.unsubscribe();
+      tasteSub = null;
+    },
+    async healthCheck(): Promise<ModuleHealth> {
+      try {
+        const manifest = await readTasteManifest(resolvedDataDir);
+        if (lastTasteError) {
+          return {
+            moduleId: 'taste-engine',
+            status: 'degraded',
+            detail: `errors=${tasteErrorCount}; ${lastTasteError}`,
+          };
+        }
+        return {
+          moduleId: 'taste-engine',
+          status: tasteSub ? 'healthy' : 'degraded',
+          detail: manifest
+            ? `generation=${manifest.generationId}`
+            : tasteSub
+              ? 'subscribed (bootstrap pending)'
+              : 'stopped',
+        };
+      } catch (err) {
+        return {
+          moduleId: 'taste-engine',
+          status: 'unhealthy',
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  };
+
+  const backupSyncModule: IApplicationModule = {
+    id: 'backup-sync',
+    version: '1.0.0',
+    layer: 'background',
+    async initialize() {
+      persistentStore.getSyncStatus();
+    },
+    async start() {
+      backupSyncStarted = true;
+    },
+    async stop() {
+      backupSyncStarted = false;
+    },
+    async healthCheck(): Promise<ModuleHealth> {
+      const syncStatus = persistentStore.getSyncStatus();
+      if (syncStatus.authFailed) {
+        return {
+          moduleId: 'backup-sync',
+          status: 'degraded',
+          detail: 'github_auth_failed',
+        };
+      }
+      return {
+        moduleId: 'backup-sync',
+        status: backupSyncStarted ? 'healthy' : 'degraded',
+        detail: `mode=${syncStatus.mode}`,
+      };
+    },
+  };
+
+  moduleRegistry.register(primaryStorageModule);
+  moduleRegistry.register(tasteEngineModule);
+  moduleRegistry.register(backupSyncModule);
+
+  const serverModuleContext: ModuleContext = {
+    profile: profileContext,
+    events: eventBus,
+    subscribe: eventBus,
+    logger: {
+      info(moduleId, message) {
+        console.log(`[Module:${moduleId}] ${message}`);
+      },
+      warn(moduleId, message) {
+        console.warn(`[Module:${moduleId}] ${message}`);
+      },
+      error(moduleId, message) {
+        console.error(`[Module:${moduleId}] ${message}`);
+      },
+    },
+  };
+
+  const startRuntimeModules = async () => {
+    await moduleRegistry.startAll(serverModuleContext);
+  };
+
+  const stopRuntimeModules = async () => {
+    await moduleRegistry.stopAll();
+  };
 
   const notifyLocalMutation = (reason: string) => {
     try {
@@ -509,8 +691,21 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
 
   app.get('/api/health', async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
-    const posterCache = await getPosterCacheStatsAsync(path.join(resolvedDataDir, 'cache', 'posters'));
-    res.json({ ok: true, posterCache, storage: storage.sqliteStatus() });
+    const [posterCache, repoHealth, moduleHealth] = await Promise.all([
+      getPosterCacheStatsAsync(path.join(resolvedDataDir, 'cache', 'posters')),
+      primaryRepository.getHealth(),
+      moduleRegistry.healthCheckAll(),
+    ]);
+    res.json({
+      ok: true,
+      posterCache,
+      storage: {
+        ...storage.sqliteStatus(),
+        ...repoHealth,
+        driver: repoHealth.driver,
+      },
+      modules: moduleHealth,
+    });
   });
 
   // === SQLite arşivi: profil + stok + stok görsellerinin tek dosyalık tam yedeği ===
@@ -833,7 +1028,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
 
   async function rollbackArchiveRestore(beforeDocument: DataDocument): Promise<boolean> {
     try {
-      const restored = await storage.saveDataSerialized(beforeDocument, {
+      const restored = await primaryRepository.saveRaw(beforeDocument, {
         forceOverwrite: true,
         confirmBulkDelete: true,
         requirePrecondition: false,
@@ -849,7 +1044,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     res: Response
   ): Promise<void> {
     const { archive } = entry;
-    const current = await storage.readDataAsync();
+    const rawCurrent = await primaryRepository.readRaw();
+    const current = rawCurrent.document;
 
     // P0-01-C: önizleme ile onay arasında veri değiştiyse eski arşiv sessizce yazılmaz.
     const currentHash = hashDocument(current);
@@ -874,7 +1070,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     // Commit niyeti önce diske yazılır: süreç burada çökerse açılışta geri alınır.
     await restoreJournal.update(entry.restoreId, { state: 'server_committed' });
 
-    const saved = await storage.saveDataSerialized(archive.dataDocument, {
+    const saved = await primaryRepository.saveRaw(archive.dataDocument, {
       forceOverwrite: true,
       confirmBulkDelete: true,
       requirePrecondition: false,
@@ -1273,8 +1469,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
 
   app.get('/api/data', personalReadGuard, async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
-    const doc = await storage.readDataAsync();
-    if (storage.hasUnrecoverableCorruption()) {
+    const rawState = await primaryRepository.readRaw();
+    if (rawState.corrupt) {
       res.status(500).json({
         status_message:
           'Mevcut veri dosyası bozuk ve kurtarılabilecek geçerli bir yedek bulunamadı. Veri kaybını önlemek için lütfen sunucu dosyalarını kontrol edin.',
@@ -1282,6 +1478,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       });
       return;
     }
+    const doc = rawState.document;
     const rev = doc.revision ?? 0;
     res.setHeader('ETag', `"rev-${rev}"`);
     res.json(doc);
@@ -1293,14 +1490,24 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const { expectedRevision, hasInvalidIfMatch, forceOverwrite } = parseWritePrecondition(req);
       const confirmBulkDelete = isBulkDeleteConfirmed(req);
       const { mergeStrategy, foldUnhydratedDefaultProfile } = parseMergeWriteOptions(req);
-      const result = await storage.saveDataSerialized(req.body, {
+      const rawProfileHeader = req.headers['x-cinetrack-profile-id'];
+      const expectedProfileId =
+        typeof rawProfileHeader === 'string' && rawProfileHeader.trim()
+          ? rawProfileHeader.trim()
+          : undefined;
+      const strictProfileMatch =
+        req.headers['x-cinetrack-strict-profile'] === '1' ||
+        req.headers['x-cinetrack-strict-profile'] === 'true';
+      const result = await primaryRepository.saveRaw(req.body, {
         expectedRevision,
         hasInvalidIfMatch,
-        requirePrecondition: true,
+        requirePrecondition: !forceOverwrite,
         forceOverwrite,
         confirmBulkDelete,
         mergeStrategy,
         foldUnhydratedDefaultProfile,
+        ...(expectedProfileId ? { expectedProfileId } : {}),
+        ...(strictProfileMatch ? { strictProfileMatch } : {}),
       });
 
       if (!result.ok) {
@@ -1947,7 +2154,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       }
 
       const dryRun = Boolean(req.body?.dryRun);
-      const current = await storage.readDataAsync();
+      const { document: current } = await primaryRepository.readRaw();
       const { document: mergedDocument, cinemaKunye, report } = runHybridMerge(csvText, current);
 
       if (dryRun) {
@@ -1955,7 +2162,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         return;
       }
 
-      const result = await storage.saveDataSerialized(mergedDocument, {
+      const result = await primaryRepository.saveRaw(mergedDocument, {
         expectedRevision: current.revision ?? 0,
         requirePrecondition: true,
         forceOverwrite: false,
@@ -2236,7 +2443,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.use(
     '/api/taste',
     personalReadGuard,
-    createTasteRouter(resolvedDataDir, { tmdbApiKey: options.tmdbApiKey })
+    createTasteRouter(resolvedDataDir, {
+      tmdbApiKey: options.tmdbApiKey,
+      eventBus,
+      tasteAdapter,
+      deferAdapterSubscription: true,
+    })
   );
 
   if (typeof options.registerCustomRoutes === 'function') {
@@ -2276,5 +2488,16 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     });
   });
 
-  return { app, storage, tmdbProxy, persistentStore };
+  return {
+    app,
+    storage,
+    primaryRepository,
+    eventBus,
+    profileContext,
+    moduleRegistry,
+    startRuntimeModules,
+    stopRuntimeModules,
+    tmdbProxy,
+    persistentStore,
+  };
 }

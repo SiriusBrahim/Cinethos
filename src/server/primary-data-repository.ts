@@ -10,18 +10,23 @@
  *   (SQLite istenip açılamadıysa dürüstçe `'json'` + hata detayı bildirir).
  */
 
-import type {
-  PrimaryDataRepository,
-  RepositoryReadResult,
-  SaveDataOptions as ContractSaveDataOptions,
-  SaveDataResult as ContractSaveDataResult,
-  StorageDriverId,
-  StorageHealth,
-  WriteProfileRef,
+import {
+  ProfileConflictError,
+  StaleRevisionError,
+  type PrimaryDataRepository,
+  type RepositoryReadResult,
+  type SaveDataOptions as ContractSaveDataOptions,
+  type SaveDataResult as ContractSaveDataResult,
+  type StorageDriverId,
+  type StorageHealth,
+  type WriteProfileRef,
 } from '../contracts/index.ts';
-import { StaleRevisionError } from '../contracts/index.ts';
 import type { DataDocument } from '../core/cinetrack-core.ts';
-import type { createDataStorage } from './storage.ts';
+import type {
+  createDataStorage,
+  SaveDataOptions as StorageSaveDataOptions,
+  SaveDataResult as StorageSaveDataResult,
+} from './storage.ts';
 
 export type DataStorageHandle = ReturnType<typeof createDataStorage>;
 
@@ -66,22 +71,57 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
     };
   }
 
-  async read(): Promise<RepositoryReadResult<DataDocument>> {
+  async readRaw(): Promise<{
+    document: DataDocument;
+    revision: number | null;
+    health: StorageHealth;
+    corrupt: boolean;
+  }> {
     const doc = await this.storage.readDataAsync();
     if (this.storage.hasUnrecoverableCorruption()) {
       return {
-        document: null,
+        document: doc,
         revision: null,
         health: this.buildHealth(null, null),
+        corrupt: true,
       };
     }
-    const hasData = (doc.profiles?.length ?? 0) > 0 || (doc.revision ?? 0) > 0;
     const rev = typeof doc.revision === 'number' ? doc.revision : 0;
     return {
-      document: hasData ? doc : null,
-      revision: hasData ? rev : 0,
+      document: doc,
+      revision: rev,
       health: this.buildHealth(rev, doc.updatedAt ?? null),
+      corrupt: false,
     };
+  }
+
+  async read(): Promise<RepositoryReadResult<DataDocument>> {
+    const raw = await this.readRaw();
+    if (raw.corrupt) {
+      return {
+        document: null,
+        revision: null,
+        health: raw.health,
+      };
+    }
+    const hasData = (raw.document.profiles?.length ?? 0) > 0 || (raw.document.revision ?? 0) > 0;
+    return {
+      document: hasData ? raw.document : null,
+      revision: raw.revision ?? 0,
+      health: raw.health,
+    };
+  }
+
+  async saveRaw(
+    rawPayload: unknown,
+    saveOptions: StorageSaveDataOptions = {}
+  ): Promise<StorageSaveDataResult> {
+    const enforcePrecondition =
+      saveOptions.requirePrecondition ?? !saveOptions.forceOverwrite;
+    return this.storage.saveDataSerialized(rawPayload, {
+      ...saveOptions,
+      requirePrecondition: enforcePrecondition,
+    });
   }
 
   async save(
@@ -90,10 +130,9 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
   ): Promise<ContractSaveDataResult> {
     const expected =
       options.expectedRevision !== undefined ? options.expectedRevision : null;
-    const res = await this.storage.saveDataSerialized(document, {
+    const res = await this.saveRaw(document, {
       expectedRevision: expected,
-      requirePrecondition:
-        options.requirePrecondition ?? options.expectedRevision !== undefined,
+      requirePrecondition: options.requirePrecondition ?? true,
     });
 
     if (res.ok) {
@@ -105,6 +144,7 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
 
     const isConflict =
       res.code === 'revision_conflict' ||
+      res.code === 'profile_conflict' ||
       res.code === 'precondition_required' ||
       res.code === 'sudden_item_drop';
 
@@ -118,25 +158,46 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
 
   /**
    * Profil izolasyonlu yazım yardımcısı: `WriteProfileRef` üzerinden
-   * iyimser kilitleme uygular ve çelişkide `StaleRevisionError` fırlatabilir.
+   * profil ve iyimser kilitleme doğrular; çelişkide `ProfileConflictError`
+   * veya `StaleRevisionError` fırlatır.
    */
   async saveForProfileOrThrow(
     document: DataDocument,
     ref: WriteProfileRef,
     reason?: string
   ): Promise<number> {
-    const result = await this.save(document, {
-      expectedRevision: ref.revision,
-      requirePrecondition: true,
-      reason,
-    });
-    if (!result.ok) {
-      if (result.conflict) {
-        throw new StaleRevisionError(ref.revision, result.revision ?? null);
-      }
-      throw new Error(result.error || 'Birincil depoya yazılamadı.');
+    const expectedProfileId = typeof ref?.profileId === 'string' ? ref.profileId.trim() : '';
+    if (!expectedProfileId || document.activeProfileId !== expectedProfileId) {
+      throw new ProfileConflictError('profile-switched', {
+        expectedRevision: ref.revision,
+        message: `Profil uyuşmazlığı: yazma '${expectedProfileId || 'bilinmiyor'}' profili için istendi, belge '${document.activeProfileId || 'bilinmiyor'}' profiline ait.`,
+      });
     }
-    return result.revision ?? ref.revision + 1;
+    const res = await this.saveRaw(document, {
+      expectedRevision: ref.revision,
+      expectedProfileId,
+      strictProfileMatch: true,
+      requirePrecondition: true,
+      ...(reason ? {} : {}),
+    });
+    if (!res.ok) {
+      if (res.code === 'profile_conflict') {
+        throw new ProfileConflictError('profile-switched', {
+          expectedRevision: ref.revision,
+          actualRevision: res.currentRevision,
+          message: res.message,
+        });
+      }
+      if (
+        res.code === 'revision_conflict' ||
+        res.code === 'precondition_required' ||
+        res.code === 'sudden_item_drop'
+      ) {
+        throw new StaleRevisionError(ref.revision, res.currentRevision ?? null);
+      }
+      throw new Error(res.message || 'Birincil depoya yazılamadı.');
+    }
+    return res.document.revision ?? ref.revision + 1;
   }
 
   async getRevision(): Promise<number | null> {

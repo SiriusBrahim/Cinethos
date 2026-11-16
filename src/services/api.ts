@@ -27,7 +27,7 @@ export interface ServerBackupMetadata {
 }
 
 export interface ServerConflictDetail {
-  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop';
+  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop' | 'profile_conflict';
   message: string;
   currentRevision?: number;
   expectedRevision?: number;
@@ -384,12 +384,28 @@ export async function pushServerDataDetailed(
   payload: DataDocument,
   options: {
     baseRevision?: number | null;
+    expectedProfileId?: string;
     confirmBulkDelete?: boolean;
     forceOverwrite?: boolean;
     mergeStrategy?: 'lossless';
     foldUnhydratedDefaultProfile?: boolean;
   } = {}
 ): Promise<PushServerDataResult> {
+  if (options.expectedProfileId && payload.activeProfileId !== options.expectedProfileId) {
+    return {
+      ok: false,
+      status: 409,
+      conflict: {
+        code: 'profile_conflict',
+        message: `Profil uyuşmazlığı: beklenen '${options.expectedProfileId}', gelen '${payload.activeProfileId}'.`,
+        currentRevision: getLastKnownServerRevision() ?? undefined,
+        expectedRevision: options.baseRevision ?? undefined,
+        localPayload: payload,
+      },
+      errorMessage: 'Profil uyuşmazlığı nedeniyle yazma reddedildi.',
+    };
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -399,6 +415,9 @@ export async function pushServerDataDetailed(
     headers['X-CineTrack-Force-Write'] = '1';
   } else if (typeof revToCheck === 'number' && Number.isSafeInteger(revToCheck) && revToCheck >= 0) {
     headers['If-Match'] = `"rev-${revToCheck}"`;
+  }
+  if (options.expectedProfileId) {
+    headers['X-CineTrack-Profile-Id'] = options.expectedProfileId;
   }
   if (options.confirmBulkDelete) {
     headers['X-CineTrack-Confirm-Drop'] = '1';
@@ -441,6 +460,7 @@ export async function pushServerDataDetailed(
     if (
       (response.status === 409 || response.status === 412 || response.status === 428) &&
       (bodyJson?.code === 'revision_conflict' ||
+        bodyJson?.code === 'profile_conflict' ||
         bodyJson?.code === 'precondition_required' ||
         bodyJson?.code === 'sudden_item_drop' ||
         response.status === 412 ||
@@ -479,7 +499,15 @@ export async function pushServerDataDetailed(
 }
 
 export async function pushServerData(payload: DataDocument): Promise<boolean> {
-  const res = await pushServerDataDetailed(payload);
+  const knownRevision =
+    getLastKnownServerRevision() ??
+    (typeof payload?.revision === 'number' && Number.isSafeInteger(payload.revision)
+      ? payload.revision
+      : null);
+  const res = await pushServerDataDetailed(payload, {
+    baseRevision: knownRevision,
+    expectedProfileId: payload?.activeProfileId || undefined,
+  });
   return res.ok;
 }
 

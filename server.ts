@@ -49,7 +49,13 @@ let githubTokenLive = resolved.githubToken;
 let schedulePostMutationSync: ((reason: string) => void) | null = null;
 const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev');
 
-const { app, storage, persistentStore } = createCineTrackApp({
+const {
+  app,
+  primaryRepository,
+  startRuntimeModules,
+  stopRuntimeModules,
+  persistentStore,
+} = createCineTrackApp({
   dataDir,
   maxDataBytes,
   maxProfiles,
@@ -98,6 +104,7 @@ const { app, storage, persistentStore } = createCineTrackApp({
 });
 
 async function startServer() {
+  await startRuntimeModules();
   // GitHub OAuth token'ları (~8 saat) süresi dolduğunda Windows Kimlik Yöneticisi'nden
   // (Git Credential Manager) taze token alınır; .env ve canlı senkron yapılandırması güncellenir.
   const applyFreshGitHubToken = async (reason: string, timeoutMs = 45_000): Promise<void> => {
@@ -184,7 +191,7 @@ async function startServer() {
     void (async () => {
       await applyFreshGitHubToken('başlangıç', 8_000);
       try {
-        const initialData = await storage.readDataAsync();
+        const { document: initialData } = await primaryRepository.readRaw();
         const allItems: SavedItem[] = [];
         for (const p of initialData.profiles || []) {
           if (Array.isArray(p.items)) allItems.push(...p.items);
@@ -313,6 +320,12 @@ async function startServer() {
       const deadline = Date.now() + 5_000;
       while (persistentStore.isSyncBusy() && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      try {
+        await stopRuntimeModules();
+      } catch (stopErr) {
+        console.warn('[Shutdown] Modül durdurma uyarısı:', stopErr);
       }
 
       clearTimeout(forceExitTimer);
