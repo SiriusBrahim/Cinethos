@@ -26,6 +26,18 @@ const GENERIC_PLOT_WORDS = new Set([
 export const ENCODING_LAYOUT_VERSION = 2;
 export const DENSE_VECTOR_DIM = 48;
 
+/**
+ * Tone vektörü (16 boyut) için deterministik iki dilli kelime listesi.
+ * NOT: Daha önce `Array.from(ENCODING_TONE_WORDS).slice(0, 16)` kullanılıyordu;
+ * Set iterasyon sırası gereği ilk 16 kelimenin tamamı Türkçe olduğundan İngilizce
+ * içeriklerde toneVector hep sıfır kalıyordu. Bu sabit liste her iki dili dengeli
+ * kapsar ve sırası asla değişmez (layout kararı: denseVector 31..46 indeksleri).
+ */
+export const TONE_VECTOR_WORDS: readonly string[] = [
+  'dark', 'psychological', 'dystopia', 'mystery', 'dream', 'isolation', 'tension', 'noir',
+  'karanlık', 'distopya', 'gizem', 'psikolojik', 'sürreal', 'gerilim', 'kabus', 'yalnızlık',
+];
+
 export interface ItemFeatureEncoding {
   id: string | number;
   media_type: 'movie' | 'tv';
@@ -185,7 +197,7 @@ export function encodeItemContent(item: EncodableMediaInput): ItemFeatureEncodin
 
   // 6. Tokenize & Tone vector
   const textTokens = tokenizeText(`${item.title || item.name || ''} ${item.overview || ''}`);
-  const toneList = Array.from(ENCODING_TONE_WORDS).slice(0, 16);
+  const toneList = TONE_VECTOR_WORDS;
   const toneVector = toneList.map((w) => (textTokens.has(w) ? 1.0 : 0.0));
 
   // 7. Dense continuous vector (48 dimensions)

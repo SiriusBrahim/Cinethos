@@ -60,6 +60,8 @@ export interface BackupMetadata {
 
 export interface SaveDataOptions {
   expectedRevision?: number | null;
+  expectedProfileId?: string;
+  strictProfileMatch?: boolean;
   confirmBulkDelete?: boolean;
   requirePrecondition?: boolean;
   forceOverwrite?: boolean;
@@ -150,6 +152,12 @@ export function createDataStorage(options: StorageOptions) {
 
   let unrecoverableCorruptionError: string | null = null;
   let writeQueue: Promise<unknown> = Promise.resolve();
+
+  // Faz 7 — SQLite birincil kaynak (opt-in). JSON her zaman yedek olarak yazılır.
+  const primaryStore = createSqlitePrimaryStore({
+    dataDir: resolvedDataDir,
+    enabled: (options.storageDriver ?? resolveStorageDriver()) === 'sqlite',
+  });
 
   function serialize<T>(task: () => Promise<T>): Promise<T> {
     const run = writeQueue.then(task);

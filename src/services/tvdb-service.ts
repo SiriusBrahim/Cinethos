@@ -1,4 +1,5 @@
 import type { TmdbGenre, TmdbItem } from '../types/tmdb.ts';
+import { apiFetch } from './api-client.ts';
 import {
   loadStockIdb,
   saveStockIdb,
@@ -73,7 +74,7 @@ export interface TvdbStatusResponse {
 export async function checkTvdbStatus(apiKey?: string): Promise<TvdbStatusResponse> {
   const keyToUse = (apiKey || getStoredTvdbApiKey()).trim();
   try {
-    const res = await fetch(`/api/tvdb-status?apikey=${encodeURIComponent(keyToUse)}`, {
+    const res = await apiFetch(`/api/tvdb-status?apikey=${encodeURIComponent(keyToUse)}`, {
       headers: {
         Accept: 'application/json',
       },
@@ -641,7 +642,7 @@ export async function syncTvdbStockBatch(options: SyncTvdbOptions = {}): Promise
 
     // Sync to server storage
     try {
-      await fetch('/api/stock/upload', {
+      await apiFetch('/api/stock/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

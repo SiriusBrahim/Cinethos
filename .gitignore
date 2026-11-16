@@ -8,4 +8,7 @@ dev-dist/
 bun.lock
 data/
 
+
+# Test ve build artefaktları
 test-results/
+playwright-report/

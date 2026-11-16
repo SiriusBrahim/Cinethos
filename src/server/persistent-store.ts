@@ -31,6 +31,7 @@ import type {
   SyncComparisonSummary,
   SyncSideSummary,
 } from '../core/sync-display.ts';
+import { BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
 import { GitHubBidirectionalSyncManager } from './github-bidirectional-sync.ts';
 import type { createDataStorage } from './storage.ts';
 
@@ -183,6 +184,7 @@ export interface SyncFileStateRecord {
 
 export interface SyncStatus {
   configured: boolean;
+  authFailed?: boolean;
   mode: 'github' | 'local_only';
   reason?: string;
   isPublicRepo: boolean;
@@ -990,7 +992,7 @@ export class PersistentDataStore {
       writeJsonFileAtomic(this.syncStateFile, stringifyDeterministic(payload), {
         validateParsed: isPlainRecordObject,
       });
-    } catch {}
+    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
   }
 
   private setFileSyncStage(
@@ -1268,7 +1270,7 @@ export class PersistentDataStore {
           headers: {
             Authorization: `Bearer ${activeTok}`,
             Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'Cinethos-Sync-Agent',
+            'User-Agent': BRAND_SYNC_USER_AGENT,
           },
         });
         if (getRes.status === 401) {
@@ -1279,7 +1281,7 @@ export class PersistentDataStore {
               headers: {
                 Authorization: `Bearer ${activeTok}`,
                 Accept: 'application/vnd.github.v3+json',
-                'User-Agent': 'Cinethos-Sync-Agent',
+                'User-Agent': BRAND_SYNC_USER_AGENT,
               },
             });
           }
@@ -1538,7 +1540,7 @@ export class PersistentDataStore {
     try {
       await fsPromises.access(this.manifestFile);
       manifestExists = true;
-    } catch {}
+    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
 
     if (moviesChanged || tvChanged || !manifestExists) {
       const manifest: CatalogManifest = {
@@ -1731,12 +1733,16 @@ export class PersistentDataStore {
           result.skippedInvalid++;
           continue;
         }
-        const id = Number((candidate as any).id);
-        if (!Number.isSafeInteger(id) || id <= 0) {
+        const idRaw = (candidate as any).id;
+        const idNum = Number(idRaw);
+        const validId =
+          (Number.isSafeInteger(idNum) && idNum > 0) ||
+          (typeof idRaw === 'string' && idRaw.trim().length > 0);
+        if (!validId) {
           result.skippedInvalid++;
           continue;
         }
-        const key = `${namespace}:${id}`;
+        const key = `${namespace}:${idRaw}`;
         if (seen.has(key)) {
           result.duplicatesRemoved++;
           continue;
@@ -2143,7 +2149,16 @@ export class PersistentDataStore {
   // --- SYNC & GITHUB OPERATIONS ---
 
   public getSyncStatus(): SyncStatus {
-    const configured = Boolean(this.githubToken && this.githubOwner && this.githubRepo);
+    const isTokenInvalid = Boolean(
+      this.githubToken && this.invalidatedGitHubTokens.has(this.githubToken)
+    );
+    const configured = Boolean(
+      this.githubToken &&
+      !isTokenInvalid &&
+      this.githubOwner &&
+      this.githubRepo
+    );
+    const authFailed = isTokenInvalid;
     const corruptionWarnings: string[] = [];
 
     let movieCount = 0;
@@ -2198,7 +2213,9 @@ export class PersistentDataStore {
 
     const hasTargetRepo = Boolean(this.githubOwner && this.githubRepo);
     const missingReason = !configured
-      ? hasTargetRepo
+      ? authFailed
+        ? 'GitHub erişim hatası: Token geçersiz veya süresi dolmuş (HTTP 401 - Bad credentials). Lütfen geçerli bir CINETRACK_GITHUB_PAT tanımlayın.'
+        : hasTargetRepo
         ? `Hedef depo (${this.githubOwner}/${this.githubRepo} · ${this.githubBranch}) tanımlı; CINETRACK_GITHUB_PAT ortam değişkeni bekleniyor`
         : 'GitHub token veya hedef repository yapılandırılmadı'
       : undefined;
@@ -2215,6 +2232,7 @@ export class PersistentDataStore {
 
     return {
       configured,
+      authFailed,
       mode: configured ? 'github' : 'local_only',
       reason: missingReason,
       isPublicRepo: effectiveConfiguredIsPublic,
@@ -2324,7 +2342,7 @@ export class PersistentDataStore {
       const baseHeaders = {
         Authorization: `Bearer ${activeToken}`,
         Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'Cinethos-Sync-Agent',
+        'User-Agent': BRAND_SYNC_USER_AGENT,
       };
 
       // 1. Repo varlık ve erişim kontrolü
@@ -2680,7 +2698,7 @@ export class PersistentDataStore {
         headers: {
           Authorization: `Bearer ${this.githubToken}`,
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'Cinethos-Sync-Agent',
+          'User-Agent': BRAND_SYNC_USER_AGENT,
         },
       });
       if (res.status !== 200) return null;
@@ -2724,7 +2742,7 @@ export class PersistentDataStore {
     const makeAuthHeaders = (tok: string) => ({
       Authorization: `Bearer ${tok}`,
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'Cinethos-Sync-Agent',
+      'User-Agent': BRAND_SYNC_USER_AGENT,
     });
     const targetBranch = options?.branchToUse || this.githubBranch;
     const isEmptyRepo = Boolean(options?.isEmptyRepo);
@@ -3190,7 +3208,7 @@ export class PersistentDataStore {
           if (existsSync(item.localPath)) {
             localHash = hashContent(readFileSync(item.localPath, 'utf8').trim());
           }
-        } catch {}
+        } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
         this.setFileSyncStage(item.repoPath, 'failed', {
           localContentHash: localHash,
           readBackHash: null,
@@ -3830,7 +3848,7 @@ export class PersistentDataStore {
         headers: {
           Authorization: `Bearer ${this.githubToken}`,
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'Cinethos-Sync-Agent',
+          'User-Agent': BRAND_SYNC_USER_AGENT,
         },
       });
       if (res.status !== 200) return null;
@@ -3926,7 +3944,7 @@ export class PersistentDataStore {
     const baseHeaders = {
       Authorization: `Bearer ${this.githubToken}`,
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'Cinethos-Sync-Agent',
+      'User-Agent': BRAND_SYNC_USER_AGENT,
     };
     const targetBranch = this.githubBranch;
 

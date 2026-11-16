@@ -533,4 +533,5 @@ registerCandidatePoolStorePort({
   hydrateCandidatePools: hydrateCandidatePoolsIdb,
   loadPool: loadPersistentPoolData,
   savePool: savePersistentPoolData,
+  resetMirrors: resetCoreIdbMirrorsForTests,
 });

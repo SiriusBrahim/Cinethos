@@ -26,6 +26,7 @@ import {
 import {
   ContentMetadataSource,
   TransientMetadataFetchError,
+  hasSufficientDetail,
 } from './content-metadata-source.ts';
 
 export interface EnqueueContentJobInput {
@@ -392,6 +393,25 @@ export class ContentProcessingQueue {
     }
 
     try {
+      // Senaryo 7/13 koruması: Yük yeterli metaveri taşımıyorsa ve bu media_key için
+      // zaten tamamlanmış bir ortak kayıt varsa, kaydı 'failed' ile EZME; mevcut kaydı koru.
+      // (Başka bir kullanıcının aynı içeriği listeye eklemesi ortak kaydı bozmamalı.)
+      const existingCompleted = this.repository.getByMediaKey(job.media_key);
+      if (
+        existingCompleted &&
+        existingCompleted.processing_status === 'completed' &&
+        !hasSufficientDetail(parsedPayload)
+      ) {
+        if (updateQueueTable) {
+          this.repository.markJobCompleted(job.media_key);
+        }
+        return {
+          mediaKey: job.media_key,
+          status: 'skipped',
+          record: existingCompleted,
+        };
+      }
+
       const acquired = await this.metadataSource.acquireMetadata({
         mediaKey: job.media_key,
         mediaType: job.media_type,

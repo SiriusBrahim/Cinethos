@@ -74,6 +74,11 @@ export const STRIPPED_PERSONAL_KEYS = new Set([
   'deleted_keys',
   'addedtopoolat',
   'added_to_pool_at',
+  'notes',
+  'note',
+  'personal_note',
+  'personalnote',
+  'personal_notes',
 ]);
 
 const TMDB_GENRE_ID_LABELS: Record<number, string> = {
@@ -953,6 +958,7 @@ export class ContentMetadataProcessor {
       })),
       collection,
       releaseDate,
+      ...(mediaType === 'tv' ? { firstAirDate: releaseDate } : {}),
       runtimeMinutes,
       episodeRunTime,
       numberOfSeasons,
@@ -984,6 +990,7 @@ export class ContentMetadataProcessor {
       crew,
       collection,
       releaseDate,
+      ...(mediaType === 'tv' ? { firstAirDate: releaseDate } : {}),
       runtimeMinutes,
       episodeRunTime,
       numberOfSeasons,

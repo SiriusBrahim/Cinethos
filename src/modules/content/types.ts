@@ -68,6 +68,8 @@ export interface NormalizedContentMetadata {
   readonly crew: readonly ContentCreditPerson[];
   readonly collection: ContentCollectionRef | null;
   readonly releaseDate: string | null;
+  /** Yalnızca TV: ilk yayın tarihi (movie için undefined). */
+  readonly firstAirDate?: string | null;
   readonly runtimeMinutes: number | null;
   readonly episodeRunTime: readonly number[];
   readonly numberOfSeasons: number | null;

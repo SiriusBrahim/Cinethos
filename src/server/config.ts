@@ -141,6 +141,8 @@ export interface ResolvedServerConfig {
   effectiveBindHost: string;
   isRemoteHostWithoutToken: boolean;
   tmdbApiKey: string;
+  respanApiKey: string;
+  respanBaseUrl?: string;
   tvdbApiKey?: string;
   authToken: string;
   suggestedAuthToken?: string;
@@ -188,6 +190,11 @@ export function isAiStudioContainerEnv(
   return Boolean(
     env.APP_URL ||
       env.SHARED_APP_URL ||
+      env.K_SERVICE ||
+      env.K_REVISION ||
+      env.K_CONFIGURATION ||
+      env.CLOUD_RUN_JOB ||
+      env.GOOGLE_CLOUD_PROJECT ||
       (env === process.env && existsSync('/.aistudio'))
   );
 }
@@ -267,6 +274,9 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServe
       : 3000;
 
   const tmdbApiKey = pickNonEmpty('TMDB_API_KEY') || '';
+  // Respan izleme anahtarı yalnızca sunucu tarafında kullanılır; boşsa izleme devre dışı kalır.
+  const respanApiKey = pickNonEmpty('RESPAN_API_KEY') || '';
+  const respanBaseUrl = pickNonEmpty('RESPAN_BASE_URL');
   const tvdbApiKey = pickNonEmpty('TVDB_API_KEY') || pickNonEmpty('CINETRACK_TVDB_API_KEY') || '';
   const authToken = inAiStudio
     ? envLocalValues.CINETRACK_TOKEN?.trim() || dotEnvValues.CINETRACK_TOKEN?.trim() || ''
@@ -377,6 +387,8 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServe
     effectiveBindHost,
     isRemoteHostWithoutToken,
     tmdbApiKey,
+    respanApiKey,
+    ...(respanBaseUrl ? { respanBaseUrl } : {}),
     tvdbApiKey,
     authToken,
     ...(suggestedAuthToken ? { suggestedAuthToken } : {}),

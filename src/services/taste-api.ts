@@ -4,6 +4,11 @@
 // ===========================================================================
 
 import type {
+  EventSubscription,
+  IEventSubscriber,
+  TypedAppEvent,
+} from "../contracts/index.ts";
+import type {
   ManualOverrideMode,
   TasteProfile,
   TasteManifest,
@@ -11,6 +16,7 @@ import type {
   TasteMetadataInput,
 } from "../core/taste/types.ts";
 import type { MetricExplanation } from "../core/taste/profile-explainer.ts";
+import { ApiError, apiFetch, readApiErrorMessage } from "./api-client.ts";
 
 const BASE = "/api/taste";
 const TASTE_CHANNEL_NAME = "cinetrack-taste-profile-sync";
@@ -37,7 +43,7 @@ function getTasteBroadcastChannel(): BroadcastChannel | null {
           for (const listener of localUpdateListeners) {
             try {
               listener(ev.data);
-            } catch {}
+            } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
           }
         }
       };
@@ -64,14 +70,14 @@ export function notifyTasteProfileUpdated(
   for (const listener of localUpdateListeners) {
     try {
       listener(signal);
-    } catch {}
+    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
   }
 
   const channel = getTasteBroadcastChannel();
   if (channel) {
     try {
       channel.postMessage(signal);
-    } catch {}
+    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
   }
 }
 
@@ -140,17 +146,16 @@ export function extractTasteMetadataFromItem(
   };
 }
 
-/** Ortak fetch yardımcısı */
-async function apiFetch<T>(
-  url: string,
-  options?: RequestInit
-): Promise<T> {
-  const res = await fetch(url, options);
+/**
+ * P0-02: Tüm istekler ortak `apiFetch` üzerinden gider; böylece LAN modunda
+ * `X-CineTrack-Token` başlığı eklenir ve 401/503'te token istemi açılır.
+ * Durum kodu ve sunucu hata kodu `ApiError` ile korunur.
+ */
+async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await apiFetch(url, options);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `HTTP ${res.status}: ${url}`
-    );
+    const { message, code } = await readApiErrorMessage(res, `HTTP ${res.status}: ${url}`);
+    throw new ApiError(message, res.status, code);
   }
   return res.json() as Promise<T>;
 }
@@ -186,12 +191,12 @@ export interface TasteOverviewClientResponse {
 
 /** Taste profilini sunucudan çek */
 export async function fetchTasteProfile(): Promise<TasteProfile> {
-  return apiFetch<TasteProfile>(`${BASE}/profile`);
+  return requestJson<TasteProfile>(`${BASE}/profile`);
 }
 
 /** Kimliğim genel bakış, Film vs Dizi karşılaştırması ve aylık evrim verilerini çek */
 export async function fetchTasteOverview(): Promise<TasteOverviewClientResponse> {
-  return apiFetch<TasteOverviewClientResponse>(`${BASE}/overview`);
+  return requestJson<TasteOverviewClientResponse>(`${BASE}/overview`);
 }
 
 // === Metrik Detayı ===
@@ -205,7 +210,7 @@ export interface MetricDetailResponse {
 export async function fetchMetricDetail(
   metricId: string
 ): Promise<MetricDetailResponse> {
-  return apiFetch<MetricDetailResponse>(`${BASE}/metric/${encodeURIComponent(metricId)}`);
+  return requestJson<MetricDetailResponse>(`${BASE}/metric/${encodeURIComponent(metricId)}`);
 }
 
 // === Kanıt ===
@@ -222,7 +227,7 @@ export interface EvidenceResponse {
 export async function fetchEvidence(
   metricId: string
 ): Promise<EvidenceResponse> {
-  return apiFetch<EvidenceResponse>(
+  return requestJson<EvidenceResponse>(
     `${BASE}/evidence/${encodeURIComponent(metricId)}`
   );
 }
@@ -231,7 +236,7 @@ export async function fetchEvidence(
 
 /** Taste manifest'ini çek */
 export async function fetchTasteManifest(): Promise<TasteManifest> {
-  return apiFetch<TasteManifest>(`${BASE}/manifest`);
+  return requestJson<TasteManifest>(`${BASE}/manifest`);
 }
 
 // === Manuel Kontrol (TP-028) ===
@@ -251,7 +256,7 @@ export interface OverrideResponse {
 export async function postManualOverride(
   req: OverrideRequest
 ): Promise<OverrideResponse> {
-  const res = await apiFetch<OverrideResponse>(`${BASE}/override`, {
+  const res = await requestJson<OverrideResponse>(`${BASE}/override`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -264,7 +269,7 @@ export async function postManualOverride(
 export async function deleteManualOverride(
   metricId: string
 ): Promise<OverrideResponse> {
-  const res = await apiFetch<OverrideResponse>(
+  const res = await requestJson<OverrideResponse>(
     `${BASE}/override/${encodeURIComponent(metricId)}`,
     { method: "DELETE" }
   );
@@ -285,7 +290,7 @@ export async function postFeatureObjection(
   contentId: string,
   metricId: string
 ): Promise<FeatureObjectionResponse> {
-  const res = await apiFetch<FeatureObjectionResponse>(`${BASE}/objection`, {
+  const res = await requestJson<FeatureObjectionResponse>(`${BASE}/objection`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contentId, metricId }),
@@ -305,13 +310,94 @@ export interface PostEventResponse {
   generationId?: string;
 }
 
+const pendingEventMetadata = new Map<string, TasteMetadataInput>();
+const pendingEventRawMetadata = new Map<string, Record<string, unknown>>();
+
+export function sanitizeRawMetadataForContentIntelligence(
+  raw: Record<string, unknown> | null | undefined
+): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const blockedKeys = new Set([
+    "poster_path",
+    "posterPath",
+    "poster_url",
+    "posterUrl",
+    "backdrop_path",
+    "backdropPath",
+    "backdrop_url",
+    "backdropUrl",
+    "profile_path",
+    "profilePath",
+    "still_path",
+    "stillPath",
+    "logo_path",
+    "logoPath",
+    "images",
+    "posters",
+    "backdrops",
+    "profileId",
+    "profile_id",
+    "userId",
+    "user_id",
+    "status",
+    "list",
+    "personal_rating",
+    "personalRating",
+    "rating",
+    "ratedAt",
+    "completedAt",
+    "addedAt",
+    "season_progress",
+    "episodes_watched",
+    "notes",
+  ]);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (blockedKeys.has(key) || value === undefined) continue;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function registerTasteMetadataForEvent(
+  eventId: string,
+  metadata?: TasteMetadataInput,
+  rawMetadata?: Record<string, unknown>
+): void {
+  if (!eventId) return;
+  if (metadata) {
+    pendingEventMetadata.set(eventId, metadata);
+    if (pendingEventMetadata.size > 200) {
+      const oldestKey = pendingEventMetadata.keys().next().value;
+      if (oldestKey) pendingEventMetadata.delete(oldestKey);
+    }
+  }
+  const sanitizedRaw = sanitizeRawMetadataForContentIntelligence(rawMetadata);
+  if (sanitizedRaw) {
+    pendingEventRawMetadata.set(eventId, sanitizedRaw);
+    if (pendingEventRawMetadata.size > 200) {
+      const oldestKey = pendingEventRawMetadata.keys().next().value;
+      if (oldestKey) pendingEventRawMetadata.delete(oldestKey);
+    }
+  }
+}
+
 /** Yeni taste olayı gönder + sunucu worker yeniden hesaplaması bitince dinleyicileri tetikle */
 export async function postTasteEvent(
   event: TasteEvent,
-  metadata?: TasteMetadataInput
+  metadata?: TasteMetadataInput,
+  rawMetadata?: Record<string, unknown>
 ): Promise<PostEventResponse> {
-  const payload = metadata ? { event, metadata } : event;
-  const res = await apiFetch<PostEventResponse>(`${BASE}/event`, {
+  const sanitizedRaw = sanitizeRawMetadataForContentIntelligence(rawMetadata);
+  const payload =
+    metadata || sanitizedRaw
+      ? {
+          event,
+          ...(metadata ? { metadata } : {}),
+          ...(sanitizedRaw ? { rawMetadata: sanitizedRaw } : {}),
+        }
+      : event;
+  const res = await requestJson<PostEventResponse>(`${BASE}/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -323,12 +409,105 @@ export async function postTasteEvent(
   return res;
 }
 
+/**
+ * Domain olayını (`TypedAppEvent`) `/api/taste/domain-event` üzerinden sunucu
+ * `TasteServiceAdapter`'ına gönderir (aynı `eventId` korunur -> çift yazım olmaz).
+ * Kalıcılık hatası fırlatılır; sessizce yutulmaz.
+ */
+export async function postTasteDomainEvent(
+  event: TypedAppEvent,
+  metadata?: TasteMetadataInput,
+  rawMetadata?: Record<string, unknown>
+): Promise<PostEventResponse> {
+  const sanitizedRaw = sanitizeRawMetadataForContentIntelligence(rawMetadata);
+  const payload =
+    metadata || sanitizedRaw
+      ? {
+          event,
+          ...(metadata ? { metadata } : {}),
+          ...(sanitizedRaw ? { rawMetadata: sanitizedRaw } : {}),
+        }
+      : { event };
+  const res = await requestJson<PostEventResponse>(`${BASE}/domain-event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  notifyTasteProfileUpdated({
+    generationId: res.generationId,
+    reason: event.eventType,
+  });
+  return res;
+}
+
+const CLIENT_TASTE_DOMAIN_EVENTS = [
+  "LibraryItemAdded",
+  "LibraryItemUpdated",
+  "LibraryStatusChanged",
+  "LibraryRatingChanged",
+  "LibraryItemRemoved",
+  "FavoriteActorChanged",
+] as const;
+
+export function subscribeClientTasteSyncToEventBus(
+  subscriber: IEventSubscriber,
+  options: {
+    resolveMetadata?: (mediaKey: string) => TasteMetadataInput | undefined;
+    resolveRawMetadata?: (mediaKey: string) => Record<string, unknown> | undefined;
+    onError?: (error: unknown, event: TypedAppEvent) => void;
+    sendDomainEvent?: (
+      event: TypedAppEvent,
+      metadata?: TasteMetadataInput,
+      rawMetadata?: Record<string, unknown>
+    ) => Promise<PostEventResponse>;
+  } = {}
+): EventSubscription {
+  const sender = options.sendDomainEvent ?? postTasteDomainEvent;
+  const subs: EventSubscription[] = CLIENT_TASTE_DOMAIN_EVENTS.map((eventType) =>
+    subscriber.subscribe(eventType, async (event) => {
+      const cachedMeta = pendingEventMetadata.get(event.eventId);
+      if (cachedMeta) {
+        pendingEventMetadata.delete(event.eventId);
+      }
+      const cachedRawMeta = pendingEventRawMetadata.get(event.eventId);
+      if (cachedRawMeta) {
+        pendingEventRawMetadata.delete(event.eventId);
+      }
+      const mediaKey =
+        typeof (event.payload as { mediaKey?: unknown })?.mediaKey === "string"
+          ? (event.payload as { mediaKey: string }).mediaKey
+          : event.entityId;
+      const meta = cachedMeta ?? (mediaKey ? options.resolveMetadata?.(mediaKey) : undefined);
+      const rawMeta =
+        cachedRawMeta ??
+        sanitizeRawMetadataForContentIntelligence(
+          mediaKey ? options.resolveRawMetadata?.(mediaKey) : undefined
+        );
+
+      try {
+        await sender(event, meta, rawMeta);
+      } catch (error) {
+        options.onError?.(error, event);
+        throw error;
+      }
+    })
+  );
+
+  return {
+    unsubscribe: () => {
+      for (const sub of subs) {
+        sub.unsubscribe();
+      }
+    },
+  };
+}
+
 /** Arka plan profil yeniden hesaplamasını manuel tetikle */
 export async function triggerTasteRebuild(): Promise<{
   success: boolean;
   generationId: string;
 }> {
-  const res = await apiFetch<{ success: boolean; generationId: string }>(
+  const res = await requestJson<{ success: boolean; generationId: string }>(
     `${BASE}/rebuild`,
     { method: "POST" }
   );

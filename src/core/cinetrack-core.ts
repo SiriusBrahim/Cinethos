@@ -1,4 +1,6 @@
 import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
+import { apiFetch } from '../services/api-client.ts';
+import { getCandidatePoolStorePort } from './candidate-pool-store-port.ts';
 import {
   DEFAULT_MAX_DATA_BYTES,
   DEFAULT_MAX_ITEMS_PER_PROFILE,
@@ -14,6 +16,34 @@ import {
   normalizeCinemaKunyeDocument,
   type CinemaKunyeDocument,
 } from './cinema-kunye.ts';
+
+// Loved Similarity motoru: geriye dönük uyumluluk için cinetrack-core üzerinden
+// yeniden export edilir (kullanıcının Faz 1 düzeniyle aynı sözleşme).
+import {
+  type LovedItemFeatures,
+  type LovedSimBreakdown,
+  type LovedSimMatchResult,
+  calculateGenreSim,
+  calculateStorySim,
+  calculateCastSim,
+  calculateAtmosphereSim,
+  calculateEraSim,
+  computeItemToItemLovedSim,
+  computeLovedSimilarityScore,
+} from './loved-similarity.ts';
+
+export {
+  type LovedItemFeatures,
+  type LovedSimBreakdown,
+  type LovedSimMatchResult,
+  calculateGenreSim,
+  calculateStorySim,
+  calculateCastSim,
+  calculateAtmosphereSim,
+  calculateEraSim,
+  computeItemToItemLovedSim,
+  computeLovedSimilarityScore,
+};
 
 let discoveryHistoryIdbStore: UseStore | undefined;
 let candidatePoolIdbStore: UseStore | undefined;
@@ -49,6 +79,10 @@ export async function flushCoreIdbWrites(): Promise<void> {
 }
 
 export function resetCoreIdbMirrorsForTests(): void {
+  // Port sahibinin (discovery-storage) aynalarını da sıfırla — tek kaynak garantisi.
+  try {
+    getCandidatePoolStorePort()?.resetMirrors?.();
+  } catch {}
   idbHydratedTasteMaps.clear();
   idbHydratedPools.clear();
   discoveryHistoryIdbStore = undefined;
@@ -1208,6 +1242,7 @@ export function buildTasteProfileV3(
         lovedOverviewTokens.add(token);
       }
 
+      // Loved Similarity özellikleri (çok boyutlu anlamsal benzerlik için)
       const itemGenres: number[] = Array.isArray(item.genre_ids)
         ? item.genre_ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
         : Array.isArray(item.genres)
@@ -3124,13 +3159,26 @@ export function scoreCandidatesV3(
     genreNames = null as Record<number | string, string> | null,
     mood = '',
     tasteMap = null as PersistentTasteMapData | null,
+    now = new Date(),
   }: {
     weights?: typeof RECOMMENDATION_WEIGHTS_V3;
     genreNames?: Record<number | string, string> | null;
     mood?: string;
     tasteMap?: PersistentTasteMapData | null;
+    now?: Date | number | string;
   } = {}
 ) {
+  // Deterministik değerlendirme için referans zamanı dışarıdan verilebilir
+  // (örn. evaluateRecommendationEngine sabit 'now' geçirir).
+  const referenceDate =
+    now instanceof Date
+      ? now
+      : typeof now === 'number' || typeof now === 'string'
+      ? new Date(now)
+      : new Date();
+  const currentYear = Number.isFinite(referenceDate.getTime())
+    ? referenceDate.getFullYear()
+    : new Date().getFullYear();
   const actorOf = (id: any) => profile.actors?.[String(id)] || null;
   const directorOf = (id: any) => profile.directors?.[String(id)] || null;
   const topGenreSet = new Set(profile.positiveGenres.slice(0, 4));
@@ -3182,6 +3230,7 @@ export function scoreCandidatesV3(
     }
 
     // 5. Sevilen Yapımlara Benzerlik (0.09) — Çok boyutlu anlamsal benzerlik
+    // NOT: seedSourceType artık puanı yapay olarak şişirmez; içerik özellikleri belirler.
     const lovedSimResult = computeLovedSimilarityScore(
       candidate,
       profile.lovedItemFeatures || [],
@@ -3289,7 +3338,6 @@ export function scoreCandidatesV3(
     const releaseDate = candidate.release_date || candidate.first_air_date;
     if (releaseDate && typeof releaseDate === 'string') {
       const year = parseInt(releaseDate.slice(0, 4), 10);
-      const currentYear = new Date().getFullYear();
       if (year >= currentYear - 2) {
         contextScore = clamp01(contextScore + 0.2);
       }
@@ -3420,7 +3468,7 @@ export function scoreCandidatesV3(
     candidate.lastShownAt = lastShownAt;
     candidate.tags = tags.slice(0, 4);
     candidate.signalBreakdown = parts;
-    candidate.lovedSimDetail = lovedSimResult.breakdown;
+    candidate.lovedSimDetail = lovedSimResult.breakdown ?? null;
 
     return {
       candidate,
@@ -3658,7 +3706,8 @@ export async function fetchActorCreditsBatch(
             // Önce Türkçe ardından İngilizce yedek (Language fallback)
             let data: any = null;
             const fetcher = fetchTmdbFn || (async (p: string, params?: Record<string, string>) => {
-              const res = await fetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
+              // P0-02: doğrudan fetch yerine ortak apiFetch (LAN token + 401/503 bildirimi)
+              const res = await apiFetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
               return res.json();
             });
 
@@ -5441,6 +5490,12 @@ export function loadPersistentPoolData(
   profileId: string,
   mediaType: 'movie' | 'tv'
 ): PersistentCandidatePoolData {
+  // MIA Faz 1B: havuz deposu sahibi (discovery-storage) port üzerinden kayıtlıysa
+  // tek doğruluk kaynağı orasıdır; yerel kopya yalnızca port yoksa kullanılır.
+  const portPoolStore = getCandidatePoolStorePort();
+  if (portPoolStore?.loadPool) {
+    return portPoolStore.loadPool(profileId, mediaType);
+  }
   const key = `cinetrack_pool_${mediaType}_${profileId}`;
   const store = getCandidatePoolIdbStore();
   if (store && idbHydratedPools.has(key)) {
@@ -5496,6 +5551,12 @@ export function savePersistentPoolData(
   profileId: string,
   data: PersistentCandidatePoolData
 ): void {
+  // MIA Faz 1B: port kayıtlıysa havuz yazımı port sahibine delege edilir.
+  const portPoolStore = getCandidatePoolStorePort();
+  if (portPoolStore?.savePool) {
+    portPoolStore.savePool(profileId, data);
+    return;
+  }
   const key = `cinetrack_pool_${data.mediaType}_${profileId}`;
   const updatedAt = new Date().toISOString();
   const sliced = data.items.slice(0, POOL_TARGET_CAPACITY);

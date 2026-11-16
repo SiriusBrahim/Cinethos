@@ -4,7 +4,7 @@ import {
   type CinemaKunyeDocument,
 } from '../core/cinema-kunye.ts';
 import type { BidirectionalSyncReport, SyncOperationKind } from '../core/sync-display.ts';
-import { apiFetch, readApiErrorMessage } from './api-client.ts';
+import { ApiError, apiFetch, readApiErrorMessage } from './api-client.ts';
 
 export type TmdbDataSource = 'live' | 'demo' | 'stale-cache' | 'error' | 'unknown';
 
@@ -27,7 +27,7 @@ export interface ServerBackupMetadata {
 }
 
 export interface ServerConflictDetail {
-  code: 'revision_conflict' | 'profile_conflict' | 'precondition_required' | 'sudden_item_drop';
+  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop' | 'profile_conflict';
   message: string;
   currentRevision?: number;
   expectedRevision?: number;
@@ -191,7 +191,7 @@ export async function fetchTmdb(path: string, params: Record<string, string> = {
   let response: globalThis.Response;
   try {
     const signals = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
-    response = await fetch(`/api/tmdb?${query.toString()}`, { signal: signals });
+    response = await apiFetch(`/api/tmdb?${query.toString()}`, { signal: signals });
   } catch (error: any) {
     if (signal?.aborted) throw error;
     setTmdbSourceState({ source: 'error', cacheStatus: 'none', staleReason: error.message });
@@ -356,7 +356,7 @@ export async function fetchServerData(): Promise<DataDocument | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch('/api/data', {
+    const response = await apiFetch('/api/data', {
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -416,6 +416,9 @@ export async function pushServerDataDetailed(
   } else if (typeof revToCheck === 'number' && Number.isSafeInteger(revToCheck) && revToCheck >= 0) {
     headers['If-Match'] = `"rev-${revToCheck}"`;
   }
+  if (options.expectedProfileId) {
+    headers['X-CineTrack-Profile-Id'] = options.expectedProfileId;
+  }
   if (options.confirmBulkDelete) {
     headers['X-CineTrack-Confirm-Drop'] = '1';
   }
@@ -427,7 +430,7 @@ export async function pushServerDataDetailed(
   }
 
   try {
-    const response = await fetch('/api/data', {
+    const response = await apiFetch('/api/data', {
       method: 'PUT',
       headers,
       body: JSON.stringify(payload),
@@ -457,6 +460,7 @@ export async function pushServerDataDetailed(
     if (
       (response.status === 409 || response.status === 412 || response.status === 428) &&
       (bodyJson?.code === 'revision_conflict' ||
+        bodyJson?.code === 'profile_conflict' ||
         bodyJson?.code === 'precondition_required' ||
         bodyJson?.code === 'sudden_item_drop' ||
         response.status === 412 ||
@@ -495,7 +499,11 @@ export async function pushServerDataDetailed(
 }
 
 export async function pushServerData(payload: DataDocument): Promise<boolean> {
-  const knownRevision = getLastKnownServerRevision();
+  const knownRevision =
+    getLastKnownServerRevision() ??
+    (typeof payload?.revision === 'number' && Number.isSafeInteger(payload.revision)
+      ? payload.revision
+      : null);
   const res = await pushServerDataDetailed(payload, {
     baseRevision: knownRevision,
     expectedProfileId: payload?.activeProfileId || undefined,
@@ -505,7 +513,7 @@ export async function pushServerData(payload: DataDocument): Promise<boolean> {
 
 export async function fetchServerBackups(): Promise<ServerBackupMetadata[]> {
   try {
-    const res = await fetch('/api/data/backups', {
+    const res = await apiFetch('/api/data/backups', {
       cache: 'no-store',
     });
     if (!res.ok) return [];
@@ -518,7 +526,7 @@ export async function fetchServerBackups(): Promise<ServerBackupMetadata[]> {
 
 export async function triggerImmediateServerBackup(): Promise<{ ok: boolean; message: string; backups?: ServerBackupMetadata[] }> {
   try {
-    const res = await fetch('/api/data/backup-now', {
+    const res = await apiFetch('/api/data/backup-now', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -536,7 +544,7 @@ export async function triggerImmediateServerBackup(): Promise<{ ok: boolean; mes
 
 export async function restoreServerBackup(backupId: string): Promise<DataDocument | null> {
   try {
-    const res = await fetch('/api/data/restore', {
+    const res = await apiFetch('/api/data/restore', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -560,7 +568,7 @@ export async function checkServerTmdbStatus(): Promise<{
   cacheEntries: number;
 } | null> {
   try {
-    const res = await fetch('/api/tmdb-status', { cache: 'no-store' });
+    const res = await apiFetch('/api/tmdb-status', { cache: 'no-store' });
     if (!res.ok) return null;
     const json = await res.json();
     setTmdbSourceState({ source: json.source as TmdbDataSource });
@@ -604,7 +612,7 @@ export function getTmdbSourceDescription(source: TmdbDataSource, staleReason?: s
 
 export async function fetchSyncStatus(): Promise<any> {
   try {
-    const res = await fetch('/api/sync/status', { cache: 'no-store' });
+    const res = await apiFetch('/api/sync/status', { cache: 'no-store' });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -632,7 +640,7 @@ export async function uploadStockSnapshot(payload: {
   tv?: unknown[];
 }): Promise<StockUploadResult> {
   try {
-    const res = await fetch('/api/stock/upload', {
+    const res = await apiFetch('/api/stock/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -675,7 +683,7 @@ export async function hybridMergeCsv(
   dryRun: boolean
 ): Promise<HybridMergeResult> {
   try {
-    const res = await fetch('/api/backup/hybrid-merge', {
+    const res = await apiFetch('/api/backup/hybrid-merge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ csvText, dryRun }),
@@ -752,7 +760,7 @@ function buildClientNetworkErrorReport(
 
 export async function inspectGitHubSync(): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/inspect', {
+    const res = await apiFetch('/api/sync/inspect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -770,7 +778,7 @@ export async function pullGitHubSync(
   conflictStrategy: 'ask' | 'merge' | 'overwrite_with_remote' = 'ask'
 ): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/pull', {
+    const res = await apiFetch('/api/sync/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conflictStrategy }),
@@ -790,7 +798,7 @@ export async function pullGitHubSync(
 
 export async function pushGitHubSync(): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/push', {
+    const res = await apiFetch('/api/sync/push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -810,7 +818,7 @@ export async function pushGitHubSync(): Promise<BidirectionalSyncReport> {
 
 export async function reconcileGitHubSync(): Promise<BidirectionalSyncReport> {
   try {
-    const res = await fetch('/api/sync/reconcile', {
+    const res = await apiFetch('/api/sync/reconcile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -830,7 +838,7 @@ export async function reconcileGitHubSync(): Promise<BidirectionalSyncReport> {
 
 export async function triggerGitHubSync(): Promise<any> {
   try {
-    const res = await fetch('/api/sync/trigger', {
+    const res = await apiFetch('/api/sync/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -842,7 +850,7 @@ export async function triggerGitHubSync(): Promise<any> {
 
 export async function testGitHubConnection(forceWriteProbe = true): Promise<any> {
   try {
-    const res = await fetch('/api/sync/test-connection', {
+    const res = await apiFetch('/api/sync/test-connection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ forceWriteProbe }),
@@ -857,11 +865,27 @@ export async function testGitHubConnection(forceWriteProbe = true): Promise<any>
   }
 }
 
+export async function updateGitHubSyncToken(token: string): Promise<any> {
+  try {
+    const res = await apiFetch('/api/sync/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return await res.json();
+  } catch (e: any) {
+    return {
+      ok: false,
+      error: e?.message || 'GitHub token güncelleme isteği başarısız oldu.',
+    };
+  }
+}
+
 export async function setPublicRepoPersonalSyncConsent(
   allowPersonalDataInPublicRepo: boolean
 ): Promise<any> {
   try {
-    const res = await fetch('/api/sync/public-consent', {
+    const res = await apiFetch('/api/sync/public-consent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -880,7 +904,7 @@ export async function setPublicRepoPersonalSyncConsent(
 
 export async function runStagedGitHubSync(forceWriteProbe = true): Promise<any> {
   try {
-    const res = await fetch('/api/sync/staged', {
+    const res = await apiFetch('/api/sync/staged', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ forceWriteProbe }),
@@ -901,7 +925,7 @@ export async function runStagedGitHubSync(forceWriteProbe = true): Promise<any> 
 export async function fetchCatalogItems(type?: 'movie' | 'tv'): Promise<any> {
   try {
     const query = type ? `?type=${encodeURIComponent(type)}` : '';
-    const res = await fetch(`/api/catalog${query}`, { cache: 'no-store' });
+    const res = await apiFetch(`/api/catalog${query}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -912,7 +936,7 @@ export async function fetchCatalogItems(type?: 'movie' | 'tv'): Promise<any> {
 export async function pushCatalogItems(items: any[]): Promise<any> {
   if (!Array.isArray(items) || items.length === 0) return null;
   try {
-    const res = await fetch('/api/catalog/upsert', {
+    const res = await apiFetch('/api/catalog/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
@@ -939,7 +963,7 @@ export async function fetchDerivedProfileData(
     if (expected?.algorithmVersion) params.set('algorithmVersion', expected.algorithmVersion);
     if (expected?.sourceCatalogHash) params.set('sourceCatalogHash', expected.sourceCatalogHash);
     const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/profiles/derived/${encodeURIComponent(profileId)}${query}`,
       { cache: 'no-store' }
     );
@@ -959,7 +983,7 @@ export async function pushDerivedProfileData(data: {
   items: Record<string, any>;
 }): Promise<any> {
   try {
-    const res = await fetch('/api/profiles/derived/upsert', {
+    const res = await apiFetch('/api/profiles/derived/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -1039,7 +1063,7 @@ export async function createProfileBackupExport(params: {
   allowPersonalDataInPublicRepo?: boolean;
 }): Promise<ProfileBackupExportReportClient> {
   try {
-    const res = await fetch('/api/backup/profile-export', {
+    const res = await apiFetch('/api/backup/profile-export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -1328,35 +1352,100 @@ export async function downloadVerifiedBackupBinary(params: {
   };
 }
 
-export async function fetchServerCinemaKunye(): Promise<CinemaKunyeDocument | null> {
+export type CinemaKunyeServerSyncStatus =
+  | 'ok'
+  | 'offline'
+  | 'auth'
+  | 'conflict'
+  | 'validation'
+  | 'server'
+  | 'unexpected';
+
+/**
+ * P1-01: Sinema KünYESİ senkronunun sonucu. `null` yerine ayrıştırılmış durum
+ * döner; böylece beklenen çevrimdışı durumu gerçek sunucu arızasından ayrılır.
+ */
+export interface CinemaKunyeServerSyncResult {
+  status: CinemaKunyeServerSyncStatus;
+  document?: CinemaKunyeDocument;
+  message?: string;
+  code?: string;
+}
+
+function classifyCinemaKunyeFailure(status: number): CinemaKunyeServerSyncStatus {
+  if (status === 0) return 'offline';
+  if (status === 401 || status === 403 || status === 503) return 'auth';
+  if (status === 409) return 'conflict';
+  if (status === 400 || status === 413 || status === 415 || status === 422) return 'validation';
+  if (status >= 500) return 'server';
+  return 'unexpected';
+}
+
+export async function fetchServerCinemaKunye(): Promise<CinemaKunyeServerSyncResult> {
   try {
-    const res = await fetch('/api/cinema-kunye', { cache: 'no-store' });
-    if (!res.ok) return null;
-    const json = await res.json();
+    const res = await apiFetch('/api/cinema-kunye', { cache: 'no-store' });
+    if (!res.ok) {
+      const { message, code } = await readApiErrorMessage(
+        res,
+        'Sinema künYESİ sunucudan okunamadı.'
+      );
+      return { status: classifyCinemaKunyeFailure(res.status), message, code };
+    }
+    const json = await res.json().catch(() => null);
     const rawDoc = json?.cinemaKunye ?? json;
-    if (!rawDoc || typeof rawDoc !== 'object') return null;
-    return normalizeCinemaKunyeDocument(rawDoc);
-  } catch {
-    return null;
+    if (!rawDoc || typeof rawDoc !== 'object') {
+      return {
+        status: 'validation',
+        message: 'Sunucu sinema künYESİ belgesini geçersiz biçimde döndü.',
+      };
+    }
+    return { status: 'ok', document: normalizeCinemaKunyeDocument(rawDoc) };
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return {
+        status: classifyCinemaKunyeFailure(error.status),
+        message: error.message,
+        code: error.code,
+      };
+    }
+    return { status: 'unexpected', message: error?.message || 'Beklenmeyen istemci hatası.' };
   }
 }
 
 export async function saveServerCinemaKunye(
   doc: CinemaKunyeDocument,
   mode: 'merge' | 'overwrite' = 'merge'
-): Promise<CinemaKunyeDocument | null> {
+): Promise<CinemaKunyeServerSyncResult> {
   try {
-    const res = await fetch('/api/cinema-kunye', {
+    const res = await apiFetch('/api/cinema-kunye', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cinemaKunye: doc, mode }),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json?.cinemaKunye || typeof json.cinemaKunye !== 'object') return null;
-    return normalizeCinemaKunyeDocument(json.cinemaKunye);
-  } catch {
-    return null;
+    if (!res.ok) {
+      const { message, code } = await readApiErrorMessage(
+        res,
+        'Sinema künYESİ sunucuya kaydedilemedi.'
+      );
+      return { status: classifyCinemaKunyeFailure(res.status), message, code };
+    }
+    const json = await res.json().catch(() => null);
+    if (!json?.cinemaKunye || typeof json.cinemaKunye !== 'object') {
+      return {
+        status: 'validation',
+        message: 'Sunucu kaydettiği sinema künYESİ belgesini geçersiz biçimde döndü.',
+      };
+    }
+    return { status: 'ok', document: normalizeCinemaKunyeDocument(json.cinemaKunye) };
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return {
+        status: classifyCinemaKunyeFailure(error.status),
+        message: error.message,
+        code: error.code,
+      };
+    }
+    return { status: 'unexpected', message: error?.message || 'Beklenmeyen istemci hatası.' };
   }
 }
 
