@@ -17,34 +17,6 @@ import {
   type CinemaKunyeDocument,
 } from './cinema-kunye.ts';
 
-// Loved Similarity motoru: geriye dönük uyumluluk için cinetrack-core üzerinden
-// yeniden export edilir (kullanıcının Faz 1 düzeniyle aynı sözleşme).
-import {
-  type LovedItemFeatures,
-  type LovedSimBreakdown,
-  type LovedSimMatchResult,
-  calculateGenreSim,
-  calculateStorySim,
-  calculateCastSim,
-  calculateAtmosphereSim,
-  calculateEraSim,
-  computeItemToItemLovedSim,
-  computeLovedSimilarityScore,
-} from './loved-similarity.ts';
-
-export {
-  type LovedItemFeatures,
-  type LovedSimBreakdown,
-  type LovedSimMatchResult,
-  calculateGenreSim,
-  calculateStorySim,
-  calculateCastSim,
-  calculateAtmosphereSim,
-  calculateEraSim,
-  computeItemToItemLovedSim,
-  computeLovedSimilarityScore,
-};
-
 let discoveryHistoryIdbStore: UseStore | undefined;
 let candidatePoolIdbStore: UseStore | undefined;
 const idbHydratedTasteMaps = new Map<string, any>();

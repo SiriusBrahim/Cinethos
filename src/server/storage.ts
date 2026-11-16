@@ -68,10 +68,6 @@ export interface SaveDataOptions {
   hasInvalidIfMatch?: boolean;
   mergeStrategy?: 'lossless';
   foldUnhydratedDefaultProfile?: boolean;
-  /** Profil izolasyonu (§5.1): yazımın beklenen aktif profili. */
-  expectedProfileId?: string;
-  /** true ise activeProfileId uyuşmazlığı 'profile_conflict' döner. */
-  strictProfileMatch?: boolean;
 }
 
 export type SaveDataResult =
@@ -143,12 +139,6 @@ export function createDataStorage(options: StorageOptions) {
   mkdirSync(backupsDir, { recursive: true });
   cleanupStaleTempFiles(resolvedDataDir);
   cleanupStaleTempFiles(backupsDir);
-
-  // Faz 7 — SQLite birincil kaynak (opt-in). JSON her zaman yedek olarak yazılır.
-  const primaryStore = createSqlitePrimaryStore({
-    dataDir: resolvedDataDir,
-    enabled: (options.storageDriver ?? resolveStorageDriver()) === 'sqlite',
-  });
 
   let unrecoverableCorruptionError: string | null = null;
   let writeQueue: Promise<unknown> = Promise.resolve();

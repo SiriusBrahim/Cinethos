@@ -22,7 +22,6 @@ import {
   savePersistentPoolData,
 } from './discovery-storage.ts';
 import type { TmdbCastMember, TmdbItem } from '../types/tmdb.ts';
-import type { StockPosterPatch } from './stock-poster-utils.ts';
 import {
   buildStockExclusionSets,
   dedupeAndPurgeStockList,
@@ -223,7 +222,7 @@ export interface EnrichedStockItemPatch {
  * so encodings, person insights, and stock health metrics stay enriched across reloads (IMP-11).
  */
 export async function updateStockItemsMetadata(
-  patchesByMediaKey: Record<string, EnrichedStockItemPatch | StockPosterPatch>
+  patchesByMediaKey: Record<string, EnrichedStockItemPatch>
 ): Promise<number> {
   const keys = Object.keys(patchesByMediaKey);
   if (keys.length === 0) return 0;
@@ -238,27 +237,11 @@ export async function updateStockItemsMetadata(
     for (let i = 0; i < list.length; i += 1) {
       const item = list[i];
       const key = `${mType}:${item.id}`;
-      const patch = patchesByMediaKey[key] as
-        | (EnrichedStockItemPatch & Partial<StockPosterPatch>)
-        | undefined;
+      const patch = patchesByMediaKey[key];
       if (!patch) continue;
 
       let changed = false;
       const nextItem: TmdbItem & { keywords?: Array<{ id: number; name: string }> } = { ...item };
-
-      // Poster yamaları (poster hidrasyon servisi) — semantiği
-      // applyStockPosterPatchesToItems ile aynıdır: poster_path yazılır,
-      // backdrop yalnızca yoksa eklenir, demo poster_url işareti silinir.
-      const posterPath = (patch as Partial<StockPosterPatch>).poster_path;
-      if (typeof posterPath === 'string' && posterPath) {
-        nextItem.poster_path = posterPath;
-        const backdropPath = (patch as Partial<StockPosterPatch>).backdrop_path;
-        if (!nextItem.backdrop_path && backdropPath) {
-          nextItem.backdrop_path = backdropPath;
-        }
-        delete nextItem.poster_url;
-        changed = true;
-      }
 
       if (Array.isArray(patch.cast) && patch.cast.length > 0) {
         nextItem.cast = patch.cast;
