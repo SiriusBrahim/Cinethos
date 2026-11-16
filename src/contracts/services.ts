@@ -15,15 +15,20 @@
  * Faz 1B'de yapılır. Bu dosya core'dan import YAPMAZ.
  */
 
-import type { OperationOutcome, ProfileRef } from './common.ts';
+import type {
+  LibraryListId,
+  MediaKind,
+  OperationOutcome,
+  ProfileRef,
+} from './common.ts';
 import type { TypedAppEvent } from './events.ts';
+
+/** Ortak liste/medya tipleri buradan da dışa açılır (uyumluluk). */
+export type { LibraryListId, MediaKind } from './common.ts';
 
 /* ------------------------------------------------------------------ */
 /* Kütüphane — ILibraryService                                         */
 /* ------------------------------------------------------------------ */
-
-/** Kullanıcı liste kimlikleri (mevcut uygulama alanlarıyla uyumlu). */
-export type LibraryListId = 'watched' | 'watching' | 'watchlist' | 'not-interested';
 
 /** İzleme durumu → sinyal ağırlığı (kullanıcı planı §4 "Önemli bir ayrıntı"). */
 export type LibrarySignalKind =
@@ -36,7 +41,7 @@ export type LibrarySignalKind =
 export interface AddLibraryItemInput {
   readonly ref: ProfileRef;
   readonly mediaKey: string;
-  readonly mediaType: 'movie' | 'tv';
+  readonly mediaType: MediaKind;
   readonly list: LibraryListId;
   /** Ekleme anında verilen puan (yalnızca 'watched' için anlamlı). */
   readonly rating?: number | null;
@@ -79,7 +84,7 @@ export interface ILibraryService {
 /** Normalleştirilmiş içerik metaverisi (yapısal minimal). */
 export interface ContentMetadata {
   readonly mediaKey: string;
-  readonly mediaType: 'movie' | 'tv';
+  readonly mediaType: MediaKind;
   readonly title: string;
   readonly genres: readonly string[];
   readonly overview?: string;
