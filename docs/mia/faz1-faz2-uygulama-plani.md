@@ -2,7 +2,7 @@
 
 > **Bu belge Faz 1 ve Content Intelligence Faz 2 için tek yetkili uygulama ve kabul planıdır.** Önceki tarihsel tamamlanma işaretleri başlangıç kabul edilmez. Aşağıdaki durumlar mevcut master kodunun yeniden incelenmesine dayanır.
 >
-> **Kod denetimi tabanı:** son kaynak kodu commit'i = 89fda58daf9be820e4ec88b171945e7b7bb9fb5b (16.11.2026); ardından gelen `218c426` yalnızca bu plan belgesini günceller. Ajanın PR #19 çalışması `5a6b23d8c235ab0c806194c017f981394751de24` merge commit'iyle alındı. Bakım düzeltmeleri bu merge sonrasında master'a doğrudan işlendi. CI/test doğrulaması henüz ajanın tamamlaması gereken ayrı bir iş paketidir. Geri yüklenen kaynakların temel snapshot'ı = 1c135fea5136fc5039cc0303fa2a9ea9b929936c; silinen 123 dosya 44aabcd60b9736816c006c383ba8ec80488f2cc2 ile geri eklendi.
+> **Kod denetimi tabanı:** son kaynak kodu commit'i = 89fda58daf9be820e4ec88b171945e7b7bb9fb5b (16.11.2026); ardından gelen `218c426` ve `e64966d` commit'leri yalnızca bu plan belgesini günceller. Ajanın PR #19 çalışması `5a6b23d8c235ab0c806194c017f981394751de24` merge commit'iyle alındı. Bakım düzeltmeleri bu merge sonrasında master'a doğrudan işlendi. CI/test doğrulaması henüz ajanın tamamlaması gereken ayrı bir iş paketidir. Geri yüklenen kaynakların temel snapshot'ı = 1c135fea5136fc5039cc0303fa2a9ea9b929936c; silinen 123 dosya 44aabcd60b9736816c006c383ba8ec80488f2cc2 ile geri eklendi.
 >
 > **Kapsam ayrımı:** Ana MIA_TRANSFORMATION_PLAN.md içindeki mimari yol haritasının Faz 2'si Veri Yöneticisi / repository / adaptör / SQLite dönüşümüdür. Bu belge, konuşmada Faz 2 diye adlandırdığımız Content Intelligence ve ortak içerik veritabanı işlerini kapsar. İkisi karıştırılmayacaktır.
 
