@@ -2,7 +2,7 @@
 
 > **Bu belge Faz 1 ve Content Intelligence Faz 2 için tek yetkili uygulama ve kabul planıdır.** Önceki tarihsel tamamlanma işaretleri başlangıç kabul edilmez. Aşağıdaki durumlar mevcut master kodunun yeniden incelenmesine dayanır.
 >
-> **Güncel denetim tabanı:** master = f677d51c9732d0b399c5a622b703d38687b9f6ae (16.11.2026). Ajanın PR #19 çalışması `5a6b23d8c235ab0c806194c017f981394751de24` merge commit'iyle alındı. Bakım düzeltmeleri bu merge sonrasında master'a doğrudan işlendi. CI/test doğrulaması henüz ajanın tamamlaması gereken ayrı bir iş paketidir. Geri yüklenen kaynakların temel snapshot'ı = 1c135fea5136fc5039cc0303fa2a9ea9b929936c; silinen 123 dosya 44aabcd60b9736816c006c383ba8ec80488f2cc2 ile geri eklendi.
+> **Güncel denetim tabanı:** master = 89fda58daf9be820e4ec88b171945e7b7bb9fb5b (16.11.2026). Ajanın PR #19 çalışması `5a6b23d8c235ab0c806194c017f981394751de24` merge commit'iyle alındı. Bakım düzeltmeleri bu merge sonrasında master'a doğrudan işlendi. CI/test doğrulaması henüz ajanın tamamlaması gereken ayrı bir iş paketidir. Geri yüklenen kaynakların temel snapshot'ı = 1c135fea5136fc5039cc0303fa2a9ea9b929936c; silinen 123 dosya 44aabcd60b9736816c006c383ba8ec80488f2cc2 ile geri eklendi.
 >
 > **Kapsam ayrımı:** Ana MIA_TRANSFORMATION_PLAN.md içindeki mimari yol haritasının Faz 2'si Veri Yöneticisi / repository / adaptör / SQLite dönüşümüdür. Bu belge, konuşmada Faz 2 diye adlandırdığımız Content Intelligence ve ortak içerik veritabanı işlerini kapsar. İkisi karıştırılmayacaktır.
 
@@ -132,6 +132,7 @@ Her adım tamamlandığında kod, test ve commit birlikte doğrulanır. Dosyanı
 ### 1.6 Bakım düzeltmeleri — KOD DEĞİŞİKLİKLERİ YAPILDI, AJAN TESTİ BEKLİYOR
 - [x] Allowlist derinlik sınırında ham nesnenin olduğu gibi döndürülmesi kaldırıldı; derinlik limiti aşılınca alt ağaç düşürülüyor.
 - [x] Liste olay kimliklerinden profileId, mediaKey ve favori oyuncu ID listesi çıkarıldı; eventId opak UUID.
+- [x] Eski `lib-<profileId>-...` eventId değerleri ile queue trigger_event_id referansları açılış migration'ında rastgele opak kimliklerle değiştiriliyor; mevcut idempotency satırları korunuyor.
 - [x] Content queue, çalışan iş sırasında gelen yeni metadata payload'ını daha ileri timestamp ile saklıyor; eski worker tamamlandığında yeni revizyonu pending'e geri bırakıyor.
 - [x] Completion, retry ve failure güncellemeleri çalışan worker'ın aldığı updated_at snapshot'ına koşullandı.
 - [x] Aynı mediaKey için ikinci in-flight claim'in mevcut işi yanlışlıkla completed işaretlemesi engellendi.
@@ -141,7 +142,7 @@ Her adım tamamlandığında kod, test ve commit birlikte doğrulanır. Dosyanı
 - [x] Başlangıç indekslemesi reddedilen kayıt varsa `partial` durumunu raporluyor.
 - [ ] Ajan bu kod değişiklikleri için regresyon testlerini ekleyip CI'da doğrulasın.
 
-**Kod commit'leri:** `e91f10d`, `42e0d75`, `d23067a`, `d12fd94`, `40875a1`, `7b41244`, `65da513`, `62b381b`, `1028a6c`, `f677d51`, `85e4557`, `57bcb52`.
+**Kod commit'leri:** `e91f10d`, `42e0d75`, `d23067a`, `d12fd94`, `40875a1`, `7b41244`, `65da513`, `62b381b`, `1028a6c`, `f677d51`, `85e4557`, `57bcb52`, `89fda58`.
 
 ### Faz 1 kabul kapısı
 - [ ] npm run lint başarılı.
@@ -185,6 +186,7 @@ Her adım tamamlandığında kod, test ve commit birlikte doğrulanır. Dosyanı
 - [ ] Enqueue başarısızsa event tekrar denenebilir durumda kalsın; kalıcı olarak processed işaretlenmesin.
 - [ ] Queue.enqueue() dönüş değeri kontrol edilsin; accepted=false durumunda abone başarısızlığı çağırana bildirilsin.
 - [ ] Event tekrar geldiğinde aynı eventId ikinci iş üretmesin.
+- [ ] Eski profile-bearing eventId ve queue trigger_event_id kayıtları anonimleştirilsin; yeni eventId opak UUID olsun.
 - [ ] Aynı media_key için farklı eventId geldiğinde metadata revizyonu ve güncel payload kaybolmasın.
 - [ ] Transaction rollback, disk dolu, SQLite kilidi, process crash ve yeniden başlatma senaryoları test edilsin.
 - [ ] Event durumları received → queued → completed / retrying / failed / dead-letter şeklinde izlenebilsin.
