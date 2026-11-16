@@ -251,6 +251,19 @@ Yalnızca gösterge değil: modül çalışma süreleri, hata sayıları, bekley
 
 ### 7.1 Faz 1 Sözleşme Kesinleştirmesi (kullanıcı Faz 1 hazırlık denetimiyle entegre)
 
+**Yürütme kararları (kullanıcı, Faz 0 kapanış denetimi sonrası):**
+
+- **Faz 0 kapandı** (`phase-0-findings.md` v3 §Q — canlı veri denetimi dahil, 17/17 madde). Ancak büyük dosya bölme/taşıma, `ProfileContext` ve veri sahipliği sözleşmeleri kesinleşmeden **başlamaz**.
+- **Faz 1 iki parça halinde yürütülür:**
+
+| Parça | Kapsam | Kural |
+| --- | --- | --- |
+| **Faz 1A — Mimari sözleşmeler** | `IApplicationModule` yaşam döngüsü · merkezi modül kayıt sistemi · `ProfileContext` + profil izolasyonu · ortak uygulama olay sistemi (§2 event modeli) · veri erişim sözleşmeleri (`PrimaryDataRepository` + `IDataRepository`) · modüller arası arayüz kararları | **Mevcut kod parçalanmaz; yalnızca yeni sözleşme dosyaları + tipler eklenir. Mevcut sistemler olduğu gibi çalışmaya devam eder.** |
+| **Faz 1B — Mevcut sistemlerle uyum** | `TasteEvent`/`TasteStore`/`TasteEventProjector` korunarak yeni mimariye bağlanması · `TasteRebuildCoordinator` görev sınırı · SQLite/JSON/IndexedDB sorumluluk ayrıştırması · Offline Queue + senkronizasyonun veri sözleşmelerine uyarlanması · öneri/ilişki motorlarının işlev kaybı olmadan hazırlanması | Her bağlama adımı öncesi/sonrası 767 test + E2E yeşil; davranış değişikliği yasak |
+
+- **Faz 1A çıktı sırası:** ① `core/media/types.ts` + `keys.ts` (4 tip döngüsünü koparır, §J) → ② sözleşme dosyaları (`src/contracts/`: 12 arayüz + `IApplicationModule` + `PrimaryDataRepository`) → ③ `ProfileContext` kural belgesi (profileId + revision zorunluluğu, v2 §G korumalarıyla eşleşme) → ④ olay modeli `AppEventMap` tipleri.
+- **Faz 1B girdisi (canlı veri bulgusu):** taste olay deposu canlıda 11 kez bozulmuş (`.corrupt.*` karantina kopyaları) → Faz 1B'de `TasteStore` sözleşmeye bağlanırken atomik yazım + kilit şartı Faz 2'ye taşınan P2 bulgu olarak işlendi.
+
 Faz 1'de yazılacak sözleşmelerin **tam listesi** (kullanıcı denetiminden; 4 yönetici sözleşmesi bu listenin alt kümesidir):
 
 | Sözleşme | Görevi | Not |

@@ -158,14 +158,15 @@ CI (PR #9, run `43777139705`): `Playwright E2E: FAILURE` — **gerçek test hata
 
 **Sonuç (commit `c9da060`, CI run `43778497153`):** `Playwright E2E: PASS` ✅ — Lint/Typecheck/Test/Build PASS, Production dependency audit PASS, Production server smoke PASS. Kalan tek kırmızı: `Full dependency audit (informational)` — Glob GHSA-3g3m-2fjr-6pw4 (moderate); kök: `exceljs → archiver → glob@7.2.3` geçişli zinciri. Kör override archiver/exceljs'i kırma riski taşıdığından **kabul edilmiş risk** olarak belgelendi; exceljs güncellemesiyle izlenir (job bloklamaz).
 
-### Q. Faz 0 kapanış durumu
+### Q. Faz 0 kapanış durumu — **FAZ 0 KAPANDI** ✅
 
 1. ~~E2E'nin CI'da yeşile dönmesi~~ ✅ tamamlandı (`c9da060`).
-2. Canlı `data/cinetrack-data.json` salt okunur denetimi — kullanıcı onayı bekliyor (v1'deki şema doğrulaması `ef031af` verisiyle yapılmıştı; şema değişmedi, teyit niteliğinde).
+2. ~~Canlı veri denetimi~~ ✅ **tamamlandı (salt okunur, `2026-11-16`):**
+   - `data/cinetrack-data.json`: `version: 3`, `schemaVersion: 3`, `engineVersion: "v3.2.0"`, `revision: 28`, `activeProfileId` biçimi geçerli, 1 profil. Repo'nun kendi `normalizeDataDocument`'ı ile doğrulandı: **başarılı, kök anahtar kaybı yok**.
+   - Yedek zinciri sağlıklı: `data/backups/` içinde rev24→rev28 arası 7 döner yedek + `.bak` (rev27) — atomik yazım + yedekleme davranışı canlıda teyit edildi.
+   - **YENİ BULGU (P2, Faz 2 girdisi):** `data/taste/` içinde `cinetrack-taste-events.json` dosyasının **11 karantinaya alınmış `.corrupt.<ts>` kopyası** mevcut. Taste olay deposu tekrar tekrar bozulmuş (muhtemel neden: kilitlenmemiş eşzamanlı yazım — `taste-store.ts`); sistem karantina + yeniden oluşturmayla toparlıyor (mevcut dosya okunabilir, 0 olay) ama **kanıt kaybı yaşanmış**. Faz 2'de taste olay deposunun `PrimaryDataRepository` altında atomik yazım + kilit kullanması zorunlu kılınmalı.
 
-Bu tek madde dışında Faz 0 kapanmıştır; Faz 1'e (sözleşmeler — MIA planı §7.1) geçilebilir.
-
-Bu iki adım sonrası Faz 0 **kapalı** sayılır ve Faz 1'e (sözleşmeler — aşağıda MIA planı §7.1) geçilir.
+**Sonuç: 17 maddelik kontrol listesinde açık madde kalmadı — Faz 0 kapandı.** Faz 1'e geçiliyor; kullanıcı kararıyla iki parçalı yürütülecek: **Faz 1A** (sözleşmeler + ortak altyapı tasarımı, kod taşıma YOK) → **Faz 1B** (mevcut sistemlerin yeni sözleşmelere bağlanması). Bkz. MIA planı §7.1.
 
 ---
 ---
