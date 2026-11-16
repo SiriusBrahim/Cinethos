@@ -2,8 +2,8 @@
 
 > Bu belge, 16.11.2026 tarihinde Git geçmişinde bulunan Faz 1 uygulama kayıtları ve konuşmada kesinleştirilen Faz 2 Content Intelligence kapsamı esas alınarak yeniden oluşturulmuştur.
 >
-> **Durum uyarısı:** Faz 1'deki [x] işaretleri, son sağlam mimari commit olan `1c135fe` öncesindeki kodda doğrulanmış tarihsel tamamlanmayı gösterir. `17a12e8` commit'i bu modüllerin önemli bölümünü master'dan sildiği için bu adımlar mevcut HEAD'de yeniden uygulanmadan veya eski kod güvenli biçimde geri alınmadan güncel tamamlanmış sayılamaz. Faz 2 kodu da aynı commit'te silinmiştir; aşağıdaki maddeler uygulama/kabul kontrol listesidir, mevcut kodun var olduğunu iddia etmez.
->
+> **Güncel durum (16.11.2026):** `17a12e8` commit'inde silinen 123 dosya, son sağlam mimari snapshot `1c135fe` üzerinden `44aabcd` commit'iyle master'a geri eklendi. Buna Faz 1 sözleşmeleri, profil bağlamı, olay yolu, repository adaptörleri, Faz 2 Content Intelligence modülleri, SQLite kuyruk/depo ve ilgili testler dahildir. Ancak `src/App.tsx`, `src/server/app.ts`, `server.ts`, `package.json` gibi silinmeyip değiştirilmiş dosyalardaki çalışma zamanı bağlantıları eski entegrasyonla aynı değildir. Bu nedenle dosyaların geri gelmesi, Faz 1/2'nin uygulamada yeniden etkin ve testlerden geçmiş olduğu anlamına gelmez. Önce entegrasyon uyumu ve CI sonuçları doğrulanmalıdır.
+
 > **Önemli kapsam ayrımı:** `MIA_TRANSFORMATION_PLAN.md` içindeki ana mimari yol haritasında Faz 2, Veri Yöneticisi / repository-adapter / SQLite çalışma modu işlerini ifade eder. Bu belgede ayrıca konuşmada “Faz 2” olarak adlandırılan **Content Intelligence ve ortak içerik veritabanı** uygulaması kayıt altına alınır. İki kapsam birbirinin yerine geçmez.
 
 ## 1. Faz 1 — Mimari sözleşmeler ve çalışma zamanı entegrasyonu
