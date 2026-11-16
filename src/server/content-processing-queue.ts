@@ -372,9 +372,8 @@ export class ContentProcessingQueue {
   ): Promise<ProcessJobOutcome> {
     const existing = this.inFlightByKey.get(job.media_key);
     if (existing) {
-      if (updateQueueTable) {
-        this.repository.markJobCompleted(job.media_key);
-      }
+      // Aynı anahtar için mevcut worker hâlâ çalışıyor. İkinci claim'i
+      // tamamlandı olarak işaretleme; ilk worker kendi snapshot'ını kapatacak.
       return existing;
     }
 
@@ -412,7 +411,7 @@ export class ContentProcessingQueue {
         !hasSufficientDetail(parsedPayload)
       ) {
         if (updateQueueTable) {
-          this.repository.markJobCompleted(job.media_key);
+          this.repository.markJobCompleted(job.media_key, job.updated_at);
         }
         return {
           mediaKey: job.media_key,
@@ -451,7 +450,7 @@ export class ContentProcessingQueue {
           error: errMsg,
         });
         if (updateQueueTable) {
-          this.repository.markJobFailed(job.media_key, errMsg);
+          this.repository.markJobFailed(job.media_key, errMsg, job.updated_at);
         }
         return {
           mediaKey: job.media_key,
@@ -496,7 +495,7 @@ export class ContentProcessingQueue {
       if (retryable && updateQueueTable && job.attempts < job.max_attempts) {
         const delayMs = this.baseRetryDelayMs * Math.pow(2, Math.max(0, job.attempts - 1));
         const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
-        this.repository.scheduleJobRetry(job.media_key, nextRetryAt, errMsg);
+        this.repository.scheduleJobRetry(job.media_key, nextRetryAt, errMsg, job.updated_at);
         this.logger?.warn?.(
           `${job.media_key} için geçici hata; yeniden deneme planlandı (${job.attempts}/${job.max_attempts}): ${errMsg}`
         );
