@@ -24,8 +24,8 @@ Bu senaryo, Faz 1A'da tanımlanan `IProfileContext` sözleşmesi + `ProfileRef.r
 | # | Kural | Sözleşme karşılığı |
 |---|---|---|
 | K1 | Her asenkron işlem `profileId` taşımak **ZORUNDADIR** | `ProfileRef.profileId` |
-| K2 | Her **yazma** işlemi kaynak `revision` taşımak **ZORUNDADIR** | `ProfileRef.revision` (yazmada zorunlu, okumada opsiyonel) |
-| K3 | Async devam etmeden **hemen önce** güncellik denetimi yapılır | `assertCurrent(ref)` — uçuş öncesi son kontrol |
+| K2 | Her **yazma** işlemi kaynak `revision` taşımak **ZORUNDADIR** | `WriteProfileRef.revision` (yazmada derleme zamanında zorunlu, okumada opsiyonel `ProfileRef`) |
+| K3 | Async devam etmeden **hemen önce** güncellik denetimi yapılır | `assertCurrent(ref)` / `assertWritable(ref)` — uçuş öncesi son kontrol |
 | K4 | Profil değiştiyse eski-profil işi **yazamaz**; arşivlenir | `ProfileConflictError('profile-switched')` |
 | K5 | Revision eskiyse yazım **reddedilir** (iyimser kilitleme) | `ProfileConflictError('stale-revision')` + `StaleRevisionError` (data.ts) |
 | K6 | Profil değişimi **olay olarak** yayınlanır | `ProfileSwitched` (AppEventMap, Faz 1A ④) |

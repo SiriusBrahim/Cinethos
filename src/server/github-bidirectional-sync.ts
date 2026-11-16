@@ -2,17 +2,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   ALGORITHM_VERSION,
-  buildTasteProfileV3,
   computeTasteProfileSignature,
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
-  inferLifecycleRing,
-  isItemSaved,
   makeMediaKey,
   normalizeDataDocument,
-  normalizeDeletedKeys,
-  RECOMMENDATION_WEIGHTS_V3,
-  scoreCandidatesV3,
   validItemId,
   type DataDocument,
   type Profile,
@@ -29,7 +23,6 @@ import {
   normalizeCinemaKunyeDocument,
   type CinemaKunyeDocument,
 } from '../core/cinema-kunye.ts';
-import { canonicalizeMediaKey, canonicalizeMediaKeyList } from '../core/keys.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb, measureUtf8Bytes } from '../core/limits.ts';
 import {
   computeDerivedProfileContentHash,
@@ -43,7 +36,6 @@ import type {
   SyncErrorCategory,
   SyncErrorRecord,
   SyncFileCategory,
-  SyncFileDiffDetail,
   SyncFileInspection,
   SyncOperationKind,
   SyncSideSummary,
@@ -55,7 +47,6 @@ import {
   redactSecrets,
   sanitizeProfileId,
   stringifyDeterministic,
-  toCanonicalKey,
   type CatalogManifest,
   type CatalogRecord,
   type DerivedProfileDocument,
@@ -75,93 +66,23 @@ import type { createDataStorage } from './storage.ts';
  * Geçici önbellekler, `.bak`, `data/backups/*`, `data/sync-state.json`, `.tmp`, `.corrupt.*`,
  * `.env` ve derleme çıktıları envantere kesinlikle dahil edilmez.
  */
-export const SYNC_STATIC_INVENTORY: ReadonlyArray<{
-  repoPath: string;
-  category: SyncFileCategory;
-  personal: boolean;
-  description: string;
-}> = Object.freeze([
-  {
-    repoPath: 'data/catalog/movies.json',
-    category: 'catalog_movies',
-    personal: false,
-    description: 'Ortak film kataloğu metaverileri (movie:<id>)',
-  },
-  {
-    repoPath: 'data/catalog/tv.json',
-    category: 'catalog_tv',
-    personal: false,
-    description: 'Ortak dizi kataloğu metaverileri (tv:<id>)',
-  },
-  {
-    repoPath: 'data/catalog/manifest.json',
-    category: 'catalog_manifest',
-    personal: false,
-    description: 'Katalog film/dizi sayıları ve içerik özeti doğrulaması',
-  },
-  {
-    repoPath: 'data/cinetrack-data.json',
-    category: 'user_data',
-    personal: true,
-    description: 'Kullanıcı profilleri, izleme listeleri, puanlar, tercihler ve favori oyuncular',
-  },
-  // Faz 6: Taste Engine — varsayılan olarak yalnızca manifest + profile senkrona girer (TP-006)
-  // index ve events boyut nedeniyle dışarıda kalır
-  {
-    repoPath: 'data/taste/cinetrack-taste-manifest.json',
-    category: 'taste_manifest',
-    personal: true,
-    description: 'Taste Engine veri özeti ve versiyon bilgisi',
-  },
-  {
-    repoPath: 'data/taste/cinetrack-taste-profile.json',
-    category: 'taste_profile',
-    personal: true,
-    description: 'Kullanıcı Taste Engine profili ve metrikler',
-  },
-  {
-    repoPath: 'data/stock.json',
-    category: 'stock',
-    personal: true,
-    description: 'Stok içerik deposu (film + dizi, sınırsız ve media:key tekilleştirmeli)',
-  },
-  {
-    repoPath: 'data/sinema-kunyesi.json',
-    category: 'cinema_kunye',
-    personal: true,
-    description: 'Sinema Künyesi izlenen içerik tür/yıl/oyuncu metaverileri (içerik ID anahtarlı)',
-  },
-]);
+import {
+  SYNC_STATIC_INVENTORY,
+  computeRawUtf8Hash,
+  classifyGitHubHttpStatus,
+  stripUserDataVolatileFields,
+  computeUserDataSemanticHash,
+  buildFreshDerivedProfileDocumentOnServer,
+} from './sync-manifest.ts';
 
-
-export function computeRawUtf8Hash(rawContent: string): string {
-  return hashContent(rawContent);
-}
-
-function classifyGitHubHttpStatus(
-  status: number,
-  headers: Headers,
-  bodyMessage: string
-): SyncErrorCategory {
-  const remaining = headers.get('x-ratelimit-remaining');
-  const lower = (bodyMessage || '').toLowerCase();
-  if (
-    status === 429 ||
-    (status === 403 && (remaining === '0' || lower.includes('rate limit') || lower.includes('secondary rate')))
-  ) {
-    return 'rate_limit';
-  }
-  if (status === 401 || status === 403) {
-    return 'auth_error';
-  }
-  if (status === 404) {
-    return 'not_found';
-  }
-  if (status === 409) {
-    return 'conflict';
-  }
-  return 'http_error';
-}
+export {
+  SYNC_STATIC_INVENTORY,
+  computeRawUtf8Hash,
+  classifyGitHubHttpStatus,
+  stripUserDataVolatileFields,
+  computeUserDataSemanticHash,
+  buildFreshDerivedProfileDocumentOnServer,
+};
 
 import {
   isPlainObject,
@@ -181,173 +102,6 @@ export {
   computeCatalogManifestContentHash,
   mergeCatalogMapsLossless,
 };
-
-function stripUserDataVolatileFields(doc: DataDocument): Record<string, any> {
-  const profiles = [...(doc.profiles || [])]
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((p) => {
-      const items = [...(p.items || [])]
-        .map((it) => {
-          const key = makeMediaKey(it);
-          return {
-            key,
-            id: it.id,
-            media_type: it.media_type,
-            title: it.title,
-            status: it.status,
-            personal_rating: it.personal_rating === '' ? '' : Number(it.personal_rating),
-            personal_rating_cleared: Boolean(it.personal_rating_cleared),
-            season_progress: it.season_progress || {},
-            season_episode_counts: it.season_episode_counts || {},
-            genre_ids: [...(it.genre_ids || [])].sort((a, b) => a - b),
-            overview: it.overview || '',
-            poster_path: it.poster_path || '',
-            backdrop_path: it.backdrop_path || '',
-            isDemo: Boolean(it.isDemo),
-          };
-        })
-        .sort((a, b) => a.key.localeCompare(b.key));
-
-      const prefs = p.preferences || {
-        disliked: [],
-        providers: [],
-        mood: '',
-        reminders: false,
-        notified: [],
-      };
-      const normalizedTombstones = normalizeDeletedKeys(p.deleted_keys);
-      return {
-        id: p.id,
-        name: p.name,
-        isDemo: Boolean(p.isDemo),
-        preferences: {
-          disliked: canonicalizeMediaKeyList(prefs.disliked || []).sort(),
-          hidden: canonicalizeMediaKeyList(prefs.hidden || []).sort(),
-          providers: [...(prefs.providers || [])].map(String).sort(),
-          mood: prefs.mood || '',
-          reminders: Boolean(prefs.reminders),
-        },
-        favoriteActors: [...(p.favoriteActors || [])]
-          .map((a) => ({ id: a.id, name: a.name, profile_path: a.profile_path ?? null }))
-          .sort((a, b) => a.id - b.id),
-        ...(Object.keys(normalizedTombstones).length > 0
-          ? { deleted_keys: normalizedTombstones }
-          : {}),
-        items,
-      };
-    });
-
-  return {
-    version: 3,
-    schemaVersion: doc.schemaVersion || CURRENT_SCHEMA_VERSION,
-    activeProfileId: doc.activeProfileId,
-    profiles,
-  };
-}
-
-export function computeUserDataSemanticHash(doc: DataDocument): string {
-  return hashContent(stringifyDeterministic(stripUserDataVolatileFields(doc)));
-}
-
-/**
- * Kaynak profil ve katalogdan sunucu tarafında güncel türetilmiş profil belgesi üretir.
- * Eski/geçersiz profil önbellekleri yenilendiğinde kullanılır.
- */
-export function buildFreshDerivedProfileDocumentOnServer(
-  profile: Profile,
-  movies: Record<string, CatalogRecord>,
-  tv: Record<string, CatalogRecord>,
-  sourceCatalogHash: string
-): DerivedProfileDocument {
-  const savedItems = profile.items || [];
-  const preferences = profile.preferences || {
-    disliked: [],
-    providers: [],
-    mood: '',
-    reminders: false,
-    notified: [],
-  };
-  const favoriteActors = profile.favoriteActors || [];
-  const fingerprint = computeTasteProfileSignature(savedItems, preferences, favoriteActors, {
-    targetType: 'all',
-    algorithmVersion: ALGORITHM_VERSION,
-  });
-
-  const candidates: CatalogRecord[] = [...Object.values(movies), ...Object.values(tv)];
-  const tasteProfile = buildTasteProfileV3(savedItems, {
-    dislikedKeys: preferences.disliked || [],
-  });
-  const scored = scoreCandidatesV3(candidates, tasteProfile, {
-    weights: RECOMMENDATION_WEIGHTS_V3,
-    mood: preferences.mood || '',
-  });
-
-  const nowIso = new Date().toISOString();
-  const items: Record<string, DerivedProfileItem> = {};
-
-  for (const s of scored) {
-    const cand = s.candidate || s;
-    const key = toCanonicalKey(cand);
-    if (!key) continue;
-    const tasteScore = Math.max(
-      1,
-      Math.min(100, Math.round(Number(s.tasteScore ?? s.score ?? 50)))
-    );
-    const saved = isItemSaved(savedItems, cand, cand.media_type);
-    const disliked = Boolean(
-      preferences.disliked?.some((k) => canonicalizeMediaKey(k) === key)
-    );
-    const hidden = Boolean(
-      preferences.hidden?.some((k) => canonicalizeMediaKey(k) === key)
-    );
-    const status: DerivedProfileItem['status'] = saved
-      ? 'saved'
-      : disliked
-      ? 'disliked'
-      : hidden
-      ? 'hidden'
-      : 'active';
-
-    const normalized = normalizeDerivedProfileItem(key, {
-      mediaKey: key,
-      matchScore: tasteScore,
-      tasteScore,
-      priorityScore: tasteScore,
-      lifecycleRing: inferLifecycleRing(key, { shownCount: 0, skippedCount: 0 }, []),
-      signals: s.parts && Object.keys(s.parts).length > 0 ? s.parts : undefined,
-      reasons: Array.isArray(s.tags) && s.tags.length > 0 ? s.tags : undefined,
-      shownCount: 0,
-      skippedCount: 0,
-      demotionPenalty: 0,
-      status,
-      scoreCoverage: 'basic',
-      calculatedAt: nowIso,
-    });
-    if (normalized) {
-      items[key] = normalized;
-    }
-  }
-
-  const contentHash = computeDerivedProfileContentHash({
-    schemaVersion: DERIVED_PROFILE_SCHEMA_VERSION,
-    profileId: profile.id,
-    algorithmVersion: ALGORITHM_VERSION,
-    profileFingerprint: fingerprint,
-    sourceCatalogHash,
-    items,
-  });
-
-  return {
-    schemaVersion: DERIVED_PROFILE_SCHEMA_VERSION,
-    profileId: profile.id,
-    algorithmVersion: ALGORITHM_VERSION,
-    profileFingerprint: fingerprint,
-    sourceCatalogHash,
-    contentHash,
-    generatedAt: nowIso,
-    items,
-  };
-}
 
 function inspectCatalogRawContent(
   repoPath: string,
@@ -1261,207 +1015,9 @@ function inspectDerivedProfileRawContent(
   };
 }
 
-interface ParsedSideBundle {
-  summary: SyncSideSummary;
-  movies: Record<string, CatalogRecord>;
-  tv: Record<string, CatalogRecord>;
-  manifest: CatalogManifest | null;
-  userData: DataDocument | null;
-  cinemaKunye: CinemaKunyeDocument | null;
-  derivedProfiles: Record<string, DerivedProfileDocument>;
-  errors: SyncErrorRecord[];
-}
+import { type ParsedSideBundle, compareSyncSides } from './sync-compare.ts';
+export { type ParsedSideBundle, compareSyncSides };
 
-export function compareSyncSides(
-  localBundle: ParsedSideBundle,
-  remoteBundle: ParsedSideBundle,
-  options: { includePersonalFiles: boolean; includeCatalogFiles?: boolean }
-): SyncComparisonSummary {
-  const includeCatalog = options.includeCatalogFiles !== false;
-  const allPaths = new Set<string>([
-    ...Object.keys(localBundle.summary.files),
-    ...Object.keys(remoteBundle.summary.files),
-  ]);
-
-  const differingFiles: SyncFileDiffDetail[] = [];
-  const reasons: string[] = [];
-  let rawFilesEqual = true;
-  let semanticEqual = true;
-  let comparedFilesCount = 0;
-  let differentRecordsCount = 0;
-
-  const sortedPaths = Array.from(allPaths).sort((a, b) => a.localeCompare(b));
-  for (const repoPath of sortedPaths) {
-    const lf = localBundle.summary.files[repoPath];
-    const rf = remoteBundle.summary.files[repoPath];
-    const personal = Boolean(lf?.personal ?? rf?.personal);
-    if (personal && !options.includePersonalFiles) continue;
-    if (!personal && !includeCatalog) continue;
-
-    const lExists = Boolean(lf?.exists);
-    const rExists = Boolean(rf?.exists);
-    if (!lExists && !rExists) continue;
-
-    comparedFilesCount++;
-    const category: SyncFileCategory = lf?.category || rf?.category || 'catalog_movies';
-    const lValid = lExists ? Boolean(lf?.valid) : true;
-    const rValid = rExists ? Boolean(rf?.valid) : true;
-    const lRecords = lf?.uniqueKeyCount ?? 0;
-    const rRecords = rf?.uniqueKeyCount ?? 0;
-
-    const fileRawEqual = Boolean(
-      lExists && rExists && lValid && rValid && lf?.rawFileHash && lf.rawFileHash === rf?.rawFileHash
-    );
-    const fileSemanticEqual = Boolean(
-      lExists &&
-        rExists &&
-        lValid &&
-        rValid &&
-        lf?.semanticHash &&
-        lf.semanticHash === rf?.semanticHash
-    );
-
-    if (!fileRawEqual) rawFilesEqual = false;
-    if (!fileSemanticEqual) {
-      semanticEqual = false;
-      let reason = '';
-      if (!lValid && lf?.error) {
-        reason = `Yerel dosya geçersiz (${lf.error})`;
-      } else if (!rValid && rf?.error) {
-        reason = `GitHub dosyası geçersiz (${rf.error})`;
-      } else if (lExists && !rExists) {
-        reason = "Yalnızca yerelde mevcut (GitHub'da henüz yok)";
-      } else if (rExists && !lExists) {
-        reason = "Yalnızca GitHub'da mevcut (yerelde henüz yok)";
-      } else if (lRecords !== rRecords) {
-        reason = `Kayıt sayısı farklı (Yerel: ${lRecords}, GitHub: ${rRecords})`;
-      } else {
-        reason = 'Kayıt içerikleri veya özetleri farklı';
-      }
-
-      differingFiles.push({
-        repoPath,
-        category,
-        localExists: lExists,
-        remoteExists: rExists,
-        localValid: lValid,
-        remoteValid: rValid,
-        localRecords: lRecords,
-        remoteRecords: rRecords,
-        rawEqual: fileRawEqual,
-        semanticEqual: fileSemanticEqual,
-        reason,
-      });
-      reasons.push(`${repoPath}: ${reason}`);
-    }
-  }
-
-  // Katalog bazında farklı kayıt sayısını doğrudan anahtar farkından hesapla
-  if (includeCatalog) {
-    const allMovieKeys = new Set([
-      ...Object.keys(localBundle.movies),
-      ...Object.keys(remoteBundle.movies),
-    ]);
-    for (const k of allMovieKeys) {
-      const lm = localBundle.movies[k];
-      const rm = remoteBundle.movies[k];
-      if (!lm || !rm) {
-        differentRecordsCount++;
-      } else {
-        const ls = stringifyDeterministic({ ...lm, firstStoredAt: '', lastUpdatedAt: '' });
-        const rs = stringifyDeterministic({ ...rm, firstStoredAt: '', lastUpdatedAt: '' });
-        if (ls !== rs) differentRecordsCount++;
-      }
-    }
-
-    const allTvKeys = new Set([
-      ...Object.keys(localBundle.tv),
-      ...Object.keys(remoteBundle.tv),
-    ]);
-    for (const k of allTvKeys) {
-      const lt = localBundle.tv[k];
-      const rt = remoteBundle.tv[k];
-      if (!lt || !rt) {
-        differentRecordsCount++;
-      } else {
-        const ls = stringifyDeterministic({ ...lt, firstStoredAt: '', lastUpdatedAt: '' });
-        const rs = stringifyDeterministic({ ...rt, firstStoredAt: '', lastUpdatedAt: '' });
-        if (ls !== rs) differentRecordsCount++;
-      }
-    }
-  }
-
-  let localOnlyUserItemsCount = 0;
-  let remoteOnlyUserItemsCount = 0;
-  let conflictingUserItemsCount = 0;
-  let userDataConflicts: UserDataConflictItem[] = [];
-
-  if (options.includePersonalFiles) {
-    if (localBundle.userData && remoteBundle.userData) {
-      const mergePreview = reconcileUserDataDocumentsLossless(
-        localBundle.userData,
-        remoteBundle.userData
-      );
-      localOnlyUserItemsCount = mergePreview.addedToRemote;
-      remoteOnlyUserItemsCount = mergePreview.addedToLocal;
-      userDataConflicts = mergePreview.conflicts;
-      conflictingUserItemsCount = mergePreview.conflicts.length;
-      differentRecordsCount +=
-        localOnlyUserItemsCount + remoteOnlyUserItemsCount + mergePreview.updatedItems;
-    } else if (localBundle.userData && !remoteBundle.userData) {
-      localOnlyUserItemsCount = localBundle.summary.userUniqueSavedItemsCount;
-      differentRecordsCount += localOnlyUserItemsCount;
-    } else if (remoteBundle.userData && !localBundle.userData) {
-      remoteOnlyUserItemsCount = remoteBundle.summary.userUniqueSavedItemsCount;
-      differentRecordsCount += remoteOnlyUserItemsCount;
-    }
-
-    const allProfilePaths = new Set([
-      ...Object.keys(localBundle.derivedProfiles),
-      ...Object.keys(remoteBundle.derivedProfiles),
-    ]);
-    for (const pPath of allProfilePaths) {
-      const ld = localBundle.derivedProfiles[pPath];
-      const rd = remoteBundle.derivedProfiles[pPath];
-      if (!ld && rd) {
-        differentRecordsCount += Object.keys(rd.items || {}).length || 1;
-      } else if (ld && !rd) {
-        differentRecordsCount += Object.keys(ld.items || {}).length || 1;
-      } else if (ld && rd && ld.contentHash !== rd.contentHash) {
-        const pKeys = new Set([
-          ...Object.keys(ld.items || {}),
-          ...Object.keys(rd.items || {}),
-        ]);
-        let pDiff = 0;
-        for (const pk of pKeys) {
-          if (stringifyDeterministic(ld.items[pk]) !== stringifyDeterministic(rd.items[pk])) {
-            pDiff++;
-          }
-        }
-        differentRecordsCount += Math.max(1, pDiff);
-      }
-    }
-  }
-
-  if (differentRecordsCount === 0 && differingFiles.length > 0) {
-    differentRecordsCount = differingFiles.length;
-  }
-
-  return {
-    semanticEqual,
-    rawFilesEqual,
-    comparedFilesCount,
-    differentFilesCount: differingFiles.length,
-    differentRecordsCount,
-    differingFiles,
-    hasUserDataConflict: localOnlyUserItemsCount > 0 || conflictingUserItemsCount > 0,
-    localOnlyUserItemsCount,
-    remoteOnlyUserItemsCount,
-    conflictingUserItemsCount,
-    userDataConflicts,
-    reasons,
-  };
-}
 
 export interface BidirectionalSyncDependencies {
   dataDir: string;

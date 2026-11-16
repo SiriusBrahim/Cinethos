@@ -45,18 +45,29 @@ export interface RepositoryReadResult<TDocument> {
 export interface SaveDataOptions {
   /**
    * İyimser kilitleme: belirtilirse güncel revision bu değerle uyuşmalıdır;
-   * uyuşmazsa yazım reddedilir (StaleRevisionError). Profil izolasyonu için
-   * yazan modül `ProfileRef.revision` değerini burada taşır.
+   * uyuşmazsa yazım reddedilir (conflict: true veya StaleRevisionError).
+   * Profil izolasyonu için yazan modül `WriteProfileRef.revision` değerini taşır.
    */
   readonly expectedRevision?: number;
+  /**
+   * İlk oluşturma dışındaki normal yazımlarda `expectedRevision` zorunlu tutulsun mu.
+   * Varsayılan davranış geriye dönük uyumlu kalır; `OptimisticSaveDataOptions`
+   * derleme zamanında zorunlu `expectedRevision` taşır.
+   */
+  readonly requirePrecondition?: boolean;
   /** Yazma nedeni — günlük/panel için insan-okur etiket. */
   readonly reason?: string;
+}
+
+/** İyimser kilitlemesi derleme zamanında zorunlu yazma seçenekleri. */
+export interface OptimisticSaveDataOptions extends SaveDataOptions {
+  readonly expectedRevision: number;
 }
 
 /** Yazma sonucu. */
 export interface SaveDataResult {
   readonly ok: boolean;
-  /** Yazım sonrası güncel revision (başarılıysa). */
+  /** Yazım sonrası güncel revision (başarılıysa veya çelişkide mevcut rev). */
   readonly revision?: number;
   /** Başarısızsa neden. */
   readonly error?: string;
@@ -84,7 +95,7 @@ export class StaleRevisionError extends Error {
 export interface IDataRepository<TDocument = unknown> {
   /** Güncel belgeyi ve revision'ını okur. Boş depoda null döner. */
   read(): Promise<RepositoryReadResult<TDocument>>;
-  /** Belgeyi yazar (iyimser kilitleme opsiyonel). */
+  /** Belgeyi yazar (iyimser kilitleme `expectedRevision` ile uygulanır). */
   save(document: TDocument, options?: SaveDataOptions): Promise<SaveDataResult>;
   /** Yalnızca güncel revision (ucuz kontrol için). */
   getRevision(): Promise<number | null>;

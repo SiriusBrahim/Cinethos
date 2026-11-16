@@ -9,6 +9,7 @@ playwright-report/
 blob-report/
 .tmp/
 .aistudio/
+.bolt/
 bun.lock
 data/
 

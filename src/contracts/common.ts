@@ -19,23 +19,38 @@ export type MediaKind = 'movie' | 'tv';
  */
 export type LibraryListId = 'watched' | 'watching' | 'watchlist' | 'not-interested';
 
+/** Kanonik medya kimliği biçimi ("movie:123" veya "tv:456"). */
+export type MediaKey = string;
+
 /**
- * Profil referansı — profil izolasyonunun temel sözleşmesi.
+ * Profil referansı — profil izolasyonunun temel sözleşmesi (okuma/genel).
  *
  * KURAL (MIA planı §7.1, P1-2): Her asenkron işlem `profileId` taşımak
- * ZORUNDADIR; yazma işlemleri ayrıca kaynak `revision` bilgisi taşımalıdır.
- * Profil değiştikten sonra tamamlanan eski-profil sonuçları yeni profile
- * yazılamaz (revision çelişirse işlem reddedilir).
+ * ZORUNDADIR; yazma işlemleri ayrıca kaynak `revision` bilgisini zorunlu
+ * tutan `WriteProfileRef` tipini kullanmak ZORUNDADIR.
  */
 export interface ProfileRef {
   /** İşlemin ait olduğu profil. Boş/geçersiz profil kimliği yasak. */
   readonly profileId: string;
   /**
-   * İşlem yapıldığı anda beklenen belge revision'ı. Yazma işlemlerinde
-   * zorunlu; okuma işlemlerinde opsiyoneldir (belirtilirse tutarlılık kontrolü
-   * için kullanılır).
+   * İşlem yapıldığı anda beklenen belge revision'ı. Okuma işlemlerinde
+   * opsiyoneldir (belirtilirse tutarlılık kontrolü için kullanılır);
+   * yazma işlemlerinde `WriteProfileRef` üzerinden ZORUNLUDUR.
    */
   readonly revision?: number;
+}
+
+/** Okuma işlemleri için açık profil referansı takma adı. */
+export type ReadProfileRef = ProfileRef;
+
+/**
+ * Yazma işlemleri için ZORUNLU revision içeren profil referansı.
+ * Profil değiştikten sonra tamamlanan eski-profil sonuçları yeni profile
+ * yazılamaz (revision eksikse derleme hatası, uyuşmazsa ProfileConflictError).
+ */
+export interface WriteProfileRef extends ProfileRef {
+  readonly profileId: string;
+  readonly revision: number;
 }
 
 /** Bir işlemin revision çelişkisi nedeniyle reddedilme nedeni. */

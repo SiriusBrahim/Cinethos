@@ -12,12 +12,12 @@
  *   `assertCurrent` ile bu senaryo kesin olarak reddedilir.
  */
 
-import type { ProfileConflictError, ProfileRef } from './common.ts';
+import type { ProfileConflictError, ProfileRef, WriteProfileRef } from './common.ts';
 
 /** Profil değişim bildirimi. */
 export interface ProfileChangeEvent {
-  readonly previous: ProfileRef | null;
-  readonly current: ProfileRef;
+  readonly previous: WriteProfileRef | null;
+  readonly current: WriteProfileRef;
 }
 
 /** Profil değişim dinleyicisi. */
@@ -28,19 +28,26 @@ export type ProfileChangeListener = (event: ProfileChangeEvent) => void | Promis
  * kaynağı.
  */
 export interface IProfileContext {
-  /** Aktif profil referansı (profileId + güncel revision). */
-  getCurrent(): ProfileRef;
+  /** Aktif profil referansı (profileId + zorunlu güncel revision). */
+  getCurrent(): WriteProfileRef;
 
   /**
-   * Verilen referansın hâlâ güncel olup olmadığını denetler.
+   * Verilen okuma/genel referansının hâlâ güncel olup olmadığını denetler.
+   * - `profileId` boş/geçersizse → 'profile-not-found'
    * - `profileId` aktif profille uyuşmuyorsa → 'profile-switched'
-   * - `revision` belirtilmiş ve güncel revision'dan eskiyse → 'stale-revision'
+   * - `revision` belirtilmiş ve güncel revision'dan farklıysa → 'stale-revision'
    * Uyumluysa sessizce geçer; uyuşmazsa `ProfileConflictError` fırlatır.
    *
    * Arka plan işleyicileri ASYNC devam etmeden hemen önce bu çağrıyı yapmak
    * ZORUNDADIR (profil izolasyonu kuralı).
    */
   assertCurrent(ref: ProfileRef): void;
+
+  /**
+   * Yazma öncesi kesin denetim: `ref.revision` sonlu, negatif olmayan bir
+   * tam sayı olmalı VE aktif profilin güncel revision'ı ile birebir eşleşmelidir.
+   */
+  assertWritable(ref: WriteProfileRef): void;
 
   /**
    * Aktif profilin güncel revision'ını döner (okuma işlemleri için

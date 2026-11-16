@@ -10,10 +10,13 @@
  */
 
 export type {
+  MediaKey,
   ModuleHealth,
   OperationOutcome,
   ProfileConflictReason,
   ProfileRef,
+  ReadProfileRef,
+  WriteProfileRef,
 } from './common.ts';
 export { ProfileConflictError } from './common.ts';
 
@@ -42,6 +45,7 @@ export type {
 
 export type {
   IDataRepository,
+  OptimisticSaveDataOptions,
   PrimaryDataRepository,
   RepositoryReadResult,
   SaveDataOptions,
@@ -53,7 +57,13 @@ export { StaleRevisionError } from './data.ts';
 
 export type {
   AddLibraryItemInput,
+  ContentFeatureProfileView,
+  ContentFeatureSignal,
   ContentMetadata,
+  ContentMoodEvaluation,
+  ContentSemanticComparison,
+  ContentSignalSource,
+  IContentIntelligenceService,
   IContentService,
   ILibraryService,
   IMemoryService,

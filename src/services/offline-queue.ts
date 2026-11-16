@@ -1,4 +1,10 @@
 import { type DataDocument } from '../core/cinetrack-core.ts';
+import type {
+  IProfileContext,
+  PrimaryDataRepository,
+  ProfileRef,
+  WriteProfileRef,
+} from '../contracts/index.ts';
 import { get, set, del, createStore } from 'idb-keyval';
 
 const OFFLINE_QUEUE_STORAGE_KEY = 'cinetrack_offline_sync_queue_v1';
@@ -18,6 +24,8 @@ export interface QueuedSyncSnapshot {
   queuedAt: string;
   baseRevision: number | null;
   payload: DataDocument;
+  /** Profil izolasyonu referansı (MIA Faz 1B Adım 11). */
+  profileRef?: ProfileRef;
   /** Kaç kez gönderilmeye çalışıldı (SEC-04: üstel geri çekilme için). */
   attempts?: number;
   lastAttemptAt?: string | null;
@@ -81,10 +89,29 @@ export function loadOfflineSyncSnapshot(): QueuedSyncSnapshot | null {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object' && parsed.payload) {
+          const baseRev = typeof parsed.baseRevision === 'number' ? parsed.baseRevision : null;
+          const rawRef =
+            parsed.profileRef &&
+            typeof parsed.profileRef === 'object' &&
+            typeof parsed.profileRef.profileId === 'string' &&
+            parsed.profileRef.profileId.trim()
+              ? {
+                  profileId: parsed.profileRef.profileId.trim(),
+                  ...(typeof parsed.profileRef.revision === 'number'
+                    ? { revision: parsed.profileRef.revision }
+                    : {}),
+                }
+              : undefined;
+          const resolvedRef = resolveSnapshotProfileRef(
+            parsed.payload as DataDocument,
+            baseRev,
+            rawRef
+          );
           const snapshot: QueuedSyncSnapshot = {
             queuedAt: String(parsed.queuedAt || new Date().toISOString()),
-            baseRevision: typeof parsed.baseRevision === 'number' ? parsed.baseRevision : null,
+            baseRevision: baseRev,
             payload: parsed.payload as DataDocument,
+            ...(resolvedRef ? { profileRef: resolvedRef } : {}),
             // SEC-04: deneme sayacı yeniden yüklemede kaybolmamalı.
             attempts: Number.isFinite(Number(parsed.attempts)) ? Number(parsed.attempts) : 0,
             lastAttemptAt:
@@ -182,26 +209,131 @@ async function persistSnapshotDurably(entry: QueuedSyncSnapshot): Promise<Offlin
   return 'memory';
 }
 
+function resolveSnapshotProfileRef(
+  payload: DataDocument,
+  baseRevision: number | null,
+  explicitRef?: ProfileRef
+): ProfileRef | undefined {
+  if (explicitRef?.profileId) {
+    return explicitRef.revision !== undefined
+      ? { profileId: explicitRef.profileId, revision: explicitRef.revision }
+      : {
+          profileId: explicitRef.profileId,
+          ...(typeof baseRevision === 'number' ? { revision: baseRevision } : {}),
+        };
+  }
+  const activeId =
+    typeof payload?.activeProfileId === 'string' ? payload.activeProfileId.trim() : '';
+  if (!activeId) return undefined;
+  return typeof baseRevision === 'number'
+    ? { profileId: activeId, revision: baseRevision }
+    : { profileId: activeId };
+}
+
 /**
  * DATA-01: kalıcılığı doğrulayan ve serileştirilmiş kuyruk yazımı. Kalıcılık
  * doğrulaması olmayan eski senkron sürüm P0-03 ile kaldırıldı.
  */
 export async function enqueueOfflineSyncSnapshotDurable(
   payload: DataDocument,
-  baseRevision: number | null
+  baseRevision: number | null,
+  profileRef?: ProfileRef
 ): Promise<EnqueueOfflineResult> {
   return serializeQueueWrite(async () => {
     const existing = loadOfflineSyncSnapshot();
+    const resolvedBase =
+      baseRevision !== null ? baseRevision : existing ? existing.baseRevision : null;
+    const resolvedRef = resolveSnapshotProfileRef(payload, resolvedBase, profileRef);
     const entry: QueuedSyncSnapshot = {
       queuedAt: new Date().toISOString(),
-      baseRevision: baseRevision !== null ? baseRevision : existing ? existing.baseRevision : null,
+      baseRevision: resolvedBase,
       payload,
+      ...(resolvedRef ? { profileRef: resolvedRef } : {}),
       attempts: existing?.attempts ?? 0,
       lastAttemptAt: existing?.lastAttemptAt ?? null,
     };
     const storage = await persistSnapshotDurably(entry);
     return { ...entry, persisted: storage !== 'memory', storage };
   });
+}
+
+/**
+ * MIA Faz 1B Adım 11: ZORUNLU `WriteProfileRef` damgalı kuyruğa alma yardımcısı.
+ */
+export async function enqueueOfflineSyncForProfile(
+  payload: DataDocument,
+  ref: WriteProfileRef
+): Promise<EnqueueOfflineResult> {
+  if (!ref?.profileId?.trim()) {
+    throw new Error('Çevrimdışı kuyruğa almak için geçerli profileId zorunludur.');
+  }
+  if (!Number.isSafeInteger(ref.revision) || ref.revision < 0) {
+    throw new Error('Çevrimdışı kuyruğa almak için geçerli kaynak revision zorunludur.');
+  }
+  return enqueueOfflineSyncSnapshotDurable(payload, ref.revision, {
+    profileId: ref.profileId,
+    revision: ref.revision,
+  });
+}
+
+export interface FlushOfflineQueueResult {
+  status: 'empty' | 'synced' | 'conflict' | 'profile-conflict' | 'retry';
+  revision?: number;
+  error?: string;
+  nextDelayMs?: number;
+  exhausted?: boolean;
+}
+
+/**
+ * MIA Faz 1B Adım 11: Kuyruktaki anlık görüntüyü `PrimaryDataRepository` sözleşmesi
+ * ve isteğe bağlı `IProfileContext` izolasyon denetimiyle boşaltır.
+ */
+export async function flushOfflineQueueWithRepository(
+  repository: PrimaryDataRepository<DataDocument>,
+  options: { profileContext?: IProfileContext } = {}
+): Promise<FlushOfflineQueueResult> {
+  const queued = (await loadOfflineSyncSnapshotAsync()) || loadOfflineSyncSnapshot();
+  if (!queued) {
+    return { status: 'empty' };
+  }
+
+  if (options.profileContext && queued.profileRef?.profileId) {
+    try {
+      options.profileContext.assertCurrent({ profileId: queued.profileRef.profileId });
+    } catch (err) {
+      return {
+        status: 'profile-conflict',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  const res = await repository.save(queued.payload, {
+    expectedRevision: queued.baseRevision ?? undefined,
+    requirePrecondition: queued.baseRevision !== null,
+    reason: 'offline-queue-flush',
+  });
+
+  if (res.ok) {
+    await clearOfflineSyncSnapshot();
+    return { status: 'synced', revision: res.revision };
+  }
+
+  if (res.conflict) {
+    return {
+      status: 'conflict',
+      revision: res.revision,
+      error: res.error,
+    };
+  }
+
+  const attemptInfo = await recordOfflineQueueAttempt();
+  return {
+    status: 'retry',
+    error: res.error,
+    nextDelayMs: attemptInfo.nextDelayMs,
+    exhausted: attemptInfo.exhausted,
+  };
 }
 
 /** Başarısız gönderimde deneme sayacını artırır ve bir sonraki bekleme süresini döner. */

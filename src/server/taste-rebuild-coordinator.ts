@@ -1,11 +1,17 @@
 // ===========================================================================
-// Cinethos Taste Engine — Server Rebuild Coordinator (v1.5)
+// Cinethos Taste Engine — Server Rebuild Coordinator (v1.6)
 // Olay güdümlü (event-driven) arka plan profil yeniden hesaplama koordinatörü.
+//
+// SINIR KURALI (TasteRebuildCoordinator ↔ TasteEventProjector):
+// - TasteRebuildCoordinator: sunucu tarafı G/Ç ve yaşam döngüsü koordinatörüdür
+//   (depo okuma/yazma, bootstrap, arka plan TMDB hidrasyonu, worker dispatch).
+// - Saf olay→durum indirgeme ve kanıt matematiği YALNIZCA `core/taste/`
+//   içindeki `TasteEventProjector` ve `profile-aggregator` tarafından yapılır.
 //
 // MUTLAK KURALLAR:
 // - data/cinetrack-data.json ASLA değiştirilmez (yalnızca ilk soğuk başlatmada okunur)
 // - Ağır profil hesaplaması worker_threads (taste-profile-worker.ts) üzerinde çalışır
-// - Tüm data/taste/ yazımları atomiktir (taste-store üzerinden)
+// - Tüm data/taste/ yazımları atomik ve kilitlidir (taste-store üzerinden)
 // ===========================================================================
 
 import { randomUUID } from "node:crypto";
@@ -32,6 +38,7 @@ import {
   aggregateProfiles,
   type AggregatedProfiles,
 } from "../core/taste/profile-aggregator.ts";
+import { projectLearningSnapshot } from "../core/taste/taste-event-projector.ts";
 import {
   EXTRACTOR_VERSION,
   CONFIG_VERSION,
@@ -461,6 +468,7 @@ async function performRebuildOnce(dataDir: string = "data"): Promise<RebuildCoor
     };
   }
 
+  const projection = projectLearningSnapshot(events);
   const profiles = await executeAggregationOffMainThread(
     generationId,
     events,
@@ -469,7 +477,7 @@ async function performRebuildOnce(dataDir: string = "data"): Promise<RebuildCoor
     existingOverrides
   );
 
-  await writeTasteProfile(profiles.unified, dataDir);
+  await writeTasteProfile(profiles.unified, dataDir, projection.eventWatermark);
   const manifest = await readTasteManifest(dataDir);
 
   return {

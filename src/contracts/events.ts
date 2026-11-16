@@ -11,7 +11,7 @@
  * çoğaltılmaz (Faz 0 kararı).
  */
 
-import type { LibraryListId, MediaKind, ProfileRef } from './common.ts';
+import type { LibraryListId, MediaKind, WriteProfileRef } from './common.ts';
 
 /**
  * Uygulama olayının temel modeli (kullanıcı planı §3 AppEvent ile birebir).
@@ -32,13 +32,13 @@ export interface AppEvent<TPayload = Record<string, unknown>> {
   /** Olay yükü — `AppEventMap` üzerinden türe bağlanır. */
   readonly payload: TPayload;
   /**
-   * Olayın kaynağından gelen profil revision'ı (varsa). Outbox işleyicileri
+   * Olayın kaynağından gelen profil revision'ı (ZORUNLU). Outbox işleyicileri
    * işleme başlarken profil hâlâ aynıysa işlem yapar; değilse olayı
-   * `profile-switched` gerekçesiyle arşivler.
+   * `profile-switched` / `stale-revision` gerekçesiyle arşivler.
    */
-  readonly sourceRevision?: number;
-  /** Profil referansı kısayolu — ProfileRef uyumu. */
-  readonly ref?: ProfileRef;
+  readonly sourceRevision: number;
+  /** Profil referansı kısayolu — WriteProfileRef uyumu. */
+  readonly ref?: WriteProfileRef;
 }
 
 /**
@@ -53,31 +53,36 @@ export interface AppEvent<TPayload = Record<string, unknown>> {
  * - `TasteEvent` (zevk öğrenme) bu katalogda YOKTUR — özel model kalır.
  */
 export interface AppEventMap {
-  /** İçerik bir listeye eklendi (Faz 4 pilotu). */
+  /** İçerik bir listeye eklendi (Faz 4 pilotu) — kanonik mediaKey zorunlu. */
   'LibraryItemAdded': {
+    readonly mediaKey: string;
     readonly mediaType: MediaKind;
     readonly list: LibraryListId;
   };
   /** İçerik bilgisi değişti (başlık notu, bölüm ilerlemesi vb. alan yazımları). */
   'LibraryItemUpdated': {
+    readonly mediaKey: string;
     readonly mediaType: MediaKind;
     /** Değişen alan adları — artımlı işleme girdisi. */
     readonly changedFields: readonly string[];
   };
   /** İzleme durumu değişti (liste değişimi). */
   'LibraryStatusChanged': {
+    readonly mediaKey: string;
     readonly mediaType: MediaKind;
     readonly from: LibraryListId | null;
     readonly to: LibraryListId;
   };
   /** Puan değişti (Faz 4 pilotu). `null` = puan kaldırıldı. */
   'LibraryRatingChanged': {
+    readonly mediaKey: string;
     readonly mediaType: MediaKind;
     readonly rating: number | null;
     readonly previousRating?: number | null;
   };
   /** İçerik silindi (tombstone'a düştü — geri alma penceresi açık). */
   'LibraryItemRemoved': {
+    readonly mediaKey: string;
     readonly mediaType: MediaKind;
     /** Silinmeden önceki liste — sinyal geri alma için. */
     readonly previousList: LibraryListId | null;

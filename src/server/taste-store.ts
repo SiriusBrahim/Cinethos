@@ -55,7 +55,47 @@ export function resolveTastePaths(dataDir: string = "data"): TasteStorePaths {
 
 export const TASTE_PATHS: TasteStorePaths = resolveTastePaths("data");
 
+// === Yazma Serileştirme Kilidi (Faz 1B — eşzamanlı .tmp / bozulma önleme) ===
+const tasteWriteChains = new Map<string, Promise<unknown>>();
+
+function serializeTasteWrite<T>(dataDir: string, task: () => Promise<T>): Promise<T> {
+  const key = path.resolve(dataDir || "data");
+  const prev = tasteWriteChains.get(key) ?? Promise.resolve();
+  const next = prev.then(task, task);
+  const settled = next.then(
+    () => undefined,
+    () => undefined
+  );
+  tasteWriteChains.set(key, settled);
+  void settled.finally(() => {
+    if (tasteWriteChains.get(key) === settled) {
+      tasteWriteChains.delete(key);
+    }
+  });
+  return next;
+}
+
 // === Event Store ===
+
+/**
+ * Olay ekle (append-only, idempotent, kilitli — TP-005 / Faz 1B).
+ * Yeni eklenip eklenmediğini döndüren ayrıntılı sürüm.
+ */
+export async function appendTasteEventIdempotent(
+  event: TasteEvent,
+  dataDir: string = "data"
+): Promise<{ added: boolean; total: number }> {
+  return serializeTasteWrite(dataDir, async () => {
+    const paths = resolveTastePaths(dataDir);
+    const events = await readTasteEvents(dataDir);
+    if (events.some((e) => e.eventId === event.eventId)) {
+      return { added: false, total: events.length };
+    }
+    events.push(event);
+    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2));
+    return { added: true, total: events.length };
+  });
+}
 
 /**
  * Olay ekle (append-only, idempotent — TP-005)
@@ -64,13 +104,7 @@ export async function appendTasteEvent(
   event: TasteEvent,
   dataDir: string = "data"
 ): Promise<void> {
-  const paths = resolveTastePaths(dataDir);
-  const events = await readTasteEvents(dataDir);
-  if (events.some((e) => e.eventId === event.eventId)) {
-    return;
-  }
-  events.push(event);
-  await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2));
+  await appendTasteEventIdempotent(event, dataDir);
 }
 
 /**
@@ -92,22 +126,27 @@ export async function writeTasteEvents(
   events: TasteEvent[],
   dataDir: string = "data"
 ): Promise<void> {
-  const paths = resolveTastePaths(dataDir);
-  await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2));
+  return serializeTasteWrite(dataDir, async () => {
+    const paths = resolveTastePaths(dataDir);
+    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2));
+  });
 }
 
 // === Profile Store ===
 
 /**
- * Profili yaz (atomik, manifest güncelle)
+ * Profili yaz (atomik, kilitli, manifest güncelle)
  */
 export async function writeTasteProfile(
   profile: TasteProfile,
-  dataDir: string = "data"
+  dataDir: string = "data",
+  eventWatermark?: string
 ): Promise<void> {
-  const paths = resolveTastePaths(dataDir);
-  await writeJsonFileAtomicAsync(paths.profile, JSON.stringify(profile, null, 2));
-  await updateManifest(dataDir);
+  return serializeTasteWrite(dataDir, async () => {
+    const paths = resolveTastePaths(dataDir);
+    await writeJsonFileAtomicAsync(paths.profile, JSON.stringify(profile, null, 2));
+    await writeManifestUnlocked(dataDir, eventWatermark);
+  });
 }
 
 /**
@@ -127,15 +166,17 @@ export async function readTasteProfile(
 // === Index Store ===
 
 /**
- * İndeksi yaz (atomik, manifest güncelle)
+ * İndeksi yaz (atomik, kilitli, manifest güncelle)
  */
 export async function writeTasteIndex(
   index: ContentTasteIndex,
   dataDir: string = "data"
 ): Promise<void> {
-  const paths = resolveTastePaths(dataDir);
-  await writeJsonFileAtomicAsync(paths.index, JSON.stringify(index, null, 2));
-  await updateManifest(dataDir);
+  return serializeTasteWrite(dataDir, async () => {
+    const paths = resolveTastePaths(dataDir);
+    await writeJsonFileAtomicAsync(paths.index, JSON.stringify(index, null, 2));
+    await writeManifestUnlocked(dataDir);
+  });
 }
 
 /**
@@ -155,11 +196,14 @@ export async function readTasteIndex(
 // === Manifest ===
 
 /**
- * Manifest'i güncelle (TP-027)
- * Profil veya index yazıldığında otomatik çağrılır.
+ * Manifest'i güncelle (TP-027) — iç yardımcı (kilit altından çağrılır).
  */
-async function updateManifest(dataDir: string = "data"): Promise<void> {
+async function writeManifestUnlocked(
+  dataDir: string = "data",
+  eventWatermark?: string
+): Promise<void> {
   const paths = resolveTastePaths(dataDir);
+  const previous = eventWatermark === undefined ? await readTasteManifest(dataDir) : null;
   const manifest: TasteManifest = {
     generationId: randomUUID(),
     taxonomyVersion: TAXONOMY_VERSION,
@@ -172,7 +216,7 @@ async function updateManifest(dataDir: string = "data"): Promise<void> {
       events: paths.events,
       profile: paths.profile,
     },
-    eventWatermark: "",
+    eventWatermark: eventWatermark ?? previous?.eventWatermark ?? "",
   };
   await writeJsonFileAtomicAsync(paths.manifest, JSON.stringify(manifest, null, 2));
 }
@@ -216,9 +260,11 @@ export async function writeTasteObjections(
   objections: TasteFeatureObjection[],
   dataDir: string = "data"
 ): Promise<void> {
-  const paths = resolveTastePaths(dataDir);
-  await writeJsonFileAtomicAsync(
-    paths.objections,
-    JSON.stringify(objections, null, 2)
-  );
+  return serializeTasteWrite(dataDir, async () => {
+    const paths = resolveTastePaths(dataDir);
+    await writeJsonFileAtomicAsync(
+      paths.objections,
+      JSON.stringify(objections, null, 2)
+    );
+  });
 }

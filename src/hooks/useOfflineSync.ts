@@ -151,9 +151,16 @@ export function useOfflineSync(
 
       if (!navigator.onLine) {
         // DATA-01: yazma tamamlanmadan "kaydedildi" denmez.
+        const baseRev = getLastKnownServerRevision();
         const enq = await enqueueOfflineSyncSnapshotDurable(
           payload,
-          getLastKnownServerRevision()
+          baseRev,
+          payload.activeProfileId
+            ? {
+                profileId: payload.activeProfileId,
+                ...(baseRev !== null ? { revision: baseRev } : {}),
+              }
+            : undefined
         );
         setPendingSync(true);
         setUnpersistedWarning(!enq.persisted || hasUnpersistedIdbFallback());
@@ -182,9 +189,16 @@ export function useOfflineSync(
       }
 
       if (res.status === 0) {
+        const baseRev = getLastKnownServerRevision();
         const enq = await enqueueOfflineSyncSnapshotDurable(
           payload,
-          getLastKnownServerRevision()
+          baseRev,
+          payload.activeProfileId
+            ? {
+                profileId: payload.activeProfileId,
+                ...(baseRev !== null ? { revision: baseRev } : {}),
+              }
+            : undefined
         );
         setPendingSync(true);
         setUnpersistedWarning(!enq.persisted || hasUnpersistedIdbFallback());
