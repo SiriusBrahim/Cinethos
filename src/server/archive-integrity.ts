@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { DataDocument } from '../core/cinetrack-core.ts';
+import type { DataDocument } from '../core/cinethos-core.ts';
 
 /**
  * P0-01: Arşiv geri yüklemesinde "gerçekten aynı içerik mi?" sorusunu yanıtlar.

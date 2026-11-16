@@ -76,7 +76,7 @@ export async function exportStockData(options: StockExportOptions = {}): Promise
   ];
 
   const dateStr = new Date().toISOString().split('T')[0];
-  const fileName = `cinetrack-stock-${source}-${dateStr}.${format}`;
+  const fileName = `cinethos-stock-${source}-${dateStr}.${format}`;
 
   if (format === 'csv') {
     const csvContent = convertItemsToCsv(allItems);
@@ -145,7 +145,7 @@ function convertItemsToCsv(items: TmdbItem[]): string {
   ];
 
   const lines = [
-    '#CINETRACK-STOCK',
+    '#CINETHOS-STOCK',
     `#ExportDate,${new Date().toISOString()}`,
     `#TotalItems,${items.length}`,
     headers.join(','),
@@ -622,7 +622,7 @@ export async function applyStockImport(
   // Arka plan stok poster hidrasyonunu tetikle
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
-      new CustomEvent('cinetrack:stock-hydrated', { detail: { checkNeeded: true } })
+      new CustomEvent('cinethos:stock-hydrated', { detail: { checkNeeded: true } })
     );
   }
 

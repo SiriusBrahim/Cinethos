@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { Profile, SavedItem } from '../core/cinetrack-core.ts';
+import type { Profile, SavedItem } from '../core/cinethos-core.ts';
 import {
   enrichSavedItemsFromCinemaKunye,
   type CinemaKunyeDocument,

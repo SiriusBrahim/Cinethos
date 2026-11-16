@@ -9,7 +9,7 @@ import {
   computeLovedSimilarityScore,
   buildTasteProfileV3,
   scoreCandidatesV3,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 
 test('1. Tür Benzerliği (calculateGenreSim): Dice katsayısı ortak türleri doğru hesaplar', () => {
   // Tam eşleşme

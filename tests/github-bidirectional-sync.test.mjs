@@ -10,7 +10,7 @@ import {
   stringifyDeterministic,
 } from '../src/server/persistent-store.ts';
 import { createDataStorage } from '../src/server/storage.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 import { resolveConfig } from '../src/server/config.ts';
 import { deriveSyncUiBanner } from '../src/core/sync-display.ts';
 import {
@@ -18,14 +18,14 @@ import {
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
   computeTasteProfileSignature,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   DERIVED_PROFILE_SCHEMA_VERSION,
   computeDerivedProfileContentHash,
 } from '../src/core/derived-profile-cache.ts';
 
 const TEST_OWNER = 'test-owner';
-const TEST_REPO = 'cinetrack-private-sync-spec';
+const TEST_REPO = 'cinethos-private-sync-spec';
 const TEST_BRANCH = 'main';
 const TEST_SECRET_TOKEN = 'github_pat_11TESTSECRETTOKEN9999999999999999';
 
@@ -457,14 +457,14 @@ test('Senaryo 3: Her iki tarafta aynı kayıt bulunduğunda duplicate oluşmaz v
     const moviesPath = path.join(tmpDir, 'catalog', 'movies.json');
     const tvPath = path.join(tmpDir, 'catalog', 'tv.json');
     const manifestPath = path.join(tmpDir, 'catalog', 'manifest.json');
-    const userDataPath = path.join(tmpDir, 'cinetrack-data.json');
+    const userDataPath = path.join(tmpDir, 'cinethos-data.json');
 
     gh.seedFile('data/catalog/movies.json', fs.readFileSync(moviesPath, 'utf8'));
     if (fs.existsSync(tvPath)) {
       gh.seedFile('data/catalog/tv.json', fs.readFileSync(tvPath, 'utf8'));
     }
     gh.seedFile('data/catalog/manifest.json', fs.readFileSync(manifestPath, 'utf8'));
-    gh.seedFile('data/cinetrack-data.json', fs.readFileSync(userDataPath, 'utf8'));
+    gh.seedFile('data/cinethos-data.json', fs.readFileSync(userDataPath, 'utf8'));
 
     await gh.installAndRun(async () => {
       const report = await store.reconcileWithGitHub();
@@ -834,7 +834,7 @@ test('Senaryo 10: Pull sırasında bir dosya bozuk olduğunda sağlam dosyalar a
     );
 
     gh.seedFile(
-      'data/cinetrack-data.json',
+      'data/cinethos-data.json',
       makeUserDataDoc([
         {
           id: 'profile-main',
@@ -1086,7 +1086,7 @@ test('Senaryo 15: Varsayılan silmeme (no-deletion) politikası, >1 MB Git Blob 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-bidir-s15-'));
   const gh = createMockGitHubHarness({ simulate403TooLargeForOver1Mb: true });
   try {
-    const { app, storage, persistentStore } = createCineTrackApp({
+    const { app, storage, persistentStore } = createCinethosApp({
       dataDir: tmpDir,
       githubToken: TEST_SECRET_TOKEN,
       githubOwner: TEST_OWNER,
@@ -1147,7 +1147,7 @@ test('Senaryo 15: Varsayılan silmeme (no-deletion) politikası, >1 MB Git Blob 
       buildValidManifest(largeRemoteMovies, { 'tv:888': makeTvRecord(888, { title: 'Uzak Korunacak Dizi' }) })
     );
     gh.seedFile(
-      'data/cinetrack-data.json',
+      'data/cinethos-data.json',
       makeUserDataDoc(
         [
           {
@@ -1690,7 +1690,7 @@ test('Aşama 5.13: Herkese açık depoda (public) kullanıcı onayı/yapılandı
       assert.ok(syncRes.repoVisibilityWarning && syncRes.repoVisibilityWarning.includes('herkese açıktır'));
       assert.equal(syncRes.filesBlockedPublic.length, 0, 'Kullanıcı onayı ile açık depoya kişisel veriler senkronize edilebilmeli');
       assert.ok(syncRes.filesCommitted.some((f) => f.startsWith('data/profiles/')));
-      assert.ok(syncRes.filesCommitted.includes('data/cinetrack-data.json'));
+      assert.ok(syncRes.filesCommitted.includes('data/cinethos-data.json'));
     });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -1730,7 +1730,7 @@ test('Aşama 5.15: Açık depoda (public) onaysızken gizlilik koruması devrede
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-phase5-15-'));
   const gh = createMockGitHubHarness({ isPrivate: false });
   try {
-    // Sunucu CINETRACK_DATA_REPO_IS_PUBLIC=false ile başlatılmış ama uzak depo gerçekte public
+    // Sunucu CINETHOS_DATA_REPO_IS_PUBLIC=false ile başlatılmış ama uzak depo gerçekte public
     const { store, storage } = createIsolatedSyncEnv(tmpDir, { isPublicRepo: false });
 
     store.upsertCatalogItems([makeMovieRecord(101)]);
@@ -1758,14 +1758,14 @@ test('Aşama 5.15: Açık depoda (public) onaysızken gizlilik koruması devrede
       assert.equal(blockedRes.ok, true);
       assert.ok(blockedRes.filesBlockedPublic.some((f) => f.includes('data/profiles/*')));
       assert.ok(blockedRes.filesBlockedPublic.some((f) => f.includes('data/catalog/')));
-      assert.equal(gh.files.has('data/cinetrack-data.json'), false);
+      assert.equal(gh.files.has('data/cinethos-data.json'), false);
       assert.equal(gh.files.has('data/profiles/profile-default.json'), false);
       assert.equal(gh.files.has('data/catalog/movies.json'), false);
 
       const blockedReconcile = await store.reconcileWithGitHub();
-      assert.ok(blockedReconcile.filesBlockedPublic.includes('data/cinetrack-data.json'));
+      assert.ok(blockedReconcile.filesBlockedPublic.includes('data/cinethos-data.json'));
       assert.ok(blockedReconcile.filesBlockedPublic.includes('data/catalog/movies.json'));
-      assert.equal(gh.files.has('data/cinetrack-data.json'), false);
+      assert.equal(gh.files.has('data/cinethos-data.json'), false);
 
       // 2) Yalnızca kişisel onay verildiğinde kişisel dosyalar eşitlenir, katalog koruması devam eder
       const consent = store.setPublicPersonalSyncConsent(true);
@@ -1774,7 +1774,7 @@ test('Aşama 5.15: Açık depoda (public) onaysızken gizlilik koruması devrede
 
       const personalOnlyRes = await store.syncToGitHub();
       assert.equal(personalOnlyRes.ok, true);
-      assert.ok(personalOnlyRes.filesCommitted.includes('data/cinetrack-data.json'));
+      assert.ok(personalOnlyRes.filesCommitted.includes('data/cinethos-data.json'));
       assert.ok(personalOnlyRes.filesCommitted.includes('data/profiles/profile-default.json'));
       assert.ok(personalOnlyRes.filesBlockedPublic.some((f) => f.includes('data/catalog/')));
 
@@ -1877,7 +1877,7 @@ test('Aşama 5.16: 1 MB üzeri dosyalarda Git Blob API geri okuma hash doğrulam
 test('Kayıpsız Birleştirme Temeli 1: Kısmi/unhydrated istemci yalnızca yeni eklenen 1 filmi gönderdiğinde mevcut 50 film silinmez, 51 film olarak birleşir ve sahte profile-default gerçek profile katlanır', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-lossless-merge-1-'));
   try {
-    const { app, storage } = createCineTrackApp({
+    const { app, storage } = createCinethosApp({
       dataDir: tmpDir,
       githubToken: '',
     });
@@ -1962,13 +1962,13 @@ test('Kayıpsız Birleştirme Temeli 1: Kısmi/unhydrated istemci yalnızca yeni
       });
       assert.equal(rawPutRes.status, 428, 'Merge başlığı olmayan ham PUT önkoşul istemeye devam etmeli');
 
-      // X-CineTrack-Merge: 1 + X-CineTrack-Unhydrated-Default: 1 ile kısmi hafızalı istemci isteği
+      // X-Cinethos-Merge: 1 + X-Cinethos-Unhydrated-Default: 1 ile kısmi hafızalı istemci isteği
       const mergePutRes = await fetch(`${baseUrl}/api/data`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-CineTrack-Merge': '1',
-          'X-CineTrack-Unhydrated-Default': '1',
+          'X-Cinethos-Merge': '1',
+          'X-Cinethos-Unhydrated-Default': '1',
         },
         body: JSON.stringify(
           makeUserDataDoc(
@@ -2038,7 +2038,7 @@ test('Kayıpsız Birleştirme Temeli 2: Arka planda GitHub otomatik senkronizasy
   const t3Tombstone = new Date(baseMs + 180_000).toISOString();
   const t4ReAdd = new Date(baseMs + 240_000).toISOString();
   try {
-    const { app, storage, persistentStore } = createCineTrackApp({
+    const { app, storage, persistentStore } = createCinethosApp({
       dataDir: tmpDir,
       githubToken: TEST_SECRET_TOKEN,
       githubOwner: TEST_OWNER,
@@ -2096,7 +2096,7 @@ test('Kayıpsız Birleştirme Temeli 2: Arka planda GitHub otomatik senkronizasy
 
       // 2. Bu sırada GitHub'da (başka cihazdan) Film 30 eklenir ve arka plan otomatik senkronizasyonu çalışır
       gh.seedFile(
-        'data/cinetrack-data.json',
+        'data/cinethos-data.json',
         makeUserDataDoc(
           [
             {
@@ -2156,7 +2156,7 @@ test('Kayıpsız Birleştirme Temeli 2: Arka planda GitHub otomatik senkronizasy
         headers: {
           'Content-Type': 'application/json',
           'If-Match': initialEtag,
-          'X-CineTrack-Merge': '1',
+          'X-Cinethos-Merge': '1',
         },
         body: JSON.stringify(
           makeUserDataDoc(
@@ -2215,7 +2215,7 @@ test('Kayıpsız Birleştirme Temeli 2: Arka planda GitHub otomatik senkronizasy
         headers: {
           'Content-Type': 'application/json',
           'If-Match': `"rev-${putJson.revision}"`,
-          'X-CineTrack-Merge': '1',
+          'X-Cinethos-Merge': '1',
         },
         body: JSON.stringify(
           makeUserDataDoc(
@@ -2252,7 +2252,7 @@ test('Kayıpsız Birleştirme Temeli 2: Arka planda GitHub otomatik senkronizasy
         const finalSync = await persistentStore.reconcileWithGitHub();
         assert.equal(finalSync.ok, true);
         assert.equal(finalSync.verifiedEqual, true);
-        const remoteData = gh.readRemoteJson('data/cinetrack-data.json');
+        const remoteData = gh.readRemoteJson('data/cinethos-data.json');
         assert.deepEqual(
           remoteData.profiles[0].items.map((it) => it.id).sort((a, b) => a - b),
           [10, 20, 30, 40]
@@ -2270,7 +2270,7 @@ test('Kayıpsız Birleştirme Temeli 3: pushToGitHub (/api/sync/push) uzaktaki m
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-lossless-merge-3-'));
   const gh = createMockGitHubHarness();
   try {
-    const { app, storage } = createCineTrackApp({
+    const { app, storage } = createCinethosApp({
       dataDir: tmpDir,
       githubToken: TEST_SECRET_TOKEN,
       githubOwner: TEST_OWNER,
@@ -2309,7 +2309,7 @@ test('Kayıpsız Birleştirme Temeli 3: pushToGitHub (/api/sync/push) uzaktaki m
 
     // Uzak GitHub deposunda önceden kayıtlı 3 içerik bulunuyor (dizi ilerlemesi dahil)
     gh.seedFile(
-      'data/cinetrack-data.json',
+      'data/cinethos-data.json',
       makeUserDataDoc(
         [
           {
@@ -2380,7 +2380,7 @@ test('Kayıpsız Birleştirme Temeli 3: pushToGitHub (/api/sync/push) uzaktaki m
           .sort();
         assert.deepEqual(mergedKeys, ['movie:101', 'movie:201', 'movie:202', 'tv:301']);
 
-        const remoteDoc = gh.readRemoteJson('data/cinetrack-data.json');
+        const remoteDoc = gh.readRemoteJson('data/cinethos-data.json');
         const remoteKeys = remoteDoc.profiles[0].items
           .map((it) => `${it.media_type}:${it.id}`)
           .sort();
@@ -2407,22 +2407,22 @@ test('Kayıpsız Birleştirme Temeli 4: process.env icindeki suresi dolmus PAT 4
   try {
     const resolved = resolveConfig({
       processEnv: {
-        CINETRACK_GITHUB_PAT: STALE_ENV_PAT,
-        CINETRACK_DATA_OWNER: TEST_OWNER,
-        CINETRACK_DATA_REPO: TEST_REPO,
-        CINETRACK_DATA_BRANCH: TEST_BRANCH,
+        CINETHOS_GITHUB_PAT: STALE_ENV_PAT,
+        CINETHOS_DATA_OWNER: TEST_OWNER,
+        CINETHOS_DATA_REPO: TEST_REPO,
+        CINETHOS_DATA_BRANCH: TEST_BRANCH,
       },
-      dotEnvContent: `CINETRACK_GITHUB_PAT=${VALID_DOTENV_TOKEN}\n`,
+      dotEnvContent: `CINETHOS_GITHUB_PAT=${VALID_DOTENV_TOKEN}\n`,
     });
 
     assert.equal(resolved.githubToken, STALE_ENV_PAT);
-    assert.equal(resolved.githubTokenSource, 'env:CINETRACK_GITHUB_PAT');
+    assert.equal(resolved.githubTokenSource, 'env:CINETHOS_GITHUB_PAT');
     assert.equal(resolved.githubTokenCandidates.length, 2);
     assert.equal(resolved.githubTokenCandidates[1].token, VALID_DOTENV_TOKEN);
-    assert.equal(resolved.githubTokenCandidates[1].source, 'file:.env:CINETRACK_GITHUB_PAT');
+    assert.equal(resolved.githubTokenCandidates[1].source, 'file:.env:CINETHOS_GITHUB_PAT');
 
     const mutatedReasons = [];
-    const { app } = createCineTrackApp({
+    const { app } = createCinethosApp({
       dataDir: tmpDir,
       githubToken: resolved.githubToken,
       githubTokenSource: resolved.githubTokenSource,
@@ -2446,7 +2446,7 @@ test('Kayıpsız Birleştirme Temeli 4: process.env icindeki suresi dolmus PAT 4
     });
 
     gh.seedFile(
-      'data/cinetrack-data.json',
+      'data/cinethos-data.json',
       makeUserDataDoc(
         [
           {
@@ -2484,7 +2484,7 @@ test('Kayıpsız Birleştirme Temeli 4: process.env icindeki suresi dolmus PAT 4
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-CineTrack-Merge': 'lossless',
+          'X-Cinethos-Merge': 'lossless',
           'If-Match': '"rev-0"',
         },
         body: JSON.stringify(
@@ -2531,9 +2531,9 @@ test('Kayıpsız Birleştirme Temeli 4: process.env icindeki suresi dolmus PAT 4
         const statusRes = await fetch(`${baseUrl}/api/sync/status`);
         const statusJson = await statusRes.json();
         assert.equal(statusJson.lastError, null);
-        assert.equal(statusJson.tokenDiagnostics?.source, 'file:.env:CINETRACK_GITHUB_PAT');
+        assert.equal(statusJson.tokenDiagnostics?.source, 'file:.env:CINETHOS_GITHUB_PAT');
 
-        const remoteDoc = gh.readRemoteJson('data/cinetrack-data.json');
+        const remoteDoc = gh.readRemoteJson('data/cinethos-data.json');
         const remoteKeys = remoteDoc.profiles[0].items
           .map((it) => `${it.media_type}:${it.id}`)
           .sort();

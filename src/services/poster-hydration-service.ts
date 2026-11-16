@@ -7,7 +7,7 @@
 
 import { fetchTmdbCached } from './api.ts';
 import { makeMediaKey } from '../core/keys.ts';
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 
 export type PosterHydrationFetcher = (
   path: string,
@@ -663,7 +663,7 @@ export function startStockPosterHydration(params: {
         params.onPatches?.(ready);
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
-            new CustomEvent('cinetrack:stock-hydrated', { detail: { patches: ready } })
+            new CustomEvent('cinethos:stock-hydrated', { detail: { patches: ready } })
           );
         }
       }

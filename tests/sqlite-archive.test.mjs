@@ -19,7 +19,7 @@ import {
   isSqliteArchiveAvailable,
   SqliteArchiveValidationError,
 } from '../src/server/sqlite-archive.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 
 const AS_OF = '2026-11-13T10:00:00.000Z';
 const PNG_BYTES = Buffer.concat([
@@ -90,7 +90,7 @@ function makeSnapshot() {
 }
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-sqlite-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-sqlite-'));
 }
 
 const fakePosterFetcher = async (url) => {
@@ -104,7 +104,7 @@ test('SQLite arşivi: profil, stok, zevk haritası ve posterler tam gidiş-dön�
     return;
   }
   const dir = makeTempDir();
-  const filePath = path.join(dir, 'cinetrack.sqlite');
+  const filePath = path.join(dir, 'cinethos.sqlite');
 
   const written = await writeSqliteArchive(makeSnapshot(), filePath, {
     fetchPoster: fakePosterFetcher,
@@ -170,7 +170,7 @@ test('SQLite arşivi: posterler önbelleğe geri yazılır (çevrimdışı görs
     return;
   }
   const dir = makeTempDir();
-  const filePath = path.join(dir, 'cinetrack.sqlite');
+  const filePath = path.join(dir, 'cinethos.sqlite');
   const cacheDir = path.join(dir, 'cache', 'posters');
 
   await writeSqliteArchive(makeSnapshot(), filePath, { fetchPoster: fakePosterFetcher });
@@ -251,7 +251,7 @@ test('HTTP rotaları: SQLite arşivi indir → geri yükle uçtan uca', async (t
     return;
   }
   const dataDir = makeTempDir();
-  const { app, storage } = createCineTrackApp({
+  const { app, storage } = createCinethosApp({
     dataDir,
     maxDataBytes: 25 * 1024 * 1024,
     maxProfiles: 20,

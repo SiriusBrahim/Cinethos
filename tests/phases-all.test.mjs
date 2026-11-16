@@ -36,7 +36,7 @@ import {
   selectBalancedRecommendations,
   topUpFilteredCandidates,
   updateTasteMapWithBatch,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   loadPersistentPoolData,
   loadPersistentTasteMap,
@@ -58,7 +58,7 @@ import {
   generateIcsCalendar,
   importItemsFromCsv,
 } from '../src/core/exporters.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 import { validateTmdbResponseShape } from '../src/services/api.ts';
 import { formatMatchBadge } from '../src/i18n/index.ts';
 import {
@@ -79,7 +79,7 @@ function createMemoryLocalStorage() {
 }
 
 async function withServer(appOptions, fn) {
-  const { app } = createCineTrackApp(appOptions);
+  const { app } = createCinethosApp(appOptions);
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -399,7 +399,7 @@ test('Faz 3: ardışık yenilemelerde ring1 tekrar seçilmez, ring0 önceliklidi
 // FAZ 4 & FAZ 5: Sunucu Yazma Güvenliği, Revizyon 409, Snapshot & TMDB Proxy
 // ============================================================================
 test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut sınırı, 403 Origin, 401 Token, 429 Rate Limit, Snapshot geri yükleme ve Sezon endpointi', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-phase45-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-phase45-'));
   try {
     await withServer(
       {
@@ -424,7 +424,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
             Origin: 'https://kotu-site.example',
           },
           body: JSON.stringify({ version: 3, activeProfileId: 'profile-1', profiles: [makeSampleProfile('profile-1')] }),
@@ -453,7 +453,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
           },
           body: JSON.stringify(validDoc1),
         });
@@ -467,7 +467,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
             'If-Match': '"rev-1"',
           },
           body: JSON.stringify({
@@ -484,7 +484,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
             'If-Match': '"rev-1"',
           },
           body: JSON.stringify(validDoc1),
@@ -504,7 +504,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
             'If-Match': '"rev-2"',
           },
           body: JSON.stringify(dropDoc),
@@ -518,9 +518,9 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
             'If-Match': '"rev-2"',
-            'X-CineTrack-Confirm-Drop': '1',
+            'X-Cinethos-Confirm-Drop': '1',
           },
           body: JSON.stringify(dropDoc),
         });
@@ -528,7 +528,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
 
         // 6. Döner snapshot listeleme ve geri yükleme (8 öğeli yedeğe geri dön)
         const backupsRes = await fetch(`${baseUrl}/api/data/backups`, {
-          headers: { 'X-CineTrack-Token': 'gizli-test-token' },
+          headers: { 'X-Cinethos-Token': 'gizli-test-token' },
         });
         assert.equal(backupsRes.status, 200);
         const { backups } = await backupsRes.json();
@@ -540,7 +540,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
           },
           body: JSON.stringify({ backupId: snapshotWith8.id }),
         });
@@ -556,7 +556,7 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-CineTrack-Token': 'gizli-test-token',
+            'X-Cinethos-Token': 'gizli-test-token',
           },
           body: JSON.stringify({ junk: hugeString }),
         });
@@ -809,7 +809,7 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
   // 3. CSV dışa ve içe aktarma (Cinethos + Letterboxd 5-yıldız ölçekleme)
   const csvOut = exportItemsToCsv(profileA.items);
   const reimported = importItemsFromCsv(csvOut);
-  assert.equal(reimported.detectedFormat, 'cinetrack');
+  assert.equal(reimported.detectedFormat, 'cinethos');
   assert.equal(reimported.importedItems.length, 3);
 
   const letterboxdCsv = [
@@ -853,35 +853,35 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
 // ============================================================================
 // YEREL (LOCALHOST) SIFIR ORTAM DEĞİŞKENİ, BUN.LOCK TEMİZLİĞİ VE GOLDEN SKORLAMA
 // ============================================================================
-test('Yerel mimari güvenceleri: bun.lock yoktur, VITE_ sırrı yoktur, CINETRACK_HOST=127.0.0.1 ve sıfır env ile token/rate-limit devre dışıdır', async () => {
+test('Yerel mimari güvenceleri: bun.lock yoktur, VITE_ sırrı yoktur, CINETHOS_HOST=127.0.0.1 ve sıfır env ile token/rate-limit devre dışıdır', async () => {
   const repoRoot = path.resolve(import.meta.dirname, '..');
 
   // 1. bun.lock temizlenmiş olmalı
   assert.equal(fs.existsSync(path.join(repoRoot, 'bun.lock')), false, 'bun.lock depoda bulunmamalı');
 
-  // 2. .env.example içinde VITE_ sırrı veya CINETRACK_MAX_DATA_BYTES olmamalı; CINETRACK_TOKEN= ve CINETRACK_TMDB_RATE_LIMIT= boş varsayılanla belgelenmeli (BUG-13)
+  // 2. .env.example içinde VITE_ sırrı veya CINETHOS_MAX_DATA_BYTES olmamalı; CINETHOS_TOKEN= ve CINETHOS_TMDB_RATE_LIMIT= boş varsayılanla belgelenmeli (BUG-13)
   const envExample = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
   assert.equal(envExample.includes('VITE_'), false, '.env.example içinde VITE_ değişkeni bulunmamalı');
-  assert.equal(envExample.includes('CINETRACK_TOKEN='), true);
-  assert.equal(envExample.includes('CINETRACK_TMDB_RATE_LIMIT='), true);
-  assert.equal(envExample.includes('CINETRACK_MAX_DATA_BYTE'), false);
-  assert.equal(envExample.includes('CINETRACK_HOST=127.0.0.1'), true);
-  assert.equal(envExample.includes('CINETRACK_TRUST_PROXY=false'), true);
-  assert.equal(envExample.includes('CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=false'), true);
+  assert.equal(envExample.includes('CINETHOS_TOKEN='), true);
+  assert.equal(envExample.includes('CINETHOS_TMDB_RATE_LIMIT='), true);
+  assert.equal(envExample.includes('CINETHOS_MAX_DATA_BYTE'), false);
+  assert.equal(envExample.includes('CINETHOS_HOST=127.0.0.1'), true);
+  assert.equal(envExample.includes('CINETHOS_TRUST_PROXY=false'), true);
+  assert.equal(envExample.includes('CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC=false'), true);
 
   const apiTs = fs.readFileSync(path.join(repoRoot, 'src/services/api.ts'), 'utf8');
-  assert.equal(apiTs.includes('VITE_CINETRACK_TOKEN'), false, 'İstemci kodunda VITE_CINETRACK_TOKEN bulunmamalı');
+  assert.equal(apiTs.includes('VITE_CINETHOS_TOKEN'), false, 'İstemci kodunda VITE_CINETHOS_TOKEN bulunmamalı');
 
-  // 3. server.ts içinde CINETRACK_HOST = '127.0.0.1' ve tek kaynaklı DEFAULT_MAX_DATA_BYTES (25 MiB) sabiti korunmalı
+  // 3. server.ts içinde CINETHOS_HOST = '127.0.0.1' ve tek kaynaklı DEFAULT_MAX_DATA_BYTES (25 MiB) sabiti korunmalı
   const serverTs = fs.readFileSync(path.join(repoRoot, 'server.ts'), 'utf8');
   const limitsTs = fs.readFileSync(path.join(repoRoot, 'src/core/limits.ts'), 'utf8');
-  assert.ok(serverTs.includes("const CINETRACK_HOST = '127.0.0.1'"), 'CINETRACK_HOST sabiti 127.0.0.1 olmalı');
+  assert.ok(serverTs.includes("const CINETHOS_HOST = '127.0.0.1'"), 'CINETHOS_HOST sabiti 127.0.0.1 olmalı');
   assert.ok(serverTs.includes('const maxDataBytes = DEFAULT_MAX_DATA_BYTES;'), 'server.ts tek kaynaklı DEFAULT_MAX_DATA_BYTES kullanmalı');
   assert.ok(limitsTs.includes('export const DEFAULT_MAX_DATA_BYTES = 25 * 1024 * 1024;'), 'DEFAULT_MAX_DATA_BYTES 25 MiB olmalı');
-  assert.equal(serverTs.includes('CINETRACK_MAX_DATA_BYTE'), false, 'maxDataBytes ortam değişkenine bağlanmamalı');
+  assert.equal(serverTs.includes('CINETHOS_MAX_DATA_BYTE'), false, 'maxDataBytes ortam değişkenine bağlanmamalı');
 
   // 4. Sıfır güvenlik seçeneği ile (varsayılan localhost) token istemeden yazma ve hız sınırı olmadan TMDB erişimi çalışmalı
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-zeroenv-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-zeroenv-'));
   try {
     await withServer({ dataDir: tmpDir }, async (baseUrl) => {
       const putRes = await fetch(`${baseUrl}/api/data`, {
@@ -1329,7 +1329,7 @@ test('>2 MB Yedek Yükleme Desteği: 2 MB üzeri büyük yedek dosyaları istemc
   const parsed = parseBackupText(serializedBackup);
   assert.equal(parsed.items.length, 6000, '6000 öğenin tamamı kırpılmadan içe aktarılmalı');
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-large-backup-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-large-backup-'));
   try {
     await withServer({ dataDir: tmpDir }, async (baseUrl) => {
       const putRes = await fetch(`${baseUrl}/api/data`, {

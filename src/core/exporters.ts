@@ -3,7 +3,7 @@ import {
   safeHttpsUrl,
   type Profile,
   type SavedItem,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import {
   buildCinemaKunyeContentId,
   createEmptyCinemaKunyeDocument,
@@ -378,7 +378,7 @@ export function exportItemsToCsv(
   if (profile || (profileInfo?.cinemaKunye && kunyeEntries.length > 0)) {
     const pref = profile?.preferences || ({} as Partial<Profile['preferences']>);
     lines.push('');
-    lines.push('#CINETRACK-PROFILE');
+    lines.push('#CINETHOS-PROFILE');
     if (profile) {
       lines.push(`#ProfileId,${escapeCsvCell(profile.id || '')}`);
       lines.push(`#ProfileName,${escapeCsvCell(profile.name || '')}`);
@@ -416,7 +416,7 @@ export interface CsvImportResult {
   cinemaKunye: CinemaKunyeDocument;
   profileBlock: CsvProfileBlock | null;
   skippedCount: number;
-  detectedFormat: 'letterboxd' | 'imdb' | 'cinetrack' | 'generic';
+  detectedFormat: 'letterboxd' | 'imdb' | 'cinethos' | 'generic';
 }
 
 function stableCustomIdFromTitle(title: string, year: string, mediaType: 'movie' | 'tv'): string {
@@ -431,7 +431,7 @@ function stableCustomIdFromTitle(title: string, year: string, mediaType: 'movie'
  * normal satır olarak okunur.
  */
 const CSV_PROFILE_DIRECTIVES = new Set([
-  '#CINETRACK-PROFILE',
+  '#CINETHOS-PROFILE',
   '#ProfileId',
   '#ProfileName',
   '#ProfileCreatedAt',
@@ -452,7 +452,7 @@ function isCsvProfileDirectiveRow(row: string[]): boolean {
   return row.length > 0 && CSV_PROFILE_DIRECTIVES.has(String(row[0] || '').trim());
 }
 
-/** exportItemsToCsv'nin #CINETRACK-PROFILE bölümünde yazdığı profil verileri. */
+/** exportItemsToCsv'nin #CINETHOS-PROFILE bölümünde yazdığı profil verileri. */
 export interface CsvProfileBlock {
   profileId?: string;
   profileName?: string;
@@ -474,7 +474,7 @@ function pipeList(value: string): string[] {
 }
 
 /**
- * #CINETRACK-PROFILE bölümünü geri okur. Yazıldığında boş dizi "" olarak çıkıyor,
+ * #CINETHOS-PROFILE bölümünü geri okur. Yazıldığında boş dizi "" olarak çıkıyor,
  * bu yüzden alan var ama değer boşsa [] döner (bilerek temizlenmiş tercih).
  */
 export function parseCsvProfileBlock(rows: string[][]): CsvProfileBlock | null {
@@ -484,7 +484,7 @@ export function parseCsvProfileBlock(rows: string[][]): CsvProfileBlock | null {
   for (const row of rows) {
     if (!isCsvProfileDirectiveRow(row)) continue;
     const directive = String(row[0] || '').trim();
-    if (directive === '#SinemaKunyesi' || directive === '#CINETRACK-PROFILE' || directive === '#END') {
+    if (directive === '#SinemaKunyesi' || directive === '#CINETHOS-PROFILE' || directive === '#END') {
       continue;
     }
     found = true;
@@ -582,7 +582,7 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
 
   let detectedFormat: CsvImportResult['detectedFormat'] = 'generic';
   if (header.includes('tmdbid') && header.includes('rating10')) {
-    detectedFormat = 'cinetrack';
+    detectedFormat = 'cinethos';
   } else if (header.includes('const') || header.includes('your rating') || header.includes('title type')) {
     detectedFormat = 'imdb';
   } else if (header.includes('letterboxd uri') || (header.includes('name') && header.includes('watched date'))) {
@@ -623,7 +623,7 @@ export function importItemsFromCsv(csvText: string): CsvImportResult {
   for (let r = 1; r < rows.length; r += 1) {
     const row = rows[r];
     if (isCsvProfileDirectiveRow(row)) {
-      continue; // Profil verisi bölümü (#CINETRACK-PROFILE … #END) üstte ayrıca ayrıştırıldı
+      continue; // Profil verisi bölümü (#CINETHOS-PROFILE … #END) üstte ayrıca ayrıştırıldı
     }
     const rawTitle = (row[idxTitle] || '').trim();
     if (!rawTitle) {
@@ -832,7 +832,7 @@ export function extractUpcomingReleaseEvents(
         const sNum = item.next_episode_to_air.season_number;
         const eNum = item.next_episode_to_air.episode_number;
         events.push({
-          uid: `cinetrack-tv-${item.id}-s${sNum}e${eNum}@cinetrack.local`,
+          uid: `cinethos-tv-${item.id}-s${sNum}e${eNum}@cinethos.local`,
           title: `${item.title || item.name} — S${String(sNum).padStart(2, '0')}E${String(eNum).padStart(2, '0')}`,
           date: airDate,
           mediaType: 'tv',
@@ -844,7 +844,7 @@ export function extractUpcomingReleaseEvents(
       const relDate = item.release_date.slice(0, 10);
       if (/^\d{4}-\d{2}-\d{2}$/.test(relDate) && relDate >= referenceDateIso && item.status !== 'completed') {
         events.push({
-          uid: `cinetrack-movie-${item.id}-${relDate}@cinetrack.local`,
+          uid: `cinethos-movie-${item.id}-${relDate}@cinethos.local`,
           title: `${item.title || item.name} (Vizyon / Yayın)`,
           date: relDate,
           mediaType: 'movie',

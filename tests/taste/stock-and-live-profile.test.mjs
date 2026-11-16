@@ -322,7 +322,7 @@ describe("Derin Sinema Kabuk, Exclude Override ve V1.5 Etiket İtirazı", () => 
     assert.strictEqual(adapted.reasonIds.length, 0);
   });
 
-  it("GET /api/taste/metric/:id kanıt başlıklarını zenginleştirir ve POST /api/taste/objection cinetrack-data.json'a dokunmadan etiketi düşürür", async () => {
+  it("GET /api/taste/metric/:id kanıt başlıklarını zenginleştirir ve POST /api/taste/objection cinethos-data.json'a dokunmadan etiketi düşürür", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-derin-sinema-"));
     try {
       const userDoc = {
@@ -346,7 +346,7 @@ describe("Derin Sinema Kabuk, Exclude Override ve V1.5 Etiket İtirazı", () => 
           },
         ],
       };
-      const userDataPath = path.join(tmpDir, "cinetrack-data.json");
+      const userDataPath = path.join(tmpDir, "cinethos-data.json");
       const rawUserJson = JSON.stringify(userDoc, null, 2);
       fs.writeFileSync(userDataPath, rawUserJson, "utf8");
 
@@ -423,7 +423,7 @@ describe("Derin Sinema Kabuk, Exclude Override ve V1.5 Etiket İtirazı", () => 
         const afterObjBody = await afterObjRes.json();
         assert.strictEqual(afterObjBody.explanation.positiveEvidence.length, 0);
 
-        // cinetrack-data.json bayt-bayt dokunulmamış olmalı
+        // cinethos-data.json bayt-bayt dokunulmamış olmalı
         assert.strictEqual(fs.readFileSync(userDataPath, "utf8"), rawUserJson);
       } finally {
         await new Promise((resolve) => server.close(resolve));

@@ -1,8 +1,8 @@
-# CineTrack — Veri Bütünlüğü, Kalıcı Depolama ve Öneri Motoru Düzeltme Spec'i
+# Cinethos — Veri Bütünlüğü, Kalıcı Depolama ve Öneri Motoru Düzeltme Spec'i
 
 ## 0. Görev ve çalışma ilkesi
 
-Bu spec'i güncel CineTrack deposunda uygula. Amaç, aşağıdaki doğrulanabilir veri bütünlüğü, kalıcı depolama, önbellek ve öneri motoru sorunlarını gidermek; gerektiğinde kodu daha modüler ve test edilebilir hâle getirmektir.
+Bu spec'i güncel Cinethos deposunda uygula. Amaç, aşağıdaki doğrulanabilir veri bütünlüğü, kalıcı depolama, önbellek ve öneri motoru sorunlarını gidermek; gerektiğinde kodu daha modüler ve test edilebilir hâle getirmektir.
 
 **Önemli kullanım bağlamı:** Uygulamayı şu anda yalnızca sahibi kullanıyor. Bu görev kapsamında ağ erişimi varsayılanlarını, `0.0.0.0` / `127.0.0.1` davranışını veya kimlik doğrulama politikasını değiştirme. Bu konuları bu düzeltme paketinin kapsamı dışında tut. Yalnızca başka bir düzeltme için zorunluysa, davranışı değiştirmeden risk ve bağımlılığı raporla. Bu kapsam dışı bırakma; veri bütünlüğü, dosya güvenliği, hata yönetimi veya GitHub token'ının gizli tutulması gerekliliklerini kaldırmaz.
 
@@ -17,7 +17,7 @@ Bu spec'i güncel CineTrack deposunda uygula. Amaç, aşağıdaki doğrulanabili
    - `server.ts`
    - `src/services/api.ts`
    - `src/core/keys.ts`
-   - `src/core/cinetrack-core.ts`
+   - `src/core/cinethos-core.ts`
    - `src/App.tsx`
    - `src/core/relationship-explorer.ts`
    - ilgili test dosyaları ve kalıcı veri şemaları.
@@ -130,7 +130,7 @@ Uygulama tek kullanıcı tarafından kullanılıyor. Bu spec ağ erişimi/kimlik
 9. Ağ hatası, GitHub rate limit'i, yetki hatası, conflict ve bozuk yanıtları ayırt et. Token veya gizli başlıkları loglara yazma.
 10. Yedi döner yedek mevcutsa davranışını doğrula: yedek sayısı sınırlı kalmalı, en yeni geçerli yedekler korunmalı ve yedek oluşturma başarısız olduğunda önceki sağlam yedekler silinmemeli.
 11. Geri yükleme akışında dosya şemasını doğrula; bozuk veya beklenmeyen veri mevcut geçerli dosyanın üzerine yazılmamalı.
-12. GitHub deposunun `private/public` ayarıyla `CINETRACK_DATA_REPO_IS_PUBLIC` değişkeninin tutarlılığını kontrol et. Bu spec ağ/kimlik doğrulama tasarımını değiştirmeyi istemez; yalnızca yanlış yapılandırmayı anlaşılır biçimde raporla.
+12. GitHub deposunun `private/public` ayarıyla `CINETHOS_DATA_REPO_IS_PUBLIC` değişkeninin tutarlılığını kontrol et. Bu spec ağ/kimlik doğrulama tasarımını değiştirmeyi istemez; yalnızca yanlış yapılandırmayı anlaşılır biçimde raporla.
 13. TMDB verilerini kalıcı depolama koşulları bakımından mevcut uygulama politikasını ve TMDB'nin geçerli kullanım koşullarını doğrula. Belirsizse hukuki kesinlik iddia etme; saklanan alanları ve olası saklama sınırlarını raporla.
 
 ### Kabul kriterleri

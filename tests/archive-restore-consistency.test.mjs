@@ -15,7 +15,7 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 
-import { createCineTrackApp, MAX_SQLITE_ARCHIVE_UPLOAD_BYTES } from '../src/server/app.ts';
+import { createCinethosApp, MAX_SQLITE_ARCHIVE_UPLOAD_BYTES } from '../src/server/app.ts';
 import {
   writeSqliteArchive,
   isSqliteArchiveAvailable,
@@ -73,12 +73,12 @@ function makeSnapshot() {
 }
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-restore-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-restore-'));
 }
 
 async function startApp(existingDataDir, securityOverrides = {}) {
   const dataDir = existingDataDir || makeTempDir();
-  const { app, storage } = createCineTrackApp({
+  const { app, storage } = createCinethosApp({
     dataDir,
     maxDataBytes: 25 * 1024 * 1024,
     maxProfiles: 20,
@@ -535,7 +535,7 @@ test('SEC: SQLite arşivi oluşturma uzaktan erişim modunda anahtar ister', asy
 
     const authorized = await fetch(`${secureCtx.baseUrl}/api/archive/sqlite`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CineTrack-Token': 'test-token-123' },
+      headers: { 'Content-Type': 'application/json', 'X-Cinethos-Token': 'test-token-123' },
       body: JSON.stringify(snapshot),
     });
     assert.equal(authorized.status, 200);

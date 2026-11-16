@@ -12,13 +12,13 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 | Döngü | 7 (madge) | **3 SCC**, bunlardan **1'i gerçek değer döngüsü** | madge basit döngüleri tek tek sayar; aynı 5'li core kümesi tek SCC'dir |
 | Katman ihlali | core→services: 2 dosya | **4 değer importu**, 2 dosya | `relationship-explorer` 3 servise, `actor-recommendations` 1 servise bağlı |
 | Paylaşılan sembol | `SavedItem` 7 dosya | **57 dosya (8 değer / 49 tip)** | Önceki sayım yalnızca değer importlarını görmüş; tip taşıma kararı daha da güçlü |
-| IndexedDB deposu | 12 | **12** | `cinetrack-relationship-cache` `DB_NAME` sabitiyle açılıyor, inline değil |
-| localStorage | "7+" | **36 anahtar/şablon** | `ct:*`, `cinetrack.*`, `cinetrack_*` aileleri; şablonlar `*` ile normalize |
+| IndexedDB deposu | 12 | **12** | `cinethos-relationship-cache` `DB_NAME` sabitiyle açılıyor, inline değil |
+| localStorage | "7+" | **36 anahtar/şablon** | `ct:*`, `cinethos.*`, `cinethos_*` aileleri; şablonlar `*` ile normalize |
 | Test dosyası | 25 | **25 dosya / 204 statik `test()` bloğu** | Çalıştırıcı: `npm test` **422/422**, `npm run test:taste` **362/362** |
-| En büyük dosya | — | `github-bidirectional-sync.ts` 4.754 · `cinetrack-core.ts` 4.691 · `App.tsx` 4.651 · `persistent-store.ts` 4.230 | `core` 20.390 satır, `server` 22.224 satır |
+| En büyük dosya | — | `github-bidirectional-sync.ts` 4.754 · `cinethos-core.ts` 4.691 · `App.tsx` 4.651 · `persistent-store.ts` 4.230 | `core` 20.390 satır, `server` 22.224 satır |
 
 **Teyit edilen döngü ayrıntısı:**
-1. Core 5'lisi (`cinetrack-core`, `actor-recommendations`, `candidate-pool-store-port`, `cinema-kunye`, `ring-lifecycle`): dört `import type` ile kırılıyor — `core/media/types.ts` taşıması bunu tamamen bitirir.
+1. Core 5'lisi (`cinethos-core`, `actor-recommendations`, `candidate-pool-store-port`, `cinema-kunye`, `ring-lifecycle`): dört `import type` ile kırılıyor — `core/media/types.ts` taşıması bunu tamamen bitirir.
 2. `relationship-explorer` ↔ `relationship-wordlists`: tek `import type` (`RelationshipType`) ile kırılıyor.
 3. `persistent-store` → `github-bidirectional-sync` → `github-catalog-sync` → `persistent-store`: **tek gerçek değer döngüsü**; `SyncStorePort` çıkarılmadan Faz 2 taşıması yapılmamalı.
 
@@ -36,8 +36,8 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 | 8 | Veri sahipliği haritası | ✅ | [`faz0-veri-sahipligi.md`](./faz0-veri-sahipligi.md) §2–4 — sunucu dosyaları, 14 IDB deposu, localStorage anahtarları |
 | 9 | Modüller arası veri akışı | ✅ | [`faz0-is-akislari.md`](./faz0-is-akislari.md) — ekleme, durum geçişleri, zevk profili, öneri, Zevk Haritası/ilişki, önbellek, GitHub, silme/geri yükleme akışları |
 | 10 | Profil değiştirme yarışları | ⚠️ Veri katmanı test edildi, asenkron öneri yarışı doğrulanmadı | `tests/faz0-baseline.test.mjs` (profil izolasyonu + 409) geçti; `profileId` damgası eksikliği `faz0-is-akislari.md` §8 |
-| 11 | SQLite/JSON veri bütünlüğü | ✅ | `sqlite-primary-store.test.mjs` 4/4 (migration, bozuk JSON kurtarma, revizyon seçimi) + canlı `CINETRACK_STORAGE=sqlite` açılışında migration doğrulandı |
-| 12 | Canlı yerel veri denetimi | ✅ | `data/cinetrack-data.json`: `version 3`, `schemaVersion 3`, `engineVersion v3.2.0`, 1 profil |
+| 11 | SQLite/JSON veri bütünlüğü | ✅ | `sqlite-primary-store.test.mjs` 4/4 (migration, bozuk JSON kurtarma, revizyon seçimi) + canlı `CINETHOS_STORAGE=sqlite` açılışında migration doğrulandı |
+| 12 | Canlı yerel veri denetimi | ✅ | `data/cinethos-data.json`: `version 3`, `schemaVersion 3`, `engineVersion v3.2.0`, 1 profil |
 | 13 | Testlerin modüllerle eşleştirilmesi | ✅ | `faz0-envanter-veri.md` §9 (26 test dosyası, hedef kaynaklar) |
 | 14 | Lint/TypeScript | ✅ | `npm run lint` temiz (eslint + 2× tsc) · `npm test` 425/425 |
 | 15 | E2E testleri | ⚠️ Çalıştırıldı: **4/11 geçti**, 7 başarısızlık testlerin eski düzene yazılmış olmasından | §0.2 — ayrıntılı senaryo/temel neden tablosu |
@@ -92,39 +92,39 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 
 | Döngü | Nitelik | Faz 0 kararı |
 | --- | --- | --- |
-| `cinetrack-core.ts` ↔ `actor-recommendations.ts` | **Yalnızca `import type`** (`FavoriteActorInfo`) | Zararsız; Faz 1'de tip `core/media/types.ts`'e taşınır |
-| `cinetrack-core.ts` ↔ `candidate-pool-store-port.ts` | `import type` (`PersistentCandidatePoolData`) | Aynı |
-| `cinetrack-core.ts` ↔ `cinema-kunye.ts` | `import type` (`SavedItem`) | Aynı |
-| `cinetrack-core.ts` ↔ `ring-lifecycle.ts` | `import type` (`PersistentTasteMapData`, `TasteMapEntry`) | Aynı |
+| `cinethos-core.ts` ↔ `actor-recommendations.ts` | **Yalnızca `import type`** (`FavoriteActorInfo`) | Zararsız; Faz 1'de tip `core/media/types.ts`'e taşınır |
+| `cinethos-core.ts` ↔ `candidate-pool-store-port.ts` | `import type` (`PersistentCandidatePoolData`) | Aynı |
+| `cinethos-core.ts` ↔ `cinema-kunye.ts` | `import type` (`SavedItem`) | Aynı |
+| `cinethos-core.ts` ↔ `ring-lifecycle.ts` | `import type` (`PersistentTasteMapData`, `TasteMapEntry`) | Aynı |
 | `persistent-store.ts` ↔ `github-bidirectional-sync.ts` | **GERÇEK değer döngüsü**: persistent-store `GitHubBidirectionalSyncManager` sınıfını import ediyor; sync 9 sembolü persistent-store'dan alıyor | **Faz 2'de kırılır:** sync manager'ın ihtiyaçları `SyncStorePort` arayüzüne çıkarılır; persistent-store somut portu verir, sınıfı import etmez |
 | `persistent-store.ts` ↔ `github-bidirectional-sync.ts` ↔ `github-catalog-sync.ts` | Aynı zincirin devamı | Aynı port ile çözülür |
 | `relationship-explorer.ts` → `relationship-semantics.ts` → `relationship-wordlists.ts` | Yönsel zincir (madge döngü işaretli) | Faz 5'te doğrulanır; wordlist saf veri modülü olduğundan riske düşük |
 
 ## 3. Paylaşılan Semboller (tip modülü adayları)
 
-`cinetrack-core.ts`'ten en çok import edilenler: **`SavedItem` (7 dosya)**, **`makeMediaKey` (4)**, **`DataDocument` (3)**, `findSavedItem` (2), `normalizeSavedItem` (1).
+`cinethos-core.ts`'ten en çok import edilenler: **`SavedItem` (7 dosya)**, **`makeMediaKey` (4)**, **`DataDocument` (3)**, `findSavedItem` (2), `normalizeSavedItem` (1).
 
-→ **Faz 1'in ilk işi:** `src/core/media/types.ts` (`SavedItem`, `DataDocument`, `FavoriteActorInfo`, `PersistentCandidatePoolData`, `PersistentTasteMapData`, `TasteMapEntry`) + `src/core/media/keys.ts` (`makeMediaKey`, `parseMediaKey`, `canonicalizeMediaKey` — mevcut `core/keys.ts` buraya taşınır). `cinetrack-core.ts` bu modüllerden yeniden export eder → 4 tip döngüsü anında kopar, export katmanı uyumluluğu korunur.
+→ **Faz 1'in ilk işi:** `src/core/media/types.ts` (`SavedItem`, `DataDocument`, `FavoriteActorInfo`, `PersistentCandidatePoolData`, `PersistentTasteMapData`, `TasteMapEntry`) + `src/core/media/keys.ts` (`makeMediaKey`, `parseMediaKey`, `canonicalizeMediaKey` — mevcut `core/keys.ts` buraya taşınır). `cinethos-core.ts` bu modüllerden yeniden export eder → 4 tip döngüsü anında kopar, export katmanı uyumluluğu korunur.
 
 ## 4. Depolama Envanteri (mülkiyet tablosu — Faz 2 repository'lerinin temeli)
 
 ### IndexedDB (12 depo)
 | Depo | İçerik | MIA sahibi | Bugün erişen |
 | --- | --- | --- | --- |
-| `cinetrack-profile-db` | Profil dokümanı | Veri | profile service'leri |
-| `cinetrack-user-lists-db` | Kullanıcı listeleri | Veri | storage-idb |
-| `cinetrack-stock-db` | İçerik stoku | İçerik | stock-engine |
-| `cinetrack-encodings-db` | Zevk kodlamaları | Zevk/Hafıza | encoding-service, relationship-explorer |
-| `cinetrack-relationship-cache` | İlişki önbelleği | İlişkiler | relationship-cache |
-| `cinetrack-series-index-db` | Dizi indeksi | İçerik | series-service |
-| `cinetrack-actor-credits-db` | Oyuncu filmografisi | İçerik | actor servisi |
-| `cinetrack-poster-lru-db` | Poster LRU | İçerik | poster-cache-manager |
-| `cinetrack-offline-queue-db` | Sunucuya yazma kuyruğu | Senkron | offline-queue |
-| `cinetrack-skip-log-db` / `cinetrack-surfaced-db` | Öneri geri bildirimi | Öneri | öneri akışı |
-| `cinetrack-ui-prefs-db` | UI tercihleri | Deneyim | UI bileşenleri |
+| `cinethos-profile-db` | Profil dokümanı | Veri | profile service'leri |
+| `cinethos-user-lists-db` | Kullanıcı listeleri | Veri | storage-idb |
+| `cinethos-stock-db` | İçerik stoku | İçerik | stock-engine |
+| `cinethos-encodings-db` | Zevk kodlamaları | Zevk/Hafıza | encoding-service, relationship-explorer |
+| `cinethos-relationship-cache` | İlişki önbelleği | İlişkiler | relationship-cache |
+| `cinethos-series-index-db` | Dizi indeksi | İçerik | series-service |
+| `cinethos-actor-credits-db` | Oyuncu filmografisi | İçerik | actor servisi |
+| `cinethos-poster-lru-db` | Poster LRU | İçerik | poster-cache-manager |
+| `cinethos-offline-queue-db` | Sunucuya yazma kuyruğu | Senkron | offline-queue |
+| `cinethos-skip-log-db` / `cinethos-surfaced-db` | Öneri geri bildirimi | Öneri | öneri akışı |
+| `cinethos-ui-prefs-db` | UI tercihleri | Deneyim | UI bileşenleri |
 
 ### localStorage (sahiplik karışık — Faz 2'de `keys.ts`'e kaydedilir)
-`cinetrack.profile.${profileId}.preferences.v1`, `.watchlist.v1`, `cinetrack_disliked_cache`, `cinetrack_evidence_objections`, `ct:library-view`, `ct:mobile-dashboard:${key}` (DashboardRepository'ye taşınacak — P2 bulgusu), `cinetrack_offline_sync_queue_v1`, DIRTY_KEY vb.
+`cinethos.profile.${profileId}.preferences.v1`, `.watchlist.v1`, `cinethos_disliked_cache`, `cinethos_evidence_objections`, `ct:library-view`, `ct:mobile-dashboard:${key}` (DashboardRepository'ye taşınacak — P2 bulgusu), `cinethos_offline_sync_queue_v1`, DIRTY_KEY vb.
 
 **Kural (Faz 2'den itibaren):** her anahtar `keys.ts`'te sahibiyle kayıtlı; kayıtsız anahtar ESLint kuralıyla engellenir.
 
@@ -151,7 +151,7 @@ Bu bölüm, aşağıdaki envanterin **kod üzerinde yeniden üretilebilir ölç�
 
 | Test dosyası | Korumadığı alan | Taşımada risk |
 | --- | --- | --- |
-| `core.test.mjs` | cinetrack-core hesaplamaları | Yüksek — export katmanı korunmalı |
+| `core.test.mjs` | cinethos-core hesaplamaları | Yüksek — export katmanı korunmalı |
 | `persistent-store.test.mjs`, `sqlite-*.test.mjs`, `archive-restore-consistency.test.mjs` | Veri katmanı | Yüksek (Faz 2) |
 | `github-bidirectional-sync.test.mjs`, `offline-queue-durability.test.mjs` | Senkron | Yüksek (Faz 2) |
 | `relationship-explorer.test.mjs`, `loved-similarity.test.mjs`, `feat-03-encoding-relationships.test.mjs` | Zevk/İlişki | Yüksek (Faz 5) |

@@ -1,6 +1,6 @@
 /**
  * Kaydedilmiş listelerde O(1) arama indeksi.
- * `cinetrack-core.findSavedItem` aynı öncelik kurallarını buradan uygular;
+ * `cinethos-core.findSavedItem` aynı öncelik kurallarını buradan uygular;
  * MediaGrid gibi yüzlerce kart üreten çağıranlar indeksi bir kez kurup her kartta
  * tekrar tekrar 2000+ kayıt taramaktan kurtulur.
  */

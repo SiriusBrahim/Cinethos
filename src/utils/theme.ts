@@ -10,7 +10,7 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
 
 const STORAGE_KEY = 'ct:theme';
-const EVENT_NAME = 'cinetrack:theme-change';
+const EVENT_NAME = 'cinethos:theme-change';
 
 export function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'dark' || value === 'system';

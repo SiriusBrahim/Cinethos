@@ -1,4 +1,4 @@
-import { type DataDocument } from '../core/cinetrack-core.ts';
+import { type DataDocument } from '../core/cinethos-core.ts';
 import {
   normalizeCinemaKunyeDocument,
   type CinemaKunyeDocument,
@@ -100,10 +100,10 @@ export function parseTmdbSourceFromHeaders(headers: Headers): {
   staleReason?: string;
   staleAgeSeconds?: number;
 } {
-  const rawSource = headers.get('X-CineTrack-Source') as TmdbDataSource | null;
-  const rawCache = headers.get('X-CineTrack-Cache') as 'hit' | 'miss' | 'stale' | null;
-  const staleReason = headers.get('X-CineTrack-Stale-Reason') || undefined;
-  const rawAge = headers.get('X-CineTrack-Stale-Age-Seconds');
+  const rawSource = headers.get('X-Cinethos-Source') as TmdbDataSource | null;
+  const rawCache = headers.get('X-Cinethos-Cache') as 'hit' | 'miss' | 'stale' | null;
+  const staleReason = headers.get('X-Cinethos-Stale-Reason') || undefined;
+  const rawAge = headers.get('X-Cinethos-Stale-Age-Seconds');
   const staleAgeSeconds = rawAge ? Number(rawAge) : undefined;
 
   const source: TmdbDataSource =
@@ -396,17 +396,17 @@ export async function pushServerDataDetailed(
 
   const revToCheck = options.baseRevision !== undefined ? options.baseRevision : lastKnownServerRevision;
   if (options.forceOverwrite) {
-    headers['X-CineTrack-Force-Write'] = '1';
+    headers['X-Cinethos-Force-Write'] = '1';
   } else if (typeof revToCheck === 'number' && Number.isSafeInteger(revToCheck) && revToCheck >= 0) {
     headers['If-Match'] = `"rev-${revToCheck}"`;
   }
   if (options.confirmBulkDelete) {
-    headers['X-CineTrack-Confirm-Drop'] = '1';
+    headers['X-Cinethos-Confirm-Drop'] = '1';
   }
   if (options.mergeStrategy === 'lossless' && !options.forceOverwrite) {
-    headers['X-CineTrack-Merge'] = '1';
+    headers['X-Cinethos-Merge'] = '1';
     if (options.foldUnhydratedDefaultProfile) {
-      headers['X-CineTrack-Unhydrated-Default'] = '1';
+      headers['X-Cinethos-Unhydrated-Default'] = '1';
     }
   }
 
@@ -1237,8 +1237,8 @@ export async function downloadVerifiedBackupBinary(params: {
     });
     usedStreamFallback = true;
     const headerLen = Number(res.headers.get('content-length') || 0);
-    const headerSha = res.headers.get('x-cinetrack-sha256') || undefined;
-    const headerName = res.headers.get('x-cinetrack-filename') || undefined;
+    const headerSha = res.headers.get('x-cinethos-sha256') || undefined;
+    const headerName = res.headers.get('x-cinethos-filename') || undefined;
     effectiveExpectedSize = headerLen > 0 ? headerLen : undefined;
     effectiveExpectedSha = headerSha;
     if (headerName) effectiveFileName = headerName;
@@ -1258,7 +1258,7 @@ export async function downloadVerifiedBackupBinary(params: {
   const arrayBuffer = await res.arrayBuffer();
   const computedSha256 = await computeSha256HexBrowser(arrayBuffer);
   const responseContentType = res.headers.get('content-type');
-  const headerSha = res.headers.get('x-cinetrack-sha256') || effectiveExpectedSha;
+  const headerSha = res.headers.get('x-cinethos-sha256') || effectiveExpectedSha;
 
   if (params.kind === 'xlsx') {
     const check = validateDownloadedXlsxBytes(arrayBuffer, {
@@ -1727,7 +1727,7 @@ export async function downloadSqliteArchive(
     return {
       ok: true,
       blob,
-      fileName: match?.[1] || `cinetrack-archive-${Date.now()}.sqlite`,
+      fileName: match?.[1] || `cinethos-archive-${Date.now()}.sqlite`,
       ...(stats ? { stats } : {}),
     };
   } catch (error: any) {

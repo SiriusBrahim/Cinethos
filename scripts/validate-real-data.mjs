@@ -6,7 +6,7 @@
 // TMDB verileriyle uçtan uca doğrular.
 //
 // MUTLAK KURALLAR:
-//  1. data/cinetrack-data.json ASLA yazılmaz — yalnızca okunur.
+//  1. data/cinethos-data.json ASLA yazılmaz — yalnızca okunur.
 //  2. TMDB API Key hiçbir yerde hardcode edilmez; process.env.TMDB_API_KEY
 //     (veya proje .env dosyası) üzerinden okunur.
 //  3. Bu script ana uygulamanın UI/sunucu rotalarını değiştirmez;
@@ -74,7 +74,7 @@ const KEYWORD_TO_METRIC = fs.existsSync(keywordMappingsPath)
 // ===========================================================================
 function parseArgs(argv) {
   const args = {
-    data: path.join(PROJECT_ROOT, "data", "cinetrack-data.json"),
+    data: path.join(PROJECT_ROOT, "data", "cinethos-data.json"),
     csv: null,
     seed: 20261102,
     sampleSize: 12,
@@ -96,7 +96,7 @@ Kullanım:
   node --env-file=.env scripts/validate-real-data.mjs [seçenekler]
 
 Seçenekler:
-  --data <yol>        cinetrack-data.json yolu (varsayılan: data/cinetrack-data.json)
+  --data <yol>        cinethos-data.json yolu (varsayılan: data/cinethos-data.json)
   --csv <yol>         CSV dışa aktarımından veri yükle (Title,Year,Rating10,Status,MediaType,tmdbID)
   --seed <n>          Rastgele seçim için tohum (tekrarlanabilirlik)
   --sample-size <n>   Örneklem büyüklüğü (varsayılan: 12)
@@ -939,7 +939,7 @@ async function main() {
       console.error(
         `HATA: ${args.data} bulunamadı.\n` +
           `  Veri dosyası bu çalışma kopyasında yoksa --csv <yol> ile CSV dışa aktarımınızı verin:\n` +
-          `  node --env-file=.env scripts/validate-real-data.mjs --csv "C:\\Users\\<kullanici>\\Downloads\\cinetrack-profile-default-*.csv"`
+          `  node --env-file=.env scripts/validate-real-data.mjs --csv "C:\\Users\\<kullanici>\\Downloads\\cinethos-profile-default-*.csv"`
       );
       process.exit(1);
     }
@@ -956,7 +956,7 @@ async function main() {
   );
 
   // Taksonomi: çalışma zamanı artefaktı (drift önleme)
-  const taxonomyPath = path.join(PROJECT_ROOT, "data", "taste", "cinetrack-taste-taxonomy.json");
+  const taxonomyPath = path.join(PROJECT_ROOT, "data", "taste", "cinethos-taste-taxonomy.json");
   if (!fs.existsSync(taxonomyPath)) {
     console.error(`HATA: Taksonomi dosyası bulunamadı: ${taxonomyPath}`);
     process.exit(1);
@@ -1101,7 +1101,7 @@ async function main() {
   console.log(`  Shrinkage: k = ${SHRINKAGE_K}  |  Yön eşiği: ${MIN_EVIDENCE_FOR_DIRECTIONAL} kanıt`);
 
   reportWarnings(warnings);
-  console.log("\nDoğrulama tamamlandı. (cinetrack-data.json dosyasına yazılmadı — salt okunur çalıştırıldı)");
+  console.log("\nDoğrulama tamamlandı. (cinethos-data.json dosyasına yazılmadı — salt okunur çalıştırıldı)");
 }
 
 main().catch((err) => {

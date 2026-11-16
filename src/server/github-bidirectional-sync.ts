@@ -16,7 +16,7 @@ import {
   validItemId,
   type DataDocument,
   type Profile,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { BRAND_NAME, BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
 import {
   mergeTwoSavedItemsLossless,
@@ -66,11 +66,11 @@ import type { createDataStorage } from './storage.ts';
 
 /**
  * Senkronize edilen kalıcı veri envanteri:
- * 1. data/catalog/movies.json   -> Ortak film metaverileri (`movie:<id>`), özel depoda varsayılan; açık depoda yalnızca `CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=true` ile senkronize edilir.
- * 2. data/catalog/tv.json       -> Ortak dizi metaverileri (`tv:<id>`), özel depoda varsayılan; açık depoda yalnızca `CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=true` ile senkronize edilir.
- * 3. data/catalog/manifest.json -> Katalog sayım ve içerik hash özeti, özel depoda varsayılan; açık depoda yalnızca `CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=true` ile senkronize edilir.
- * 4. data/cinetrack-data.json   -> Kullanıcı profilleri, izleme listeleri, puanlar ve tercihler (yalnızca özel depoda; açık depoda `CINETRACK_ALLOW_PUBLIC_PERSONAL_SYNC=true` gerekir).
- * 5. data/profiles/*.json       -> Profil bazlı türetilmiş öneri puanları ve halkaları (yalnızca özel depoda; açık depoda `CINETRACK_ALLOW_PUBLIC_PERSONAL_SYNC=true` gerekir).
+ * 1. data/catalog/movies.json   -> Ortak film metaverileri (`movie:<id>`), özel depoda varsayılan; açık depoda yalnızca `CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC=true` ile senkronize edilir.
+ * 2. data/catalog/tv.json       -> Ortak dizi metaverileri (`tv:<id>`), özel depoda varsayılan; açık depoda yalnızca `CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC=true` ile senkronize edilir.
+ * 3. data/catalog/manifest.json -> Katalog sayım ve içerik hash özeti, özel depoda varsayılan; açık depoda yalnızca `CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC=true` ile senkronize edilir.
+ * 4. data/cinethos-data.json   -> Kullanıcı profilleri, izleme listeleri, puanlar ve tercihler (yalnızca özel depoda; açık depoda `CINETHOS_ALLOW_PUBLIC_PERSONAL_SYNC=true` gerekir).
+ * 5. data/profiles/*.json       -> Profil bazlı türetilmiş öneri puanları ve halkaları (yalnızca özel depoda; açık depoda `CINETHOS_ALLOW_PUBLIC_PERSONAL_SYNC=true` gerekir).
  *
  * Geçici önbellekler, `.bak`, `data/backups/*`, `data/sync-state.json`, `.tmp`, `.corrupt.*`,
  * `.env` ve derleme çıktıları envantere kesinlikle dahil edilmez.
@@ -100,7 +100,7 @@ export const SYNC_STATIC_INVENTORY: ReadonlyArray<{
     description: 'Katalog film/dizi sayıları ve içerik özeti doğrulaması',
   },
   {
-    repoPath: 'data/cinetrack-data.json',
+    repoPath: 'data/cinethos-data.json',
     category: 'user_data',
     personal: true,
     description: 'Kullanıcı profilleri, izleme listeleri, puanlar, tercihler ve favori oyuncular',
@@ -108,13 +108,13 @@ export const SYNC_STATIC_INVENTORY: ReadonlyArray<{
   // Faz 6: Taste Engine — varsayılan olarak yalnızca manifest + profile senkrona girer (TP-006)
   // index ve events boyut nedeniyle dışarıda kalır
   {
-    repoPath: 'data/taste/cinetrack-taste-manifest.json',
+    repoPath: 'data/taste/cinethos-taste-manifest.json',
     category: 'taste_manifest',
     personal: true,
     description: 'Taste Engine veri özeti ve versiyon bilgisi',
   },
   {
-    repoPath: 'data/taste/cinetrack-taste-profile.json',
+    repoPath: 'data/taste/cinethos-taste-profile.json',
     category: 'taste_profile',
     personal: true,
     description: 'Kullanıcı Taste Engine profili ve metrikler',
@@ -621,7 +621,7 @@ function inspectUserDataRawContent(
   rawItemsCount: number;
   uniqueItemsCount: number;
 } {
-  const repoPath = 'data/cinetrack-data.json';
+  const repoPath = 'data/cinethos-data.json';
   const sizeBytes = measureUtf8Bytes(rawText);
   if (sizeBytes > maxBytes) {
     return {
@@ -686,7 +686,7 @@ function inspectUserDataRawContent(
         recordCount: 0,
         uniqueKeyCount: 0,
         sha,
-        error: 'cinetrack-data.json kök düzeyi geçerli bir nesne değil.',
+        error: 'cinethos-data.json kök düzeyi geçerli bir nesne değil.',
         errorCategory: 'schema_mismatch',
       },
     };
@@ -773,7 +773,7 @@ function inspectUserDataRawContent(
         recordCount: 0,
         uniqueKeyCount: 0,
         sha,
-        error: `cinetrack-data.json beklenen ${BRAND_NAME} veri şemasına uymuyor.`,
+        error: `cinethos-data.json beklenen ${BRAND_NAME} veri şemasına uymuyor.`,
         errorCategory: 'schema_mismatch',
       },
     };
@@ -1494,7 +1494,7 @@ function buildBlockedPublicPaths(includeCatalog: boolean, includePersonal: boole
     );
   }
   if (!includePersonal) {
-    blocked.push('data/cinetrack-data.json', 'data/profiles/*');
+    blocked.push('data/cinethos-data.json', 'data/profiles/*');
   }
   return blocked;
 }
@@ -1542,7 +1542,7 @@ export class GitHubBidirectionalSyncManager {
   }
 
   public async inspectLocalSide(): Promise<ParsedSideBundle> {
-    const userDataPath = path.join(this.deps.dataDir, 'cinetrack-data.json');
+    const userDataPath = path.join(this.deps.dataDir, 'cinethos-data.json');
     let remoteRepoDoc: DataDocument | null = null;
     if (!existsSync(userDataPath) && this.deps.storage?.readDataAsync) {
       try {
@@ -1562,7 +1562,7 @@ export class GitHubBidirectionalSyncManager {
     const moviesPath = path.join(this.deps.dataDir, 'catalog', 'movies.json');
     const tvPath = path.join(this.deps.dataDir, 'catalog', 'tv.json');
     const manifestPath = path.join(this.deps.dataDir, 'catalog', 'manifest.json');
-    const userDataPath = path.join(this.deps.dataDir, 'cinetrack-data.json');
+    const userDataPath = path.join(this.deps.dataDir, 'cinethos-data.json');
     const profilesDir = path.join(this.deps.dataDir, 'profiles');
 
     let movies: Record<string, CatalogRecord> = {};
@@ -1683,13 +1683,13 @@ export class GitHubBidirectionalSyncManager {
       if (!res.inspection.valid && res.inspection.errorCategory === 'corrupt_remote_json') {
         res.inspection.errorCategory = 'corrupt_local_file';
       }
-      files['data/cinetrack-data.json'] = res.inspection;
+      files['data/cinethos-data.json'] = res.inspection;
       if (res.doc) userData = res.doc;
       userRawItems = res.rawItemsCount;
       userUniqueItems = res.uniqueItemsCount;
       if (!res.inspection.valid && res.inspection.error) {
         errors.push({
-          repoPath: 'data/cinetrack-data.json',
+          repoPath: 'data/cinethos-data.json',
           category: res.inspection.errorCategory || 'corrupt_local_file',
           message: res.inspection.error,
         });
@@ -1703,20 +1703,20 @@ export class GitHubBidirectionalSyncManager {
       if (!res.inspection.valid && res.inspection.errorCategory === 'corrupt_remote_json') {
         res.inspection.errorCategory = 'corrupt_local_file';
       }
-      files['data/cinetrack-data.json'] = res.inspection;
+      files['data/cinethos-data.json'] = res.inspection;
       if (res.doc) userData = res.doc;
       userRawItems = res.rawItemsCount;
       userUniqueItems = res.uniqueItemsCount;
       if (!res.inspection.valid && res.inspection.error) {
         errors.push({
-          repoPath: 'data/cinetrack-data.json',
+          repoPath: 'data/cinethos-data.json',
           category: res.inspection.errorCategory || 'corrupt_local_file',
           message: res.inspection.error,
         });
       }
     } else {
-      files['data/cinetrack-data.json'] = {
-        repoPath: 'data/cinetrack-data.json',
+      files['data/cinethos-data.json'] = {
+        repoPath: 'data/cinethos-data.json',
         category: 'user_data',
         personal: true,
         exists: false,
@@ -1843,12 +1843,12 @@ export class GitHubBidirectionalSyncManager {
       manifestTvCount: manifest ? Number(manifest.tvCount) : null,
       manifestContentHash: manifest?.contentHash || null,
       ...(manifestMismatchReason ? { manifestMismatchReason } : {}),
-      userDataPresent: Boolean(files['data/cinetrack-data.json']?.exists),
+      userDataPresent: Boolean(files['data/cinethos-data.json']?.exists),
       userProfilesCount: userData?.profiles?.length ?? 0,
       userTotalSavedItemsCount: userRawItems,
       userUniqueSavedItemsCount: userUniqueItems,
-      userDataSemanticHash: files['data/cinetrack-data.json']?.semanticHash ?? null,
-      userDataRawHash: files['data/cinetrack-data.json']?.rawFileHash ?? null,
+      userDataSemanticHash: files['data/cinethos-data.json']?.semanticHash ?? null,
+      userDataRawHash: files['data/cinethos-data.json']?.rawFileHash ?? null,
       derivedProfileFilesCount: Object.keys(derivedProfiles).length,
       derivedProfileTotalRecordsCount: derivedRecordsTotal,
       files,
@@ -2465,12 +2465,12 @@ export class GitHubBidirectionalSyncManager {
     let derivedRecordsTotal = 0;
 
     if (options.includePersonalFiles) {
-      const userRes = await this.fetchRemoteFileRaw('data/cinetrack-data.json', cfg);
+      const userRes = await this.fetchRemoteFileRaw('data/cinethos-data.json', cfg);
       if (!userRes.ok) {
         transportFailed = true;
         errors.push(userRes.error);
-        files['data/cinetrack-data.json'] = {
-          repoPath: 'data/cinetrack-data.json',
+        files['data/cinethos-data.json'] = {
+          repoPath: 'data/cinethos-data.json',
           category: 'user_data',
           personal: true,
           exists: false,
@@ -2484,8 +2484,8 @@ export class GitHubBidirectionalSyncManager {
           errorCategory: userRes.error.category,
         };
       } else if (!userRes.exists) {
-        files['data/cinetrack-data.json'] = {
-          repoPath: 'data/cinetrack-data.json',
+        files['data/cinethos-data.json'] = {
+          repoPath: 'data/cinethos-data.json',
           category: 'user_data',
           personal: true,
           exists: false,
@@ -2497,7 +2497,7 @@ export class GitHubBidirectionalSyncManager {
           uniqueKeyCount: 0,
         };
       } else {
-        rawRemoteContents['data/cinetrack-data.json'] = {
+        rawRemoteContents['data/cinethos-data.json'] = {
           content: userRes.content,
           sha: userRes.sha,
         };
@@ -2506,15 +2506,15 @@ export class GitHubBidirectionalSyncManager {
           this.maxBytes,
           userRes.sha
         );
-        files['data/cinetrack-data.json'] = inspected.inspection;
+        files['data/cinethos-data.json'] = inspected.inspection;
         if (inspected.doc) userData = inspected.doc;
         userRawItems = inspected.rawItemsCount;
         userUniqueItems = inspected.uniqueItemsCount;
         if (!inspected.inspection.valid && inspected.inspection.error) {
           errors.push({
-            repoPath: 'data/cinetrack-data.json',
+            repoPath: 'data/cinethos-data.json',
             category: inspected.inspection.errorCategory || 'corrupt_remote_json',
-            message: `data/cinetrack-data.json: ${inspected.inspection.error}`,
+            message: `data/cinethos-data.json: ${inspected.inspection.error}`,
           });
         }
       }
@@ -2682,12 +2682,12 @@ export class GitHubBidirectionalSyncManager {
       manifestTvCount: manifest ? Number(manifest.tvCount) : null,
       manifestContentHash: manifest?.contentHash || null,
       ...(manifestMismatchReason ? { manifestMismatchReason } : {}),
-      userDataPresent: Boolean(files['data/cinetrack-data.json']?.exists),
+      userDataPresent: Boolean(files['data/cinethos-data.json']?.exists),
       userProfilesCount: userData?.profiles?.length ?? 0,
       userTotalSavedItemsCount: userRawItems,
       userUniqueSavedItemsCount: userUniqueItems,
-      userDataSemanticHash: files['data/cinetrack-data.json']?.semanticHash ?? null,
-      userDataRawHash: files['data/cinetrack-data.json']?.rawFileHash ?? null,
+      userDataSemanticHash: files['data/cinethos-data.json']?.semanticHash ?? null,
+      userDataRawHash: files['data/cinethos-data.json']?.rawFileHash ?? null,
       derivedProfileFilesCount: Object.keys(derivedProfiles).length,
       derivedProfileTotalRecordsCount: derivedRecordsTotal,
       files,
@@ -3083,8 +3083,8 @@ export class GitHubBidirectionalSyncManager {
       );
       const remoteHasValidUserData = Boolean(
         includePersonal &&
-          remoteInspect.bundle.summary.files['data/cinetrack-data.json']?.exists &&
-          remoteInspect.bundle.summary.files['data/cinetrack-data.json']?.valid &&
+          remoteInspect.bundle.summary.files['data/cinethos-data.json']?.exists &&
+          remoteInspect.bundle.summary.files['data/cinethos-data.json']?.valid &&
           remoteInspect.bundle.userData
       );
 
@@ -3285,23 +3285,23 @@ export class GitHubBidirectionalSyncManager {
         }
       }
 
-      // Kişisel dosyalar (cinetrack-data.json ve data/profiles/*.json)
+      // Kişisel dosyalar (cinethos-data.json ve data/profiles/*.json)
       let finalUserData = localBefore.userData;
       if (includePersonal) {
-        const rUserInfo = remoteInspect.bundle.summary.files['data/cinetrack-data.json'];
+        const rUserInfo = remoteInspect.bundle.summary.files['data/cinethos-data.json'];
         if (rUserInfo?.exists) {
           if (!rUserInfo.valid || !remoteInspect.bundle.userData) {
-            filesFailed.push('data/cinetrack-data.json');
+            filesFailed.push('data/cinethos-data.json');
             errors.push({
-              repoPath: 'data/cinetrack-data.json',
+              repoPath: 'data/cinethos-data.json',
               category: rUserInfo.errorCategory || 'corrupt_remote_json',
-              message: `data/cinetrack-data.json bozuk olduğu için yerel kullanıcı verisi korundu (${rUserInfo.error}).`,
+              message: `data/cinethos-data.json bozuk olduğu için yerel kullanıcı verisi korundu (${rUserInfo.error}).`,
             });
           } else if (
             localBefore.summary.userDataPresent &&
             localBefore.summary.userDataSemanticHash === rUserInfo.semanticHash
           ) {
-            filesUnchanged.push('data/cinetrack-data.json');
+            filesUnchanged.push('data/cinethos-data.json');
           } else {
             let docToWrite: DataDocument;
             if (
@@ -3317,7 +3317,7 @@ export class GitHubBidirectionalSyncManager {
               recordsAdded += mergedUser.addedToLocal;
               recordsUpdated += mergedUser.updatedItems;
               conflicts.push(...mergedUser.conflicts);
-              filesMerged.push('data/cinetrack-data.json');
+              filesMerged.push('data/cinethos-data.json');
             } else {
               docToWrite = remoteInspect.bundle.userData;
               recordsAdded += remoteInspect.bundle.summary.userUniqueSavedItemsCount;
@@ -3328,11 +3328,11 @@ export class GitHubBidirectionalSyncManager {
               finalUserData = saveRes.document;
               updatedDataDocument = saveRes.document;
               serverRevision = saveRes.document.revision;
-              filesDownloaded.push('data/cinetrack-data.json');
+              filesDownloaded.push('data/cinethos-data.json');
             } else {
-              filesFailed.push('data/cinetrack-data.json');
+              filesFailed.push('data/cinethos-data.json');
               errors.push({
-                repoPath: 'data/cinetrack-data.json',
+                repoPath: 'data/cinethos-data.json',
                 category: 'corrupt_local_file',
                 message: saveRes.message,
               });
@@ -3668,8 +3668,8 @@ export class GitHubBidirectionalSyncManager {
         includePersonal &&
         !remoteBeforeInspect.transportFailed &&
         remoteBeforeInspect.bundle.userData &&
-        remoteBeforeInspect.bundle.summary.files['data/cinetrack-data.json']?.valid &&
-        localReady.summary.files['data/cinetrack-data.json']?.valid !== false
+        remoteBeforeInspect.bundle.summary.files['data/cinethos-data.json']?.valid &&
+        localReady.summary.files['data/cinethos-data.json']?.valid !== false
       ) {
         if (localReady.userData) {
           if (
@@ -3691,14 +3691,14 @@ export class GitHubBidirectionalSyncManager {
               pushRecordsUpdated += mergedUser.updatedItems;
               pushConflicts.push(...mergedUser.conflicts);
               if (mergedUser.addedToLocal > 0 || mergedUser.updatedItems > 0) {
-                pushFilesMerged.push('data/cinetrack-data.json');
+                pushFilesMerged.push('data/cinethos-data.json');
               }
               localReady = await this.inspectLocalSide();
               localProfilePaths = Object.keys(localReady.derivedProfiles);
             }
           }
         } else {
-          // Yerelde henüz cinetrack-data.json yok ama GitHub'da var: uzak veriyi koru
+          // Yerelde henüz cinethos-data.json yok ama GitHub'da var: uzak veriyi koru
           const saveRes = await this.deps.storage.applySyncedDocumentSerialized(
             remoteBeforeInspect.bundle.userData
           );
@@ -4230,27 +4230,27 @@ export class GitHubBidirectionalSyncManager {
         pathsBlockedFromPush.add('data/catalog/manifest.json');
       }
 
-      // --- B. KULLANICI VERİSİ (`data/cinetrack-data.json`) İKİ YÖNLÜ BİRLEŞTİRME ---
+      // --- B. KULLANICI VERİSİ (`data/cinethos-data.json`) İKİ YÖNLÜ BİRLEŞTİRME ---
       let reconciledUserData: DataDocument | null = localBefore.userData;
       if (includePersonal) {
-        const lUserInfo = localBefore.summary.files['data/cinetrack-data.json'];
-        const rUserInfo = remoteBeforeInspect.bundle.summary.files['data/cinetrack-data.json'];
+        const lUserInfo = localBefore.summary.files['data/cinethos-data.json'];
+        const rUserInfo = remoteBeforeInspect.bundle.summary.files['data/cinethos-data.json'];
 
         if (!lUserInfo.valid) {
-          filesFailed.push('data/cinetrack-data.json');
-          pathsBlockedFromPush.add('data/cinetrack-data.json');
+          filesFailed.push('data/cinethos-data.json');
+          pathsBlockedFromPush.add('data/cinethos-data.json');
           errors.push({
-            repoPath: 'data/cinetrack-data.json',
+            repoPath: 'data/cinethos-data.json',
             category: 'corrupt_local_file',
-            message: `Yerel cinetrack-data.json bozuk olduğu için birleştirilmedi (${lUserInfo.error}).`,
+            message: `Yerel cinethos-data.json bozuk olduğu için birleştirilmedi (${lUserInfo.error}).`,
           });
         } else if (rUserInfo?.exists && !rUserInfo.valid) {
-          filesFailed.push('data/cinetrack-data.json');
-          pathsBlockedFromPush.add('data/cinetrack-data.json');
+          filesFailed.push('data/cinethos-data.json');
+          pathsBlockedFromPush.add('data/cinethos-data.json');
           errors.push({
-            repoPath: 'data/cinetrack-data.json',
+            repoPath: 'data/cinethos-data.json',
             category: rUserInfo.errorCategory || 'corrupt_remote_json',
-            message: `GitHub cinetrack-data.json bozuk olduğu için yerel sağlam dosya korundu (${rUserInfo.error}).`,
+            message: `GitHub cinethos-data.json bozuk olduğu için yerel sağlam dosya korundu (${rUserInfo.error}).`,
           });
         } else if (localBefore.userData && remoteBeforeInspect.bundle.userData) {
           if (lUserInfo.semanticHash !== rUserInfo?.semanticHash) {
@@ -4269,12 +4269,12 @@ export class GitHubBidirectionalSyncManager {
               reconciledUserData = saveRes.document;
               updatedDataDocument = saveRes.document;
               serverRevision = saveRes.document.revision;
-              filesMerged.push('data/cinetrack-data.json');
+              filesMerged.push('data/cinethos-data.json');
             } else {
-              filesFailed.push('data/cinetrack-data.json');
-              pathsBlockedFromPush.add('data/cinetrack-data.json');
+              filesFailed.push('data/cinethos-data.json');
+              pathsBlockedFromPush.add('data/cinethos-data.json');
               errors.push({
-                repoPath: 'data/cinetrack-data.json',
+                repoPath: 'data/cinethos-data.json',
                 category: 'corrupt_local_file',
                 message: saveRes.message,
               });
@@ -4288,7 +4288,7 @@ export class GitHubBidirectionalSyncManager {
             reconciledUserData = saveRes.document;
             updatedDataDocument = saveRes.document;
             serverRevision = saveRes.document.revision;
-            filesDownloaded.push('data/cinetrack-data.json');
+            filesDownloaded.push('data/cinethos-data.json');
           }
         }
 
@@ -4435,7 +4435,7 @@ export class GitHubBidirectionalSyncManager {
               });
               filesMerged.push(repoPath);
             } else {
-              // Kaynak profil cinetrack-data.json içinde yoksa eski türetilmiş veriyi geçerli kabul etme!
+              // Kaynak profil cinethos-data.json içinde yoksa eski türetilmiş veriyi geçerli kabul etme!
               warnings.push(
                 `${repoPath}: Algoritma/şema sürümü güncel olmayan türetilmiş profil geçersiz sayıldı ve üzerine yazılmadı.`
               );
@@ -4560,9 +4560,9 @@ export class GitHubBidirectionalSyncManager {
 
       if (includePersonal) {
         uploadCandidates.push({
-          repoPath: 'data/cinetrack-data.json',
-          localPath: path.join(this.deps.dataDir, 'cinetrack-data.json'),
-          commitMsg: 'chore(sync): reconcile cinetrack-data.json [skip ci]',
+          repoPath: 'data/cinethos-data.json',
+          localPath: path.join(this.deps.dataDir, 'cinethos-data.json'),
+          commitMsg: 'chore(sync): reconcile cinethos-data.json [skip ci]',
         });
         if (existsSync(path.join(this.deps.dataDir, 'stock.json'))) {
           uploadCandidates.push({
@@ -4591,7 +4591,7 @@ export class GitHubBidirectionalSyncManager {
         if (pathsBlockedFromPush.has(candidate.repoPath)) continue;
 
         let localContent: string;
-        if (candidate.repoPath === 'data/cinetrack-data.json') {
+        if (candidate.repoPath === 'data/cinethos-data.json') {
           const storedDoc = await this.deps.storage.readDataAsync();
           if (storedDoc.profiles.length === 0 && (storedDoc.revision ?? 0) === 0) continue;
           localContent = JSON.stringify(storedDoc, null, 2);

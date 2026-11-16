@@ -5,7 +5,7 @@ import type {
   RelationshipGraphNode,
 } from '../core/relationship-explorer.ts';
 import { getRelationshipTypeLabel } from '../core/relationship-wordlists.ts';
-import type { PoolCandidateItem, SavedItem } from '../core/cinetrack-core.ts';
+import type { PoolCandidateItem, SavedItem } from '../core/cinethos-core.ts';
 
 interface RelationshipDetailsPanelProps {
   selectedNode: RelationshipGraphNode | null;

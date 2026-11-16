@@ -1,4 +1,4 @@
-import type { SavedItem } from '../../core/cinetrack-core.ts';
+import type { SavedItem } from '../../core/cinethos-core.ts';
 import type { ColumnChartPoint } from './ColumnChart.tsx';
 
 const RATING_BUCKETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];

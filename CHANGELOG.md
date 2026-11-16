@@ -52,10 +52,10 @@
 
 ### Düzeltme — SQLite arşivi oluşturma
 - **Tanı:** Arşiv yazımı doğru çalışıyordu (geçerli `SQLite format 3`, 69 KB, `X-Archive-Stats`
-  doğru). Hata, önizleme sunucusunun `0.0.0.0` üzerinde `CINETRACK_TOKEN` olmadan
+  doğru). Hata, önizleme sunucusunun `0.0.0.0` üzerinde `CINETHOS_TOKEN` olmadan
   başlatılmasıydı: bu modda sunucu tüm mutasyonları `503 auth_required` ile reddediyor, bu
   yüzden "SQLite arşivi oluştur" da düşüyordu.
-- **Düzeltme:** Yerel önizleme için `.env.local` içine `CINETRACK_TOKEN` eklendi (dosya
+- **Düzeltme:** Yerel önizleme için `.env.local` içine `CINETHOS_TOKEN` eklendi (dosya
   gitignore'lu). Sunucu artık anahtarla başlıyor; istemci anahtarı oturum deposunda tutuyor.
 - **Regresyon testi:** `SEC: SQLite arşivi oluşturma uzaktan erişim modunda anahtar ister` —
   anahtarsız `503 auth_required`, anahtar tanımlıyken headersız `401`, doğru anahtarla `200`
@@ -123,7 +123,7 @@
 - **DATA-02:** SQLite geri yükleme aşamalı: sunucu tarafında profil/kayıt sayısı doğrulanıyor, istemcide zevk haritaları ve stok kalıcılığı kontrol ediliyor; kısmi başarı artık "tam geri yükleme" olarak gösterilmiyor.
 - **SEC-04:** Offline kuyrukta 5 denemeli üstel geri çekilme (2 sn → 5 dk) ve `OfflineIndicator` üzerinde "Yeniden dene" düğmesi.
 - **SEC-05:** `/api/tmdb-image` artık rate limiter'a dahil; görsel önbelleği 64 MB bayt bütçeli LRU.
-- **SEC-02 / SEC-03:** `ApiError` + `apiFetch` (sessionStorage token, `cinetrack:auth-required`), LAN modu için erişim anahtarı istemi, yakalanmamış söz redlerinin bildirime dönüşmesi.
+- **SEC-02 / SEC-03:** `ApiError` + `apiFetch` (sessionStorage token, `cinethos:auth-required`), LAN modu için erişim anahtarı istemi, yakalanmamış söz redlerinin bildirime dönüşmesi.
 - Rate limiter tahliyesi LRU'ya çevrildi (IP rotasyonu meşru istemciyi atamaz).
 - Graf: `no-empty` kuralı sıkılaştırıldı (66 boş catch gerekçelendirildi), zod `^4.6.6` override'ı ve Dependabot eklendi.
 
@@ -145,13 +145,13 @@ Tüm önemli değişiklikler bu dosyada tutulur. Sürümleme [Semantic Versionin
 - `body-parser` 2.4.0'a yükseltildi (GHSA-27r3-jxmh-p828, high DoS); CI üretim audit adımı yeniden yeşil.
 
 ### Değişen
-- Monolit bölme ikinci dilim: `cinetrack-core.ts` 5539 → 4691 satır; aktör öneri motoru `actor-recommendations.ts`, puan matematiği `rating-math.ts` ve tür eşleştirme `genre-matching.ts` modüllerine taşındı. Çekirdek, geriye dönük uyumluluk için yeniden dışa aktarır.
+- Monolit bölme ikinci dilim: `cinethos-core.ts` 5539 → 4691 satır; aktör öneri motoru `actor-recommendations.ts`, puan matematiği `rating-math.ts` ve tür eşleştirme `genre-matching.ts` modüllerine taşındı. Çekirdek, geriye dönük uyumluluk için yeniden dışa aktarır.
 
 ## [1.1.0] - 2026-11-09
 
 ### Güvenlik
 - Üretim CSP'si sıkılaştırıldı: `script-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`; dev modunda Vite HMR için ayrı politika.
-- Uzak (loopback dışı) bağlanmalarda kişisel GET uçları `CINETRACK_TOKEN` ile korunuyor.
+- Uzak (loopback dışı) bağlanmalarda kişisel GET uçları `CINETHOS_TOKEN` ile korunuyor.
 - Faz 0 bulgularındaki kişisel veriler ve `.bolt/` yapılandırması kaldırıldı.
 
 ### Değişen

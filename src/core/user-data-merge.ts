@@ -12,7 +12,7 @@ import {
   type Preferences,
   type Profile,
   type SavedItem,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import {
   buildCinemaKunyeContentId,
   extractItemReleaseYear,
@@ -430,7 +430,7 @@ export interface ReconcileUserDataOptions {
 }
 
 /**
- * Kullanıcı verisini (`cinetrack-data.json`) varsayılan silmesiz (no-deletion) ve
+ * Kullanıcı verisini (`cinethos-data.json`) varsayılan silmesiz (no-deletion) ve
  * `deleted_keys` mezar taşı (tombstone) duyarlı politikayla iki yönlü kayıpsız birleştirir.
  */
 export function reconcileUserDataDocumentsLossless(

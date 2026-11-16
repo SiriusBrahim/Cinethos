@@ -7,16 +7,16 @@
 
 | Katman | Nerede | Ne tutar | Bugünkü yazıcı |
 | --- | --- | --- | --- |
-| Ana kullanıcı belgesi | `data/cinetrack-data.json` (+ `.bak`, `data/backups/*.json` 7 adet) | profiller, items, preferences, tombstones, `revision` | `server/storage.ts` |
-| SQLite birincil kopya (opt-in) | `data/cinetrack.db` → `documents(id, revision, updated_at, payload)`, `meta(key, value)` | aynı belge | `sqlite-primary-store` ↔ `storage.ts` |
+| Ana kullanıcı belgesi | `data/cinethos-data.json` (+ `.bak`, `data/backups/*.json` 7 adet) | profiller, items, preferences, tombstones, `revision` | `server/storage.ts` |
+| SQLite birincil kopya (opt-in) | `data/cinethos.db` → `documents(id, revision, updated_at, payload)`, `meta(key, value)` | aynı belge | `sqlite-primary-store` ↔ `storage.ts` |
 | İzole kopyalar | `data/profile.json`, `data/user-lists.json` | aktif profil + listeler (istemci hidrasyonu) | `storage.ts` (best-effort) |
 | Ortak katalog | `data/catalog/movies.json`, `tv.json`, `manifest.json` | TMDB metaverisi, kanonik `movie:id` anahtarı | `persistent-store.ts`, `github-catalog-sync.ts` |
 | Türetilmiş profil | `data/profiles/<profileId>.json` | matchScore, ring, signals, reasons, pillars (`schemaVersion: 2`) | `storage.ts`, `/api/profiles/derived/upsert` |
-| Stok | `data/stock.json` + IDB `cinetrack-stock-db` | 500 film + 500 dizi aday havuzu | `persistent-store.ts`, `stock-engine.ts` |
+| Stok | `data/stock.json` + IDB `cinethos-stock-db` | 500 film + 500 dizi aday havuzu | `persistent-store.ts`, `stock-engine.ts` |
 | Sinema künyesi | `data/sinema-kunyesi.json` + `ct:cinema-kunye` | tür/yıl/kadro anahtarlı künye | `persistent-store.ts`, `/api/cinema-kunye` |
 | Zevk verisi | `data/taste/*.json` (taxonomy, index, events, profile, manifest, objections) | kanıtlar, öğrenme durumu, türetilmiş profil | `taste-store.ts`, `taste-rebuild-coordinator.ts` |
 | Tarayıcı | 14 IndexedDB deposu + 36 localStorage anahtarı | katalog önbelleği, aday havuzu, zevk haritası, UI tercihleri, offline kuyruk | `services/*` (bkz. veri sahipliği §3–4) |
-| Arşiv | `data/archives/*.sqlite` + `data/cinetrack.db` (arşiv) | tam yedek | `sqlite-archive.ts` |
+| Arşiv | `data/archives/*.sqlite` + `data/cinethos.db` (arşiv) | tam yedek | `sqlite-archive.ts` |
 
 ### 1.1 SQLite arşiv şeması (`sqlite-archive.ts:145-192`)
 `archive_meta(key,value)` · `profiles(id, name, created_at, is_demo, preferences_json, favorite_actors_json, deleted_keys_json, position)` · `profile_items(profile_id, media_key, media_type, media_id, status, personal_rating, payload_json, position)` · `taste_maps(profile_id, payload_json)` · `stock_items(kind, media_key, payload_json)` · `stock_state(key,value)` · `posters(url, media_key, content_type, byte_length, bytes)`. İki indeks: `idx_profile_items_profile(profile_id, position)`, `idx_stock_items_kind(kind)`.
@@ -35,7 +35,7 @@ UI aksiyonu (kart "Listeme Ekle")
   → writeJsonFileAtomic (JSON + .bak + snapshot) → sqlitePrimaryStore.write
 ```
 
-- **Doğrulama:** `normalizeSavedItem` (`core/cinetrack-core.ts:372`) alanları temizler; geçersiz kayıt sessizce düşürülür.
+- **Doğrulama:** `normalizeSavedItem` (`core/cinethos-core.ts:372`) alanları temizler; geçersiz kayıt sessizce düşürülür.
 - **Eşzamanlılık:** `revision > 0` iken `If-Match` zorunlu (`428`), uyuşmazlıkta `409 revision_conflict`.
 - **Kanıt:** `tests/faz0-baseline.test.mjs` (profil izolasyonu + silme/geri yükleme), `tests/persistent-store.test.mjs` (7 snapshot, bozuk yedek reddi).
 
@@ -50,19 +50,19 @@ UI aksiyonu (kart "Listeme Ekle")
 | Gizle | `handleToggleHide` (3196) + `emitHideTasteEvent` (58) | `preferences.hidden` (nötr bastırma) |
 | Silme | `handleRemoveItem` (3092) | kayıt çıkar + `deleted_keys[mediaKey]` mezar taşı (30 gün) |
 
-Ağırlıklar tek yerde: `RECOMMENDATION_WEIGHTS_V3` (`core/cinetrack-core.ts:947`); durum ağırlıkları `SIGNAL_WEIGHTS` olarak Faz 5'te ayrılacak.
+Ağırlıklar tek yerde: `RECOMMENDATION_WEIGHTS_V3` (`core/cinethos-core.ts:947`); durum ağırlıkları `SIGNAL_WEIGHTS` olarak Faz 5'te ayrılacak.
 
 ## 4. Zevk profili oluşturma ve güncelleme
 
-**İstemci (anlık hesap):** App.tsx `selectTopSeeds` (2062) → `buildTasteProfileV3` (`core/cinetrack-core.ts:1077`) → profil nesnesi `scoreCandidatesV3`'e verilir. Profil her katalog yenilemesinde yeniden hesaplanır; kalıcı değildir.
+**İstemci (anlık hesap):** App.tsx `selectTopSeeds` (2062) → `buildTasteProfileV3` (`core/cinethos-core.ts:1077`) → profil nesnesi `scoreCandidatesV3`'e verilir. Profil her katalog yenilemesinde yeniden hesaplanır; kalıcı değildir.
 
 **Sunucu (olay tabanlı öğrenme):**
 ```text
 kullanıcı aksiyonu → TasteEvent (core/taste/types.ts)
-  → appendTasteEvent (server/taste-store.ts:63)   [cinetrack-taste-events.json]
+  → appendTasteEvent (server/taste-store.ts:63)   [cinethos-taste-events.json]
   → triggerTasteProfileRebuild (taste-rebuild-coordinator.ts:486)
   → worker: new URL("../workers/taste-profile-worker.ts") (373)
-  → writeTasteProfile (taste-store.ts:104)        [cinetrack-taste-profile.json]
+  → writeTasteProfile (taste-store.ts:104)        [cinethos-taste-profile.json]
   → istemci readTasteProfile / services/taste-api.ts
 ```
 **Doğrulama:** `tests/taste/*` 362 test; `npm run test:taste` yeşil. **Risk:** istemci profili (buildTasteProfileV3) ile sunucu profili (taste-store) iki ayrı hesap yolu; hangisinin ekranda kazandığı `App.tsx` içinde dağınık.
@@ -86,10 +86,10 @@ Yenileme: handleRefreshForYou (2696) · handleRefreshTasteMap (2707) · handleMa
 
 | Akış | Giriş | Yazdığı yer |
 | --- | --- | --- |
-| Zevk Haritası tohumlama | `updateTasteMapWithBatch` (`core:1931`) | `cinetrack_taste_map_<profileId>` (localStorage) |
+| Zevk Haritası tohumlama | `updateTasteMapWithBatch` (`core:1931`) | `cinethos_taste_map_<profileId>` (localStorage) |
 | Gösterim kaydı | `recordDisplayedRecommendations` (2376) | aynı anahtar + `ct:surfaced` |
 | Arşivle/geri al | `archiveTasteMapEntry` (2551), `restoreTasteMapEntry` (2583) | aynı anahtar |
-| İlişki grafiği | `buildRelationshipGraph` (`core/relationship-explorer.ts:721`) — çağrı: `RelationshipExplorer.tsx:411,470` | `cinetrack-relationship-cache` (IDB) |
+| İlişki grafiği | `buildRelationshipGraph` (`core/relationship-explorer.ts:721`) — çağrı: `RelationshipExplorer.tsx:411,470` | `cinethos-relationship-cache` (IDB) |
 | İlişki dökümü | `computeRelationshipBreakdown` (511), `pairRelationships` (185) | yalnız hesaplama |
 
 **Risk:** Zevk Haritası anahtarı saf hesaplama modülünde (`core`) üretiliyor; depolama sahibi Faz 5'te ayrılacak (veri sahipliği §5).
@@ -126,7 +126,7 @@ Stok: stock-engine.ts stockEngine (100) → ct:stock + data/stock.json
 POST /api/sync/staged (app.ts:1778) veya arka plan tetiklemesi
   → GitHubBidirectionalSyncManager (github-bidirectional-sync.ts:1502)
   → A. katalog birleştirme (4048)  → data/catalog/*.json
-  → B. kullanıcı verisi (4233)     → data/cinetrack-data.json
+  → B. kullanıcı verisi (4233)     → data/cinethos-data.json
   → C. türetilmiş profiller (4295) → data/profiles/*.json
   → C2. stok (4448) · C3. künye (4487)
   → D. birleşik dosyaları yükle (4537)

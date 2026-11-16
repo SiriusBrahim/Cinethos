@@ -112,13 +112,13 @@ export async function refreshEnvGitHubPat(options: {
   const lines = raw.split(/\r?\n/);
   let replaced = false;
   const next = lines.map((line) => {
-    if (/^CINETRACK_GITHUB_PAT\s*=/.test(line)) {
+    if (/^CINETHOS_GITHUB_PAT\s*=/.test(line)) {
       replaced = true;
-      return `CINETRACK_GITHUB_PAT=${fresh}`;
+      return `CINETHOS_GITHUB_PAT=${fresh}`;
     }
     return line;
   });
-  if (!replaced) next.push(`CINETRACK_GITHUB_PAT=${fresh}`);
+  if (!replaced) next.push(`CINETHOS_GITHUB_PAT=${fresh}`);
   writeFileSync(envFilePath, next.join(newline), 'utf8');
   return fresh;
 }

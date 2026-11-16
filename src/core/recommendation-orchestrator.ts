@@ -12,7 +12,7 @@ import {
   type SavedItem,
   type TasteMapEntry,
   type TasteRing,
-} from './cinetrack-core.ts';
+} from './cinethos-core.ts';
 import { canonicalizeMediaKey, makeMediaKey, parseMediaKey, resolveMediaType } from './keys.ts';
 import {
   computeSourceCatalogSignature,

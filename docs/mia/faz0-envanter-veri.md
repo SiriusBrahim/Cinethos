@@ -41,7 +41,7 @@
 | Dosya | Satır | fan-in | fan-out | export |
 | --- | --- | --- | --- | --- |
 | `src/server/github-bidirectional-sync.ts` | 4.754 | 1 | 12 | 7 |
-| `src/core/cinetrack-core.ts` | 4.691 | 72 | 12 | 119 |
+| `src/core/cinethos-core.ts` | 4.691 | 72 | 12 | 119 |
 | `src/App.tsx` | 4.651 | 1 | 49 | 1 |
 | `src/server/persistent-store.ts` | 4.230 | 6 | 7 | 23 |
 | `src/server/excel-profile-backup.ts` | 3.447 | 1 | 6 | 61 |
@@ -70,7 +70,7 @@
 
 | Dosya | fan-in | fan-out | Satır |
 | --- | --- | --- | --- |
-| `src/core/cinetrack-core.ts` | 72 | 12 | 4691 |
+| `src/core/cinethos-core.ts` | 72 | 12 | 4691 |
 | `src/core/taste/types.ts` | 25 | 0 | 194 |
 | `src/utils/helpers.ts` | 25 | 3 | 444 |
 | `src/types/tmdb.ts` | 23 | 0 | 179 |
@@ -90,7 +90,7 @@
 
 | # | Dosyalar | Kenar | type-only | Niteliği |
 | --- | --- | --- | --- | --- |
-| 1 | `src/core/actor-recommendations.ts`<br>`src/core/candidate-pool-store-port.ts`<br>`src/core/cinema-kunye.ts`<br>`src/core/cinetrack-core.ts`<br>`src/core/ring-lifecycle.ts` | 8 | 4 | tip ile kırılıyor<br>- src/core/cinetrack-core.ts → src/core/cinema-kunye.ts<br>- src/core/cinetrack-core.ts → src/core/candidate-pool-store-port.ts<br>- src/core/cinetrack-core.ts → src/core/ring-lifecycle.ts<br>- src/core/cinetrack-core.ts → src/core/actor-recommendations.ts |
+| 1 | `src/core/actor-recommendations.ts`<br>`src/core/candidate-pool-store-port.ts`<br>`src/core/cinema-kunye.ts`<br>`src/core/cinethos-core.ts`<br>`src/core/ring-lifecycle.ts` | 8 | 4 | tip ile kırılıyor<br>- src/core/cinethos-core.ts → src/core/cinema-kunye.ts<br>- src/core/cinethos-core.ts → src/core/candidate-pool-store-port.ts<br>- src/core/cinethos-core.ts → src/core/ring-lifecycle.ts<br>- src/core/cinethos-core.ts → src/core/actor-recommendations.ts |
 | 2 | `src/core/relationship-explorer.ts`<br>`src/core/relationship-semantics.ts`<br>`src/core/relationship-wordlists.ts` | 4 | 1 | tip ile kırılıyor<br>- src/core/relationship-explorer.ts → src/core/relationship-wordlists.ts<br>- src/core/relationship-explorer.ts → src/core/relationship-semantics.ts<br>- src/core/relationship-semantics.ts → src/core/relationship-wordlists.ts |
 | 3 | `src/server/github-bidirectional-sync.ts`<br>`src/server/github-catalog-sync.ts`<br>`src/server/persistent-store.ts` | 4 | 0 | **değer döngüsü** |
 
@@ -107,27 +107,27 @@
 
 | Sembol | Toplam | Değer | Tip | Kullanıcılar |
 | --- | --- | --- | --- | --- |
-| `src/core/cinetrack-core.ts#SavedItem` | 57 | 8 | 49 | `server.ts`<br>`src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/app/mobile/MobileDashboard.tsx`<br>`src/app/shell-context.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>+51 |
+| `src/core/cinethos-core.ts#SavedItem` | 57 | 8 | 49 | `server.ts`<br>`src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/app/mobile/MobileDashboard.tsx`<br>`src/app/shell-context.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>+51 |
 | `src/types/tmdb.ts#TmdbItem` | 20 | 3 | 17 | `src/app/shell-context.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>`src/components/Header.tsx`<br>`src/components/MediaCard.tsx`<br>`src/components/MediaGrid.tsx`<br>`src/components/PaginatedMediaModal.tsx`<br>+14 |
-| `src/core/cinetrack-core.ts#DataDocument` | 19 | 1 | 18 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ProfileGitHubSyncSection.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/core/sync-display.ts`<br>`src/core/taste/migration.ts`<br>+13 |
-| `src/core/cinetrack-core.ts#Profile` | 18 | 1 | 17 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ProfileBackupTab.tsx`<br>`src/components/ProfileGitHubSyncSection.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/components/ProfileStatsTab.tsx`<br>+12 |
+| `src/core/cinethos-core.ts#DataDocument` | 19 | 1 | 18 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ProfileGitHubSyncSection.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/core/sync-display.ts`<br>`src/core/taste/migration.ts`<br>+13 |
+| `src/core/cinethos-core.ts#Profile` | 18 | 1 | 17 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ProfileBackupTab.tsx`<br>`src/components/ProfileGitHubSyncSection.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/components/ProfileStatsTab.tsx`<br>+12 |
 | `src/utils/helpers.ts#displayTitle` | 16 | 16 | 0 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/app/mobile/MobileDashboard.tsx`<br>`src/components/CommandPalette.tsx`<br>`src/components/DetailModal.tsx`<br>`src/components/Header.tsx`<br>+10 |
-| `src/core/cinetrack-core.ts#FavoriteActorInfo` | 16 | 3 | 13 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>`src/components/MediaGrid.tsx`<br>`src/components/PersonDrawer.tsx`<br>`src/components/ProfileModal.tsx`<br>+10 |
+| `src/core/cinethos-core.ts#FavoriteActorInfo` | 16 | 3 | 13 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>`src/components/MediaGrid.tsx`<br>`src/components/PersonDrawer.tsx`<br>`src/components/ProfileModal.tsx`<br>+10 |
 | `src/shared/brand.ts#BRAND_NAME` | 15 | 15 | 0 | `src/App.tsx`<br>`src/app/AppFooter.tsx`<br>`src/app/AppSidebar.tsx`<br>`src/app/mobile/MobileTopBar.tsx`<br>`src/components/ErrorBoundary.tsx`<br>`src/components/Header.tsx`<br>+9 |
-| `src/core/cinetrack-core.ts#Preferences` | 14 | 2 | 12 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ProfileBackupTab.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/components/RelationshipExplorer.tsx`<br>`src/components/UniversesHub.tsx`<br>+8 |
+| `src/core/cinethos-core.ts#Preferences` | 14 | 2 | 12 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ProfileBackupTab.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/components/RelationshipExplorer.tsx`<br>`src/components/UniversesHub.tsx`<br>+8 |
 | `src/core/cinema-kunye.ts#CinemaKunyeDocument` | 14 | 0 | 14 | `src/app/AppModals.tsx`<br>`src/components/ProfileBackupTab.tsx`<br>`src/components/ProfileModal.tsx`<br>`src/components/ProfileStatsTab.tsx`<br>`src/components/Stats.tsx`<br>`src/components/WrappedCard.tsx`<br>+8 |
 | `src/utils/helpers.ts#getPoster` | 12 | 12 | 0 | `src/app/mobile/MobileDashboard.tsx`<br>`src/components/CommandPalette.tsx`<br>`src/components/DetailModal.tsx`<br>`src/components/Header.tsx`<br>`src/components/Hero.tsx`<br>`src/components/MediaCard.tsx`<br>+6 |
 | `src/core/taste/types.ts#TasteProfile` | 12 | 0 | 12 | `src/components/taste/TasteCategoryDetail.tsx`<br>`src/components/taste/TasteComparePanel.tsx`<br>`src/components/taste/TasteMetricDetail.tsx`<br>`src/core/taste/profile-aggregator.ts`<br>`src/core/taste/profile-explainer.ts`<br>`src/core/taste/recommendation-adapter.ts`<br>+6 |
 | `src/core/taste/types.ts#TasteEvent` | 12 | 0 | 12 | `src/core/taste/behavioral-patterns.ts`<br>`src/core/taste/evidence-ledger.ts`<br>`src/core/taste/migration.ts`<br>`src/core/taste/profile-aggregator.ts`<br>`src/core/taste/taste-archaeology.ts`<br>`src/core/taste/taste-event-projector.ts`<br>+6 |
-| `src/core/cinetrack-core.ts#PoolCandidateItem` | 11 | 2 | 9 | `src/App.tsx`<br>`src/components/RelationshipDetailsPanel.tsx`<br>`src/components/RelationshipExplorer.tsx`<br>`src/components/RelationshipListView.tsx`<br>`src/components/UniversesHub.tsx`<br>`src/components/UniversesView.tsx`<br>+5 |
+| `src/core/cinethos-core.ts#PoolCandidateItem` | 11 | 2 | 9 | `src/App.tsx`<br>`src/components/RelationshipDetailsPanel.tsx`<br>`src/components/RelationshipExplorer.tsx`<br>`src/components/RelationshipListView.tsx`<br>`src/components/UniversesHub.tsx`<br>`src/components/UniversesView.tsx`<br>+5 |
 | `src/services/api.ts#fetchTmdb` | 10 | 10 | 0 | `src/App.tsx`<br>`src/components/CommandPalette.tsx`<br>`src/components/DetailModal.tsx`<br>`src/components/Header.tsx`<br>`src/components/PersonDrawer.tsx`<br>`src/services/actor-recommendations-engine.ts`<br>+4 |
 | `src/core/taste/taxonomy.ts#TAXONOMY_V01` | 10 | 10 | 0 | `src/app/mobile/MobileDashboard.tsx`<br>`src/components/UniversesHub.tsx`<br>`src/components/profile/ProfileIdentityCard.tsx`<br>`src/components/taste/TasteComparePanel.tsx`<br>`src/components/taste/TasteProfileDashboard.tsx`<br>`src/components/taste/TasteProfileMinimal.tsx`<br>+4 |
 | `src/services/storage-idb.ts#loadStockIdb` | 9 | 9 | 0 | `src/App.tsx`<br>`src/components/PersonDrawer.tsx`<br>`src/components/ProfileGitHubSyncSection.tsx`<br>`src/components/RelationshipExplorer.tsx`<br>`src/components/UniversesHub.tsx`<br>`src/services/idle-enrichment-service.ts`<br>+3 |
-| `src/core/cinetrack-core.ts#PersistentTasteMapData` | 9 | 3 | 6 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/IdentityView.tsx`<br>`src/components/TasteMapView.tsx`<br>`src/core/evaluation.ts`<br>`src/core/recommendation-orchestrator.ts`<br>+3 |
+| `src/core/cinethos-core.ts#PersistentTasteMapData` | 9 | 3 | 6 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/IdentityView.tsx`<br>`src/components/TasteMapView.tsx`<br>`src/core/evaluation.ts`<br>`src/core/recommendation-orchestrator.ts`<br>+3 |
 | `src/core/taste/types.ts#ContentTasteItem` | 9 | 0 | 9 | `src/core/taste/feature-extractor.ts`<br>`src/core/taste/profile-aggregator.ts`<br>`src/core/taste/profile-explainer.ts`<br>`src/core/taste/recommendation-adapter.ts`<br>`src/core/taste/taste-archaeology.ts`<br>`src/core/taste/taste-index-builder.ts`<br>+3 |
-| `src/core/cinetrack-core.ts#findSavedItem` | 8 | 8 | 0 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>`src/components/DetailModal.tsx`<br>`src/components/PaginatedMediaModal.tsx`<br>`src/components/PersonDrawer.tsx`<br>+2 |
-| `src/core/cinema-kunye.ts#enrichSavedItemsFromCinemaKunye` | 8 | 8 | 0 | `src/App.tsx`<br>`src/components/ProfileStatsTab.tsx`<br>`src/components/Stats.tsx`<br>`src/core/cinetrack-core.ts`<br>`src/core/exporters.ts`<br>`src/core/wrapped-summary.ts`<br>+2 |
-| `src/core/cinema-kunye.ts#mergeCinemaKunyeDocumentsLossless` | 8 | 8 | 0 | `src/App.tsx`<br>`src/core/cinetrack-core.ts`<br>`src/core/exporters.ts`<br>`src/hooks/useCinemaKunye.ts`<br>`src/server/excel-profile-backup.ts`<br>`src/server/github-bidirectional-sync.ts`<br>+2 |
+| `src/core/cinethos-core.ts#findSavedItem` | 8 | 8 | 0 | `src/App.tsx`<br>`src/app/AppModals.tsx`<br>`src/components/ActorRecommendationsSection.tsx`<br>`src/components/DetailModal.tsx`<br>`src/components/PaginatedMediaModal.tsx`<br>`src/components/PersonDrawer.tsx`<br>+2 |
+| `src/core/cinema-kunye.ts#enrichSavedItemsFromCinemaKunye` | 8 | 8 | 0 | `src/App.tsx`<br>`src/components/ProfileStatsTab.tsx`<br>`src/components/Stats.tsx`<br>`src/core/cinethos-core.ts`<br>`src/core/exporters.ts`<br>`src/core/wrapped-summary.ts`<br>+2 |
+| `src/core/cinema-kunye.ts#mergeCinemaKunyeDocumentsLossless` | 8 | 8 | 0 | `src/App.tsx`<br>`src/core/cinethos-core.ts`<br>`src/core/exporters.ts`<br>`src/hooks/useCinemaKunye.ts`<br>`src/server/excel-profile-backup.ts`<br>`src/server/github-bidirectional-sync.ts`<br>+2 |
 | `src/core/taste/metric-labels.ts#getMetricDisplayTitle` | 8 | 8 | 0 | `src/app/mobile/MobileDashboard.tsx`<br>`src/components/UniversesHub.tsx`<br>`src/components/profile/ProfileIdentityCard.tsx`<br>`src/components/taste/TasteComparePanel.tsx`<br>`src/components/taste/TasteEvolutionPanel.tsx`<br>`src/components/taste/TasteMetricDetail.tsx`<br>+2 |
 | `src/utils/useDialogAccessibility.ts#useDialogAccessibility` | 8 | 8 | 0 | `src/components/AddCustomModal.tsx`<br>`src/components/CommandPalette.tsx`<br>`src/components/DetailModal.tsx`<br>`src/components/ImportChoiceModal.tsx`<br>`src/components/PaginatedMediaModal.tsx`<br>`src/components/PersonDrawer.tsx`<br>+2 |
 | `src/utils/helpers.ts#imageUrl` | 8 | 8 | 0 | `src/components/DetailModal.tsx`<br>`src/components/Hero.tsx`<br>`src/components/MediaGrid.tsx`<br>`src/components/PersonDrawer.tsx`<br>`src/components/WrappedCard.tsx`<br>`src/components/taste/TasteMetricDetail.tsx`<br>+2 |
@@ -139,58 +139,58 @@
 
 | Depo | Erişen dosyalar |
 | --- | --- |
-| `cinetrack-skip-log-db` | `src/services/client-depots.ts` |
-| `cinetrack-ui-prefs-db` | `src/services/client-depots.ts` |
-| `cinetrack-actor-credits-db` | `src/services/client-depots.ts` |
-| `cinetrack-encodings-db` | `src/services/client-depots.ts` |
-| `cinetrack-offline-queue-db` | `src/services/offline-queue.ts`<br>`src/services/storage-idb.ts` |
-| `cinetrack-poster-lru-db` | `src/services/poster-cache-manager.ts` |
-| `cinetrack-relationship-cache` | `src/services/relationship-cache.ts` |
-| `cinetrack-stock-db` | `src/services/storage-idb.ts` |
-| `cinetrack-surfaced-db` | `src/services/storage-idb.ts` |
-| `cinetrack-series-index-db` | `src/services/storage-idb.ts` |
-| `cinetrack-user-lists-db` | `src/services/storage-idb.ts` |
-| `cinetrack-profile-db` | `src/services/storage-idb.ts` |
+| `cinethos-skip-log-db` | `src/services/client-depots.ts` |
+| `cinethos-ui-prefs-db` | `src/services/client-depots.ts` |
+| `cinethos-actor-credits-db` | `src/services/client-depots.ts` |
+| `cinethos-encodings-db` | `src/services/client-depots.ts` |
+| `cinethos-offline-queue-db` | `src/services/offline-queue.ts`<br>`src/services/storage-idb.ts` |
+| `cinethos-poster-lru-db` | `src/services/poster-cache-manager.ts` |
+| `cinethos-relationship-cache` | `src/services/relationship-cache.ts` |
+| `cinethos-stock-db` | `src/services/storage-idb.ts` |
+| `cinethos-surfaced-db` | `src/services/storage-idb.ts` |
+| `cinethos-series-index-db` | `src/services/storage-idb.ts` |
+| `cinethos-user-lists-db` | `src/services/storage-idb.ts` |
+| `cinethos-profile-db` | `src/services/storage-idb.ts` |
 
 ### localStorage
 
 | Anahtar | Erişen dosyalar |
 | --- | --- |
-| `cinetrack.profiles.v1` | `src/App.tsx` |
-| `cinetrack.activeProfile.v1` | `src/App.tsx` |
-| `cinetrack.profile.v1` | `src/App.tsx` |
-| `cinetrack.dirty.v2` | `src/App.tsx` |
-| `cinetrack_hide_listed_items` | `src/App.tsx` |
-| `cinetrack.profile.*.watchlist.v1` | `src/App.tsx`<br>`src/services/storage-idb.ts` |
-| `cinetrack.profile.*.preferences.v1` | `src/App.tsx`<br>`src/services/storage-idb.ts` |
-| `cinetrack_fav_actors_*` | `src/App.tsx` |
-| `cinetrack_deleted_keys_*` | `src/App.tsx` |
-| `cinetrack_disliked_cache` | `src/App.tsx` |
+| `cinethos.profiles.v1` | `src/App.tsx` |
+| `cinethos.activeProfile.v1` | `src/App.tsx` |
+| `cinethos.profile.v1` | `src/App.tsx` |
+| `cinethos.dirty.v2` | `src/App.tsx` |
+| `cinethos_hide_listed_items` | `src/App.tsx` |
+| `cinethos.profile.*.watchlist.v1` | `src/App.tsx`<br>`src/services/storage-idb.ts` |
+| `cinethos.profile.*.preferences.v1` | `src/App.tsx`<br>`src/services/storage-idb.ts` |
+| `cinethos_fav_actors_*` | `src/App.tsx` |
+| `cinethos_deleted_keys_*` | `src/App.tsx` |
+| `cinethos_disliked_cache` | `src/App.tsx` |
 | `ct:ui-prefs` | `src/App.tsx` |
 | `ct:mobile-dashboard:*` | `src/app/mobile/MobileDashboard.tsx` |
-| `cinetrack.actor-accordions.v1` | `src/components/ActorRecommendationsSection.tsx` |
-| `cinetrack_evidence_objections` | `src/components/EvidenceModal.tsx` |
+| `cinethos.actor-accordions.v1` | `src/components/ActorRecommendationsSection.tsx` |
+| `cinethos_evidence_objections` | `src/components/EvidenceModal.tsx` |
 | `ct:library-view` | `src/components/MediaGrid.tsx` |
-| `cinetrack.series-accordions.v1` | `src/components/SeriesRecommendationsSection.tsx` |
-| `cinetrack_taste_map_*` | `src/core/cinetrack-core.ts` |
+| `cinethos.series-accordions.v1` | `src/components/SeriesRecommendationsSection.tsx` |
+| `cinethos_taste_map_*` | `src/core/cinethos-core.ts` |
 | `ct:cinema-kunye` | `src/hooks/useCinemaKunye.ts` |
 | `ct:actor-credits:*` | `src/services/actor-recommendations-engine.ts`<br>`src/services/client-depots.ts` |
 | `ct:stock` | `src/services/actor-recommendations-engine.ts`<br>`src/services/idb-schema-version.ts` |
-| `cinetrack_client_token_v1` | `src/services/api-client.ts` |
+| `cinethos_client_token_v1` | `src/services/api-client.ts` |
 | `ct:auto-backup-meta` | `src/services/auto-backup-service.ts` |
-| `cinetrack_taste_map_` | `src/services/discovery-storage.ts` |
-| `cinetrack_pool_*_*` | `src/services/discovery-storage.ts` |
-| `cinetrack_idb_depot_versions_v1` | `src/services/idb-schema-version.ts` |
+| `cinethos_taste_map_` | `src/services/discovery-storage.ts` |
+| `cinethos_pool_*_*` | `src/services/discovery-storage.ts` |
+| `cinethos_idb_depot_versions_v1` | `src/services/idb-schema-version.ts` |
 | `ct:encodings` | `src/services/idb-schema-version.ts` |
 | `ct:profile` | `src/services/idb-schema-version.ts` |
 | `ct:user-lists` | `src/services/idb-schema-version.ts` |
 | `ct:series-index` | `src/services/idb-schema-version.ts`<br>`src/services/series-service.ts` |
 | `ct:idle-enrichment-quota` | `src/services/idle-enrichment-service.ts` |
-| `cinetrack_offline_sync_queue_v1` | `src/services/offline-queue.ts` |
-| `cinetrack_offline_queue_store` | `src/services/offline-queue.ts` |
+| `cinethos_offline_sync_queue_v1` | `src/services/offline-queue.ts` |
+| `cinethos_offline_queue_store` | `src/services/offline-queue.ts` |
 | `ct:poster-hydration` | `src/services/poster-hydration-service.ts` |
 | `ct:stock-poster-hydration` | `src/services/stock-poster-hydration-service.ts` |
-| `cinetrack_prefer_image_proxy` | `src/utils/helpers.ts` |
+| `cinethos_prefer_image_proxy` | `src/utils/helpers.ts` |
 | `ct:theme` | `src/utils/theme.ts` |
 
 ## 9. Test → Kaynak Eşlemesi
@@ -200,20 +200,20 @@
 | `tests/api-auth-coverage.test.mjs` | 3 | 83 | — |
 | `tests/api-error-policy.test.mjs` | 7 | 102 | `src/core/cinema-kunye.ts`<br>`src/services/api.ts` |
 | `tests/archive-restore-consistency.test.mjs` | 9 | 551 | `src/server/app.ts`<br>`src/server/archive-integrity.ts`<br>`src/server/sqlite-archive.ts` |
-| `tests/audit-spec-fixes.test.mjs` | 8 | 707 | `src/core/cinetrack-core.ts`<br>`src/core/keys.ts`<br>`src/core/mood-affinity.ts`<br>`src/core/recommendation-orchestrator.ts`<br>`src/i18n/index.ts`<br>+8 |
-| `tests/cinema-kunye-backup-sync.test.mjs` | 5 | 692 | `src/core/cinema-kunye.ts`<br>`src/core/cinetrack-core.ts`<br>`src/core/exporters.ts`<br>`src/core/user-data-merge.ts`<br>`src/core/wrapped-summary.ts`<br>+5 |
-| `tests/core.test.mjs` | 0 | 4844 | `src/core/cinetrack-core.ts`<br>`src/services/api.ts`<br>`src/services/discovery-storage.ts`<br>`src/utils/helpers.ts` |
+| `tests/audit-spec-fixes.test.mjs` | 8 | 707 | `src/core/cinethos-core.ts`<br>`src/core/keys.ts`<br>`src/core/mood-affinity.ts`<br>`src/core/recommendation-orchestrator.ts`<br>`src/i18n/index.ts`<br>+8 |
+| `tests/cinema-kunye-backup-sync.test.mjs` | 5 | 692 | `src/core/cinema-kunye.ts`<br>`src/core/cinethos-core.ts`<br>`src/core/exporters.ts`<br>`src/core/user-data-merge.ts`<br>`src/core/wrapped-summary.ts`<br>+5 |
+| `tests/core.test.mjs` | 0 | 4844 | `src/core/cinethos-core.ts`<br>`src/services/api.ts`<br>`src/services/discovery-storage.ts`<br>`src/utils/helpers.ts` |
 | `tests/excel-profile-backup.test.mjs` | 10 | 1284 | `src/server/app.ts`<br>`src/server/excel-profile-backup.ts`<br>`src/server/persistent-store.ts`<br>`src/services/api.ts` |
-| `tests/faz0-baseline.test.mjs` | 3 | 269 | `src/core/cinetrack-core.ts`<br>`src/server/storage.ts` |
+| `tests/faz0-baseline.test.mjs` | 3 | 269 | `src/core/cinethos-core.ts`<br>`src/server/storage.ts` |
 | `tests/feat-03-encoding-relationships.test.mjs` | 2 | 438 | `src/core/encoding.ts`<br>`src/core/relationship-explorer.ts`<br>`src/core/scoring.ts`<br>`src/services/client-depots.ts`<br>`src/services/encoding-service.ts`<br>+3 |
-| `tests/github-bidirectional-sync.test.mjs` | 35 | 2549 | `src/core/cinetrack-core.ts`<br>`src/core/derived-profile-cache.ts`<br>`src/core/sync-display.ts`<br>`src/server/app.ts`<br>`src/server/config.ts`<br>+2 |
+| `tests/github-bidirectional-sync.test.mjs` | 35 | 2549 | `src/core/cinethos-core.ts`<br>`src/core/derived-profile-cache.ts`<br>`src/core/sync-display.ts`<br>`src/server/app.ts`<br>`src/server/config.ts`<br>+2 |
 | `tests/image-proxy-hardening.test.mjs` | 6 | 208 | `src/server/tmdb-proxy.ts` |
-| `tests/loved-similarity.test.mjs` | 9 | 213 | `src/core/cinetrack-core.ts` |
+| `tests/loved-similarity.test.mjs` | 9 | 213 | `src/core/cinethos-core.ts` |
 | `tests/module-registry.test.mjs` | 0 | 102 | `src/app/module-registry.ts`<br>`src/app/navigation.ts` |
 | `tests/offline-queue-durability.test.mjs` | 7 | 196 | `src/services/offline-queue.ts` |
 | `tests/persistent-store.test.mjs` | 11 | 935 | `src/core/derived-profile-cache.ts`<br>`src/core/exporters.ts`<br>`src/core/limits.ts`<br>`src/core/recommendation-orchestrator.ts`<br>`src/server/app.ts`<br>+3 |
-| `tests/phases-1-to-4-architecture.test.mjs` | 4 | 769 | `src/core/cinetrack-core.ts`<br>`src/server/app.ts`<br>`src/server/config.ts`<br>`src/server/persistent-store.ts`<br>`src/server/security.ts`<br>+6 |
-| `tests/phases-all.test.mjs` | 15 | 1890 | `src/core/cinetrack-core.ts`<br>`src/core/evaluation.ts`<br>`src/core/exporters.ts`<br>`src/core/keys.ts`<br>`src/core/recommendation-orchestrator.ts`<br>+6 |
+| `tests/phases-1-to-4-architecture.test.mjs` | 4 | 769 | `src/core/cinethos-core.ts`<br>`src/server/app.ts`<br>`src/server/config.ts`<br>`src/server/persistent-store.ts`<br>`src/server/security.ts`<br>+6 |
+| `tests/phases-all.test.mjs` | 15 | 1890 | `src/core/cinethos-core.ts`<br>`src/core/evaluation.ts`<br>`src/core/exporters.ts`<br>`src/core/keys.ts`<br>`src/core/recommendation-orchestrator.ts`<br>+6 |
 | `tests/relationship-explorer.test.mjs` | 24 | 793 | `src/core/relationship-explorer.ts`<br>`src/services/relationship-cache.ts` |
 | `tests/respan-telemetry.test.mjs` | 4 | 117 | `src/server/respan-telemetry.ts` |
 | `tests/shell-events.test.mjs` | 5 | 72 | `src/app/shell-events.ts` |
@@ -299,62 +299,62 @@ flowchart LR
 
 | Modül | Hedef modüller (kenar sayısı) | Örnek dosya kenarları |
 | --- | --- | --- |
-| `app` | components (11)<br>core (8)<br>design-system (6)<br>utils (4)<br>shared (3)<br>services (1)<br>hooks (1)<br>modules/discover (1)<br>modules/list (1)<br>types (1) | `src/app/AppModals.tsx → src/components/DetailModal.tsx`<br>`src/app/AppModals.tsx → src/components/QuickSaveModal.tsx`<br>`src/app/AppModals.tsx → src/components/PersonDrawer.tsx`<br>`src/app/AppModals.tsx → src/core/cinetrack-core.ts` |
-| `components` | core (70)<br>services (40)<br>utils (31)<br>types (8)<br>hooks (7)<br>i18n (6)<br>shared (4)<br>app (3) | `src/components/ActorRecommendationsSection.tsx → src/core/cinetrack-core.ts`<br>`src/components/CommandPalette.tsx → src/core/cinetrack-core.ts`<br>`src/components/DetailModal.tsx → src/core/cinetrack-core.ts`<br>`src/components/ActorRecommendationsSection.tsx → src/services/actor-recommendations-engine.ts` |
-| `core` | services (4)<br>shared (3)<br>types (2)<br>utils (1) | `src/core/actor-recommendations.ts → src/services/api-client.ts`<br>`src/core/relationship-explorer.ts → src/services/encoding-service.ts`<br>`src/core/relationship-explorer.ts → src/services/storage-idb.ts`<br>`src/core/cinetrack-core.ts → src/shared/brand.ts` |
+| `app` | components (11)<br>core (8)<br>design-system (6)<br>utils (4)<br>shared (3)<br>services (1)<br>hooks (1)<br>modules/discover (1)<br>modules/list (1)<br>types (1) | `src/app/AppModals.tsx → src/components/DetailModal.tsx`<br>`src/app/AppModals.tsx → src/components/QuickSaveModal.tsx`<br>`src/app/AppModals.tsx → src/components/PersonDrawer.tsx`<br>`src/app/AppModals.tsx → src/core/cinethos-core.ts` |
+| `components` | core (70)<br>services (40)<br>utils (31)<br>types (8)<br>hooks (7)<br>i18n (6)<br>shared (4)<br>app (3) | `src/components/ActorRecommendationsSection.tsx → src/core/cinethos-core.ts`<br>`src/components/CommandPalette.tsx → src/core/cinethos-core.ts`<br>`src/components/DetailModal.tsx → src/core/cinethos-core.ts`<br>`src/components/ActorRecommendationsSection.tsx → src/services/actor-recommendations-engine.ts` |
+| `core` | services (4)<br>shared (3)<br>types (2)<br>utils (1) | `src/core/actor-recommendations.ts → src/services/api-client.ts`<br>`src/core/relationship-explorer.ts → src/services/encoding-service.ts`<br>`src/core/relationship-explorer.ts → src/services/storage-idb.ts`<br>`src/core/cinethos-core.ts → src/shared/brand.ts` |
 | `design-system` | utils (4) | `src/design-system/cards/DiscoveryCard.tsx → src/utils/helpers.ts`<br>`src/design-system/cards/HeroCard.tsx → src/utils/helpers.ts`<br>`src/design-system/cards/ProgressCard.tsx → src/utils/helpers.ts` |
 | `entry` | server (5)<br>core (2) | `server.ts → src/server/app.ts`<br>`server.ts → src/server/config.ts`<br>`server.ts → src/server/github-token-refresh.ts`<br>`server.ts → src/core/limits.ts` |
-| `hooks` | services (10)<br>core (6)<br>app (2)<br>utils (1) | `src/hooks/useCinemaKunye.ts → src/services/api.ts`<br>`src/hooks/useItemActions.ts → src/services/taste-api.ts`<br>`src/hooks/useOfflineSync.ts → src/services/api.ts`<br>`src/hooks/useCinemaKunye.ts → src/core/cinetrack-core.ts` |
+| `hooks` | services (10)<br>core (6)<br>app (2)<br>utils (1) | `src/hooks/useCinemaKunye.ts → src/services/api.ts`<br>`src/hooks/useItemActions.ts → src/services/taste-api.ts`<br>`src/hooks/useOfflineSync.ts → src/services/api.ts`<br>`src/hooks/useCinemaKunye.ts → src/core/cinethos-core.ts` |
 | `i18n` | shared (1) | `src/i18n/index.ts → src/shared/brand.ts` |
 | `modules/discover` | components (3) | `src/modules/discover/DiscoverSection.tsx → src/components/Hero.tsx`<br>`src/modules/discover/DiscoverSection.tsx → src/components/MediaGrid.tsx`<br>`src/modules/discover/DiscoverSection.tsx → src/components/ErrorBoundary.tsx` |
 | `modules/list` | components (3) | `src/modules/list/ListSection.tsx → src/components/Stats.tsx`<br>`src/modules/list/ListSection.tsx → src/components/MediaGrid.tsx`<br>`src/modules/list/ListSection.tsx → src/components/ErrorBoundary.tsx` |
-| `modules/relationships` | components (2)<br>core (2)<br>app (1) | `src/modules/relationships/RelationshipsSection.tsx → src/components/ErrorBoundary.tsx`<br>`src/modules/relationships/RelationshipsSection.tsx → src/components/RelationshipExplorer.tsx`<br>`src/modules/relationships/RelationshipsSection.tsx → src/core/cinetrack-core.ts`<br>`src/modules/relationships/RelationshipsSection.tsx → src/core/relationship-semantics.ts` |
+| `modules/relationships` | components (2)<br>core (2)<br>app (1) | `src/modules/relationships/RelationshipsSection.tsx → src/components/ErrorBoundary.tsx`<br>`src/modules/relationships/RelationshipsSection.tsx → src/components/RelationshipExplorer.tsx`<br>`src/modules/relationships/RelationshipsSection.tsx → src/core/cinethos-core.ts`<br>`src/modules/relationships/RelationshipsSection.tsx → src/core/relationship-semantics.ts` |
 | `modules/taste-map` | components (2)<br>app (2)<br>core (2) | `src/modules/taste-map/TasteMapSection.tsx → src/components/ErrorBoundary.tsx`<br>`src/modules/taste-map/TasteMapSection.tsx → src/components/TasteMapView.tsx`<br>`src/modules/taste-map/TasteMapSection.tsx → src/app/lazy-with-retry.ts`<br>`src/modules/taste-map/TasteMapSection.tsx → src/app/shell-context.tsx` |
-| `server` | core (40)<br>shared (5) | `src/server/app.ts → src/core/cinetrack-core.ts`<br>`src/server/app.ts → src/core/limits.ts`<br>`src/server/archive-integrity.ts → src/core/cinetrack-core.ts`<br>`src/server/app.ts → src/shared/brand.ts` |
-| `services` | core (25)<br>types (11)<br>utils (3) | `src/services/actor-recommendations-engine.ts → src/core/cinetrack-core.ts`<br>`src/services/api.ts → src/core/cinetrack-core.ts`<br>`src/services/api.ts → src/core/cinema-kunye.ts`<br>`src/services/actor-recommendations-engine.ts → src/types/tmdb.ts` |
+| `server` | core (40)<br>shared (5) | `src/server/app.ts → src/core/cinethos-core.ts`<br>`src/server/app.ts → src/core/limits.ts`<br>`src/server/archive-integrity.ts → src/core/cinethos-core.ts`<br>`src/server/app.ts → src/shared/brand.ts` |
+| `services` | core (25)<br>types (11)<br>utils (3) | `src/services/actor-recommendations-engine.ts → src/core/cinethos-core.ts`<br>`src/services/api.ts → src/core/cinethos-core.ts`<br>`src/services/api.ts → src/core/cinema-kunye.ts`<br>`src/services/actor-recommendations-engine.ts → src/types/tmdb.ts` |
 | `src-root` | services (15)<br>app (11)<br>core (9)<br>hooks (7)<br>components (5)<br>utils (3)<br>shared (1) | `src/App.tsx → src/services/discovery-storage.ts`<br>`src/App.tsx → src/services/api.ts`<br>`src/App.tsx → src/services/offline-queue.ts`<br>`src/App.tsx → src/app/AppFooter.tsx` |
-| `utils` | core (2)<br>types (1) | `src/utils/helpers.ts → src/core/cinetrack-core.ts`<br>`src/utils/helpers.ts → src/core/media/poster.ts`<br>`src/utils/helpers.ts → src/types/tmdb.ts` |
+| `utils` | core (2)<br>types (1) | `src/utils/helpers.ts → src/core/cinethos-core.ts`<br>`src/utils/helpers.ts → src/core/media/poster.ts`<br>`src/utils/helpers.ts → src/types/tmdb.ts` |
 | `workers` | core (5) | `src/workers/encoding.worker.ts → src/core/encoding.ts`<br>`src/workers/taste-profile-worker.ts → src/core/taste/feature-extractor.ts`<br>`src/workers/taste-profile-worker.ts → src/core/taste/profile-aggregator.ts` |
 
 ## 11. Veri Erişim Envanteri (R/W)
 
 | Anahtar / depo | Erişim |
 | --- | --- |
-| `cinetrack_client_token_v1` | `src/services/api-client.ts` (R) |
-| `cinetrack_deleted_keys_*` | `src/App.tsx` (sabit) |
-| `cinetrack_disliked_cache` | `src/App.tsx` (R/W) |
-| `cinetrack_evidence_objections` | `src/components/EvidenceModal.tsx` (R/W) |
-| `cinetrack_fav_actors_*` | `src/App.tsx` (sabit) |
-| `cinetrack_hide_listed_items` | `src/App.tsx` (sabit) |
-| `cinetrack_idb_depot_versions_v1` | `src/services/idb-schema-version.ts` (sabit) |
-| `cinetrack_offline_queue_store` | `src/services/offline-queue.ts` (sabit) |
-| `cinetrack_offline_sync_queue_v1` | `src/services/offline-queue.ts` (sabit) |
-| `cinetrack_pool_*_*` | `src/services/discovery-storage.ts` (sabit) |
-| `cinetrack_prefer_image_proxy` | `src/utils/helpers.ts` (R/W) |
-| `cinetrack_taste_map_` | `src/services/discovery-storage.ts` (sabit) |
-| `cinetrack_taste_map_*` | `src/core/cinetrack-core.ts` (sabit) |
-| `cinetrack-actor-credits-db` | `src/services/client-depots.ts` (R/W) |
-| `cinetrack-candidate-pool-db` | `src/services/discovery-storage.ts` (sabit) |
-| `cinetrack-discovery-history-db` | `src/services/discovery-storage.ts` (R/W) |
-| `cinetrack-encodings-db` | `src/services/client-depots.ts` (sabit) |
-| `cinetrack-offline-queue-db` | `src/services/offline-queue.ts` (R/W)<br>`src/services/storage-idb.ts` (sabit) |
-| `cinetrack-poster-lru-db` | `src/services/poster-cache-manager.ts` (sabit) |
-| `cinetrack-profile-db` | `src/services/storage-idb.ts` (R/W) |
-| `cinetrack-relationship-cache` | `src/services/idb-schema-version.ts` (R/W)<br>`src/services/relationship-cache.ts` (R/W) |
-| `cinetrack-series-index-db` | `src/services/storage-idb.ts` (R/W) |
-| `cinetrack-skip-log-db` | `src/services/client-depots.ts` (R/W) |
-| `cinetrack-stock-db` | `src/services/storage-idb.ts` (R/W) |
-| `cinetrack-surfaced-db` | `src/services/storage-idb.ts` (sabit) |
-| `cinetrack-ui-prefs-db` | `src/services/client-depots.ts` (sabit) |
-| `cinetrack-user-lists-db` | `src/services/storage-idb.ts` (sabit) |
-| `cinetrack.activeProfile.v1` | `src/App.tsx` (sabit) |
-| `cinetrack.actor-accordions.v1` | `src/components/ActorRecommendationsSection.tsx` (R) |
-| `cinetrack.dirty.v2` | `src/App.tsx` (sabit) |
-| `cinetrack.profile.*.preferences.v1` | `src/App.tsx` (sabit)<br>`src/services/storage-idb.ts` (sabit) |
-| `cinetrack.profile.*.watchlist.v1` | `src/App.tsx` (sabit)<br>`src/services/storage-idb.ts` (sabit) |
-| `cinetrack.profile.v1` | `src/App.tsx` (sabit) |
-| `cinetrack.profiles.v1` | `src/App.tsx` (sabit) |
-| `cinetrack.series-accordions.v1` | `src/components/SeriesRecommendationsSection.tsx` (R) |
+| `cinethos_client_token_v1` | `src/services/api-client.ts` (R) |
+| `cinethos_deleted_keys_*` | `src/App.tsx` (sabit) |
+| `cinethos_disliked_cache` | `src/App.tsx` (R/W) |
+| `cinethos_evidence_objections` | `src/components/EvidenceModal.tsx` (R/W) |
+| `cinethos_fav_actors_*` | `src/App.tsx` (sabit) |
+| `cinethos_hide_listed_items` | `src/App.tsx` (sabit) |
+| `cinethos_idb_depot_versions_v1` | `src/services/idb-schema-version.ts` (sabit) |
+| `cinethos_offline_queue_store` | `src/services/offline-queue.ts` (sabit) |
+| `cinethos_offline_sync_queue_v1` | `src/services/offline-queue.ts` (sabit) |
+| `cinethos_pool_*_*` | `src/services/discovery-storage.ts` (sabit) |
+| `cinethos_prefer_image_proxy` | `src/utils/helpers.ts` (R/W) |
+| `cinethos_taste_map_` | `src/services/discovery-storage.ts` (sabit) |
+| `cinethos_taste_map_*` | `src/core/cinethos-core.ts` (sabit) |
+| `cinethos-actor-credits-db` | `src/services/client-depots.ts` (R/W) |
+| `cinethos-candidate-pool-db` | `src/services/discovery-storage.ts` (sabit) |
+| `cinethos-discovery-history-db` | `src/services/discovery-storage.ts` (R/W) |
+| `cinethos-encodings-db` | `src/services/client-depots.ts` (sabit) |
+| `cinethos-offline-queue-db` | `src/services/offline-queue.ts` (R/W)<br>`src/services/storage-idb.ts` (sabit) |
+| `cinethos-poster-lru-db` | `src/services/poster-cache-manager.ts` (sabit) |
+| `cinethos-profile-db` | `src/services/storage-idb.ts` (R/W) |
+| `cinethos-relationship-cache` | `src/services/idb-schema-version.ts` (R/W)<br>`src/services/relationship-cache.ts` (R/W) |
+| `cinethos-series-index-db` | `src/services/storage-idb.ts` (R/W) |
+| `cinethos-skip-log-db` | `src/services/client-depots.ts` (R/W) |
+| `cinethos-stock-db` | `src/services/storage-idb.ts` (R/W) |
+| `cinethos-surfaced-db` | `src/services/storage-idb.ts` (sabit) |
+| `cinethos-ui-prefs-db` | `src/services/client-depots.ts` (sabit) |
+| `cinethos-user-lists-db` | `src/services/storage-idb.ts` (sabit) |
+| `cinethos.activeProfile.v1` | `src/App.tsx` (sabit) |
+| `cinethos.actor-accordions.v1` | `src/components/ActorRecommendationsSection.tsx` (R) |
+| `cinethos.dirty.v2` | `src/App.tsx` (sabit) |
+| `cinethos.profile.*.preferences.v1` | `src/App.tsx` (sabit)<br>`src/services/storage-idb.ts` (sabit) |
+| `cinethos.profile.*.watchlist.v1` | `src/App.tsx` (sabit)<br>`src/services/storage-idb.ts` (sabit) |
+| `cinethos.profile.v1` | `src/App.tsx` (sabit) |
+| `cinethos.profiles.v1` | `src/App.tsx` (sabit) |
+| `cinethos.series-accordions.v1` | `src/components/SeriesRecommendationsSection.tsx` (R) |
 | `ct:auto-backup-meta` | `src/services/auto-backup-service.ts` (sabit) |
 | `ct:cinema-kunye` | `src/hooks/useCinemaKunye.ts` (R) |
 | `ct:encodings` | `src/services/idb-schema-version.ts` (sabit) |
@@ -394,7 +394,7 @@ flowchart LR
 | 1487 | function | `buildBlockedPublicPaths` | — |
 | 1502 | class | `GitHubBidirectionalSyncManager` | ✓ |
 
-### `src/core/cinetrack-core.ts` — 4691 satır, 123 üst düzey bildirim
+### `src/core/cinethos-core.ts` — 4691 satır, 123 üst düzey bildirim
 
 | Satır | Tür | Sembol | Export |
 | --- | --- | --- | --- |
@@ -678,7 +678,7 @@ flowchart LR
 | 41 | const | `MAX_SQLITE_ARCHIVE_UPLOAD_BYTES` | ✓ |
 | 43 | function | `formatMegabytes` | — |
 | 52 | function | `streamRequestBodyToFile` | — |
-| 128 | interface | `CineTrackAppOptions` | ✓ |
+| 128 | interface | `CinethosAppOptions` | ✓ |
 | 153 | const | `STATIC_ASSET_EXT_PATTERN` | — |
 | 156 | function | `isStaticAssetRequestPath` | ✓ |
 | 164 | function | `createSpaFallbackMiddleware` | ✓ |
@@ -689,7 +689,7 @@ flowchart LR
 | 261 | function | `computeFileSha256Async` | — |
 | 271 | function | `streamFileDownload` | — |
 | 292 | function | `resolveExportDocument` | ✓ |
-| 390 | function | `createCineTrackApp` | ✓ |
+| 390 | function | `createCinethosApp` | ✓ |
 
 ### `src/services/api.ts` — 1788 satır, 59 üst düzey bildirim
 
@@ -996,7 +996,7 @@ flowchart LR
 
 **`server.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/limits.ts`
 - → `src/server/app.ts`
 - → `src/server/config.ts`
@@ -1023,7 +1023,7 @@ flowchart LR
 - → `src/components/OfflineIndicator.tsx`
 - → `src/components/Toast.tsx`
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/derived-profile-cache.ts`
 - → `src/core/duplicate-detector.ts`
 - → `src/core/exporters.ts` *(tip)*
@@ -1075,7 +1075,7 @@ flowchart LR
 - → `src/components/QuickSaveModal.tsx`
 - → `src/components/Toast.tsx`
 - → `src/core/cinema-kunye.ts` *(tip)*
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/exporters.ts` *(tip)*
 - → `src/services/api.ts` *(tip)*
 - → `src/utils/helpers.ts`
@@ -1092,8 +1092,8 @@ flowchart LR
 
 - → `src/app/MobileTabBar.tsx` *(tip)*
 - → `src/components/MoodPillsBar.tsx`
-- → `src/core/cinetrack-core.ts` *(tip)*
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts`
 - → `src/core/taste/metric-labels.ts`
 - → `src/core/taste/taxonomy.ts`
 - → `src/design-system/cards/DiscoveryCard.tsx`
@@ -1130,7 +1130,7 @@ flowchart LR
 
 **`src/app/shell-context.tsx`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/types/tmdb.ts` *(tip)*
 
 **`src/app/useHashNavigation.ts`**
@@ -1142,7 +1142,7 @@ flowchart LR
 
 - → `src/components/MediaCard.tsx`
 - → `src/components/PaginatedMediaModal.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/services/actor-recommendations-engine.ts`
 - → `src/services/stock-engine.ts`
 - → `src/types/tmdb.ts` *(tip)*
@@ -1164,12 +1164,12 @@ flowchart LR
 **`src/components/charts/profile-chart-data.ts`**
 
 - → `src/components/charts/ColumnChart.tsx` *(tip)*
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/components/CommandPalette.tsx`**
 
 - → `src/app/module-registry.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/services/api.ts`
 - → `src/utils/helpers.ts`
 - → `src/utils/useDialogAccessibility.ts`
@@ -1186,7 +1186,7 @@ flowchart LR
 
 **`src/components/DetailModal.tsx`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/i18n/index.ts`
 - → `src/services/api.ts`
 - → `src/services/series-service.ts`
@@ -1197,7 +1197,7 @@ flowchart LR
 
 **`src/components/DuplicateMergePanel.tsx`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/duplicate-detector.ts`
 
 **`src/components/ErrorBoundary.tsx`**
@@ -1228,7 +1228,7 @@ flowchart LR
 
 - → `src/components/EvidenceModal.tsx`
 - → `src/components/TasteMapView.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/utils/a11y.ts`
 
 **`src/components/ImportChoiceModal.tsx`**
@@ -1237,7 +1237,7 @@ flowchart LR
 
 **`src/components/MediaCard.tsx`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/tv-progress.ts`
 - → `src/i18n/index.ts`
 - → `src/services/poster-cache-manager.ts`
@@ -1253,7 +1253,7 @@ flowchart LR
 - → `src/components/MediaCard.tsx`
 - → `src/components/SeasonCalendarSection.tsx`
 - → `src/components/SeriesRecommendationsSection.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/shared/brand.ts`
 - → `src/types/tmdb.ts`
 - → `src/utils/helpers.ts`
@@ -1269,13 +1269,13 @@ flowchart LR
 **`src/components/PaginatedMediaModal.tsx`**
 
 - → `src/components/MediaCard.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/types/tmdb.ts` *(tip)*
 - → `src/utils/useDialogAccessibility.ts`
 
 **`src/components/PersonDrawer.tsx`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/person-insights.ts`
 - → `src/services/api.ts`
 - → `src/services/discovery-storage.ts`
@@ -1295,7 +1295,7 @@ flowchart LR
 
 - → `src/components/ProfileGitHubSyncSection.tsx` *(tip)*
 - → `src/core/cinema-kunye.ts` *(tip)*
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/exporters.ts`
 - → `src/core/limits.ts`
 - → `src/services/api.ts`
@@ -1304,7 +1304,7 @@ flowchart LR
 
 **`src/components/ProfileGitHubSyncSection.tsx`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/sync-display.ts`
 - → `src/services/api.ts`
 - → `src/services/stock-engine.ts`
@@ -1317,7 +1317,7 @@ flowchart LR
 - → `src/components/ProfileGitHubSyncSection.tsx`
 - → `src/components/ProfileStatsTab.tsx`
 - → `src/core/cinema-kunye.ts` *(tip)*
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/exporters.ts` *(tip)*
 - → `src/services/api.ts`
 - → `src/services/auto-backup-service.ts`
@@ -1331,7 +1331,7 @@ flowchart LR
 - → `src/components/charts/ColumnChart.tsx`
 - → `src/components/charts/profile-chart-data.ts`
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/exporters.ts`
 - → `src/utils/helpers.ts`
 
@@ -1342,7 +1342,7 @@ flowchart LR
 
 **`src/components/QuickSaveModal.tsx`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/utils/helpers.ts`
 - → `src/utils/useDialogAccessibility.ts`
 
@@ -1353,7 +1353,7 @@ flowchart LR
 
 **`src/components/RelationshipDetailsPanel.tsx`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/relationship-explorer.ts` *(tip)*
 - → `src/core/relationship-wordlists.ts`
 
@@ -1362,7 +1362,7 @@ flowchart LR
 - → `src/components/RelationshipCanvas.ts`
 - → `src/components/RelationshipDetailsPanel.tsx`
 - → `src/components/RelationshipListView.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/relationship-explorer.ts`
 - → `src/core/scoring.ts`
 - → `src/services/discovery-storage.ts`
@@ -1372,14 +1372,14 @@ flowchart LR
 
 **`src/components/RelationshipListView.tsx`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/relationship-explorer.ts` *(tip)*
 - → `src/core/relationship-explorer.ts`
 - → `src/core/relationship-wordlists.ts`
 
 **`src/components/SeasonCalendarSection.tsx`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/exporters.ts`
 - → `src/core/tv-progress.ts`
 - → `src/i18n/index.ts`
@@ -1388,7 +1388,7 @@ flowchart LR
 
 - → `src/components/MediaCard.tsx`
 - → `src/components/PaginatedMediaModal.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/services/series-service.ts`
 - → `src/services/storage-idb.ts`
 - → `src/types/tmdb.ts` *(tip)*
@@ -1400,7 +1400,7 @@ flowchart LR
 - → `src/components/DuplicateMergePanel.tsx`
 - → `src/components/WrappedCard.tsx`
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/exporters.ts`
 - → `src/services/auto-backup-service.ts`
 - → `src/utils/helpers.ts`
@@ -1463,7 +1463,7 @@ flowchart LR
 **`src/components/TasteMapView.tsx`**
 
 - → `src/components/MediaCard.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 
 **`src/components/UniversesHub.tsx`**
 
@@ -1472,8 +1472,8 @@ flowchart LR
 - → `src/components/RelationshipExplorer.tsx`
 - → `src/components/SeriesRecommendationsSection.tsx`
 - → `src/components/ui/GlassCard.tsx`
-- → `src/core/cinetrack-core.ts` *(tip)*
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts`
 - → `src/core/taste/metric-labels.ts`
 - → `src/core/taste/taxonomy.ts`
 - → `src/hooks/useTasteProfile.ts`
@@ -1483,20 +1483,20 @@ flowchart LR
 **`src/components/UniversesView.tsx`**
 
 - → `src/components/RelationshipExplorer.tsx`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/services/series-service.ts`
 - → `src/utils/a11y.ts`
 
 **`src/components/WrappedCard.tsx`**
 
 - → `src/core/cinema-kunye.ts` *(tip)*
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/wrapped-summary.ts`
 - → `src/utils/helpers.ts`
 
 **`src/core/actor-recommendations.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/genre-matching.ts`
 - → `src/core/keys.ts`
 - → `src/core/rating-math.ts`
@@ -1505,13 +1505,13 @@ flowchart LR
 
 **`src/core/candidate-pool-store-port.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/core/cinema-kunye.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
-**`src/core/cinetrack-core.ts`**
+**`src/core/cinethos-core.ts`**
 
 - → `src/core/actor-recommendations.ts`
 - → `src/core/candidate-pool-store-port.ts`
@@ -1532,7 +1532,7 @@ flowchart LR
 
 **`src/core/duplicate-detector.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/encoding.ts`
 
 **`src/core/encoding.ts`**
@@ -1541,12 +1541,12 @@ flowchart LR
 
 **`src/core/evaluation.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 
 **`src/core/exporters.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/shared/brand.ts`
 
 **`src/core/loved-similarity.ts`**
@@ -1555,19 +1555,19 @@ flowchart LR
 
 **`src/core/person-insights.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/encoding.ts`
 - → `src/types/tmdb.ts` *(tip)*
 
 **`src/core/recommendation-orchestrator.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/derived-profile-cache.ts`
 - → `src/core/keys.ts`
 
 **`src/core/relationship-explorer.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/encoding.ts`
 - → `src/core/relationship-semantics.ts`
 - → `src/core/relationship-wordlists.ts`
@@ -1579,7 +1579,7 @@ flowchart LR
 
 **`src/core/relationship-semantics.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/encoding.ts`
 - → `src/core/relationship-wordlists.ts`
 
@@ -1589,7 +1589,7 @@ flowchart LR
 
 **`src/core/ring-lifecycle.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/keys.ts`
 
 **`src/core/scoring.ts`**
@@ -1615,7 +1615,7 @@ flowchart LR
 
 **`src/core/sync-display.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/core/taste/behavior-signals.ts`**
 
@@ -1652,7 +1652,7 @@ flowchart LR
 
 **`src/core/taste/migration.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/taste/temporal-analyzer.ts`
 - → `src/core/taste/types.ts` *(tip)*
 
@@ -1709,18 +1709,18 @@ flowchart LR
 
 **`src/core/tv-progress.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/core/user-data-merge.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/sync-display.ts` *(tip)*
 
 **`src/core/wrapped-summary.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/encoding.ts`
 - → `src/core/exporters.ts`
 
@@ -1745,13 +1745,13 @@ flowchart LR
 **`src/hooks/useCinemaKunye.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/services/api.ts`
 - → `src/utils/helpers.ts`
 
 **`src/hooks/useItemActions.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/taste/types.ts` *(tip)*
 - → `src/services/taste-api.ts`
 
@@ -1762,7 +1762,7 @@ flowchart LR
 
 **`src/hooks/useOfflineSync.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/hooks/useOnlineStatus.ts`
 - → `src/services/api.ts`
 - → `src/services/offline-queue.ts`
@@ -1806,7 +1806,7 @@ flowchart LR
 - → `src/app/shell-context.tsx`
 - → `src/components/ErrorBoundary.tsx`
 - → `src/components/RelationshipExplorer.tsx`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/relationship-semantics.ts` *(tip)*
 
 **`src/modules/taste-map/TasteMapSection.tsx`**
@@ -1815,12 +1815,12 @@ flowchart LR
 - → `src/app/shell-context.tsx`
 - → `src/components/ErrorBoundary.tsx`
 - → `src/components/TasteMapView.tsx`
-- → `src/core/cinetrack-core.ts` *(tip)*
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/server/app.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/limits.ts`
 - → `src/server/archive-integrity.ts`
 - → `src/server/atomic-json.ts`
@@ -1838,7 +1838,7 @@ flowchart LR
 
 **`src/server/archive-integrity.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/server/config.ts`**
 
@@ -1847,7 +1847,7 @@ flowchart LR
 **`src/server/excel-profile-backup.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/keys.ts`
 - → `src/server/excel-taste-dna-sheet.ts`
 - → `src/server/persistent-store.ts` *(tip)*
@@ -1856,7 +1856,7 @@ flowchart LR
 
 **`src/server/excel-taste-dna-sheet.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/encoding.ts`
 - → `src/core/exporters.ts`
 - → `src/shared/brand.ts`
@@ -1864,7 +1864,7 @@ flowchart LR
 **`src/server/github-bidirectional-sync.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/derived-profile-cache.ts`
 - → `src/core/keys.ts`
 - → `src/core/limits.ts`
@@ -1883,7 +1883,7 @@ flowchart LR
 **`src/server/hybrid-merge.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/duplicate-detector.ts`
 - → `src/core/exporters.ts`
 
@@ -1903,11 +1903,11 @@ flowchart LR
 
 **`src/server/sqlite-archive.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 
 **`src/server/storage.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/limits.ts`
 - → `src/core/user-data-merge.ts`
 - → `src/server/atomic-json.ts`
@@ -1920,7 +1920,7 @@ flowchart LR
 
 **`src/server/taste-rebuild-coordinator.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/taste/constants.ts`
 - → `src/core/taste/migration.ts`
 - → `src/core/taste/profile-aggregator.ts`
@@ -1932,7 +1932,7 @@ flowchart LR
 
 **`src/server/taste-routes.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/taste/profile-aggregator.ts`
 - → `src/core/taste/profile-explainer.ts`
 - → `src/core/taste/types.ts` *(tip)*
@@ -1948,7 +1948,7 @@ flowchart LR
 
 **`src/services/actor-recommendations-engine.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/services/api.ts`
 - → `src/services/stock-engine.ts`
 - → `src/services/storage-idb.ts`
@@ -1957,7 +1957,7 @@ flowchart LR
 **`src/services/api.ts`**
 
 - → `src/core/cinema-kunye.ts`
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/core/sync-display.ts` *(tip)*
 - → `src/services/api-client.ts`
 
@@ -1967,14 +1967,14 @@ flowchart LR
 
 **`src/services/client-depots.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/types/tmdb.ts` *(tip)*
 
 **`src/services/discovery-storage.ts`**
 
 - → `src/core/candidate-pool-store-port.ts`
-- → `src/core/cinetrack-core.ts` *(tip)*
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts`
 - → `src/core/keys.ts`
 
 **`src/services/encoding-service.ts`**
@@ -1999,22 +1999,22 @@ flowchart LR
 
 **`src/services/offline-queue.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 
 **`src/services/poster-hydration-service.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/keys.ts`
 - → `src/services/api.ts`
 
 **`src/services/relationship-cache.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/relationship-explorer.ts` *(tip)*
 
 **`src/services/series-service.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/services/api.ts`
 - → `src/services/series-tv-seeds.ts`
 - → `src/services/series-wikidata-validator.ts`
@@ -2043,7 +2043,7 @@ flowchart LR
 
 **`src/services/stock-engine.ts`**
 
-- → `src/core/cinetrack-core.ts`
+- → `src/core/cinethos-core.ts`
 - → `src/services/api.ts`
 - → `src/services/discovery-storage.ts`
 - → `src/services/series-service.ts`
@@ -2088,7 +2088,7 @@ flowchart LR
 
 **`src/services/storage-idb.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/services/client-depots.ts`
 - → `src/services/client-depots.ts`
 - → `src/services/stock-poster-utils.ts`
@@ -2102,7 +2102,7 @@ flowchart LR
 
 **`src/utils/helpers.ts`**
 
-- → `src/core/cinetrack-core.ts` *(tip)*
+- → `src/core/cinethos-core.ts` *(tip)*
 - → `src/core/media/poster.ts`
 - → `src/types/tmdb.ts` *(tip)*
 
@@ -2184,7 +2184,7 @@ flowchart LR
 
 | Sembol | Tanımlandığı dosya sayısı | Dosyalar |
 | --- | --- | --- |
-| `ALGORITHM_VERSION` | 2 | `src/core/cinetrack-core.ts`<br>`src/core/taste/constants.ts` |
+| `ALGORITHM_VERSION` | 2 | `src/core/cinethos-core.ts`<br>`src/core/taste/constants.ts` |
 | `MetricState` | 2 | `src/core/taste/preference-calculator.ts`<br>`src/core/taste/types.ts` |
 | `TimeSource` | 2 | `src/core/taste/temporal-analyzer.ts`<br>`src/core/taste/types.ts` |
 | `TimePrecision` | 2 | `src/core/taste/temporal-analyzer.ts`<br>`src/core/taste/types.ts` |
@@ -2208,14 +2208,14 @@ flowchart LR
 | `src/core/cinema-kunye.ts` | `createEmptyCinemaKunyeDocument` | function | 192 |
 | `src/core/cinema-kunye.ts` | `buildKunyeSourceSignature` | function | 714 |
 | `src/core/cinema-kunye.ts` | `buildCinemaKunyeCanonicalPayload` | function | 993 |
-| `src/core/cinetrack-core.ts` | `buildSeasonCounts` | function | 325 |
-| `src/core/cinetrack-core.ts` | `buildSavedItemsIndex` | function | 528 |
-| `src/core/cinetrack-core.ts` | `createRequestGate` | function | 918 |
-| `src/core/cinetrack-core.ts` | `buildTasteProfileV3` | function | 1077 |
-| `src/core/cinetrack-core.ts` | `buildTasteProfileSummary` | function | 1583 |
-| `src/core/cinetrack-core.ts` | `createDefaultTasteMapData` | function | 1841 |
-| `src/core/cinetrack-core.ts` | `createDefaultPoolCursors` | function | 3237 |
-| `src/core/cinetrack-core.ts` | `createDefaultPoolData` | function | 3249 |
+| `src/core/cinethos-core.ts` | `buildSeasonCounts` | function | 325 |
+| `src/core/cinethos-core.ts` | `buildSavedItemsIndex` | function | 528 |
+| `src/core/cinethos-core.ts` | `createRequestGate` | function | 918 |
+| `src/core/cinethos-core.ts` | `buildTasteProfileV3` | function | 1077 |
+| `src/core/cinethos-core.ts` | `buildTasteProfileSummary` | function | 1583 |
+| `src/core/cinethos-core.ts` | `createDefaultTasteMapData` | function | 1841 |
+| `src/core/cinethos-core.ts` | `createDefaultPoolCursors` | function | 3237 |
+| `src/core/cinethos-core.ts` | `createDefaultPoolData` | function | 3249 |
 | `src/core/exporters.ts` | `buildTasteDnaProfile` | function | 69 |
 | `src/core/exporters.ts` | `buildMediaJourneyTimeline` | function | 992 |
 | `src/core/keys.ts` | `makeMediaKey` | function | 33 |
@@ -2242,7 +2242,7 @@ flowchart LR
 | `src/hooks/useStockEngine.ts` | `useStockEngine` | function | 12 |
 | `src/hooks/useTasteProfile.ts` | `useTasteProfile` | function | 37 |
 | `src/server/app.ts` | `createSpaFallbackMiddleware` | function | 164 |
-| `src/server/app.ts` | `createCineTrackApp` | function | 390 |
+| `src/server/app.ts` | `createCinethosApp` | function | 390 |
 | `src/server/excel-profile-backup.ts` | `PosterCacheManager` | class | 967 |
 | `src/server/excel-profile-backup.ts` | `buildProfileBackupDataset` | function | 1465 |
 | `src/server/github-bidirectional-sync.ts` | `buildFreshDerivedProfileDocumentOnServer` | function | 256 |

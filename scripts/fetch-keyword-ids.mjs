@@ -8,7 +8,7 @@
 // 2. scripts/keyword-verification.csv (manuel doğrulama için)
 //
 // MUTLAK KURALLAR:
-// 1. data/cinetrack-data.json ASLA yazılmaz.
+// 1. data/cinethos-data.json ASLA yazılmaz.
 // 2. TMDB API Key hardcode edilmez; process.env.TMDB_API_KEY, .env.local veya .env'den okunur.
 // 3. Rate-limit koruması: 300ms delay + 429 handling.
 // 4. Çakışan keyword'ler raporlanır, sessizce atlanmaz.
@@ -448,7 +448,7 @@ async function main() {
     PROJECT_ROOT,
     "data",
     "taste",
-    "cinetrack-taste-taxonomy.json"
+    "cinethos-taste-taxonomy.json"
   );
   if (!fs.existsSync(taxonomyPath)) {
     console.error(`HATA: Taksonomi dosyası bulunamadı: ${taxonomyPath}`);

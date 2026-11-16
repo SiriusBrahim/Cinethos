@@ -34,22 +34,22 @@ export interface TasteStorePaths {
 export function resolveTastePaths(dataDir: string = "data"): TasteStorePaths {
   if (dataDir === "data") {
     return {
-      taxonomy: `${TASTE_DATA_DIR}/cinetrack-taste-taxonomy.json`,
-      index: `${TASTE_DATA_DIR}/cinetrack-taste-index.json`,
-      events: `${TASTE_DATA_DIR}/cinetrack-taste-events.json`,
-      profile: `${TASTE_DATA_DIR}/cinetrack-taste-profile.json`,
-      manifest: `${TASTE_DATA_DIR}/cinetrack-taste-manifest.json`,
-      objections: `${TASTE_DATA_DIR}/cinetrack-taste-objections.json`,
+      taxonomy: `${TASTE_DATA_DIR}/cinethos-taste-taxonomy.json`,
+      index: `${TASTE_DATA_DIR}/cinethos-taste-index.json`,
+      events: `${TASTE_DATA_DIR}/cinethos-taste-events.json`,
+      profile: `${TASTE_DATA_DIR}/cinethos-taste-profile.json`,
+      manifest: `${TASTE_DATA_DIR}/cinethos-taste-manifest.json`,
+      objections: `${TASTE_DATA_DIR}/cinethos-taste-objections.json`,
     };
   }
   const base = path.join(dataDir, "taste");
   return {
-    taxonomy: path.join(base, "cinetrack-taste-taxonomy.json"),
-    index: path.join(base, "cinetrack-taste-index.json"),
-    events: path.join(base, "cinetrack-taste-events.json"),
-    profile: path.join(base, "cinetrack-taste-profile.json"),
-    manifest: path.join(base, "cinetrack-taste-manifest.json"),
-    objections: path.join(base, "cinetrack-taste-objections.json"),
+    taxonomy: path.join(base, "cinethos-taste-taxonomy.json"),
+    index: path.join(base, "cinethos-taste-index.json"),
+    events: path.join(base, "cinethos-taste-events.json"),
+    profile: path.join(base, "cinethos-taste-profile.json"),
+    manifest: path.join(base, "cinethos-taste-manifest.json"),
+    objections: path.join(base, "cinethos-taste-objections.json"),
   };
 }
 

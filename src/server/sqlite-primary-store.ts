@@ -1,10 +1,10 @@
 /**
  * SQLite birincil depolama (Faz 7).
  *
- * `CINETRACK_STORAGE=sqlite` iken veri dokümanının asıl kaynağı
- * `data/cinetrack.db` olur; JSON dosyası yedek/taşınabilirlik için aynen
+ * `CINETHOS_STORAGE=sqlite` iken veri dokümanının asıl kaynağı
+ * `data/cinethos.db` olur; JSON dosyası yedek/taşınabilirlik için aynen
  * yazılmaya devam eder. Böylece migration geri alınabilir kalır:
- * `CINETRACK_STORAGE=json` ile eski davranışa dönülür.
+ * `CINETHOS_STORAGE=json` ile eski davranışa dönülür.
  *
  * Node 22.5+ `node:sqlite` (DatabaseSync) kullanılır. Modül yoksa veya
  * veritabanı açılamazsa depo sessizce devre dışı kalır ve JSON akışı sürer.
@@ -51,7 +51,7 @@ interface DatabaseLike {
 }
 
 export function resolveStorageDriver(env: NodeJS.ProcessEnv = process.env): StorageDriver {
-  const raw = String(env.CINETRACK_STORAGE || '').trim().toLowerCase();
+  const raw = String(env.CINETHOS_STORAGE || '').trim().toLowerCase();
   return raw === 'sqlite' ? 'sqlite' : 'json';
 }
 
@@ -72,7 +72,7 @@ export interface CreateSqlitePrimaryStoreOptions {
 export function createSqlitePrimaryStore(
   options: CreateSqlitePrimaryStoreOptions
 ): SqlitePrimaryStore {
-  const filePath = `${options.dataDir}/cinetrack.db`;
+  const filePath = `${options.dataDir}/cinethos.db`;
   const enabled = options.enabled ?? resolveStorageDriver() === 'sqlite';
   let db: DatabaseLike | null = null;
   let available = false;

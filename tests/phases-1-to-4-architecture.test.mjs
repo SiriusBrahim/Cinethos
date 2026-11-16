@@ -8,7 +8,7 @@ import test from 'node:test';
 import { resolveConfig } from '../src/server/config.ts';
 import { createTokenAuthMiddleware } from '../src/server/security.ts';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 import {
   enqueueOfflineSyncSnapshotDurable,
   loadOfflineSyncSnapshotAsync,
@@ -58,7 +58,7 @@ import {
 import {
   createDefaultTasteMapData,
   createDefaultPoolData,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   savePersistentTasteMap,
   hydrateDiscoveryHistoryIdb,
@@ -192,14 +192,14 @@ function createFakeLocalStorage() {
   };
 }
 
-test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRACK_TOKEN zorunluluğu, IndexedDB göçü ve bloklamayan fs.promises G/Ç', async () => {
-  // 1. BUG-01: Default host 127.0.0.1 & remote bind requires CINETRACK_TOKEN
+test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETHOS_TOKEN zorunluluğu, IndexedDB göçü ve bloklamayan fs.promises G/Ç', async () => {
+  // 1. BUG-01: Default host 127.0.0.1 & remote bind requires CINETHOS_TOKEN
   const defaultCfg = resolveConfig({ env: {} });
   assert.equal(defaultCfg.listenHost, '127.0.0.1');
   assert.equal(defaultCfg.effectiveBindHost, '127.0.0.1');
   assert.equal(defaultCfg.isRemoteHostWithoutToken, false);
 
-  const remoteUnprotectedCfg = resolveConfig({ env: { CINETRACK_HOST: '0.0.0.0' } });
+  const remoteUnprotectedCfg = resolveConfig({ env: { CINETHOS_HOST: '0.0.0.0' } });
   assert.equal(remoteUnprotectedCfg.isRemoteHostWithoutToken, true);
 
   // Cloud Run container environment (K_SERVICE) binds listenHost to 0.0.0.0 for TCP health probes
@@ -291,11 +291,11 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
     const enq = await enqueueOfflineSyncSnapshotDurable(sampleDoc, 3);
     assert.equal(enq.persisted, true);
     await flushOfflineQueuePersistence();
-    assert.equal(fakeLs.getItem('cinetrack_offline_sync_queue_v1'), null);
+    assert.equal(fakeLs.getItem('cinethos_offline_sync_queue_v1'), null);
     assert.equal(
       fakeIdb._databases
-        .get('cinetrack-offline-queue-db')
-        ?.stores.get('cinetrack_offline_queue_store')
+        .get('cinethos-offline-queue-db')
+        ?.stores.get('cinethos_offline_queue_store')
         ?.has('latest_offline_snapshot'),
       true
     );
@@ -327,20 +327,20 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
     savePersistentPoolData('profile-default', moviePool);
     await flushCoreIdbWrites();
 
-    assert.equal(fakeLs.getItem('cinetrack_taste_map_profile-default'), null);
-    assert.equal(fakeLs.getItem('cinetrack_pool_movie_profile-default'), null);
+    assert.equal(fakeLs.getItem('cinethos_taste_map_profile-default'), null);
+    assert.equal(fakeLs.getItem('cinethos_pool_movie_profile-default'), null);
     assert.equal(
       fakeIdb._databases
-        .get('cinetrack-discovery-history-db')
+        .get('cinethos-discovery-history-db')
         ?.stores.get('ct_discovery_history')
-        ?.has('cinetrack_taste_map_profile-default'),
+        ?.has('cinethos_taste_map_profile-default'),
       true
     );
     assert.equal(
       fakeIdb._databases
-        .get('cinetrack-candidate-pool-db')
+        .get('cinethos-candidate-pool-db')
         ?.stores.get('ct_candidate_pool')
-        ?.has('cinetrack_pool_movie_profile-default'),
+        ?.has('cinethos_pool_movie_profile-default'),
       true
     );
 
@@ -361,7 +361,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-async-io-'));
   try {
     const persistentStore = new PersistentDataStore({ dataDir: tmpDir });
-    const { app } = createCineTrackApp({
+    const { app } = createCinethosApp({
       dataDir: tmpDir,
       bindHost: '127.0.0.1',
       authToken: '',

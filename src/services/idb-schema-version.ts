@@ -31,7 +31,7 @@ export type StoredDepotVersions = Partial<Record<IdbDepotKey, number>> & {
   updatedAt?: string;
 };
 
-export const IDB_SCHEMA_STORAGE_KEY = 'cinetrack_idb_depot_versions_v1';
+export const IDB_SCHEMA_STORAGE_KEY = 'cinethos_idb_depot_versions_v1';
 
 let memoryFallbackVersions: StoredDepotVersions | null = null;
 let migrationPromise: Promise<IdbMigrationReport> | null = null;
@@ -151,7 +151,7 @@ export async function runIdbSchemaMigrationsOnce(): Promise<IdbMigrationReport> 
 
 /**
  * REG-03 + IMP-18: Ayarlar menüsü veya Hata Kartı üzerinden tetiklenen manuel önbellek sıfırlama.
- * `ct:encodings` ve `cinetrack-relationship-cache` depolarını tamamen temizler;
+ * `ct:encodings` ve `cinethos-relationship-cache` depolarını tamamen temizler;
  * kullanıcı profili, izleme listeleri ve `ct:stock` yerel katalog havuzuna kesinlikle dokunmaz.
  */
 export async function resetDerivedCachesPreserveProfileAndStock(): Promise<DerivedCacheResetReport> {
@@ -165,7 +165,7 @@ export async function resetDerivedCachesPreserveProfileAndStock(): Promise<Deriv
   const resetAt = new Date().toISOString();
   return {
     ok: Boolean(encRes.cleared && graphCleared),
-    clearedDepots: ['ct:encodings', 'cinetrack-relationship-cache'],
+    clearedDepots: ['ct:encodings', 'cinethos-relationship-cache'],
     preservedDepots: ['ct:profile', 'ct:user-lists', 'ct:stock', 'ct:series-index'],
     resetAt,
   };

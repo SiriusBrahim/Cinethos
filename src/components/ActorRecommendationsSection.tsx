@@ -9,7 +9,7 @@ import {
   type ActorFetchStatus,
   normalizeFavoriteActors,
   describeActorFetchChipState,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   buildMergedActorCreditsWithStock,
   loadOpenActorCreditsLazy,
@@ -46,7 +46,7 @@ interface ActorRecommendationsSectionProps {
   onOpenPerson?: (id: number, name: string) => void;
 }
 
-const ACCORDION_STORAGE_KEY = 'cinetrack.actor-accordions.v1';
+const ACCORDION_STORAGE_KEY = 'cinethos.actor-accordions.v1';
 
 function loadAccordionStates(): Record<number, boolean> {
   try {

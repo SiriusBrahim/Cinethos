@@ -76,7 +76,7 @@ import {
   HIDE_LISTED_CATEGORIES,
   filterHiddenUserRegisteredItems,
   normalizeDeletedKeys,
-} from './core/cinetrack-core.ts';
+} from './core/cinethos-core.ts';
 import {
   deletePersistentTasteMap,
   flushCoreIdbWrites,
@@ -206,11 +206,11 @@ import {
   isWithinReleaseWindow,
 } from './utils/release-window.ts';
 
-const PROFILES_STORAGE = 'cinetrack.profiles.v1';
-const ACTIVE_PROFILE_STORAGE = 'cinetrack.activeProfile.v1';
-const PROFILE_STORAGE = 'cinetrack.profile.v1';
-const DIRTY_KEY = 'cinetrack.dirty.v2';
-const HIDE_LISTED_STORAGE_KEY = 'cinetrack_hide_listed_items';
+const PROFILES_STORAGE = 'cinethos.profiles.v1';
+const ACTIVE_PROFILE_STORAGE = 'cinethos.activeProfile.v1';
+const PROFILE_STORAGE = 'cinethos.profile.v1';
+const DIRTY_KEY = 'cinethos.dirty.v2';
+const HIDE_LISTED_STORAGE_KEY = 'cinethos_hide_listed_items';
 const EMPTY_REASONS_MAP = new Map<string, string>();
 
 /** Arka plan zenginleştirmesi: tek seferde çekilecek kayıt ve eşzamanlılık sınırları. */
@@ -220,10 +220,10 @@ const TV_HYDRATION_PAGE = 12;
 const TV_HYDRATION_CONCURRENCY = 4;
 
 function listStorageKey(profileId: string) {
-  return `cinetrack.profile.${profileId}.watchlist.v1`;
+  return `cinethos.profile.${profileId}.watchlist.v1`;
 }
 function preferencesStorageKey(profileId: string) {
-  return `cinetrack.profile.${profileId}.preferences.v1`;
+  return `cinethos.profile.${profileId}.preferences.v1`;
 }
 
 function hasPersistedProfilesInStorage(): boolean {
@@ -314,7 +314,7 @@ function loadProfileItems(profileId: string): SavedItem[] {
 }
 
 function favActorsStorageKey(profileId: string): string {
-  return `cinetrack_fav_actors_${profileId}`;
+  return `cinethos_fav_actors_${profileId}`;
 }
 
 function loadFavoriteActors(profileId: string): FavoriteActorInfo[] {
@@ -327,7 +327,7 @@ function loadFavoriteActors(profileId: string): FavoriteActorInfo[] {
 }
 
 function deletedKeysStorageKey(profileId: string): string {
-  return `cinetrack_deleted_keys_${profileId}`;
+  return `cinethos_deleted_keys_${profileId}`;
 }
 
 function loadDeletedKeys(profileId: string): Record<string, string> {
@@ -351,13 +351,13 @@ export function App() {
   const [deletedKeys, setDeletedKeys] = useState<Record<string, string>>(() => loadDeletedKeys(activeProfileId));
   const [dislikedItems, setDislikedItems] = useState<any[]>(() => {
     try {
-      const cache = JSON.parse(localStorage.getItem('cinetrack_disliked_cache') || '{}');
+      const cache = JSON.parse(localStorage.getItem('cinethos_disliked_cache') || '{}');
       return Object.values(cache);
     } catch {
       return [];
     }
   });
-  const [syncStatus, setSyncStatus] = useState<string>('Kayıt yeri: data/cinetrack-data.json');
+  const [syncStatus, setSyncStatus] = useState<string>('Kayıt yeri: data/cinethos-data.json');
 
   // Discover & Grid State
   const [tab, setTab] = useState<ModuleId>('discover');
@@ -731,7 +731,7 @@ export function App() {
         }));
         localStorage.setItem(listStorageKey(activeProfileId), JSON.stringify(compactSaved));
       } catch {
-        // >5 MB yedeklerde tarayıcı localStorage kotası aşılabilir; tam veri React state'te ve data/cinetrack-data.json üzerinde korunur.
+        // >5 MB yedeklerde tarayıcı localStorage kotası aşılabilir; tam veri React state'te ve data/cinethos-data.json üzerinde korunur.
       }
     }
 
@@ -1006,8 +1006,8 @@ export function App() {
       const message = String((event as CustomEvent).detail?.message || 'Beklenmeyen bir hata oluştu.');
       showToast(message, 'error');
     };
-    window.addEventListener('cinetrack:unhandled-error', handler);
-    return () => window.removeEventListener('cinetrack:unhandled-error', handler);
+    window.addEventListener('cinethos:unhandled-error', handler);
+    return () => window.removeEventListener('cinethos:unhandled-error', handler);
   }, [showToast]);
 
   // SEC-03: sunucu 401/503 döndürdüğünde erişim anahtarı istemini göster.
@@ -1026,8 +1026,8 @@ export function App() {
     const handler = () => {
       void flushQueue();
     };
-    window.addEventListener('cinetrack:force-flush-queue', handler);
-    return () => window.removeEventListener('cinetrack:force-flush-queue', handler);
+    window.addEventListener('cinethos:force-flush-queue', handler);
+    return () => window.removeEventListener('cinethos:force-flush-queue', handler);
   }, [flushQueue]);
 
   // Autonomous 500-movie + 500-TV IndexedDB stock engine & <250 background replenisher (Aşama 2 & 4)
@@ -1172,7 +1172,7 @@ export function App() {
           } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
         }
         setServerConflict(null);
-        setSyncStatus('Kayıt yeri: data/cinetrack-data.json (bu bilgisayarda, tüm profiller).');
+        setSyncStatus('Kayıt yeri: data/cinethos-data.json (bu bilgisayarda, tüm profiller).');
       } else if (res.queued) {
         setSyncStatus('Çevrimdışı kuyrukta: bağlantı sağlandığında yerel sunucuya aktarılacak.');
       } else if (!res.conflict) {
@@ -3153,7 +3153,7 @@ export function App() {
               updated.forEach((item) => {
                 cache[`${item.media_type}:${item.id}`] = item;
               });
-              localStorage.setItem('cinetrack_disliked_cache', JSON.stringify(cache));
+              localStorage.setItem('cinethos_disliked_cache', JSON.stringify(cache));
             } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
             return updated;
           });
@@ -3269,7 +3269,7 @@ export function App() {
     try {
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = result.fileName || 'cinetrack-archive.sqlite';
+      link.download = result.fileName || 'cinethos-archive.sqlite';
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -3510,7 +3510,7 @@ export function App() {
           combined.forEach((item) => {
             cache[`${item.media_type}:${item.id}`] = item;
           });
-          localStorage.setItem('cinetrack_disliked_cache', JSON.stringify(cache));
+          localStorage.setItem('cinethos_disliked_cache', JSON.stringify(cache));
         } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
         return combined;
       });
@@ -4092,7 +4092,7 @@ export function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `cinetrack-local-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `cinethos-local-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -4171,7 +4171,7 @@ export function App() {
     showToast(`Yedek başarıyla içe aktarıldı (${importedItems.length} içerik)!`);
   };
 
-  /** CSV'deki #CINETRACK-PROFILE bölümünü mevcut verilerin üzerine birleştirir. */
+  /** CSV'deki #CINETHOS-PROFILE bölümünü mevcut verilerin üzerine birleştirir. */
   const applyCsvProfileBlock = (block: CsvProfileBlock) => {
     const union = (current: string[] | undefined, incoming: string[]) =>
       Array.from(new Set([...(current || []), ...incoming]));

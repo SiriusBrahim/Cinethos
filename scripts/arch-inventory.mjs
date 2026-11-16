@@ -196,19 +196,19 @@ function tarjan(nodes, adjacency) {
 function storageInventory(files) {
   const idb = new Map();
   const local = new Map();
-  const literalRe = /['"`]((?:ct:|cinetrack)[^'"`\n]*)['"`]/g;
+  const literalRe = /['"`]((?:ct:|cinethos)[^'"`\n]*)['"`]/g;
   const dbConstRe = /(?:DB_NAME|DATABASE_NAME)\s*=\s*['"`]([^'"`]+)['"`]/g;
   const dbOpenRe = /(?:openDB|indexedDB\.open|createStore)\(\s*['"`]([^'"`]+)['"`]/g;
-  const isDbName = (name) => /-db$/.test(name) || /^cinetrack-relationship-cache$/.test(name);
+  const isDbName = (name) => /-db$/.test(name) || /^cinethos-relationship-cache$/.test(name);
   const isStorageKey = (name) => {
     if (!name || name.length < 4 || name.includes(' ')) return false;
     if (/\.(json|sqlite|db)$/.test(name)) return false;
-    if (name.includes('@cinetrack.local')) return false;
+    if (name.includes('@cinethos.local')) return false;
     // DOM kimlikleri, worker adları ve dosya adları
-    if (/^cinetrack(-|$)/.test(name)) return false;
-    // shell olay adları (`cinetrack:*`), depolama anahtarı değil
-    if (/^cinetrack:/.test(name)) return false;
-    return /^(ct:|cinetrack\.|cinetrack_)/.test(name);
+    if (/^cinethos(-|$)/.test(name)) return false;
+    // shell olay adları (`cinethos:*`), depolama anahtarı değil
+    if (/^cinethos:/.test(name)) return false;
+    return /^(ct:|cinethos\.|cinethos_)/.test(name);
   };
 
   const normalizeKey = (name) => name.replace(/\$\{[^}]*\}|\{[^}]*\}/g, '*');
@@ -280,9 +280,9 @@ function declarationsOf(code) {
 
 function dataAccessInventory(files) {
   const access = new Map();
-  const keyRe = /['"`]((?:ct:|cinetrack[._])[a-zA-Z0-9_.${}*-]*)['"`]/g;
-  const dbRe = /['"`](cinetrack-[a-z-]+(?:-db|-cache))['"`]/g;
-  const isNoise = (name) => /\.(json|sqlite|db)$/.test(name) || name.includes('@cinetrack.local');
+  const keyRe = /['"`]((?:ct:|cinethos[._])[a-zA-Z0-9_.${}*-]*)['"`]/g;
+  const dbRe = /['"`](cinethos-[a-z-]+(?:-db|-cache))['"`]/g;
+  const isNoise = (name) => /\.(json|sqlite|db)$/.test(name) || name.includes('@cinethos.local');
   const classifyFile = (code, name) => {
     let read = false;
     let write = false;

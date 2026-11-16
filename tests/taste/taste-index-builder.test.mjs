@@ -2,7 +2,7 @@
  * Faz 2 — Taste Index Builder Testleri
  * Çalıştırma: tsx --test tests/taste/taste-index-builder.test.mjs
  *
- * KURAL: data/cinetrack-data.json'a kesinlikle yazma.
+ * KURAL: data/cinethos-data.json'a kesinlikle yazma.
  */
 
 import { describe, it } from "node:test";
@@ -214,14 +214,14 @@ describe("Taste Index Builder — İstatistikler", () => {
   });
 });
 
-// === data/cinetrack-data.json değişmedi ===
+// === data/cinethos-data.json değişmedi ===
 
 describe("Taste Index Builder — Ana Veri Koruması", () => {
-  it("data/cinetrack-data.json yolu ile eşleşen hiçbir dosya değiştirilmemeli (dosya yoksa skip)", () => {
-    const dataPath = join(ROOT, "data", "cinetrack-data.json");
+  it("data/cinethos-data.json yolu ile eşleşen hiçbir dosya değiştirilmemeli (dosya yoksa skip)", () => {
+    const dataPath = join(ROOT, "data", "cinethos-data.json");
     if (!existsSync(dataPath)) return; // dosya yok → skip
 
     // buildTasteIndex sonrası dosya hâlâ erişilebilir olmalı (existsSync zaten import edildi)
-    assert.ok(existsSync(dataPath), "cinetrack-data.json silinmiş/değişmiş!");
+    assert.ok(existsSync(dataPath), "cinethos-data.json silinmiş/değişmiş!");
   });
 });

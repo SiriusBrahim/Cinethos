@@ -137,7 +137,7 @@ test('P1-02: aynı URL için eşzamanlı istekler tek upstream çağrısına ine
       [200, 200, 200, 200, 200]
     );
     assert.equal(calls, 1, 'beş istek için tek upstream çağrısı');
-    const badge = responses[0].headers.get('x-cinetrack-image-proxy');
+    const badge = responses[0].headers.get('x-cinethos-image-proxy');
     assert.ok(['miss', 'shared'].includes(badge), `beklenmeyen badge: ${badge}`);
   } finally {
     await ctx.close();
@@ -182,11 +182,11 @@ test('P1-02: cache byte muhasebesi aynı URL yeniden yazıldığında bozulmaz',
   try {
     const first = await requestImage(ctx.baseUrl, 'cache-budget.jpg');
     assert.equal(first.status, 200);
-    assert.equal(first.headers.get('x-cinetrack-image-proxy'), 'miss');
+    assert.equal(first.headers.get('x-cinethos-image-proxy'), 'miss');
     await first.arrayBuffer();
 
     const second = await requestImage(ctx.baseUrl, 'cache-budget.jpg');
-    assert.equal(second.headers.get('x-cinetrack-image-proxy'), 'hit');
+    assert.equal(second.headers.get('x-cinethos-image-proxy'), 'hit');
     await second.arrayBuffer();
     assert.equal(calls, 1, 'ikinci istek cache\'ten gelmeli');
 
@@ -200,7 +200,7 @@ test('P1-02: cache byte muhasebesi aynı URL yeniden yazıldığında bozulmaz',
 
     const stillCached = await requestImage(ctx.baseUrl, 'evict-4.jpg');
     assert.equal(stillCached.status, 200);
-    assert.equal(stillCached.headers.get('x-cinetrack-image-proxy'), 'hit');
+    assert.equal(stillCached.headers.get('x-cinethos-image-proxy'), 'hit');
   } finally {
     await ctx.close();
   }

@@ -40,23 +40,23 @@ function makeDocument(revision = 1, title = 'Film') {
 }
 
 test('SQLite: sürücü varsayılan olarak json ve depo dosyası oluşturmaz', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-sqlite-driver-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-sqlite-driver-'));
   try {
     assert.equal(resolveStorageDriver({}), 'json');
-    assert.equal(resolveStorageDriver({ CINETRACK_STORAGE: 'sqlite' }), 'sqlite');
-    assert.equal(resolveStorageDriver({ CINETRACK_STORAGE: ' SQLITE ' }), 'sqlite');
+    assert.equal(resolveStorageDriver({ CINETHOS_STORAGE: 'sqlite' }), 'sqlite');
+    assert.equal(resolveStorageDriver({ CINETHOS_STORAGE: ' SQLITE ' }), 'sqlite');
 
     const storage = createDataStorage({ dataDir: tmpDir, storageDriver: 'json' });
     assert.equal(storage.sqliteStatus().driver, 'json');
     assert.equal(storage.sqliteStatus().enabled, false);
-    assert.equal(fs.existsSync(path.join(tmpDir, 'cinetrack.db')), false);
+    assert.equal(fs.existsSync(path.join(tmpDir, 'cinethos.db')), false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
 test('SQLite: mevcut JSON dokümanı ilk açılışta migrate edilir', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-sqlite-migrate-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-sqlite-migrate-'));
   try {
     const jsonStorage = createDataStorage({ dataDir: tmpDir, storageDriver: 'json' });
     const saved = await jsonStorage.saveDataSerialized(makeDocument(3, 'Migrate Film'));
@@ -81,7 +81,7 @@ test('SQLite: mevcut JSON dokümanı ilk açılışta migrate edilir', async () 
 });
 
 test('SQLite: yazma sonrası JSON bozulsa bile veri SQLite üzerinden okunur', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-sqlite-primary-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-sqlite-primary-'));
   try {
     const storage = createDataStorage({ dataDir: tmpDir, storageDriver: 'sqlite' });
     assert.equal(storage.sqliteStatus().available, true);
@@ -94,8 +94,8 @@ test('SQLite: yazma sonrası JSON bozulsa bile veri SQLite üzerinden okunur', a
     assert.equal(second.ok, true);
 
     // JSON ve .bak dosyalarını bozarak yalnızca SQLite bırakılır.
-    fs.writeFileSync(path.join(tmpDir, 'cinetrack-data.json'), '{ bozuk json', 'utf8');
-    fs.writeFileSync(path.join(tmpDir, 'cinetrack-data.json.bak'), '{ bozuk json', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'cinethos-data.json'), '{ bozuk json', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'cinethos-data.json.bak'), '{ bozuk json', 'utf8');
     const backupsDir = path.join(tmpDir, 'backups');
     if (fs.existsSync(backupsDir)) {
       for (const file of fs.readdirSync(backupsDir)) {
@@ -113,7 +113,7 @@ test('SQLite: yazma sonrası JSON bozulsa bile veri SQLite üzerinden okunur', a
 });
 
 test('SQLite: JSON revizyonu daha yeniyse JSON kazanır ve SQLite güncellenir', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-sqlite-newer-json-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-sqlite-newer-json-'));
   try {
     const storage = createDataStorage({ dataDir: tmpDir, storageDriver: 'sqlite' });
     const saved = await storage.saveDataSerialized(makeDocument(1, 'Eski'));
@@ -121,7 +121,7 @@ test('SQLite: JSON revizyonu daha yeniyse JSON kazanır ve SQLite güncellenir',
 
     // Dışarıdan daha yüksek revizyonlu JSON yazılır (ör. SQLite kaybı sonrası geri dönüş).
     fs.writeFileSync(
-      path.join(tmpDir, 'cinetrack-data.json'),
+      path.join(tmpDir, 'cinethos-data.json'),
       JSON.stringify(makeDocument(9, 'Yeni JSON'), null, 2),
       'utf8'
     );

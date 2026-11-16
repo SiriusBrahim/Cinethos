@@ -63,7 +63,7 @@ test('P0-02: /api çağrıları doğrudan fetch yerine ortak apiFetch kullanır'
 
 test('P0-02: ortak istemci token başlığını ve kimlik olayını içerir', () => {
   const source = fs.readFileSync(path.join(SRC_ROOT, 'services', 'api-client.ts'), 'utf8');
-  assert.match(source, /X-CineTrack-Token/);
+  assert.match(source, /X-Cinethos-Token/);
   assert.match(source, /AUTH_REQUIRED_EVENT/);
   assert.match(source, /export async function apiFetch/);
   // Kimlik hatası tek yerden bildirilir.

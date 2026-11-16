@@ -20,9 +20,9 @@ if (typeof window !== 'undefined') {
       typeof reason === 'string'
         ? reason
         : reason?.message || 'Beklenmeyen bir hata oluştu.';
-    console.error('[CineTrack] Yakalanmamış hata:', reason);
+    console.error('[Cinethos] Yakalanmamış hata:', reason);
     window.dispatchEvent(
-      new CustomEvent('cinetrack:unhandled-error', { detail: { message } })
+      new CustomEvent('cinethos:unhandled-error', { detail: { message } })
     );
   });
 }

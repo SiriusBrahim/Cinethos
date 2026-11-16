@@ -143,7 +143,7 @@ describe("Faz5 Migration — contentId formatı", () => {
   });
 });
 
-// === cinetrack-data.json değişmedi ===
+// === cinethos-data.json değişmedi ===
 
 describe("Faz5 Migration — Kaynak veri korunması", () => {
   it("dataDocument referansı mutation almaz", () => {

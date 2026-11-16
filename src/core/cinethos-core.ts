@@ -1835,7 +1835,7 @@ export function filterOutLastRecommendedCandidates<T>(
 }
 
 export function getTasteMapStorageKey(profileId: string): string {
-  return `cinetrack_taste_map_${profileId}`;
+  return `cinethos_taste_map_${profileId}`;
 }
 
 export function createDefaultTasteMapData(profileId: string): PersistentTasteMapData {

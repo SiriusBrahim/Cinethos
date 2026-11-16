@@ -13,7 +13,7 @@ import {
   writeJsonFileAtomic,
 } from '../src/server/atomic-json.ts';
 import { createDataStorage } from '../src/server/storage.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 import {
   DEFAULT_MAX_DATA_BYTES,
   formatMaxDataLimitMb,
@@ -29,7 +29,7 @@ import {
 } from '../src/core/recommendation-orchestrator.ts';
 
 async function withTestApp(options, fn) {
-  const { app, storage, persistentStore } = createCineTrackApp(options);
+  const { app, storage, persistentStore } = createCinethosApp(options);
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -43,7 +43,7 @@ async function withTestApp(options, fn) {
 }
 
 test('Katalog Tekilleştirme: Aynı film iki kez indirildiğinde tek kayıt tutulur, aynı sayısal ID film ve dizi ayrışır', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-store-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-store-test-'));
   try {
     const store = new PersistentDataStore({ dataDir: tmpDir });
 
@@ -68,7 +68,7 @@ test('Katalog Tekilleştirme: Aynı film iki kez indirildiğinde tek kayıt tutu
 });
 
 test('Katalog No-op ve Güncelleme: Mevcut kayıt aynı payload ile gelince dosya yeniden yazılmaz; gerçek güncellemede tek kayıt güncellenir', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-store-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-store-test-'));
   try {
     const store = new PersistentDataStore({ dataDir: tmpDir });
 
@@ -127,7 +127,7 @@ test('Katalog Alan Birleştirme: Kısmi payload mevcut zengin kaydı silmez', ()
 });
 
 test('Faz A: Atomik JSON yazma başarısı, yazma ortası hata koruması, yarım .tmp temizliği ve bozuk JSON kurtarma / ezmeme koruması', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-atomic-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-atomic-test-'));
   try {
     const targetFile = path.join(tmpDir, 'sample.json');
     const backupFile = `${targetFile}.bak`;
@@ -230,7 +230,7 @@ test('Faz B: Tek kaynaklı boyut sınırı (UTF-8 bayt ölçümü), sınır alt�
   assert.ok(readme.includes('25 MB') || readme.includes('25 MiB'));
   assert.ok(arch.includes('25 MiB') || arch.includes('26_214_400'));
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-limit-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-limit-test-'));
   try {
     const tightLimitBytes = 4_000;
     await withTestApp({ dataDir: tmpDir, maxDataBytes: tightLimitBytes }, async ({ baseUrl, storage }) => {
@@ -309,7 +309,7 @@ test('Faz B: Tek kaynaklı boyut sınırı (UTF-8 bayt ölçümü), sınır alt�
 });
 
 test('Faz C: Türetilmiş profil verisi (signals & reasons değişiklik tespiti, deterministik no-op, invalidation ve uçtan uca okuma)', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-derived-cache-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-derived-cache-'));
   try {
     await withTestApp({ dataDir: tmpDir }, async ({ baseUrl, persistentStore }) => {
       // Katalog ekle
@@ -512,7 +512,7 @@ test('Faz C: Türetilmiş profil verisi (signals & reasons değişiklik tespiti,
 });
 
 test('Faz D: GitHub senkronizasyonu (ilk sync, no-op, 409 retry, rate limit, ağ hatası, kısmi hata + kaldığı yerden devam, görünürlük uyarısı ve token gizliliği)', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-gh-sync-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-gh-sync-'));
   const originalFetch = globalThis.fetch;
   try {
     const secretToken = 'github_pat_SUPER_SECRET_TOKEN_987654321';
@@ -643,7 +643,7 @@ test('Faz D: GitHub senkronizasyonu (ilk sync, no-op, 409 retry, rate limit, ağ
     assert.equal(sync4.ok, true, '409 çakışması güncel SHA çekilerek sınırlı retry ile çözülmeli');
     assert.ok(sync4.filesCommitted.includes('data/catalog/movies.json'));
 
-    // 5. Uzak depo gerçekte PUBLIC iken CINETRACK_DATA_REPO_IS_PUBLIC=false ise:
+    // 5. Uzak depo gerçekte PUBLIC iken CINETHOS_DATA_REPO_IS_PUBLIC=false ise:
     // Uyarı üretilmeli ve kişisel profil dosyaları açık depoya gönderilmemeli!
     repoPrivateFlag = false;
     store.upsertDerivedProfile({
@@ -679,7 +679,7 @@ test('Faz D: GitHub senkronizasyonu (ilk sync, no-op, 409 retry, rate limit, ağ
 });
 
 test('Faz D: 7 döner sunucu yedeği sınırı, bozuk yedeğin geri yüklenmemesi ve sağlam verinin korunması', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-backups-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-backups-test-'));
   try {
     const storage = createDataStorage({ dataDir: tmpDir, maxSnapshots: 7 });
 
@@ -713,14 +713,14 @@ test('Faz D: 7 döner sunucu yedeği sınırı, bozuk yedeğin geri yüklenmemes
 
     const snapshotFiles = fs
       .readdirSync(storage.backupsDir)
-      .filter((f) => f.startsWith('cinetrack-') && f.endsWith('.json'));
+      .filter((f) => f.startsWith('cinethos-') && f.endsWith('.json'));
     assert.equal(snapshotFiles.length, 7, 'Döner yedek sayısı en fazla 7 ile sınırlı kalmalı');
 
     // Bozuk bir yedek dosyası oluşturulduğunda mevcut sağlam verinin üzerine geri yüklenmemeli!
-    const corruptBackupName = 'cinetrack-2026-10-25-rev99-corrupt.json';
+    const corruptBackupName = 'cinethos-2026-10-25-rev99-corrupt.json';
     fs.writeFileSync(path.join(storage.backupsDir, corruptBackupName), '{bozuk_yedek_json', 'utf8');
 
-    const invalidSchemaBackupName = 'cinetrack-2026-10-25-rev98-invalidschema.json';
+    const invalidSchemaBackupName = 'cinethos-2026-10-25-rev98-invalidschema.json';
     fs.writeFileSync(
       path.join(storage.backupsDir, invalidSchemaBackupName),
       JSON.stringify({ unexpected: true }),
@@ -755,7 +755,7 @@ test('Sır İzolasyonu: İstemci kodu ve .env.example içinde hiçbir GitHub tok
   const clientFiles = [
     'src/services/api.ts',
     'src/App.tsx',
-    'src/core/cinetrack-core.ts',
+    'src/core/cinethos-core.ts',
     'src/core/recommendation-orchestrator.ts',
     'src/core/derived-profile-cache.ts',
   ];
@@ -763,14 +763,14 @@ test('Sır İzolasyonu: İstemci kodu ve .env.example içinde hiçbir GitHub tok
     const full = path.join(repoRoot, rel);
     if (fs.existsSync(full)) {
       const code = fs.readFileSync(full, 'utf8');
-      assert.equal(code.includes('CINETRACK_GITHUB_TOKEN'), false, `${rel} içinde GitHub token referansı olmamalı`);
-      assert.equal(code.includes('CINETRACK_GITHUB_PAT'), false, `${rel} içinde GitHub token referansı olmamalı`);
+      assert.equal(code.includes('CINETHOS_GITHUB_TOKEN'), false, `${rel} içinde GitHub token referansı olmamalı`);
+      assert.equal(code.includes('CINETHOS_GITHUB_PAT'), false, `${rel} içinde GitHub token referansı olmamalı`);
     }
   }
 });
 
 test('Stok Yedekleme: Limitsiz tekilleştirilmiş anlık görüntü (media:key bazlı) ve boş yükleme koruması', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-stock-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-stock-test-'));
   try {
     await withTestApp({ dataDir: tmpDir }, async ({ baseUrl, persistentStore }) => {
       // 1. İlk yükleme: filmlerde yinelenen id, tv'de geçersiz kayıtlar
@@ -911,7 +911,7 @@ test('CSV Tam Veri Dışa Aktarımı: profil fragmanı + kullanıcı verisi süt
   ];
 
   const csv = exportItemsToCsv(items, { profile, activeProfileId: 'prof-csv' });
-  assert.ok(csv.includes('#CINETRACK-PROFILE'), 'Profil fragmanı yazılmalı');
+  assert.ok(csv.includes('#CINETHOS-PROFILE'), 'Profil fragmanı yazılmalı');
   assert.ok(csv.includes('#Mood,rahat'), 'Mood tercihi yazılmalı');
   assert.ok(csv.includes('#Providers,netflix|blu-tv'), 'Sağlayıcılar yazılmalı');
   assert.ok(csv.includes('#FavoriteActor'), 'Favori oyuncu yazılmalı');
@@ -920,7 +920,7 @@ test('CSV Tam Veri Dışa Aktarımı: profil fragmanı + kullanıcı verisi süt
   assert.ok(csv.includes('2026-02-01 09:00:00'), 'Eklenme tarihi yazılmalı');
 
   const result = importItemsFromCsv(csv);
-  assert.equal(result.detectedFormat, 'cinetrack');
+  assert.equal(result.detectedFormat, 'cinethos');
   assert.equal(result.importedItems.length, 2, 'Fragman satırları içerik olarak sayılmamalı');
   const interstellar = result.importedItems.find((it) => it.id === 11);
   assert.equal(interstellar.completedAt, '2026-02-15T12:00:00.000Z');

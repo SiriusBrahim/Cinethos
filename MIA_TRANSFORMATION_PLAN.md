@@ -54,7 +54,7 @@ Sorumluluk: TMDB metaverisi, kimlik standardizasyonu, katalog stoku, posterler. 
 | `services/series-service.ts` (946), `series-*` | `content/catalog/` | Dizi katalog servisi |
 | `stock-engine.ts` (991) + 6 stock-* | `content/stock/` | Stok işleri Arka Plan Yöneticisi'ne devredilir (`CatalogRefreshJob`) |
 | `poster-hydration-service.ts` (736), `poster-cache-manager.ts` | `content/posters/` | Poster tamamlama arka plan işi |
-| `cinetrack-core.ts` içindeki normalizasyon | `content/metadata/MetadataNormalizer.ts` | Faz 5'te sınıflandırılarak ayrılır (§5.2) |
+| `cinethos-core.ts` içindeki normalizasyon | `content/metadata/MetadataNormalizer.ts` | Faz 5'te sınıflandırılarak ayrılır (§5.2) |
 
 ### Yönetici 4 — Kütüphane Yöneticisi (ön plan) · `src/modules/library/`
 Sorumluluk: kullanıcının içerikle yaptığı **bütün** işlemlerin tek giriş noktası. Hangi ekrandan eklenirse eklensin aynı işlem hattı.
@@ -206,7 +206,7 @@ export interface AppEvent<T extends keyof AppEventMap = keyof AppEventMap> {
 | --- | --- | --- | --- |
 | Genel kalıcı olay kuyruğu yok | P1 | master'da yok; bu dalda shell-events (UI) hazır | Faz 4: Outbox |
 | App.tsx sorumluluk yoğunluğu | P1 | 4.650 satır; M1 ile 4 modül bölümü çıkarıldı | Faz 6–7: kancalar + yöneticiler |
-| Core yoğunluğu | P1 | `cinetrack-core.ts` 4.690 satır | §5.2 sınıflandırma |
+| Core yoğunluğu | P1 | `cinethos-core.ts` 4.690 satır | §5.2 sınıflandırma |
 | Persistent Store yoğunluğu | P1 | 4.229 satır; katalog + türetilmiş profil + GitHub + senkron durumu | Servis sınırları önce, taşıma sonra |
 | **SQLite sessiz JSON fallback** | P1 | `sqlite-primary-store.ts`: başarısızlıkta `available=false` + içsel `lastError`; kullanıcıya açık bildirim yok | §5.1 |
 | Dashboard tercihi doğrudan localStorage | P2 | `ct:mobile-dashboard:*` doğrulandı | `DashboardRepository` |
@@ -220,7 +220,7 @@ export interface AppEvent<T extends keyof AppEventMap = keyof AppEventMap> {
 - SQLite ↔ JSON revision farkı izlenir; iki ana veri kaynağı oluşamaz.
 
 ### 5.2 Büyük dosyaların ayrıştırma sırası
-- **`cinetrack-core.ts` (4.690):** rastgele taşıma yok — önce sorumluluk sınıflandırması (veri modeli/normalizasyon, profil hesabı, öneri puanlama, aday havuzu, Zevk Haritası, medya anahtarları, benzerlik). Eski dosya geçiş süresince **geriye dönük uyumluluk export katmanı** olarak kalır; Faz 8'de kaldırılır.
+- **`cinethos-core.ts` (4.690):** rastgele taşıma yok — önce sorumluluk sınıflandırması (veri modeli/normalizasyon, profil hesabı, öneri puanlama, aday havuzu, Zevk Haritası, medya anahtarları, benzerlik). Eski dosya geçiş süresince **geriye dönük uyumluluk export katmanı** olarak kalır; Faz 8'de kaldırılır.
 - **`persistent-store.ts` (4.229):** tek hamle taşıma yok — önce katalog / türetilmiş profil / GitHub / senkron durumu servis sınırları çizilir.
 - **`App.tsx`:** ekran bileşenleri ve işlem fonksiyonları yöneticilere aktarılır; bileşen yalnızca yöneticileri birleştirir.
 

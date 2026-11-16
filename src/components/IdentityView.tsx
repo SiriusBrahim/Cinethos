@@ -4,7 +4,7 @@ import {
   PersistentTasteMapData,
   TasteProfileSummary,
   SavedItem,
-} from '../core/cinetrack-core';
+} from '../core/cinethos-core';
 import { EvidenceModal, EvidenceDetailData } from './EvidenceModal';
 import { TasteMapView } from './TasteMapView';
 

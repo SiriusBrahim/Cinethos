@@ -14,7 +14,7 @@ import type { MetricExplanation } from "../core/taste/profile-explainer.ts";
 import { ApiError, apiFetch, readApiErrorMessage } from "./api-client.ts";
 
 const BASE = "/api/taste";
-const TASTE_CHANNEL_NAME = "cinetrack-taste-profile-sync";
+const TASTE_CHANNEL_NAME = "cinethos-taste-profile-sync";
 
 export interface TasteProfileUpdateSignal {
   generationId?: string;
@@ -143,7 +143,7 @@ export function extractTasteMetadataFromItem(
 
 /**
  * P0-02: Tüm istekler ortak `apiFetch` üzerinden gider; böylece LAN modunda
- * `X-CineTrack-Token` başlığı eklenir ve 401/503'te token istemi açılır.
+ * `X-Cinethos-Token` başlığı eklenir ve 401/503'te token istemi açılır.
  * Durum kodu ve sunucu hata kodu `ApiError` ile korunur.
  */
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {

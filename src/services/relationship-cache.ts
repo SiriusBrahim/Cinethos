@@ -1,4 +1,4 @@
-import type { PoolCandidateItem, SavedItem } from '../core/cinetrack-core.ts';
+import type { PoolCandidateItem, SavedItem } from '../core/cinethos-core.ts';
 import type {
   MediaFilter,
   RelationshipGraphData,
@@ -6,7 +6,7 @@ import type {
   RelationshipType,
 } from '../core/relationship-explorer.ts';
 
-const DB_NAME = 'cinetrack-relationship-cache';
+const DB_NAME = 'cinethos-relationship-cache';
 export const RELATIONSHIP_CACHE_DB_VERSION = 2;
 const DB_VERSION = RELATIONSHIP_CACHE_DB_VERSION;
 const STORE_NAMES = ['graphs', 'features', 'edges'] as const;

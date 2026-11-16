@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 import {
   buildCinemaKunyeCanonicalPayload,
   buildKunyeSourceSignature,

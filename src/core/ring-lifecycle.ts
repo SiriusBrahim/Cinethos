@@ -1,4 +1,4 @@
-import type { PersistentTasteMapData, TasteMapEntry } from './cinetrack-core.ts';
+import type { PersistentTasteMapData, TasteMapEntry } from './cinethos-core.ts';
 import { canonicalizeMediaKey } from './keys.ts';
 
 export type LifecycleRing = 'ring0' | 'ring1' | 'ring2';

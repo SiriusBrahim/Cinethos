@@ -39,7 +39,7 @@ test.describe('Profil ve çakışma senaryoları', () => {
     }
 
     await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('cinetrack.activeProfile.v1')))
+      .poll(() => page.evaluate(() => localStorage.getItem('cinethos.activeProfile.v1')))
       .toBe(PROFILE_B);
 
     await page.getByRole('tab', { name: 'Listem' }).click();

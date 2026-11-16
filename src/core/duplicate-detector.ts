@@ -1,4 +1,4 @@
-import { makeMediaKey, type SavedItem } from './cinetrack-core.ts';
+import { makeMediaKey, type SavedItem } from './cinethos-core.ts';
 import { cosineSimilarity, encodeItemContent, type ItemFeatureEncoding } from './encoding.ts';
 
 export interface DuplicatePairCandidate {

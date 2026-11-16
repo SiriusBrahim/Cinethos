@@ -13,7 +13,7 @@ TMDB metaverileriyle çalışan, tamamen deterministik (kural tabanlı) öneri v
 - **İlişki Keşif Motoru (`relationship-v3`)**: Evren/seri (`universe`), kişi (`person`), özet/tür benzerliği (`semantic`), atmosferik yakınlık (`atmosphere`) ve karşıt ton (`contrast`) kanıtlarını zevk haritası verisini kirletmeden IndexedDB üzerinde önbellekler.
 - **Zevk DNA Özeti, Ortak İzleme Kesişimi ve Yolculuk Zaman Çizelgesi**: Profil istatistiklerinde baskın dönem/tür karakteri, iki yerel profil arasında *"Birlikte Ne İzlesek?"* kesişimi ve kronolojik izleme yolculuğu.
 - **Sezon Yayın Takvimi ve `.ics` Takvim Dışa Aktarma**: İzlenen dizilerin yaklaşan bölüm ve vizyon tarihlerini listeler; RFC 5545 uyumlu `.ics` dosyası üretir.
-- **Atomik JSON Depolama, 7 Döner Yedek ve Çift Yönlü GitHub Senkronizasyonu**: Tüm kalıcı JSON yazımları `.tmp` + `fsync` + `rename` ile atomik yapılır; bozuk dosyalar sessizce ezilmez, `.bak` ve son 7 döner snapshot (`data/backups/`) üzerinden kurtarılır. İsteğe bağlı özel GitHub deposu entegrasyonu **Durumu denetle** (`/api/sync/inspect`), **GitHub'dan indir** (`/api/sync/pull`), **GitHub'a yükle** (`/api/sync/push`) ve **İki yönlü eşitle** (`/api/sync/reconcile`) eylemlerini ayrı ayrı sunar; ortak katalog (`data/catalog/movies.json`, `tv.json`, `manifest.json`), kişisel kullanıcı durumu (`data/cinetrack-data.json`) ve türetilmiş profilleri (`data/profiles/*.json`) varsayılan silmesiz (no-deletion) politikayla kayıpsız birleştirir, `>1 MB` dosyaları Git Blob API üzerinden tam okur ve uzak dosyaları işlem sonrası yeniden okuyarak kayıt sayısı + semantik/ham hash eşitliğini (`verifiedEqual`) doğrular.
+- **Atomik JSON Depolama, 7 Döner Yedek ve Çift Yönlü GitHub Senkronizasyonu**: Tüm kalıcı JSON yazımları `.tmp` + `fsync` + `rename` ile atomik yapılır; bozuk dosyalar sessizce ezilmez, `.bak` ve son 7 döner snapshot (`data/backups/`) üzerinden kurtarılır. İsteğe bağlı özel GitHub deposu entegrasyonu **Durumu denetle** (`/api/sync/inspect`), **GitHub'dan indir** (`/api/sync/pull`), **GitHub'a yükle** (`/api/sync/push`) ve **İki yönlü eşitle** (`/api/sync/reconcile`) eylemlerini ayrı ayrı sunar; ortak katalog (`data/catalog/movies.json`, `tv.json`, `manifest.json`), kişisel kullanıcı durumu (`data/cinethos-data.json`) ve türetilmiş profilleri (`data/profiles/*.json`) varsayılan silmesiz (no-deletion) politikayla kayıpsız birleştirir, `>1 MB` dosyaları Git Blob API üzerinden tam okur ve uzak dosyaları işlem sonrası yeniden okuyarak kayıt sayısı + semantik/ham hash eşitliğini (`verifiedEqual`) doğrular.
 - **PWA ve Çevrimdışı Senkronizasyon Kuyruğu**: Kurulabilir Web App Manifest, Workbox çalışma zamanı önbelleği, çevrimdışı değişiklik kuyruğu ve `ETag` / `If-Match` tabanlı `409 Conflict` veri kaybı koruması.
 
 ## Kurulum ve Çalıştırma
@@ -24,22 +24,22 @@ TMDB metaverileriyle çalışan, tamamen deterministik (kural tabanlı) öneri v
    ```bash
    npm install
    ```
-2. İsteğe bağlı `.env` veya `.env.local` dosyasını oluşturun (`process.env > .env.local > .env > varsayılan` öncelik sırası uygulanır; `TMDB_API_KEY` girilmezse uygulama yerleşik örnek katalogla, `CINETRACK_GITHUB_PAT` girilmezse güvenli yerel depolama modunda çalışır):
+2. İsteğe bağlı `.env` veya `.env.local` dosyasını oluşturun (`process.env > .env.local > .env > varsayılan` öncelik sırası uygulanır; `TMDB_API_KEY` girilmezse uygulama yerleşik örnek katalogla, `CINETHOS_GITHUB_PAT` girilmezse güvenli yerel depolama modunda çalışır):
    ```bash
    cp .env.example .env
    ```
    Desteklenen ortam değişkenleri (`.env.example`):
    - `PORT`: HTTP dinleme portu (varsayılan `3000`).
-   - `CINETRACK_HOST`: Bağlanılacak ağ arayüzü (varsayılan `127.0.0.1` — yalnızca yerel makine).
-   - `CINETRACK_TOKEN`: LAN / uzaktan erişimde (`CINETRACK_HOST=0.0.0.0`) zorunlu kimlik doğrulama parolası (`Authorization: Bearer <token>` veya `X-CineTrack-Token`). Loopback dışı arayüzde token tanımlanmamışsa tüm yazma ve hassas durum uç noktaları güvenli biçimde `503 auth_required` döner.
-   - `CINETRACK_STORAGE`: Depolama sürücüsü. Varsayılan `json` (`data/cinetrack-data.json` + yedekler). `sqlite` seçildiğinde `data/cinetrack.db` asıl kaynak olur, JSON dosyası yedek/taşınabilir kopya olarak yazılmaya devam eder; ilk açılışta mevcut JSON tek seferlik migrate edilir ve JSON bozulursa veri SQLite'tan okunur. Durum `GET /api/health` yanıtındaki `storage` alanından izlenir. (`node:sqlite`, Node >= 22.5)
-   - `CINETRACK_TRUST_PROXY`: Yalnızca güvenilir bir ters vekil (Nginx/Caddy vb.) arkasında çalışırken `true` yapılmalıdır; `false` iken sahte `X-Forwarded-For` ve `X-Forwarded-Host` başlıkları yok sayılır.
-   - `CINETRACK_TMDB_RATE_LIMIT`: Loopback dışı bağlantılarda dakikadaki maksimum `/api/tmdb` istek sınırı (varsayılan `60`).
+   - `CINETHOS_HOST`: Bağlanılacak ağ arayüzü (varsayılan `127.0.0.1` — yalnızca yerel makine).
+   - `CINETHOS_TOKEN`: LAN / uzaktan erişimde (`CINETHOS_HOST=0.0.0.0`) zorunlu kimlik doğrulama parolası (`Authorization: Bearer <token>` veya `X-Cinethos-Token`). Loopback dışı arayüzde token tanımlanmamışsa tüm yazma ve hassas durum uç noktaları güvenli biçimde `503 auth_required` döner.
+   - `CINETHOS_STORAGE`: Depolama sürücüsü. Varsayılan `json` (`data/cinethos-data.json` + yedekler). `sqlite` seçildiğinde `data/cinethos.db` asıl kaynak olur, JSON dosyası yedek/taşınabilir kopya olarak yazılmaya devam eder; ilk açılışta mevcut JSON tek seferlik migrate edilir ve JSON bozulursa veri SQLite'tan okunur. Durum `GET /api/health` yanıtındaki `storage` alanından izlenir. (`node:sqlite`, Node >= 22.5)
+   - `CINETHOS_TRUST_PROXY`: Yalnızca güvenilir bir ters vekil (Nginx/Caddy vb.) arkasında çalışırken `true` yapılmalıdır; `false` iken sahte `X-Forwarded-For` ve `X-Forwarded-Host` başlıkları yok sayılır.
+   - `CINETHOS_TMDB_RATE_LIMIT`: Loopback dışı bağlantılarda dakikadaki maksimum `/api/tmdb` istek sınırı (varsayılan `60`).
    - `TMDB_API_KEY`: Sunucu tarafı TMDB vekil anahtarı.
    - `RESPAN_API_KEY`: İsteğe bağlı Respan izleme anahtarı (yalnızca sunucu tarafında okunur; tanımlı değilse LLM izleme devre dışı kalır). Kurumsal uç nokta için `RESPAN_BASE_URL`.
-   - `CINETRACK_GITHUB_PAT`: İsteğe bağlı GitHub Contents API kişisel erişim belirteci (birincil değişken; geriye dönük uyumluluk için `CINETRACK_GITHUB_TOKEN` yedek olarak desteklenir).
-   - `CINETRACK_DATA_OWNER`, `CINETRACK_DATA_REPO`, `CINETRACK_DATA_BRANCH`: Uzak kalıcı veri deposu hedefi.
-   - `CINETRACK_DATA_REPO_IS_PUBLIC` ve `CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC`: Uzak depo gerçekte `public` ise hem kişisel profil verileri hem de TMDB katalog dosyaları varsayılan olarak engellenir; açık depoya aktarım yalnızca açık onay ve TMDB atıf koşulları kabulüyle etkinleşir.
+   - `CINETHOS_GITHUB_PAT`: İsteğe bağlı GitHub Contents API kişisel erişim belirteci (birincil değişken; geriye dönük uyumluluk için `CINETHOS_GITHUB_TOKEN` yedek olarak desteklenir).
+   - `CINETHOS_DATA_OWNER`, `CINETHOS_DATA_REPO`, `CINETHOS_DATA_BRANCH`: Uzak kalıcı veri deposu hedefi.
+   - `CINETHOS_DATA_REPO_IS_PUBLIC` ve `CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC`: Uzak depo gerçekte `public` ise hem kişisel profil verileri hem de TMDB katalog dosyaları varsayılan olarak engellenir; açık depoya aktarım yalnızca açık onay ve TMDB atıf koşulları kabulüyle etkinleşir.
 3. Geliştirme sunucusunu başlatın:
    ```bash
    npm run dev
@@ -62,7 +62,7 @@ npm run build    # Vite + PWA üretim paketi oluşturma
 
 - **Tahmini İzleme Süresi Hesabı**: TMDB liste yanıtları tekil süre bilgisini her zaman içermediğinden profil istatistiklerindeki *"İzlenen Süre (tahmini)"* metriği filmler için `110 dk`, diziler için bölüm başına `45 dk` (bölüm sayısı bilinmiyorsa `10` bölüm) varsayımıyla hesaplanır.
 - **Tek Kaynaklı Veri Boyutu Sınırı (`25 MB` / `26.214.400` bayt)**: Hem Express sunucusu (`PUT /api/data`), hem depolama katmanı (`src/server/storage.ts`), hem de yedek içe aktarma doğrulaması (`src/core/limits.ts` -> `DEFAULT_MAX_DATA_BYTES = 25 * 1024 * 1024`) UTF-8 bayt uzunluğu üzerinden tek bir 25 MiB sınırı kullanır.
-- **Sırların İzolasyonu ve Önkoşullu Yazma**: İstemci tarafında hiçbir `VITE_` önekli sır veya anahtar kullanılmaz; `TMDB_API_KEY`, `CINETRACK_GITHUB_PAT` ve `CINETRACK_TOKEN` yalnızca sunucu katmanında okunur ve hata mesajlarından maskelenir (`[REDACTED]`). Mevcut veri revizyonu `> 0` olduğunda `PUT /api/data` yazmaları `If-Match` başlığı zorunluluğu (`428 Precondition Required`) ile yarış koşulu kayıplarına karşı korunur; silinen içerikler 30 günlük mezar taşı (`deleted_keys`) kaydıyla çift yönlü senkronizasyonda geri dirilmez.
+- **Sırların İzolasyonu ve Önkoşullu Yazma**: İstemci tarafında hiçbir `VITE_` önekli sır veya anahtar kullanılmaz; `TMDB_API_KEY`, `CINETHOS_GITHUB_PAT` ve `CINETHOS_TOKEN` yalnızca sunucu katmanında okunur ve hata mesajlarından maskelenir (`[REDACTED]`). Mevcut veri revizyonu `> 0` olduğunda `PUT /api/data` yazmaları `If-Match` başlığı zorunluluğu (`428 Precondition Required`) ile yarış koşulu kayıplarına karşı korunur; silinen içerikler 30 günlük mezar taşı (`deleted_keys`) kaydıyla çift yönlü senkronizasyonda geri dirilmez.
 - **TMDB Kullanım Koşulları ve Saklama Sınırları**: Katalog verileri [The Movie Database (TMDB)](https://www.themoviedb.org/) tarafından sağlanır; bu ürün TMDB tarafından onaylanmamış veya sertifikalandırılmamıştır. TMDB API kullanım koşulları, TMDB içeriklerinin genel bir veri seti veya rakip servis olarak herkese açık yeniden dağıtımına izin vermez; bu nedenle uzak GitHub eşitlemesi varsayılan olarak yalnızca özel (`private`) depolarla çalışacak biçimde sınırlandırılmıştır.
 
 ## Lisans

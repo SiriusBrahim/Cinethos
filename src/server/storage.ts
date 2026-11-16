@@ -13,7 +13,7 @@ import {
   ENGINE_VERSION,
   type DataDocument,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   areUserDataDocumentsSemanticallyEqual,
   reconcileUserDataDocumentsLossless,
@@ -111,17 +111,17 @@ function isWorthKeeping(doc: DataDocument): boolean {
   );
 }
 
-const SNAPSHOT_FILE_PATTERN = /^cinetrack-[a-zA-Z0-9._-]+\.json$/;
+const SNAPSHOT_FILE_PATTERN = /^cinethos-[a-zA-Z0-9._-]+\.json$/;
 
 function formatSnapshotFileName(revision: number): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const suffix = Math.random().toString(16).slice(2, 6);
-  return `cinetrack-${stamp}-rev${revision}-${suffix}.json`;
+  return `cinethos-${stamp}-rev${revision}-${suffix}.json`;
 }
 
 export function createDataStorage(options: StorageOptions) {
   const resolvedDataDir = path.resolve(options.dataDir || path.join(process.cwd(), 'data'));
-  const dataFile = path.join(resolvedDataDir, 'cinetrack-data.json');
+  const dataFile = path.join(resolvedDataDir, 'cinethos-data.json');
   const backupFile = `${dataFile}.bak`;
   const isolatedProfileFile = path.join(resolvedDataDir, 'profile.json');
   const isolatedUserListsFile = path.join(resolvedDataDir, 'user-lists.json');
@@ -183,7 +183,7 @@ export function createDataStorage(options: StorageOptions) {
     if (!existsSync(backupsDir)) return [];
     try {
       return readdirSync(backupsDir)
-        .filter((f) => f.startsWith('cinetrack-') && f.endsWith('.json'))
+        .filter((f) => f.startsWith('cinethos-') && f.endsWith('.json'))
         .sort((a, b) => b.localeCompare(a));
     } catch {
       return [];
@@ -194,7 +194,7 @@ export function createDataStorage(options: StorageOptions) {
     try {
       const entries = await fsPromises.readdir(backupsDir);
       return entries
-        .filter((f) => f.startsWith('cinetrack-') && f.endsWith('.json'))
+        .filter((f) => f.startsWith('cinethos-') && f.endsWith('.json'))
         .sort((a, b) => b.localeCompare(a));
     } catch {
       return [];
@@ -217,7 +217,7 @@ export function createDataStorage(options: StorageOptions) {
     const recovery = readJsonFileWithRecovery<DataDocument>(dataFile, {
       backupPaths: getDiskRecoveryBackupPathsSync(),
       validate: validateRawDocument,
-      label: 'cinetrack-data.json',
+      label: 'cinethos-data.json',
     });
     if (recovery.status === 'missing') {
       unrecoverableCorruptionError = null;
@@ -235,7 +235,7 @@ export function createDataStorage(options: StorageOptions) {
     const recovery = await readJsonFileWithRecoveryAsync<DataDocument>(dataFile, {
       backupPaths: await getDiskRecoveryBackupPathsAsync(),
       validate: validateRawDocument,
-      label: 'cinetrack-data.json',
+      label: 'cinethos-data.json',
     });
     if (recovery.status === 'missing') {
       unrecoverableCorruptionError = null;

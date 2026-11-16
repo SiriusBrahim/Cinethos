@@ -1,6 +1,6 @@
 import { get, set, del, createStore, type UseStore } from 'idb-keyval';
 import type { TmdbItem } from '../types/tmdb.ts';
-import type { SavedItem, Preferences, FavoriteActorInfo } from '../core/cinetrack-core.ts';
+import type { SavedItem, Preferences, FavoriteActorInfo } from '../core/cinethos-core.ts';
 import { sanitizeStockPosterDepot } from './stock-poster-utils.ts';
 import {
   type IdbWriteResult,
@@ -29,22 +29,22 @@ function getStore(name: string): UseStore | undefined {
   if (!isIndexedDBAvailable()) return undefined;
   switch (name) {
     case 'ct_stock':
-      if (!stockStore) stockStore = createStore('cinetrack-stock-db', 'ct_stock');
+      if (!stockStore) stockStore = createStore('cinethos-stock-db', 'ct_stock');
       return stockStore;
     case 'ct_surfaced':
-      if (!surfacedStore) surfacedStore = createStore('cinetrack-surfaced-db', 'ct_surfaced');
+      if (!surfacedStore) surfacedStore = createStore('cinethos-surfaced-db', 'ct_surfaced');
       return surfacedStore;
     case 'ct_series_index':
-      if (!seriesIndexStore) seriesIndexStore = createStore('cinetrack-series-index-db', 'ct_series_index');
+      if (!seriesIndexStore) seriesIndexStore = createStore('cinethos-series-index-db', 'ct_series_index');
       return seriesIndexStore;
     case 'ct_user_lists':
-      if (!userListsStore) userListsStore = createStore('cinetrack-user-lists-db', 'ct_user_lists');
+      if (!userListsStore) userListsStore = createStore('cinethos-user-lists-db', 'ct_user_lists');
       return userListsStore;
     case 'ct_profile':
-      if (!profileStore) profileStore = createStore('cinetrack-profile-db', 'ct_profile');
+      if (!profileStore) profileStore = createStore('cinethos-profile-db', 'ct_profile');
       return profileStore;
     case 'ct_offline_queue':
-      if (!offlineQueueStore) offlineQueueStore = createStore('cinetrack-offline-queue-db', 'ct_offline_queue');
+      if (!offlineQueueStore) offlineQueueStore = createStore('cinethos-offline-queue-db', 'ct_offline_queue');
       return offlineQueueStore;
     default:
       return undefined;
@@ -142,7 +142,7 @@ export async function loadIsolatedProfileIdb(profileId: string): Promise<Isolate
   if (record && record.preferences) return record;
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
-      const stored = window.localStorage.getItem(`cinetrack.profile.${profileId}.preferences.v1`);
+      const stored = window.localStorage.getItem(`cinethos.profile.${profileId}.preferences.v1`);
       if (stored) {
         const preferences = JSON.parse(stored);
         return {
@@ -238,7 +238,7 @@ export async function loadUserListsIdb(profileId: string): Promise<UserListItemC
   }
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
-      const stored = window.localStorage.getItem(`cinetrack.profile.${profileId}.watchlist.v1`);
+      const stored = window.localStorage.getItem(`cinethos.profile.${profileId}.watchlist.v1`);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {

@@ -3,9 +3,9 @@
  *
  * - `ApiError`: HTTP durumunu ve sunucu `code`'unu koruyan tek hata tipi.
  *   Böylece 401/503/ağ hatası birbirinden ayrılabilir (tek `null` dönüşü yerine).
- * - LAN/uzak modda sunucu `CINETRACK_TOKEN` ister; istemci tokenı yalnızca
+ * - LAN/uzak modda sunucu `CINETHOS_TOKEN` ister; istemci tokenı yalnızca
  *   `sessionStorage`'da tutar, `localStorage`'a yazılmaz.
- * - 401/503 yanıtında `cinetrack:auth-required` olayı yayınlanır; App token
+ * - 401/503 yanıtında `cinethos:auth-required` olayı yayınlanır; App token
  *   istemini gösterir.
  */
 
@@ -29,8 +29,8 @@ export class ApiError extends Error {
   }
 }
 
-const CLIENT_TOKEN_KEY = 'cinetrack_client_token_v1';
-export const AUTH_REQUIRED_EVENT = 'cinetrack:auth-required';
+const CLIENT_TOKEN_KEY = 'cinethos_client_token_v1';
+export const AUTH_REQUIRED_EVENT = 'cinethos:auth-required';
 
 export function getClientAuthToken(): string {
   try {
@@ -49,7 +49,7 @@ export function setClientAuthToken(token: string): void {
     /* oturum deposu kapalıysa token yalnızca bellekte tutulamaz */
   }
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('cinetrack:auth-token-changed'));
+    window.dispatchEvent(new CustomEvent('cinethos:auth-token-changed'));
   }
 }
 
@@ -61,17 +61,17 @@ function withClientAuth(headers: HeadersInit | undefined): HeadersInit {
   const token = getClientAuthToken();
   if (headers instanceof Headers) {
     const merged = new Headers(headers);
-    if (token && !merged.has('X-CineTrack-Token')) merged.set('X-CineTrack-Token', token);
+    if (token && !merged.has('X-Cinethos-Token')) merged.set('X-Cinethos-Token', token);
     return merged;
   }
   if (Array.isArray(headers)) {
     const merged = new Map(headers as Array<[string, string]>);
-    if (token && !merged.has('X-CineTrack-Token')) merged.set('X-CineTrack-Token', token);
+    if (token && !merged.has('X-Cinethos-Token')) merged.set('X-Cinethos-Token', token);
     return Array.from(merged.entries());
   }
   // Düz nesne biçimini koru: çağıranlar ve testler başlıkları `obj['If-Match']` gibi okuyor.
   const plain: Record<string, string> = { ...((headers as Record<string, string>) || {}) };
-  if (token && !('X-CineTrack-Token' in plain)) plain['X-CineTrack-Token'] = token;
+  if (token && !('X-Cinethos-Token' in plain)) plain['X-Cinethos-Token'] = token;
   return plain;
 }
 
@@ -92,7 +92,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   } catch (error: any) {
     if (error?.name === 'AbortError') throw error;
     throw new ApiError(
-      'Yerel CineTrack sunucusuna ulaşılamadı. Sunucunun çalıştığını doğrulayın.',
+      'Yerel Cinethos sunucusuna ulaşılamadı. Sunucunun çalıştığını doğrulayın.',
       0
     );
   }

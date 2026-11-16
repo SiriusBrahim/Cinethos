@@ -75,7 +75,7 @@ export async function seedProfiles(
   await page.addInitScript(
     ({ profiles: seed, activeId }) => {
       localStorage.setItem(
-        'cinetrack.profiles.v1',
+        'cinethos.profiles.v1',
         JSON.stringify(
           seed.map((profile) => ({
             id: profile.id,
@@ -84,14 +84,14 @@ export async function seedProfiles(
           }))
         )
       );
-      localStorage.setItem('cinetrack.activeProfile.v1', activeId);
+      localStorage.setItem('cinethos.activeProfile.v1', activeId);
       for (const profile of seed) {
         localStorage.setItem(
-          `cinetrack.profile.${profile.id}.watchlist.v1`,
+          `cinethos.profile.${profile.id}.watchlist.v1`,
           JSON.stringify(profile.items ?? [])
         );
         localStorage.setItem(
-          `cinetrack.profile.${profile.id}.preferences.v1`,
+          `cinethos.profile.${profile.id}.preferences.v1`,
           JSON.stringify({
             disliked: [],
             providers: [],
@@ -101,7 +101,7 @@ export async function seedProfiles(
           })
         );
       }
-      localStorage.removeItem('cinetrack.dirty.v2');
+      localStorage.removeItem('cinethos.dirty.v2');
     },
     { profiles, activeId: activeProfileId }
   );
@@ -165,8 +165,8 @@ export async function mockApi(page: Page, options: ApiMockOptions = {}): Promise
         ? { genres: [] }
         : { page: 1, results: [], total_pages: 0, total_results: 0 };
       return json(route, body, 200, {
-        'x-cinetrack-source': 'demo',
-        'x-cinetrack-cache': 'none',
+        'x-cinethos-source': 'demo',
+        'x-cinethos-cache': 'none',
       });
     }
 

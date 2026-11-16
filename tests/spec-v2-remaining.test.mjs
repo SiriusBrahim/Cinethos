@@ -70,7 +70,7 @@ import {
   resetCoreIdbMirrorsForTests,
 } from '../src/services/discovery-storage.ts';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 
 function createFakeIndexedDB() {
   const databases = new Map();
@@ -801,14 +801,14 @@ test('Set D & BUG-11: no sync file writes on hot paths, CSP worker-src/manifest-
   assert.equal(excelSrc.includes('writeFileSync'), false);
 
   const envExample = fs.readFileSync(path.resolve(process.cwd(), '.env.example'), 'utf8');
-  assert.match(envExample, /^CINETRACK_TOKEN=$/m);
-  assert.match(envExample, /^CINETRACK_TMDB_RATE_LIMIT=$/m);
+  assert.match(envExample, /^CINETHOS_TOKEN=$/m);
+  assert.match(envExample, /^CINETHOS_TMDB_RATE_LIMIT=$/m);
 
   const ghSyncSrc = fs.readFileSync(
     path.resolve(process.cwd(), 'src/server/github-bidirectional-sync.ts'),
     'utf8'
   );
-  assert.ok(ghSyncSrc.includes('CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=true'));
+  assert.ok(ghSyncSrc.includes('CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC=true'));
 
   // BUG-11: Every newly created / refactored module must be strictly < 1,000 lines
   const modularFiles = [
@@ -829,9 +829,9 @@ test('Set D & BUG-11: no sync file writes on hot paths, CSP worker-src/manifest-
   }
 
   // BUG-12 & BUG-04: Verify /api/health returns CSP with worker-src & manifest-src and async posterCache stats
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-v2-csp-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-v2-csp-'));
   const persistentStore = new PersistentDataStore({ dataDir: tmpDir });
-  const { app } = createCineTrackApp({
+  const { app } = createCinethosApp({
     dataDir: tmpDir,
     bindHost: '127.0.0.1',
     authToken: '',

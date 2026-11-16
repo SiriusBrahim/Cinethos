@@ -8,15 +8,15 @@ import {
   DEFAULT_MAX_ITEMS_PER_PROFILE,
   DEFAULT_MAX_PROFILES,
 } from './src/core/limits.ts';
-import type { SavedItem } from './src/core/cinetrack-core.ts';
-import { createCineTrackApp, createSpaFallbackMiddleware } from './src/server/app.ts';
+import type { SavedItem } from './src/core/cinethos-core.ts';
+import { createCinethosApp, createSpaFallbackMiddleware } from './src/server/app.ts';
 import { isAiStudioContainerEnv, resolveConfig } from './src/server/config.ts';
 import { refreshEnvGitHubPat } from './src/server/github-token-refresh.ts';
 import { redactSecrets } from './src/server/persistent-store.ts';
 import { createRespanTracing } from './src/server/respan-telemetry.ts';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CINETRACK_HOST = '127.0.0.1';
+const CINETHOS_HOST = '127.0.0.1';
 const resolved = resolveConfig({ rootDir: root });
 const isContainerDeployment = Boolean(
   isAiStudioContainerEnv(process.env) ||
@@ -25,7 +25,7 @@ const isContainerDeployment = Boolean(
   process.env.CLOUD_RUN_JOB
 );
 const port = resolved.port;
-const bindHost = resolved.explicitHost || CINETRACK_HOST;
+const bindHost = resolved.explicitHost || CINETHOS_HOST;
 const listenHost = resolved.explicitHost || (isContainerDeployment ? '0.0.0.0' : resolved.listenHost);
 
 const dataDir = path.join(root, 'data');
@@ -49,7 +49,7 @@ let githubTokenLive = resolved.githubToken;
 let schedulePostMutationSync: ((reason: string) => void) | null = null;
 const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev');
 
-const { app, storage, persistentStore } = createCineTrackApp({
+const { app, storage, persistentStore } = createCinethosApp({
   dataDir,
   maxDataBytes,
   maxProfiles,
@@ -75,7 +75,7 @@ const { app, storage, persistentStore } = createCineTrackApp({
     });
     if (fresh) {
       githubTokenLive = fresh;
-      return { token: fresh, source: 'file:.env:CINETRACK_GITHUB_PAT' as const };
+      return { token: fresh, source: 'file:.env:CINETHOS_GITHUB_PAT' as const };
     }
     return null;
   },
@@ -111,7 +111,7 @@ async function startServer() {
       });
       if (fresh) {
         githubTokenLive = fresh;
-        persistentStore.updateGitHubToken(fresh, 'file:.env:CINETRACK_GITHUB_PAT');
+        persistentStore.updateGitHubToken(fresh, 'file:.env:CINETHOS_GITHUB_PAT');
         console.log(`[GitHub-Token] ${reason}: Kimlik Yöneticisi'nden taze token alındı (.env güncellendi).`);
       }
     } catch (e: any) {
@@ -171,7 +171,7 @@ async function startServer() {
     console.log(
       `Cinethos is running at http://${listenHost}:${port} (bind policy: ${bindHost}, ${isDevMode ? 'development' : 'production'})`
     );
-    console.log('Profil ve izleme listesi: Yerel dosya sistemi (data/cinetrack-data.json)');
+    console.log('Profil ve izleme listesi: Yerel dosya sistemi (data/cinethos-data.json)');
     const syncStatus = persistentStore.getSyncStatus();
     console.log(
       `Kalıcı Veri Deposu: ${syncStatus.mode === 'github' ? `GitHub Uzak Eşitleme (${syncStatus.remoteTarget?.repo})` : 'Yerel Depolama (data/catalog & data/profiles)'}`
@@ -219,7 +219,7 @@ async function startServer() {
           const isAuthError = report.errors.some((e) => e.category === 'auth_error');
           if (isAuthError) {
             console.warn(
-              `[Auto-Sync:${label}] GitHub kimlik doğrulama hatası (HTTP 401). Otomatik arka plan eşitlemesi duraklatıldı; geçerli bir CINETRACK_GITHUB_PAT tanımlandığında eşitleme devam edecektir.`
+              `[Auto-Sync:${label}] GitHub kimlik doğrulama hatası (HTTP 401). Otomatik arka plan eşitlemesi duraklatıldı; geçerli bir CINETHOS_GITHUB_PAT tanımlandığında eşitleme devam edecektir.`
             );
           } else {
             console.warn(

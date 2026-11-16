@@ -88,7 +88,7 @@ function makeIndex() {
 
 describe("Taste Store — appendTasteEvent", () => {
   it("Olay eklenmeli ve okunabilmeli", async () => {
-    // data/taste/cinetrack-taste-events.json üzerinde çalışır
+    // data/taste/cinethos-taste-events.json üzerinde çalışır
     // İlk önce boş başlat
     await writeTasteEvents([]);
 

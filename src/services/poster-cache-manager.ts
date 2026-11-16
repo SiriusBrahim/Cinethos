@@ -2,10 +2,10 @@ import { get, set, del, createStore, type UseStore } from 'idb-keyval';
 
 /**
  * Client-side poster cache quota manager (EXT-03)
- * Enforces maximum 200 MiB budget for poster images in the Cache API (`cinetrack-tmdb-posters`)
+ * Enforces maximum 200 MiB budget for poster images in the Cache API (`cinethos-tmdb-posters`)
  * with strict Least-Recently-Used (LRU) eviction and Service Worker coordination.
  */
-export const POSTER_CACHE_NAME = 'cinetrack-tmdb-posters';
+export const POSTER_CACHE_NAME = 'cinethos-tmdb-posters';
 export const MAX_POSTER_CACHE_BYTES = 200 * 1024 * 1024; // 200 MiB
 export const TARGET_POSTER_CACHE_BYTES = 160 * 1024 * 1024; // 160 MiB post-purge target
 const DEFAULT_POSTER_ESTIMATE_BYTES = 40 * 1024; // ~40 KB fallback for opaque responses
@@ -28,7 +28,7 @@ const memoryPosterMeta = new Map<string, PosterLruMeta>();
 function getPosterMetaStore(): UseStore | undefined {
   if (typeof indexedDB === 'undefined') return undefined;
   if (!posterMetaStore) {
-    posterMetaStore = createStore('cinetrack-poster-lru-db', 'ct_poster_lru');
+    posterMetaStore = createStore('cinethos-poster-lru-db', 'ct_poster_lru');
   }
   return posterMetaStore;
 }

@@ -92,14 +92,14 @@ export interface DerivedProfileDocument {
 }
 
 export type TokenSourceKind =
-  | 'env:CINETRACK_GITHUB_TOKEN'
-  | 'env:CINETRACK_GITHUB_PAT'
-  | 'file:CINETRACK_GITHUB_TOKEN'
-  | 'file:CINETRACK_GITHUB_PAT'
-  | 'file:.env.local:CINETRACK_GITHUB_PAT'
-  | 'file:.env.local:CINETRACK_GITHUB_TOKEN'
-  | 'file:.env:CINETRACK_GITHUB_PAT'
-  | 'file:.env:CINETRACK_GITHUB_TOKEN'
+  | 'env:CINETHOS_GITHUB_TOKEN'
+  | 'env:CINETHOS_GITHUB_PAT'
+  | 'file:CINETHOS_GITHUB_TOKEN'
+  | 'file:CINETHOS_GITHUB_PAT'
+  | 'file:.env.local:CINETHOS_GITHUB_PAT'
+  | 'file:.env.local:CINETHOS_GITHUB_TOKEN'
+  | 'file:.env:CINETHOS_GITHUB_PAT'
+  | 'file:.env:CINETHOS_GITHUB_TOKEN'
   | 'dotenv_local_pat'
   | 'dotenv_pat'
   | 'options'
@@ -632,12 +632,12 @@ export class PersistentDataStore {
     const catalogAllowed = this.isCatalogSyncAllowedForRepo(remoteIsPublic);
     if (!remoteIsPublic) {
       if (effectiveConfiguredIsPublic) {
-        return 'Yapılandırma uyarısı: Uzak GitHub deposu özel (private), ancak CINETRACK_DATA_REPO_IS_PUBLIC=true tanımlandı.';
+        return 'Yapılandırma uyarısı: Uzak GitHub deposu özel (private), ancak CINETHOS_DATA_REPO_IS_PUBLIC=true tanımlandı.';
       }
       return undefined;
     }
     if (!effectiveConfiguredIsPublic && !catalogAllowed) {
-      return 'Yapılandırma uyarısı: Uzak GitHub deposu herkese açıktır (public), ancak CINETRACK_DATA_REPO_IS_PUBLIC=false ve CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=false tanımlıdır. Kişisel profil verileri ve TMDB katalog dosyalarının açık depoya gönderimi engellendi.';
+      return 'Yapılandırma uyarısı: Uzak GitHub deposu herkese açıktır (public), ancak CINETHOS_DATA_REPO_IS_PUBLIC=false ve CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC=false tanımlıdır. Kişisel profil verileri ve TMDB katalog dosyalarının açık depoya gönderimi engellendi.';
     }
     if (!personalAllowed && !catalogAllowed) {
       return 'Bilgi: Uzak GitHub veri deposu herkese açıktır (public). Gizlilik ve TMDB lisans koruması aktif olduğu için açık onay verilmeden kişisel veriler ve katalog dosyaları gönderilmez.';
@@ -646,7 +646,7 @@ export class PersistentDataStore {
       return 'Bilgi: Uzak GitHub veri deposu herkese açıktır (public). Gizlilik koruması aktif olduğu için kişisel veriler gönderilmez; TMDB katalog verileri açık lisans onayınız doğrultusunda senkronize edilir.';
     }
     if (personalAllowed && !catalogAllowed) {
-      return 'Dikkat: Uzak GitHub veri deposu herkese açıktır (public). Kişisel profil verileriniz açık onayınızla senkronize edilir; TMDB katalog dosyaları ise CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC onayı olmadığı için açık depoya gönderilmez.';
+      return 'Dikkat: Uzak GitHub veri deposu herkese açıktır (public). Kişisel profil verileriniz açık onayınızla senkronize edilir; TMDB katalog dosyaları ise CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC onayı olmadığı için açık depoya gönderilmez.';
     }
     return 'Dikkat: Uzak GitHub veri deposu herkese açıktır (public). Kişisel izleme listesi, profil verileriniz ve TMDB katalog önbelleği açık onayınız doğrultusunda herkese açık olarak depolanmaktadır.';
   }
@@ -743,7 +743,7 @@ export class PersistentDataStore {
       source ??
       (trimmed === this.githubToken
         ? this.githubTokenSource
-        : 'file:.env:CINETRACK_GITHUB_PAT');
+        : 'file:.env:CINETHOS_GITHUB_PAT');
     this.githubToken = trimmed;
     this.githubTokenSource = nextSource;
     if (!this.githubTokenCandidates.some((c) => c.token === trimmed)) {
@@ -804,7 +804,7 @@ export class PersistentDataStore {
         const refreshedSource: TokenSourceKind =
           typeof refreshed === 'object' && refreshed?.source
             ? refreshed.source
-            : 'file:.env:CINETRACK_GITHUB_PAT';
+            : 'file:.env:CINETHOS_GITHUB_PAT';
         if (
           refreshedTok &&
           refreshedTok !== bad &&
@@ -2214,9 +2214,9 @@ export class PersistentDataStore {
     const hasTargetRepo = Boolean(this.githubOwner && this.githubRepo);
     const missingReason = !configured
       ? authFailed
-        ? 'GitHub erişim hatası: Token geçersiz veya süresi dolmuş (HTTP 401 - Bad credentials). Lütfen geçerli bir CINETRACK_GITHUB_PAT tanımlayın.'
+        ? 'GitHub erişim hatası: Token geçersiz veya süresi dolmuş (HTTP 401 - Bad credentials). Lütfen geçerli bir CINETHOS_GITHUB_PAT tanımlayın.'
         : hasTargetRepo
-        ? `Hedef depo (${this.githubOwner}/${this.githubRepo} · ${this.githubBranch}) tanımlı; CINETRACK_GITHUB_PAT ortam değişkeni bekleniyor`
+        ? `Hedef depo (${this.githubOwner}/${this.githubRepo} · ${this.githubBranch}) tanımlı; CINETHOS_GITHUB_PAT ortam değişkeni bekleniyor`
         : 'GitHub token veya hedef repository yapılandırılmadı'
       : undefined;
 
@@ -2386,7 +2386,7 @@ export class PersistentDataStore {
           let guidance = '';
           if (res.status === 401) {
             guidance =
-              ' (GitHub token geçersiz, süresi dolmuş veya iptal edilmiş/yenilenmiş. Lütfen GitHub üzerinde geçerli bir Fine-grained PAT oluşturup CINETRACK_GITHUB_PAT ortam değişkenini güncelleyin)';
+              ' (GitHub token geçersiz, süresi dolmuş veya iptal edilmiş/yenilenmiş. Lütfen GitHub üzerinde geçerli bir Fine-grained PAT oluşturup CINETHOS_GITHUB_PAT ortam değişkenini güncelleyin)';
           } else if (res.status === 403 && category === 'auth_error') {
             guidance = ` (Fine-grained PAT ayarlarında '${this.githubOwner}/${this.githubRepo}' deposu için 'Contents: Read and write' izninin seçili olduğunu doğrulayın${
               acceptedPerms ? `; beklenen izin: ${acceptedPerms}` : ''
@@ -2671,7 +2671,7 @@ export class PersistentDataStore {
 
   /**
    * Uzak GitHub deposunun gerçek `private/public` görünürlüğünü kontrol eder ve
-   * `CINETRACK_DATA_REPO_IS_PUBLIC` ayarıyla uyumsuzluk varsa raporlar.
+   * `CINETHOS_DATA_REPO_IS_PUBLIC` ayarıyla uyumsuzluk varsa raporlar.
    */
   public async verifyRemoteRepoVisibility(): Promise<{
     effectiveIsPublicRepo: boolean;
@@ -3064,12 +3064,12 @@ export class PersistentDataStore {
     commitMessage: string;
   }> {
     const items: Array<{ repoPath: string; localPath: string; commitMessage: string }> = [];
-    const mainDataFile = path.join(this.dataDir, 'cinetrack-data.json');
+    const mainDataFile = path.join(this.dataDir, 'cinethos-data.json');
     if (existsSync(mainDataFile)) {
       items.push({
-        repoPath: 'data/cinetrack-data.json',
+        repoPath: 'data/cinethos-data.json',
         localPath: mainDataFile,
-        commitMessage: 'chore(data): sync cinetrack-data.json [skip ci]',
+        commitMessage: 'chore(data): sync cinethos-data.json [skip ci]',
       });
     }
 
@@ -3349,7 +3349,7 @@ export class PersistentDataStore {
    * Aşamalı güvenli eşitleme:
    * 1) Küçük test probu (data/catalog/manifest.json) ile yazma ve geri okuma doğrulaması.
    * 2) Başarılıysa ortak kataloglar (manifest.json, movies.json, tv.json).
-   * 3) Başarılıysa ve gizlilik izni uygunsa kullanıcı profili ve kişisel veriler (cinetrack-data.json, data/profiles/*) + iki yönlü doğrulama.
+   * 3) Başarılıysa ve gizlilik izni uygunsa kullanıcı profili ve kişisel veriler (cinethos-data.json, data/profiles/*) + iki yönlü doğrulama.
    */
   public async runStagedFullSync(
     options: {
@@ -3511,7 +3511,7 @@ export class PersistentDataStore {
         ...(haltedAtPersonal ? { haltedAtStage: haltedAtPersonal } : {}),
         probe: {
           ok: true,
-          repoPath: 'data/cinetrack-data.json',
+          repoPath: 'data/cinethos-data.json',
           step: 'access_check',
           sizeBytes: 0,
           localHash: null,

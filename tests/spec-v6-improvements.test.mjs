@@ -65,7 +65,7 @@ import {
   inspectXlsxPackageBuffer,
   EXCEL_SHEET_NAMES,
 } from '../src/server/excel-profile-backup.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 
 function createMemoryLocalStorage() {
   const store = new Map();
@@ -78,7 +78,7 @@ function createMemoryLocalStorage() {
 }
 
 async function withServer(options, fn) {
-  const { app } = createCineTrackApp(options);
+  const { app } = createCinethosApp(options);
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const addr = server.address();

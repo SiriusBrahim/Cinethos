@@ -12,7 +12,7 @@ import {
   findSavedIndexed,
   makeMediaKey,
   normalizeFavoriteActors,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { displayTitle, getPoster, imageUrl, handleImageError } from '../utils/helpers.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 

@@ -10,7 +10,7 @@ import type {
   PersistentTasteMapData,
   TasteMapEntry,
   PersistentCandidatePoolData,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   getTasteMapStorageKey,
   createDefaultTasteMapData,
@@ -24,7 +24,7 @@ import {
   syncPoolCandidatesWithTasteMap,
   MAX_IMPRESSION_HISTORY_PER_ENTRY,
   POOL_TARGET_CAPACITY,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { migratePersistentTasteMapData } from '../core/keys.ts';
 import { registerCandidatePoolStorePort } from '../core/candidate-pool-store-port.ts';
 
@@ -39,7 +39,7 @@ const pendingCoreIdbWrites = new Set<Promise<void>>();
 export function getDiscoveryHistoryIdbStore(): UseStore | undefined {
   if (typeof indexedDB === 'undefined') return undefined;
   if (!discoveryHistoryIdbStore) {
-    discoveryHistoryIdbStore = createIdbStore('cinetrack-discovery-history-db', 'ct_discovery_history');
+    discoveryHistoryIdbStore = createIdbStore('cinethos-discovery-history-db', 'ct_discovery_history');
   }
   return discoveryHistoryIdbStore;
 }
@@ -47,13 +47,13 @@ export function getDiscoveryHistoryIdbStore(): UseStore | undefined {
 export function getCandidatePoolIdbStore(): UseStore | undefined {
   if (typeof indexedDB === 'undefined') return undefined;
   if (!candidatePoolIdbStore) {
-    candidatePoolIdbStore = createIdbStore('cinetrack-candidate-pool-db', 'ct_candidate_pool');
+    candidatePoolIdbStore = createIdbStore('cinethos-candidate-pool-db', 'ct_candidate_pool');
   }
   return candidatePoolIdbStore;
 }
 
 
-const TASTE_MAP_KEY_PREFIX = 'cinetrack_taste_map_';
+const TASTE_MAP_KEY_PREFIX = 'cinethos_taste_map_';
 
 /**
  * P0-01-B: Yerel depoda bulunan TÜM zevk haritası profil kimlikleri.
@@ -389,7 +389,7 @@ export async function hydrateCandidatePoolsIdb(
   const store = getCandidatePoolIdbStore();
   if (store) {
     for (const mediaType of ['movie', 'tv'] as const) {
-      const key = `cinetrack_pool_${mediaType}_${profileId}`;
+      const key = `cinethos_pool_${mediaType}_${profileId}`;
       try {
         const idbVal = await idbGet<PersistentCandidatePoolData>(key, store);
         if (idbVal && idbVal.mediaType === mediaType && Array.isArray(idbVal.items)) {
@@ -419,7 +419,7 @@ export function loadPersistentPoolData(
   profileId: string,
   mediaType: 'movie' | 'tv'
 ): PersistentCandidatePoolData {
-  const key = `cinetrack_pool_${mediaType}_${profileId}`;
+  const key = `cinethos_pool_${mediaType}_${profileId}`;
   const store = getCandidatePoolIdbStore();
   if (store && idbHydratedPools.has(key)) {
     const cached = idbHydratedPools.get(key) as PersistentCandidatePoolData;
@@ -474,7 +474,7 @@ export function savePersistentPoolData(
   profileId: string,
   data: PersistentCandidatePoolData
 ): void {
-  const key = `cinetrack_pool_${data.mediaType}_${profileId}`;
+  const key = `cinethos_pool_${data.mediaType}_${profileId}`;
   const updatedAt = new Date().toISOString();
   const sliced = data.items.slice(0, POOL_TARGET_CAPACITY);
   const poolRecord: PersistentCandidatePoolData = {

@@ -64,7 +64,7 @@ export default defineConfig({
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'cinetrack-google-fonts',
+              cacheName: 'cinethos-google-fonts',
               expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -73,7 +73,7 @@ export default defineConfig({
             urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'cinetrack-gstatic-fonts',
+              cacheName: 'cinethos-gstatic-fonts',
               expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -82,7 +82,7 @@ export default defineConfig({
             urlPattern: /^(?:https:\/\/image\.tmdb\.org\/.*|\/api\/tmdb-image(?:\?.*)?$)/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'cinetrack-tmdb-posters',
+              cacheName: 'cinethos-tmdb-posters',
               expiration: {
                 maxEntries: 1000,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
@@ -95,7 +95,7 @@ export default defineConfig({
             urlPattern: /\/api\/tmdb(?:\?.*)?$/i,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'cinetrack-tmdb-api',
+              cacheName: 'cinethos-tmdb-api',
               networkTimeoutSeconds: 5,
               expiration: { maxEntries: 250, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },

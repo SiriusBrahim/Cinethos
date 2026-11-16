@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import type { Preferences, Profile, SavedItem } from '../core/cinetrack-core.ts';
+import type { Preferences, Profile, SavedItem } from '../core/cinethos-core.ts';
 import type { CinemaKunyeDocument } from '../core/cinema-kunye.ts';
 import { exportItemsToCsv, importItemsFromCsv, type CsvProfileBlock } from '../core/exporters.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';

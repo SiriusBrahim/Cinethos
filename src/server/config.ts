@@ -201,7 +201,7 @@ export function isAiStudioContainerEnv(
 /**
  * Tek kaynaklı sunucu yapılandırma çözümleyicisi (EXT-09 & BUG-01):
  * Tüm değişkenler için tek öncelik kuralı: `process.env > .env.local > .env > güvenli varsayılan`.
- * Birincil GitHub anahtarı `CINETRACK_GITHUB_PAT` olarak seçilir; `CINETRACK_GITHUB_TOKEN` yalnızca geri uyumluluk yedeğidir.
+ * Birincil GitHub anahtarı `CINETHOS_GITHUB_PAT` olarak seçilir; `CINETHOS_GITHUB_TOKEN` yalnızca geri uyumluluk yedeğidir.
  */
 export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServerConfig {
   const env = options.processEnv ?? options.env ?? process.env;
@@ -249,24 +249,24 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServe
 
   const defaultLoopbackHost = '127.0.0.1' as const;
   const localFileHost =
-    envLocalValues.CINETRACK_HOST?.trim() ||
-    dotEnvValues.CINETRACK_HOST?.trim() ||
+    envLocalValues.CINETHOS_HOST?.trim() ||
+    dotEnvValues.CINETHOS_HOST?.trim() ||
     envLocalValues.HOST?.trim() ||
     dotEnvValues.HOST?.trim() ||
     undefined;
-  const rawCinetrackHost = pickNonEmpty('CINETRACK_HOST');
+  const rawCinethosHost = pickNonEmpty('CINETHOS_HOST');
   const rawHost = pickNonEmpty('HOST');
-  const explicitHost = inAiStudio ? localFileHost : rawCinetrackHost || rawHost;
+  const explicitHost = inAiStudio ? localFileHost : rawCinethosHost || rawHost;
   const effectiveBindHost = explicitHost || defaultLoopbackHost;
   const listenHost = explicitHost || (inAiStudio ? '0.0.0.0' : defaultLoopbackHost);
 
   const rawPortCandidate = inAiStudio
-    ? Number(pickNonEmpty('CINETRACK_PORT')) ||
+    ? Number(pickNonEmpty('CINETHOS_PORT')) ||
       Number(envLocalValues.PORT?.trim()) ||
       Number(dotEnvValues.PORT?.trim()) ||
       (env.PORT && env.PORT.trim() !== '8080' ? Number(env.PORT.trim()) : 0) ||
       3000
-    : Number(pickNonEmpty('PORT')) || Number(pickNonEmpty('CINETRACK_PORT')) || 3000;
+    : Number(pickNonEmpty('PORT')) || Number(pickNonEmpty('CINETHOS_PORT')) || 3000;
   const port =
     Number.isSafeInteger(rawPortCandidate) && rawPortCandidate > 0 && rawPortCandidate <= 65535
       ? rawPortCandidate
@@ -277,15 +277,15 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServe
   const respanApiKey = pickNonEmpty('RESPAN_API_KEY') || '';
   const respanBaseUrl = pickNonEmpty('RESPAN_BASE_URL');
   const authToken = inAiStudio
-    ? envLocalValues.CINETRACK_TOKEN?.trim() || dotEnvValues.CINETRACK_TOKEN?.trim() || ''
-    : pickNonEmpty('CINETRACK_TOKEN') || '';
+    ? envLocalValues.CINETHOS_TOKEN?.trim() || dotEnvValues.CINETHOS_TOKEN?.trim() || ''
+    : pickNonEmpty('CINETHOS_TOKEN') || '';
   const isRemoteHostWithoutToken = !isLoopbackBindHost(effectiveBindHost) && !authToken;
 
   const suggestedAuthToken = !authToken ? crypto.randomBytes(24).toString('hex') : undefined;
 
   if (isRemoteHostWithoutToken) {
     warnings.push(
-      `[GÜVENLİK UYARISI] Sunucu harici ağ arayüzünde (${effectiveBindHost}) CINETRACK_TOKEN olmadan başlatıldı! Uzak mutasyonlar 503 auth_required ile reddedilecek. Önerilen .env.local ayarı: CINETRACK_TOKEN=${suggestedAuthToken}`
+      `[GÜVENLİK UYARISI] Sunucu harici ağ arayüzünde (${effectiveBindHost}) CINETHOS_TOKEN olmadan başlatıldı! Uzak mutasyonlar 503 auth_required ile reddedilecek. Önerilen .env.local ayarı: CINETHOS_TOKEN=${suggestedAuthToken}`
     );
   }
 
@@ -298,39 +298,39 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServe
   };
 
   const trustProxy = inAiStudio
-    ? parseOptionalBool(envLocalValues.CINETRACK_TRUST_PROXY ?? dotEnvValues.CINETRACK_TRUST_PROXY) === true
-    : pickValidBool('CINETRACK_TRUST_PROXY') === true;
+    ? parseOptionalBool(envLocalValues.CINETHOS_TRUST_PROXY ?? dotEnvValues.CINETHOS_TRUST_PROXY) === true
+    : pickValidBool('CINETHOS_TRUST_PROXY') === true;
 
   const rawRateLimit = inAiStudio
-    ? envLocalValues.CINETRACK_TMDB_RATE_LIMIT?.trim() || dotEnvValues.CINETRACK_TMDB_RATE_LIMIT?.trim()
-    : pickNonEmpty('CINETRACK_TMDB_RATE_LIMIT');
+    ? envLocalValues.CINETHOS_TMDB_RATE_LIMIT?.trim() || dotEnvValues.CINETHOS_TMDB_RATE_LIMIT?.trim()
+    : pickNonEmpty('CINETHOS_TMDB_RATE_LIMIT');
   const parsedRateLimit = rawRateLimit !== undefined ? Number(rawRateLimit) : NaN;
   const tmdbRateLimit =
     Number.isFinite(parsedRateLimit) && parsedRateLimit >= 0 ? parsedRateLimit : undefined;
 
-  const rawWindowMs = pickNonEmpty('CINETRACK_TMDB_RATE_WINDOW_MS');
+  const rawWindowMs = pickNonEmpty('CINETHOS_TMDB_RATE_WINDOW_MS');
   const parsedWindowMs = rawWindowMs !== undefined ? Number(rawWindowMs) : NaN;
   const tmdbRateWindowMs =
     Number.isFinite(parsedWindowMs) && parsedWindowMs > 0 ? parsedWindowMs : undefined;
 
-  // GitHub PAT çözümleme: katman önceliği process.env > .env.local > .env; katman içinde CINETRACK_GITHUB_PAT > CINETRACK_GITHUB_TOKEN
+  // GitHub PAT çözümleme: katman önceliği process.env > .env.local > .env; katman içinde CINETHOS_GITHUB_PAT > CINETHOS_GITHUB_TOKEN
   let githubToken = '';
   let githubTokenSource: TokenSourceKind = 'none';
 
-  const envPat = env.CINETRACK_GITHUB_PAT?.trim() || '';
-  const envLegacyTok = env.CINETRACK_GITHUB_TOKEN?.trim() || '';
-  const localPat = envLocalValues.CINETRACK_GITHUB_PAT?.trim() || '';
-  const localLegacyTok = envLocalValues.CINETRACK_GITHUB_TOKEN?.trim() || '';
-  const dotPat = dotEnvValues.CINETRACK_GITHUB_PAT?.trim() || '';
-  const dotLegacyTok = dotEnvValues.CINETRACK_GITHUB_TOKEN?.trim() || '';
+  const envPat = env.CINETHOS_GITHUB_PAT?.trim() || '';
+  const envLegacyTok = env.CINETHOS_GITHUB_TOKEN?.trim() || '';
+  const localPat = envLocalValues.CINETHOS_GITHUB_PAT?.trim() || '';
+  const localLegacyTok = envLocalValues.CINETHOS_GITHUB_TOKEN?.trim() || '';
+  const dotPat = dotEnvValues.CINETHOS_GITHUB_PAT?.trim() || '';
+  const dotLegacyTok = dotEnvValues.CINETHOS_GITHUB_TOKEN?.trim() || '';
 
   const rawTokenCandidates: Array<[string, TokenSourceKind]> = [
-    [envPat, 'env:CINETRACK_GITHUB_PAT'],
-    [envLegacyTok, 'env:CINETRACK_GITHUB_TOKEN'],
-    [localPat, 'file:.env.local:CINETRACK_GITHUB_PAT'],
-    [localLegacyTok, 'file:.env.local:CINETRACK_GITHUB_TOKEN'],
-    [dotPat, 'file:.env:CINETRACK_GITHUB_PAT'],
-    [dotLegacyTok, 'file:.env:CINETRACK_GITHUB_TOKEN'],
+    [envPat, 'env:CINETHOS_GITHUB_PAT'],
+    [envLegacyTok, 'env:CINETHOS_GITHUB_TOKEN'],
+    [localPat, 'file:.env.local:CINETHOS_GITHUB_PAT'],
+    [localLegacyTok, 'file:.env.local:CINETHOS_GITHUB_TOKEN'],
+    [dotPat, 'file:.env:CINETHOS_GITHUB_PAT'],
+    [dotLegacyTok, 'file:.env:CINETHOS_GITHUB_TOKEN'],
   ];
   const githubTokenCandidates: GitHubTokenCandidate[] = [];
   const seenCandidateTokens = new Set<string>();
@@ -351,31 +351,31 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedServe
   const effectiveLegacy = envLegacyTok || localLegacyTok || dotLegacyTok;
   if (effectivePat && effectiveLegacy && effectivePat !== effectiveLegacy) {
     warnings.push(
-      '[Config] Hem CINETRACK_GITHUB_PAT hem de eski CINETRACK_GITHUB_TOKEN tanımlı ve birbirinden farklı; birincil kural gereği öncelikli katmandaki CINETRACK_GITHUB_PAT / ortam değişkeni seçildi.'
+      '[Config] Hem CINETHOS_GITHUB_PAT hem de eski CINETHOS_GITHUB_TOKEN tanımlı ve birbirinden farklı; birincil kural gereği öncelikli katmandaki CINETHOS_GITHUB_PAT / ortam değişkeni seçildi.'
     );
   }
   if (envPat && (localPat || dotPat) && envPat !== (localPat || dotPat)) {
     warnings.push(
-      '[Config] process.env.CINETRACK_GITHUB_PAT değeri yerel .env/.env.local dosyasındaki eski anahtarı geçersiz kıldı (process.env önceliklidir).'
+      '[Config] process.env.CINETHOS_GITHUB_PAT değeri yerel .env/.env.local dosyasındaki eski anahtarı geçersiz kıldı (process.env önceliklidir).'
     );
   }
 
-  const githubOwner = pickNonEmpty('CINETRACK_DATA_OWNER') || '6yildiz9-maker';
-  const githubRepo = pickNonEmpty('CINETRACK_DATA_REPO') || 'cinetrack-private-data';
-  const githubBranch = pickNonEmpty('CINETRACK_DATA_BRANCH') || 'main';
+  const githubOwner = pickNonEmpty('CINETHOS_DATA_OWNER') || '6yildiz9-maker';
+  const githubRepo = pickNonEmpty('CINETHOS_DATA_REPO') || 'cinethos-private-data';
+  const githubBranch = pickNonEmpty('CINETHOS_DATA_BRANCH') || 'main';
 
   const processEnvIsPublicRepo =
-    env.CINETRACK_DATA_REPO_IS_PUBLIC !== undefined ? env.CINETRACK_DATA_REPO_IS_PUBLIC : null;
+    env.CINETHOS_DATA_REPO_IS_PUBLIC !== undefined ? env.CINETHOS_DATA_REPO_IS_PUBLIC : null;
   const localEnvIsPublicRepo =
-    envLocalValues.CINETRACK_DATA_REPO_IS_PUBLIC !== undefined
-      ? envLocalValues.CINETRACK_DATA_REPO_IS_PUBLIC
-      : dotEnvValues.CINETRACK_DATA_REPO_IS_PUBLIC !== undefined
-        ? dotEnvValues.CINETRACK_DATA_REPO_IS_PUBLIC
+    envLocalValues.CINETHOS_DATA_REPO_IS_PUBLIC !== undefined
+      ? envLocalValues.CINETHOS_DATA_REPO_IS_PUBLIC
+      : dotEnvValues.CINETHOS_DATA_REPO_IS_PUBLIC !== undefined
+        ? dotEnvValues.CINETHOS_DATA_REPO_IS_PUBLIC
         : null;
 
-  const isPublicRepo = pickValidBool('CINETRACK_DATA_REPO_IS_PUBLIC') === true;
-  const allowPublicPersonalSync = pickValidBool('CINETRACK_ALLOW_PUBLIC_PERSONAL_SYNC');
-  const allowPublicCatalogSync = pickValidBool('CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC');
+  const isPublicRepo = pickValidBool('CINETHOS_DATA_REPO_IS_PUBLIC') === true;
+  const allowPublicPersonalSync = pickValidBool('CINETHOS_ALLOW_PUBLIC_PERSONAL_SYNC');
+  const allowPublicCatalogSync = pickValidBool('CINETHOS_ALLOW_PUBLIC_CATALOG_SYNC');
 
   return {
     port,

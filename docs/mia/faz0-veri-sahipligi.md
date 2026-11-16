@@ -12,7 +12,7 @@
 
 | Varlık | Bugün yazan (doğrulandı) | Bugün okuyan | Hedef sahip | U | V | K | İ | Z | H | R | Ö | B | D |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `data/cinetrack-data.json` (DataDocument: profiller, items, preferences, tombstones) | `server/storage.ts`, `server/github-bidirectional-sync.ts`, `server/app.ts` (`PUT /api/data`, restore) | `App.tsx`, `services/api.ts`, arşiv/Excel yedeği | **V** | R | **W** | R¹ | – | R | – | R | R | R | R |
+| `data/cinethos-data.json` (DataDocument: profiller, items, preferences, tombstones) | `server/storage.ts`, `server/github-bidirectional-sync.ts`, `server/app.ts` (`PUT /api/data`, restore) | `App.tsx`, `services/api.ts`, arşiv/Excel yedeği | **V** | R | **W** | R¹ | – | R | – | R | R | R | R |
 | `data/profile.json`, `data/user-lists.json` (izole kopyalar) | `server/storage.ts` | `App.tsx` (hidrasyon), `services/storage-idb.ts` | **V** | R | **W** | R¹ | – | – | – | – | – | – | – |
 | `data/profiles/*.json` (türetilmiş profil) | `server/storage.ts`, `server/github-bidirectional-sync.ts`, `POST /api/profiles/derived/upsert` | `App.tsx`, `services/api.ts` | **V** (yazar) · **Z** (üretir) | – | **W** | – | – | W² | – | – | R | – | – |
 | `data/catalog/{movies,tv,manifest}.json` | `server/persistent-store.ts`, `server/github-catalog-sync.ts`, `POST /api/catalog/upsert` | `services/api.ts`, `App.tsx` (havuz tamamlama) | **İ** | – | R³ | – | **W** | – | – | – | R | R⁴ | – |
@@ -21,7 +21,7 @@
 | `data/sinema-kunyesi.json` | `server/persistent-store.ts`, `POST /api/cinema-kunye` | `hooks/useCinemaKunye.ts` | **İ** | – | R³ | – | **W** | – | – | – | R | – | – |
 | `data/taste/*.json` (taxonomy, index, events, profile, manifest, objections) | `server/taste-store.ts`, `server/taste-rebuild-coordinator.ts` | `core/taste/*`, `services/api.ts` | **Z** | – | R³ | – | – | **W** | R⁵ | – | R | R⁶ | – |
 | `data/archives/*.sqlite` | `server/sqlite-archive.ts` | arşiv geri yükleme akışı | **V** | R | **W** | – | R | R | – | – | – | – | – |
-| `data/cinetrack.db` (SQLite birincil, `CINETRACK_STORAGE=sqlite`) | `server/sqlite-primary-store.ts` (yalnız `storage.ts` üzerinden) | `server/storage.ts` | **V** | – | **W** | – | – | – | – | – | R³ | – | – |
+| `data/cinethos.db` (SQLite birincil, `CINETHOS_STORAGE=sqlite`) | `server/sqlite-primary-store.ts` (yalnız `storage.ts` üzerinden) | `server/storage.ts` | **V** | – | **W** | – | – | – | – | – | R³ | – | – |
 
 ¹ Kütüphane yazmaz; ekleme/silme **komut** olarak Veri'ye gider ve Veri tek yazıcı kalır.
 ² Zevk profili üretir, dosyayı Veri yazar.
@@ -34,20 +34,20 @@
 
 | Depo | İçerik | Bugün erişen (doğrulandı) | Hedef sahip | Not |
 | --- | --- | --- | --- | --- |
-| `cinetrack-profile-db` | Profil dokümanı | `services/storage-idb.ts` | **V** | Sunucu kapalıyken birincil kopya |
-| `cinetrack-user-lists-db` | Kullanıcı listeleri | `services/storage-idb.ts` | **V** | `data/user-lists.json` aynası |
-| `cinetrack-stock-db` | İçerik stoku (500+500) | `services/storage-idb.ts`, `services/stock-engine.ts` | **İ** | Boyut nedeniyle tarayıcıda kalır |
-| `cinetrack-series-index-db` | Dizi indeksi | `services/storage-idb.ts`, `services/series-service.ts` | **İ** | |
-| `cinetrack-actor-credits-db` | Oyuncu filmografisi | `services/client-depots.ts` | **İ** | `ct:actor-credits:*` anahtarıyla eşleşir |
-| `cinetrack-poster-lru-db` | Poster LRU (200 MiB) | `services/poster-cache-manager.ts` | **İ** | `ct:poster-hydration` ile kota yönetimi |
-| `cinetrack-encodings-db` | Zevk kodlamaları | `services/encoding-service.ts` | **Z/H** | Hafıza katmanına devredilecek |
-| `cinetrack-relationship-cache` | İlişki grafiği önbelleği | `services/relationship-cache.ts`, `services/idb-schema-version.ts` | **R** | Şema sürümü Veri'nin sorumluluğunda |
-| `cinetrack-candidate-pool-db` | Aday havuzu | `services/discovery-storage.ts` | **Ö** | `cinetrack_pool_*_*` anahtarlarıyla |
-| `cinetrack-discovery-history-db` | Keşif geçmişi | `services/discovery-storage.ts` | **Ö** | |
-| `cinetrack-skip-log-db` | "İlgilenmiyorum" geri bildirimi | `services/client-depots.ts` | **Ö** | Kütüphane `disliked` ile karıştırılmamalı |
-| `cinetrack-surfaced-db` | Gösterilen öneriler | `services/storage-idb.ts` | **Ö** | Tekrar göstermeme |
-| `cinetrack-ui-prefs-db` | UI tercihleri | `services/client-depots.ts` | **D** | |
-| `cinetrack-offline-queue-db` | Sunucuya yazma kuyruğu | `services/offline-queue.ts`, `services/storage-idb.ts` | **V** | İki dosya aynı depoyu açıyor → çakışma listesi |
+| `cinethos-profile-db` | Profil dokümanı | `services/storage-idb.ts` | **V** | Sunucu kapalıyken birincil kopya |
+| `cinethos-user-lists-db` | Kullanıcı listeleri | `services/storage-idb.ts` | **V** | `data/user-lists.json` aynası |
+| `cinethos-stock-db` | İçerik stoku (500+500) | `services/storage-idb.ts`, `services/stock-engine.ts` | **İ** | Boyut nedeniyle tarayıcıda kalır |
+| `cinethos-series-index-db` | Dizi indeksi | `services/storage-idb.ts`, `services/series-service.ts` | **İ** | |
+| `cinethos-actor-credits-db` | Oyuncu filmografisi | `services/client-depots.ts` | **İ** | `ct:actor-credits:*` anahtarıyla eşleşir |
+| `cinethos-poster-lru-db` | Poster LRU (200 MiB) | `services/poster-cache-manager.ts` | **İ** | `ct:poster-hydration` ile kota yönetimi |
+| `cinethos-encodings-db` | Zevk kodlamaları | `services/encoding-service.ts` | **Z/H** | Hafıza katmanına devredilecek |
+| `cinethos-relationship-cache` | İlişki grafiği önbelleği | `services/relationship-cache.ts`, `services/idb-schema-version.ts` | **R** | Şema sürümü Veri'nin sorumluluğunda |
+| `cinethos-candidate-pool-db` | Aday havuzu | `services/discovery-storage.ts` | **Ö** | `cinethos_pool_*_*` anahtarlarıyla |
+| `cinethos-discovery-history-db` | Keşif geçmişi | `services/discovery-storage.ts` | **Ö** | |
+| `cinethos-skip-log-db` | "İlgilenmiyorum" geri bildirimi | `services/client-depots.ts` | **Ö** | Kütüphane `disliked` ile karıştırılmamalı |
+| `cinethos-surfaced-db` | Gösterilen öneriler | `services/storage-idb.ts` | **Ö** | Tekrar göstermeme |
+| `cinethos-ui-prefs-db` | UI tercihleri | `services/client-depots.ts` | **D** | |
+| `cinethos-offline-queue-db` | Sunucuya yazma kuyruğu | `services/offline-queue.ts`, `services/storage-idb.ts` | **V** | İki dosya aynı depoyu açıyor → çakışma listesi |
 
 > Plan §1'de 12 depo sayılmıştı; burada 14 satır var çünkü `candidate-pool` ve `discovery-history` ayrı depo olarak açılıyor (önceki raporda tek satırda birleştirilmişti).
 
@@ -55,21 +55,21 @@
 
 | Anahtar | Bugün erişen | Hedef sahip |
 | --- | --- | --- |
-| `cinetrack.profiles.v1`, `cinetrack.activeProfile.v1`, `cinetrack.profile.v1` | `App.tsx` | **V** |
-| `cinetrack.profile.*.watchlist.v1`, `cinetrack.profile.*.preferences.v1` | `App.tsx` (yazar), `services/storage-idb.ts` (okur) | **V** |
-| `cinetrack.dirty.v2` | `App.tsx` | **V** (senkron durumu) |
-| `cinetrack_deleted_keys_*` | `App.tsx` | **V** (mezar taşı) |
-| `cinetrack_disliked_cache` | `App.tsx` | **K** |
-| `cinetrack_hide_listed_items` | `App.tsx` | **D** (görünüm filtresi) |
-| `cinetrack_fav_actors_*` | `App.tsx` | **K** |
-| `cinetrack_taste_map_*` | `core/cinetrack-core.ts` (anahtar üretimi), `services/discovery-storage.ts` | **Z** |
-| `cinetrack_pool_*_*` | `services/discovery-storage.ts` | **Ö** |
-| `cinetrack_evidence_objections` | `components/EvidenceModal.tsx` | **H** (kanıt itirazı) |
-| `cinetrack_offline_sync_queue_v1`, `cinetrack_offline_queue_store` | `services/offline-queue.ts` | **V** |
-| `cinetrack_client_token_v1` | `services/api-client.ts` | **U** (güvenlik) |
-| `cinetrack_prefer_image_proxy` | `utils/helpers.ts` | **D** |
-| `cinetrack_idb_depot_versions_v1` | `services/idb-schema-version.ts` | **V** (şema sürümü) |
-| `cinetrack.actor-accordions.v1`, `cinetrack.series-accordions.v1` | `components/*RecommendationsSection.tsx` | **D** |
+| `cinethos.profiles.v1`, `cinethos.activeProfile.v1`, `cinethos.profile.v1` | `App.tsx` | **V** |
+| `cinethos.profile.*.watchlist.v1`, `cinethos.profile.*.preferences.v1` | `App.tsx` (yazar), `services/storage-idb.ts` (okur) | **V** |
+| `cinethos.dirty.v2` | `App.tsx` | **V** (senkron durumu) |
+| `cinethos_deleted_keys_*` | `App.tsx` | **V** (mezar taşı) |
+| `cinethos_disliked_cache` | `App.tsx` | **K** |
+| `cinethos_hide_listed_items` | `App.tsx` | **D** (görünüm filtresi) |
+| `cinethos_fav_actors_*` | `App.tsx` | **K** |
+| `cinethos_taste_map_*` | `core/cinethos-core.ts` (anahtar üretimi), `services/discovery-storage.ts` | **Z** |
+| `cinethos_pool_*_*` | `services/discovery-storage.ts` | **Ö** |
+| `cinethos_evidence_objections` | `components/EvidenceModal.tsx` | **H** (kanıt itirazı) |
+| `cinethos_offline_sync_queue_v1`, `cinethos_offline_queue_store` | `services/offline-queue.ts` | **V** |
+| `cinethos_client_token_v1` | `services/api-client.ts` | **U** (güvenlik) |
+| `cinethos_prefer_image_proxy` | `utils/helpers.ts` | **D** |
+| `cinethos_idb_depot_versions_v1` | `services/idb-schema-version.ts` | **V** (şema sürümü) |
+| `cinethos.actor-accordions.v1`, `cinethos.series-accordions.v1` | `components/*RecommendationsSection.tsx` | **D** |
 | `ct:ui-prefs`, `ct:library-view` | `App.tsx`, `components/MediaGrid.tsx` | **D** |
 | `ct:mobile-dashboard:*` | `app/mobile/MobileDashboard.tsx` | **D** (Faz 7: `DashboardRepository`) |
 | `ct:theme` | `utils/theme.ts` | **D** |
@@ -82,13 +82,13 @@
 
 | Varlık | Çoklu erişim | Risk | Faz 2 çözümü |
 | --- | --- | --- | --- |
-| `data/cinetrack-data.json` | `storage.ts`, `github-bidirectional-sync.ts`, `app.ts`, `App.tsx` PUT | Aynı belgeye 4 yol yazıyor; revizyon çakışması | Tek `PrimaryDataRepository`; senkron ve rotalar yalnızca onu çağırır |
+| `data/cinethos-data.json` | `storage.ts`, `github-bidirectional-sync.ts`, `app.ts`, `App.tsx` PUT | Aynı belgeye 4 yol yazıyor; revizyon çakışması | Tek `PrimaryDataRepository`; senkron ve rotalar yalnızca onu çağırır |
 | `ct:stock` | `App.tsx`, `stock-engine.ts`, `actor-recommendations-engine.ts`, `idb-schema-version.ts` | Stok hem içerik hem UI tarafından yazılıyor | Yalnız İçerik yazar; UI salt okur |
-| `cinetrack-offline-queue-db` | `offline-queue.ts` + `storage-idb.ts` (ikisi de `createStore`) | İki bağlantı, tek kuyruk | Kuyruk tek modülde (`data/synchronization/`), diğer dosya import eder |
-| `cinetrack-relationship-cache` | `relationship-cache.ts` + `idb-schema-version.ts` | Şema göçü ile veri yazımı ayrı sahiplerde | Şema Veri, veri İlişki |
-| `cinetrack_taste_map_*` | `cinetrack-core.ts` (saf hesaplama) + `discovery-storage.ts` | Hesaplama modülü depolama anahtarı biliyor | Anahtar `keys.ts`'e, yazma Zevk repository'sine |
+| `cinethos-offline-queue-db` | `offline-queue.ts` + `storage-idb.ts` (ikisi de `createStore`) | İki bağlantı, tek kuyruk | Kuyruk tek modülde (`data/synchronization/`), diğer dosya import eder |
+| `cinethos-relationship-cache` | `relationship-cache.ts` + `idb-schema-version.ts` | Şema göçü ile veri yazımı ayrı sahiplerde | Şema Veri, veri İlişki |
+| `cinethos_taste_map_*` | `cinethos-core.ts` (saf hesaplama) + `discovery-storage.ts` | Hesaplama modülü depolama anahtarı biliyor | Anahtar `keys.ts`'e, yazma Zevk repository'sine |
 | `ct:ui-prefs`, `ct:library-view`, `ct:mobile-dashboard:*` | `App.tsx`, `MediaGrid.tsx`, `MobileDashboard.tsx`, `theme.ts` | UI tercihleri 4 ayrı yerde | `DashboardRepository` + tek UI tercih deposu |
-| `cinetrack.profile.*` | `App.tsx` yazar, `storage-idb.ts` okur | İki farklı okuma yolu, kota davranışı farklı | Veri repository'si tek okuma/yazma yolu |
+| `cinethos.profile.*` | `App.tsx` yazar, `storage-idb.ts` okur | İki farklı okuma yolu, kota davranışı farklı | Veri repository'si tek okuma/yazma yolu |
 
 ## 6. Profil izolasyonu — doğrulanan durum ve açık risk
 

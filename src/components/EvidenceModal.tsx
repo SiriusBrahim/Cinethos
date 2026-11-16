@@ -68,9 +68,9 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   const handleObjection = () => {
     setObjectionSent(true);
     try {
-      const stored = JSON.parse(localStorage.getItem('cinetrack_evidence_objections') || '[]');
+      const stored = JSON.parse(localStorage.getItem('cinethos_evidence_objections') || '[]');
       stored.push({ title: data.title, at: new Date().toISOString() });
-      localStorage.setItem('cinetrack_evidence_objections', JSON.stringify(stored));
+      localStorage.setItem('cinethos_evidence_objections', JSON.stringify(stored));
     } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
   };
 

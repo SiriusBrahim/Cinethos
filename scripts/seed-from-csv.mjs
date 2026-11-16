@@ -1,4 +1,4 @@
-// Cinethos CSV -> cinetrack-data.json tohumlama aracı
+// Cinethos CSV -> cinethos-data.json tohumlama aracı
 // Kullanım: node scripts/seed-from-csv.mjs "<csv-yolu>" [server-url]
 // Varsayılan: en yeni profil CSV'si ve http://127.0.0.1:3000
 import fs from 'node:fs';
@@ -12,11 +12,11 @@ if (!csvPath) {
   const downloads = path.join(os.homedir(), 'Downloads');
   const candidates = fs
     .readdirSync(downloads)
-    .filter((f) => /^cinetrack-profile-.*\.csv$/i.test(f))
+    .filter((f) => /^cinethos-profile-.*\.csv$/i.test(f))
     .sort()
     .reverse();
   if (candidates.length === 0) {
-    console.error('Downloads klasöründe cinetrack-profile-*.csv bulunamadı.');
+    console.error('Downloads klasöründe cinethos-profile-*.csv bulunamadı.');
     process.exit(1);
   }
   csvPath = path.join(downloads, candidates[0]);

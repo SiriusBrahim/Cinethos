@@ -7,7 +7,7 @@ import {
   resolveAirDate,
   makeMediaKey,
   getTasteRingLabel,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 import { formatMatchBadge } from '../i18n/index.ts';
 import { getItemSeriesInfo } from '../services/series-service.ts';

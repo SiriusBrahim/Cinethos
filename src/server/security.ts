@@ -5,21 +5,21 @@ import { isAiStudioContainerEnv } from './config.ts';
 export interface SecurityOptions {
   /**
    * Optional bearer/header token required on /api/data mutations (and reads if requireTokenForReads is true).
-   * Defaults to process.env.CINETRACK_TOKEN || ''.
+   * Defaults to process.env.CINETHOS_TOKEN || ''.
    */
   authToken?: string;
   /**
-   * Whether GET /api/data (or other guarded GET routes) also requires CINETRACK_TOKEN when configured.
+   * Whether GET /api/data (or other guarded GET routes) also requires CINETHOS_TOKEN when configured.
    */
   requireTokenForReads?: boolean;
   /**
    * Effective bind host of the server (defaults to '127.0.0.1').
-   * When bound to a non-loopback address without CINETRACK_TOKEN, mutations fail closed with 503 auth_required.
+   * When bound to a non-loopback address without CINETHOS_TOKEN, mutations fail closed with 503 auth_required.
    */
   bindHost?: string;
   /**
    * Whether X-Forwarded-Host and X-Forwarded-For headers from a reverse proxy are trusted.
-   * Defaults to false unless CINETRACK_TRUST_PROXY=true or app 'trust proxy' is enabled.
+   * Defaults to false unless CINETHOS_TRUST_PROXY=true or app 'trust proxy' is enabled.
    */
   trustProxy?: boolean;
   /**
@@ -40,7 +40,7 @@ export interface SecurityOptions {
 }
 
 function extractRequestToken(req: Request): string {
-  const headerToken = req.headers['x-cinetrack-token'];
+  const headerToken = req.headers['x-cinethos-token'];
   if (typeof headerToken === 'string' && headerToken.trim()) {
     return headerToken.trim();
   }
@@ -101,7 +101,7 @@ function isTrustedProxyEnabled(
   if (options?.trustProxy !== undefined) return options.trustProxy;
   if (
     !isAiStudioContainerEnv(process.env) &&
-    process.env.CINETRACK_TRUST_PROXY?.trim().toLowerCase() === 'true'
+    process.env.CINETHOS_TRUST_PROXY?.trim().toLowerCase() === 'true'
   ) {
     return true;
   }
@@ -224,7 +224,7 @@ export function createTokenAuthMiddleware(options: SecurityOptions = {}) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const fallbackEnvToken = isAiStudioContainerEnv(process.env)
       ? ''
-      : process.env.CINETRACK_TOKEN ?? '';
+      : process.env.CINETHOS_TOKEN ?? '';
     const configuredToken = (options.authToken ?? fallbackEnvToken).trim();
     const bindHost = (options.bindHost ?? '127.0.0.1').trim() || '127.0.0.1';
     const isRead = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
@@ -236,7 +236,7 @@ export function createTokenAuthMiddleware(options: SecurityOptions = {}) {
           error: 'auth_required',
           code: 'auth_required',
           status_message:
-            'Uzaktan erişim modunda mutasyonlar için CINETRACK_TOKEN yapılandırması zorunludur.',
+            'Uzaktan erişim modunda mutasyonlar için CINETHOS_TOKEN yapılandırması zorunludur.',
         });
         return;
       }
@@ -252,7 +252,7 @@ export function createTokenAuthMiddleware(options: SecurityOptions = {}) {
     const provided = extractRequestToken(req);
     if (!timingSafeTokenMatches(provided, configuredToken)) {
       res.status(401).json({
-        status_message: 'Yetkisiz istek: Geçerli CINETRACK_TOKEN gerekli.',
+        status_message: 'Yetkisiz istek: Geçerli CINETHOS_TOKEN gerekli.',
         code: 'unauthorized_token',
       });
       return;
@@ -312,7 +312,7 @@ export function createTmdbRateLimitMiddleware(options: SecurityOptions = {}) {
   const bindHost = (options.bindHost ?? '127.0.0.1').trim() || '127.0.0.1';
   const rawEnvLimit = isAiStudioContainerEnv(process.env)
     ? undefined
-    : process.env.CINETRACK_TMDB_RATE_LIMIT;
+    : process.env.CINETHOS_TMDB_RATE_LIMIT;
   const parsedEnvLimit =
     rawEnvLimit !== undefined && rawEnvLimit.trim() !== '' ? Number(rawEnvLimit) : NaN;
 
@@ -337,8 +337,8 @@ export function createTmdbRateLimitMiddleware(options: SecurityOptions = {}) {
   const windowMs =
     options.tmdbRateLimitWindowMs ??
     options.rateLimitWindowMs ??
-    (Number(process.env.CINETRACK_TMDB_RATE_WINDOW_MS) > 0
-      ? Number(process.env.CINETRACK_TMDB_RATE_WINDOW_MS)
+    (Number(process.env.CINETHOS_TMDB_RATE_WINDOW_MS) > 0
+      ? Number(process.env.CINETHOS_TMDB_RATE_WINDOW_MS)
       : 60_000);
   const limiter = new SlidingWindowRateLimiter(maxReq, windowMs);
 
@@ -358,7 +358,7 @@ export function createTmdbRateLimitMiddleware(options: SecurityOptions = {}) {
 
     if (!verdict.allowed) {
       res.setHeader('Retry-After', String(verdict.retryAfterSeconds));
-      res.setHeader('X-CineTrack-Source', 'error');
+      res.setHeader('X-Cinethos-Source', 'error');
       res.status(429).json({
         status_message: `Çok fazla TMDB isteği gönderildi. Lütfen ${verdict.retryAfterSeconds} saniye sonra tekrar deneyin.`,
         code: 'rate_limit_exceeded',

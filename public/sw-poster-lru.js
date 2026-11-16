@@ -3,10 +3,10 @@
  * with automatic Least-Recently-Used (LRU) eviction.
  */
 (function () {
-  const POSTER_CACHE_NAME = 'cinetrack-tmdb-posters';
+  const POSTER_CACHE_NAME = 'cinethos-tmdb-posters';
   const MAX_POSTER_CACHE_BYTES = 200 * 1024 * 1024; // 200 MiB
   const TARGET_POSTER_CACHE_BYTES = 160 * 1024 * 1024; // 160 MiB post-purge target
-  const DB_NAME = 'cinetrack-sw-poster-meta';
+  const DB_NAME = 'cinethos-sw-poster-meta';
   const STORE_NAME = 'poster_lru';
 
   let purgeInFlight = false;

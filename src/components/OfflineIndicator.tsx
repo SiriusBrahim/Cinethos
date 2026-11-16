@@ -43,7 +43,7 @@ export const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
         <button
           type="button"
           className="offline-indicator-retry"
-          onClick={() => window.dispatchEvent(new CustomEvent('cinetrack:force-flush-queue'))}
+          onClick={() => window.dispatchEvent(new CustomEvent('cinethos:force-flush-queue'))}
         >
           Yeniden dene
         </button>

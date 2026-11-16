@@ -5,7 +5,7 @@ import {
   makeMediaKey,
   matchesSelectedGenre,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import {
   backfillSavedSeriesLazy,
   computeUserSeriesUniverses,
@@ -45,7 +45,7 @@ export interface SeriesRecommendationsSectionProps {
   onBackToRecommendations?: () => void;
 }
 
-const SERIES_ACCORDION_STORAGE_KEY = 'cinetrack.series-accordions.v1';
+const SERIES_ACCORDION_STORAGE_KEY = 'cinethos.series-accordions.v1';
 
 function loadSeriesAccordionStates(): Record<string, boolean> {
   try {

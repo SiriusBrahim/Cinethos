@@ -1,4 +1,4 @@
-import type { SavedItem } from '../core/cinetrack-core.ts';
+import type { SavedItem } from '../core/cinethos-core.ts';
 import type { TmdbItem } from '../types/tmdb.ts';
 import { resolvePoster } from '../core/media/poster.ts';
 
@@ -150,7 +150,7 @@ export function extractGenreNames(
 let preferImageProxy = false;
 if (typeof window !== 'undefined') {
   try {
-    preferImageProxy = window.sessionStorage?.getItem('cinetrack_prefer_image_proxy') === '1';
+    preferImageProxy = window.sessionStorage?.getItem('cinethos_prefer_image_proxy') === '1';
   } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
 }
 
@@ -163,9 +163,9 @@ export function setImageProxyPreferred(preferred: boolean): void {
   if (typeof window !== 'undefined') {
     try {
       if (preferred) {
-        window.sessionStorage?.setItem('cinetrack_prefer_image_proxy', '1');
+        window.sessionStorage?.setItem('cinethos_prefer_image_proxy', '1');
       } else {
-        window.sessionStorage?.removeItem('cinetrack_prefer_image_proxy');
+        window.sessionStorage?.removeItem('cinethos_prefer_image_proxy');
       }
     } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
   }

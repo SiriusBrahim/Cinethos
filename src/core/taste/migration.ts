@@ -1,11 +1,11 @@
 // ===========================================================================
 // Cinethos Taste Engine — Migration Service (v1.5)
-// Eski cinetrack-data.json → yeni taste-events.json dönüşümü (TP-029 & V1.5)
-// KRİTİK: cinetrack-data.json ASLA değiştirilmez, sadece okunur
+// Eski cinethos-data.json → yeni taste-events.json dönüşümü (TP-029 & V1.5)
+// KRİTİK: cinethos-data.json ASLA değiştirilmez, sadece okunur
 // ===========================================================================
 
 import type { TasteEvent, MigrationResult, TimeSource, TimePrecision } from "./types.ts";
-import type { DataDocument, SavedItem } from "../cinetrack-core.ts";
+import type { DataDocument, SavedItem } from "../cinethos-core.ts";
 import { resolveExperiencedAt } from "./temporal-analyzer.ts";
 
 export interface MigrationInput {
@@ -24,7 +24,7 @@ function validOptionalTimestamp(value: unknown): string | undefined {
  * Eski veriyi yeni olay formatına dönüştür
  *
  * KRİTİK KURALLAR:
- * 1. cinetrack-data.json ASLA değiştirilmez
+ * 1. cinethos-data.json ASLA değiştirilmez
  * 2. Eski kayıtlarda ratedAt/completedAt yoksa timeSource: "imported" ve timePrecision: "unknown" (Faz 0)
  * 3. V1.5 yeni kayıtlarda ratedAt/completedAt mevcutsa timeSource: "actual" ve timePrecision: "exact"
  * 4. contentId formatı makeMediaKey'ten alınır

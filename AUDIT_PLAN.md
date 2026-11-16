@@ -109,7 +109,7 @@ export interface AppModuleManifest {
 | Kalem | Özet |
 | --- | --- |
 | Y2 | Delta yazma yolu: `PUT /api/profiles/:profileId` + `pushProfileDelta` (tam belge PUT kaldırılır) |
-| Y3 | Depo hijyeni: `phase-0-findings.md` → `docs/`; README "eski ad: CineTrack" notu + CI badge |
+| Y3 | Depo hijyeni: `phase-0-findings.md` → `docs/`; README "eski ad: Cinethos" notu + CI badge |
 | Y4 | E2E'ye `firefox` + `webkit` projeleri |
 | Y5 | Çok dillilik: `tr.ts`/`en.ts` bölmesi, `navigator.language` tespiti |
 | Y6 | Yenilikler: Zevk Anlatıcısı (LLM özet) · Ortak izleme listesi (`watch-party.json`) · Semantik arama (worker içi indeks) · Prediktif detay ısınması · Zevk İkizi |

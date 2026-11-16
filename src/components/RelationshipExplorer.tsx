@@ -23,7 +23,7 @@ import {
   type PoolCandidateItem,
   type Preferences,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { loadPersistentPoolData } from '../services/discovery-storage.ts';
 import {
   latestGraphCacheKey,

@@ -26,7 +26,7 @@ import type {
   TasteMetadataInput,
   TasteProfile,
 } from "../core/taste/types.ts";
-import type { DataDocument } from "../core/cinetrack-core.ts";
+import type { DataDocument } from "../core/cinethos-core.ts";
 import {
   coerceItemToTasteMetadata,
   configureTasteHydration,
@@ -135,7 +135,7 @@ interface ResolvedContentSummary {
 
 /**
  * Kanıt öğelerinin başlık, yıl, poster ve kişisel puan bilgilerini
- * cinetrack-data.json ve catalog/*.json dosyalarından SALT-OKUNUR çözümler.
+ * cinethos-data.json ve catalog/*.json dosyalarından SALT-OKUNUR çözümler.
  */
 async function buildContentSummaryLookup(
   dataDir: string = "data"
@@ -147,7 +147,7 @@ async function buildContentSummaryLookup(
   const tvCatPath =
     dataDir === "data" ? "data/catalog/tv.json" : path.join(dataDir, "catalog", "tv.json");
   const userDataPath =
-    dataDir === "data" ? "data/cinetrack-data.json" : path.join(dataDir, "cinetrack-data.json");
+    dataDir === "data" ? "data/cinethos-data.json" : path.join(dataDir, "cinethos-data.json");
 
   const [moviesCatRes, tvCatRes, dataDocRes] = await Promise.all([
     readJsonFileWithRecoveryAsync<Record<string, Record<string, unknown>>>(moviesCatPath),

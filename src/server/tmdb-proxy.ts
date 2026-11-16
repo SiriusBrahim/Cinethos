@@ -673,7 +673,7 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
   const handleStatus = (_req: Request, res: Response): void => {
     res.setHeader('Cache-Control', 'no-store');
     const source = tmdbApiKey ? 'live' : 'demo';
-    res.setHeader('X-CineTrack-Source', source);
+    res.setHeader('X-Cinethos-Source', source);
     res.json({
       configured: Boolean(tmdbApiKey),
       source,
@@ -684,7 +684,7 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
   const handleTmdb = async (req: Request, res: Response): Promise<void> => {
     const endpoint = String(req.query.path || '');
     if (!ALLOWED_TMDB_PATH.test(endpoint)) {
-      res.setHeader('X-CineTrack-Source', 'error');
+      res.setHeader('X-Cinethos-Source', 'error');
       res.status(400).json({ status_message: 'TMDB uç noktası izinli değil.' });
       return;
     }
@@ -697,13 +697,13 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
 
     for (const [key, value] of Object.entries(queryParams)) {
       if (!ALLOWED_TMDB_QUERY_KEYS.has(key)) {
-        res.setHeader('X-CineTrack-Source', 'error');
+        res.setHeader('X-Cinethos-Source', 'error');
         res.status(400).json({ status_message: `Sorgu parametresi '${key}' izinli değil.` });
         return;
       }
       const invalid = validateTmdbParam(key, value);
       if (invalid) {
-        res.setHeader('X-CineTrack-Source', 'error');
+        res.setHeader('X-Cinethos-Source', 'error');
         res.status(400).json({ status_message: invalid });
         return;
       }
@@ -712,13 +712,13 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
     if (!tmdbApiKey) {
       const mockResult = getMockTmdbResponse(endpoint, queryParams);
       if (mockResult) {
-        res.setHeader('X-CineTrack-Source', 'demo');
-        res.setHeader('X-CineTrack-Cache', 'miss');
+        res.setHeader('X-Cinethos-Source', 'demo');
+        res.setHeader('X-Cinethos-Cache', 'miss');
         res.setHeader('Cache-Control', 'public, max-age=180');
         res.json({ ...mockResult, _source: 'demo' });
         return;
       }
-      res.setHeader('X-CineTrack-Source', 'demo');
+      res.setHeader('X-Cinethos-Source', 'demo');
       res.status(503).json({
         status_message: 'TMDB_API_KEY eksik. Canlı katalog için .env dosyasına anahtarınızı ekleyin.',
         source: 'demo',
@@ -741,8 +741,8 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
       tmdbCache.set(cacheKey, cached);
       res.setHeader('Content-Type', cached.contentType);
       res.setHeader('Cache-Control', 'public, max-age=180');
-      res.setHeader('X-CineTrack-Source', cached.source || 'live');
-      res.setHeader('X-CineTrack-Cache', 'hit');
+      res.setHeader('X-Cinethos-Source', cached.source || 'live');
+      res.setHeader('X-Cinethos-Cache', 'hit');
       res.send(cached.body);
       return;
     }
@@ -823,8 +823,8 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
       res.status(result.status);
       res.setHeader('Content-Type', result.contentType);
       res.setHeader('Cache-Control', result.ok ? 'public, max-age=180' : 'no-store');
-      res.setHeader('X-CineTrack-Source', result.ok ? 'live' : 'error');
-      res.setHeader('X-CineTrack-Cache', 'miss');
+      res.setHeader('X-Cinethos-Source', result.ok ? 'live' : 'error');
+      res.setHeader('X-Cinethos-Cache', 'miss');
       res.send(result.body);
     } catch (error: any) {
       console.error('TMDB request failed:', error?.message || error);
@@ -833,14 +833,14 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
         res.status(200);
         res.setHeader('Content-Type', staleEntry.contentType);
         res.setHeader('Cache-Control', 'no-cache, no-store');
-        res.setHeader('X-CineTrack-Source', 'stale-cache');
-        res.setHeader('X-CineTrack-Cache', 'stale');
-        res.setHeader('X-CineTrack-Stale-Reason', error?.message || 'upstream_unreachable');
-        res.setHeader('X-CineTrack-Stale-Age-Seconds', Math.round((Date.now() - staleEntry.at) / 1000).toString());
+        res.setHeader('X-Cinethos-Source', 'stale-cache');
+        res.setHeader('X-Cinethos-Cache', 'stale');
+        res.setHeader('X-Cinethos-Stale-Reason', error?.message || 'upstream_unreachable');
+        res.setHeader('X-Cinethos-Stale-Age-Seconds', Math.round((Date.now() - staleEntry.at) / 1000).toString());
         res.send(staleEntry.body);
         return;
       }
-      res.setHeader('X-CineTrack-Source', 'error');
+      res.setHeader('X-Cinethos-Source', 'error');
       res.status(502).json({
         status_message: 'TMDB servisine ulaşılamadı ve geçerli bir önbellek kaydı bulunamadı.',
         source: 'error',
@@ -928,7 +928,7 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
         imageCache.set(targetUrl, cached);
         res.setHeader('Content-Type', cached.contentType);
         res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-        res.setHeader('X-CineTrack-Image-Proxy', 'hit');
+        res.setHeader('X-Cinethos-Image-Proxy', 'hit');
         res.send(cached.buffer);
         return;
       }
@@ -1031,7 +1031,7 @@ export function createTmdbProxyService(options: TmdbProxyServiceOptions = {}) {
 
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-      res.setHeader('X-CineTrack-Image-Proxy', inflight ? 'shared' : 'miss');
+      res.setHeader('X-Cinethos-Image-Proxy', inflight ? 'shared' : 'miss');
       res.send(buffer);
     } catch (err: any) {
       console.warn('TMDB image proxy error:', err?.message || err);

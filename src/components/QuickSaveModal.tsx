@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { displayTitle, formatMediaDates, getPoster, handleImageError } from '../utils/helpers.ts';
-import { SavedItem } from '../core/cinetrack-core.ts';
+import { SavedItem } from '../core/cinethos-core.ts';
 import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
 
 interface QuickSaveModalProps {

@@ -32,7 +32,7 @@ import {
   MAX_IMPRESSION_HISTORY_PER_ENTRY, 
   sanitizeTasteMapEntryImpressions, getImpressionSummary,
   ENGINE_VERSION, ALGORITHM_VERSION
-} from "../src/core/cinetrack-core.ts";
+} from "../src/core/cinethos-core.ts";
 import {
   loadPersistentTasteMap,
   savePersistentPoolData,
@@ -3042,7 +3042,7 @@ describe("Doğruluk ve Veri Kaybı Riskleri — Profil İmzası, Favori Oyuncu S
     assert.equal(parsedSingle.favoriteActors[0].id, 201);
     assert.equal(parsedSingle.isDemo, false);
 
-    // 2. Çok profilli / sunucu cinetrack-data.json belgesi
+    // 2. Çok profilli / sunucu cinethos-data.json belgesi
     const documentBackup = JSON.stringify({
       version: 3,
       schemaVersion: 3,
@@ -3600,11 +3600,11 @@ describe("Favori Oyuncu İsteklerini Sağlamlaştırma — Sınırlı Kuyruk, Oy
 });
 
 describe("TMDB Veri Kaynağı Ayrımı (Data Source Signaling) — Canlı, Demo, Eski Önbellek (Stale-Cache) ve Hata Ayrımı", () => {
-  it("parseTmdbSourceFromHeaders: X-CineTrack-Source ve X-CineTrack-Cache başlıklarını doğru ayrıştırır", () => {
+  it("parseTmdbSourceFromHeaders: X-Cinethos-Source ve X-Cinethos-Cache başlıklarını doğru ayrıştırır", () => {
     // 1. Canlı yanıt başlığı
     const liveHeaders = new Headers({
-      "X-CineTrack-Source": "live",
-      "X-CineTrack-Cache": "hit",
+      "X-Cinethos-Source": "live",
+      "X-Cinethos-Cache": "hit",
     });
     const parsedLive = parseTmdbSourceFromHeaders(liveHeaders);
     assert.equal(parsedLive.source, "live");
@@ -3612,8 +3612,8 @@ describe("TMDB Veri Kaynağı Ayrımı (Data Source Signaling) — Canlı, Demo,
 
     // 2. Demo başlığı
     const demoHeaders = new Headers({
-      "X-CineTrack-Source": "demo",
-      "X-CineTrack-Cache": "miss",
+      "X-Cinethos-Source": "demo",
+      "X-Cinethos-Cache": "miss",
     });
     const parsedDemo = parseTmdbSourceFromHeaders(demoHeaders);
     assert.equal(parsedDemo.source, "demo");
@@ -3621,10 +3621,10 @@ describe("TMDB Veri Kaynağı Ayrımı (Data Source Signaling) — Canlı, Demo,
 
     // 3. Eski önbellek (stale-cache) başlığı
     const staleHeaders = new Headers({
-      "X-CineTrack-Source": "stale-cache",
-      "X-CineTrack-Cache": "stale",
-      "X-CineTrack-Stale-Reason": "fetch_failed_upstream",
-      "X-CineTrack-Stale-Age-Seconds": "3600",
+      "X-Cinethos-Source": "stale-cache",
+      "X-Cinethos-Cache": "stale",
+      "X-Cinethos-Stale-Reason": "fetch_failed_upstream",
+      "X-Cinethos-Stale-Age-Seconds": "3600",
     });
     const parsedStale = parseTmdbSourceFromHeaders(staleHeaders);
     assert.equal(parsedStale.source, "stale-cache");
@@ -4694,7 +4694,7 @@ describe("Faz 1: CI ve üretim başlatma zinciri güvenceleri", () => {
       "vite yalnızca geliştirme dalında dinamik import edilmeli"
     );
     assert.equal(
-      serverSource.includes("./src/core/cinetrack-core.ts"),
+      serverSource.includes("./src/core/cinethos-core.ts"),
       true,
       "Node 22 yerel TS çalıştırması için açık .ts uzantısı kullanılmalı"
     );

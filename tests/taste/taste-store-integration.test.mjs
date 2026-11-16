@@ -181,35 +181,35 @@ describe("Taste Store Integration — GitHub Senkron Kapsamı", () => {
 
   it("TASTE_PATHS dosya yolları doğru tanımlı", () => {
     assert.ok(
-      TASTE_PATHS.manifest.includes("cinetrack-taste-manifest.json"),
+      TASTE_PATHS.manifest.includes("cinethos-taste-manifest.json"),
       "manifest dosya yolu yanlış"
     );
     assert.ok(
-      TASTE_PATHS.profile.includes("cinetrack-taste-profile.json"),
+      TASTE_PATHS.profile.includes("cinethos-taste-profile.json"),
       "profile dosya yolu yanlış"
     );
     assert.ok(
-      TASTE_PATHS.index.includes("cinetrack-taste-index.json"),
+      TASTE_PATHS.index.includes("cinethos-taste-index.json"),
       "index dosya yolu yanlış"
     );
     assert.ok(
-      TASTE_PATHS.events.includes("cinetrack-taste-events.json"),
+      TASTE_PATHS.events.includes("cinethos-taste-events.json"),
       "events dosya yolu yanlış"
     );
   });
 });
 
-// === cinetrack-data.json değişmedi ===
+// === cinethos-data.json değişmedi ===
 
 describe("Taste Store Integration — Ana Veri Koruması", () => {
-  it("data/cinetrack-data.json değiştirilmemiş olmalı (dosya varsa)", () => {
-    const dataPath = join(ROOT, "data", "cinetrack-data.json");
+  it("data/cinethos-data.json değiştirilmemiş olmalı (dosya varsa)", () => {
+    const dataPath = join(ROOT, "data", "cinethos-data.json");
     if (!existsSync(dataPath)) return; // dosya yok → skip
 
     // Dosya hâlâ erişilebilir ve okunabilir
-    assert.ok(existsSync(dataPath), "cinetrack-data.json silinmiş!");
+    assert.ok(existsSync(dataPath), "cinethos-data.json silinmiş!");
     const raw = readFileSync(dataPath, "utf8");
-    assert.ok(raw.length > 0, "cinetrack-data.json boş!");
+    assert.ok(raw.length > 0, "cinethos-data.json boş!");
 
     // JSON parse edilebilir mi?
     const doc = JSON.parse(raw);

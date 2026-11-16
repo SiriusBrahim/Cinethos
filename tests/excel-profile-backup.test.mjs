@@ -30,13 +30,13 @@ import {
   sanitizeSpreadsheetText,
 } from '../src/server/excel-profile-backup.ts';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
-import { createCineTrackApp, resolveExportDocument } from '../src/server/app.ts';
+import { createCinethosApp, resolveExportDocument } from '../src/server/app.ts';
 import {
   downloadVerifiedBackupBinary,
   validateDownloadedXlsxBytes,
 } from '../src/services/api.ts';
 
-function createTempDir(prefix = 'cinetrack-excel-test-') {
+function createTempDir(prefix = 'cinethos-excel-test-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
@@ -858,9 +858,9 @@ test('HTTP API integration: POST /api/backup/profile-export and GET /api/backup/
       },
     ],
   };
-  fs.writeFileSync(path.join(tmpDir, 'cinetrack-data.json'), JSON.stringify(seedDoc, null, 2));
+  fs.writeFileSync(path.join(tmpDir, 'cinethos-data.json'), JSON.stringify(seedDoc, null, 2));
 
-  const { app } = createCineTrackApp({ dataDir: tmpDir });
+  const { app } = createCinethosApp({ dataDir: tmpDir });
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
@@ -895,7 +895,7 @@ test('HTTP API integration: POST /api/backup/profile-export and GET /api/backup/
   assert.equal(dlSha, report.excelBackup.sha256);
 
   // Path traversal / invalid filename must be rejected with 400
-  const badRes = await fetch(`${baseUrl}/api/backup/exports/..%2Fcinetrack-data.json`);
+  const badRes = await fetch(`${baseUrl}/api/backup/exports/..%2Fcinethos-data.json`);
   assert.equal(badRes.status, 400);
 
   // Unknown /api/* path must return JSON 404 (never fall through to SPA index.html)
@@ -959,7 +959,7 @@ test('15. ZIP/OpenXML package inspection, 10 KB HTML/JSON download rejection, bi
       },
     ],
   };
-  fs.writeFileSync(path.join(tmpDir, 'cinetrack-data.json'), JSON.stringify(seedDoc, null, 2));
+  fs.writeFileSync(path.join(tmpDir, 'cinethos-data.json'), JSON.stringify(seedDoc, null, 2));
 
   // Verify PersistentDataStore extracts genre_ids from TMDB detail `genres: [{ id, name }]`
   const store = new PersistentDataStore({ dataDir: tmpDir });
@@ -1076,7 +1076,7 @@ test('15. ZIP/OpenXML package inspection, 10 KB HTML/JSON download rejection, bi
   assert.match(disguisedHtmlValidation.reason || '', /HTML/i);
 
   // End-to-end verified client download + stream fallback when GET returns HTML/404
-  const { app } = createCineTrackApp({ dataDir: tmpDir });
+  const { app } = createCinethosApp({ dataDir: tmpDir });
   // Seed cached posters into tmpDir/cache/posters so stream endpoint needs zero external internet calls
   const exportReport = await executeProfileBackupExport({
     dataDir: tmpDir,

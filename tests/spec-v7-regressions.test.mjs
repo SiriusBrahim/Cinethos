@@ -86,7 +86,7 @@ import {
 import {
   filterHiddenUserRegisteredItems,
   isMediaRegisteredInUserProfile,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import {
   updateStockItemsMetadata,
 } from '../src/services/stock-engine.ts';
@@ -344,7 +344,7 @@ test('REG-02 + REG-03 + IMP-17: ENCODING_LAYOUT_VERSION=2 prevents 47->48 dim Na
   assert.equal(
     await readRelationshipCache('graphs', 'latest:profile-default:relationships'),
     null,
-    'cinetrack-relationship-cache must be empty after reset'
+    'cinethos-relationship-cache must be empty after reset'
   );
 
   // Verify ct:stock was 100% preserved!
@@ -961,7 +961,7 @@ test('POSTER-05: Başlığı # ile başlayan içerik profil bloğu sanılmaz, CS
   const csv = exportItemsToCsv(items, null);
   const { importedItems, detectedFormat } = importItemsFromCsv(csv);
 
-  assert.equal(detectedFormat, 'cinetrack');
+  assert.equal(detectedFormat, 'cinethos');
   assert.equal(importedItems.length, 1, '# ile başlayan başlık veri satırıdır');
   assert.equal(importedItems[0].title, '#Alive');
   assert.equal(importedItems[0].poster_path, '/zb06eXz3Pg5JzytPnMFb3cIDV7B.jpg');
@@ -980,7 +980,7 @@ test('POSTER-05: Başlığı # ile başlayan içerik profil bloğu sanılmaz, CS
   assert.equal(reparsed.importedItems[0].poster_path, '/zb06eXz3Pg5JzytPnMFb3cIDV7B.jpg');
 });
 
-test('BACKUP-CSV-01: #CINETRACK-PROFILE bölümü dışa aktarımda yazılır ve importta geri okunur', () => {
+test('BACKUP-CSV-01: #CINETHOS-PROFILE bölümü dışa aktarımda yazılır ve importta geri okunur', () => {
   const items = [
     makePosterlessSavedItem(4922, 'tv', { poster_path: '/poster-4922.jpg' }),
     makePosterlessSavedItem(614696, 'movie', { title: '#Alive', poster_path: '/zb06eXz.jpg' }),
@@ -1004,7 +1004,7 @@ test('BACKUP-CSV-01: #CINETRACK-PROFILE bölümü dışa aktarımda yazılır ve
     activeProfileId: 'profile-default',
   });
 
-  assert.ok(csv.includes('#CINETRACK-PROFILE'), 'profil bölümü dosyada yazılı');
+  assert.ok(csv.includes('#CINETHOS-PROFILE'), 'profil bölümü dosyada yazılı');
 
   const result = importItemsFromCsv(csv);
   assert.equal(result.importedItems.length, 2, '# ile başlayan başlık veri satırı olarak okunur');

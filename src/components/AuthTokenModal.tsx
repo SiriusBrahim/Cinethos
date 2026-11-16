@@ -10,7 +10,7 @@ interface AuthTokenModalProps {
 }
 
 /**
- * SEC-03: Sunucu loopback dışına bağlandığında (LAN modu) `CINETRACK_TOKEN` ister.
+ * SEC-03: Sunucu loopback dışına bağlandığında (LAN modu) `CINETHOS_TOKEN` ister.
  * İstemci anahtarı yalnızca sessionStorage'da tutar; localStorage'a yazılmaz.
  * P1-03: odak tuzağı, Escape ve kapanışta odak geri yükleme ortak hook'tan gelir.
  */
@@ -44,7 +44,7 @@ export const AuthTokenModal: React.FC<AuthTokenModalProps> = ({ open, status, on
       // yüklenip aynı istemi göstermesin.
       const res = await apiFetch('/api/sync/status', { cache: 'no-store' });
       if (res.status === 401 || res.status === 503) {
-        setError('Anahtar sunucu tarafından reddedildi. CINETRACK_TOKEN değerini kontrol edin.');
+        setError('Anahtar sunucu tarafından reddedildi. CINETHOS_TOKEN değerini kontrol edin.');
         return;
       }
       onSubmit(clean);
@@ -68,8 +68,8 @@ export const AuthTokenModal: React.FC<AuthTokenModalProps> = ({ open, status, on
         <h2 id="authTokenTitle">Sunucu erişim anahtarı gerekli</h2>
         <p>
           {isForbidden
-            ? 'Sunucu yerel ağa açık ve CINETRACK_TOKEN tanımlı değil. Sunucuda anahtarı tanımlayıp aşağıya girin.'
-            : 'Sunucu bu isteği yetkisiz buldu. CINETRACK_TOKEN değerini girin; anahtar yalnızca bu sekme oturumu için saklanır.'}
+            ? 'Sunucu yerel ağa açık ve CINETHOS_TOKEN tanımlı değil. Sunucuda anahtarı tanımlayıp aşağıya girin.'
+            : 'Sunucu bu isteği yetkisiz buldu. CINETHOS_TOKEN değerini girin; anahtar yalnızca bu sekme oturumu için saklanır.'}
         </p>
         <label htmlFor="authTokenInput">Erişim anahtarı</label>
         <input

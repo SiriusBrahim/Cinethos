@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { buildTasteProfileV3, scoreCandidatesV3 } from '../src/core/cinetrack-core.ts';
+import { buildTasteProfileV3, scoreCandidatesV3 } from '../src/core/cinethos-core.ts';
 import { createDataStorage } from '../src/server/storage.ts';
 
 /**
@@ -156,7 +156,7 @@ function makeDocument(activeProfileId, profiles, revision) {
 }
 
 test('Faz 0 baseline: profil değişimi diğer profilin kayıtlarını bozmaz', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-profile-isolation-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-profile-isolation-'));
   try {
     const storage = createDataStorage({ dataDir: tmpDir, storageDriver: 'json' });
 
@@ -221,7 +221,7 @@ test('Faz 0 baseline: profil değişimi diğer profilin kayıtlarını bozmaz', 
 });
 
 test('Faz 0 baseline: silme mezar taşı bırakır, geri yükleme kaydı geri getirir', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-delete-restore-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinethos-delete-restore-'));
   try {
     const storage = createDataStorage({ dataDir: tmpDir, storageDriver: 'json' });
     const saved = await storage.saveDataSerialized(

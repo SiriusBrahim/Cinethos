@@ -24,7 +24,7 @@ import {
   type DataDocument,
   type Profile,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { canonicalizeMediaKeyList } from '../core/keys.ts';
 import {
   enrichSavedItemsFromCinemaKunye,
@@ -368,7 +368,7 @@ export function resolveUniqueExportFileName(
 }
 
 export const EXPORT_FILE_NAME_PATTERN =
-  /^(?:Cinethos|CineTrack)_Profile_\d{4}-\d{2}-\d{2}_\d{4}(?:_\d{2,14})?\.(?:xlsx|json)$/;
+  /^(?:Cinethos|Cinethos)_Profile_\d{4}-\d{2}-\d{2}_\d{4}(?:_\d{2,14})?\.(?:xlsx|json)$/;
 
 /**
  * Inspects image magic bytes to ensure only valid binary JPEG/PNG/GIF images are embedded into Excel.

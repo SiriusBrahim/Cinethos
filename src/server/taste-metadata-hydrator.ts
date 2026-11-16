@@ -8,7 +8,7 @@
 // Kurallar:
 // - TMDB anahtarı yalnızca ortamdan gelir (process.env.TMDB_API_KEY / server config)
 // - Ağ hatası ana akışı bloklamaz; başarısız içerik sonraki turda yeniden denenir
-// - data/cinetrack-data.json'a ASLA yazılmaz
+// - data/cinethos-data.json'a ASLA yazılmaz
 // ===========================================================================
 
 import path from "node:path";
@@ -43,8 +43,8 @@ const FETCH_TIMEOUT_MS = 8000;
 
 export function resolveTasteMetadataCachePath(dataDir: string = "data"): string {
   return dataDir === "data"
-    ? "data/taste/cinetrack-taste-metadata-cache.json"
-    : path.join(dataDir, "taste", "cinetrack-taste-metadata-cache.json");
+    ? "data/taste/cinethos-taste-metadata-cache.json"
+    : path.join(dataDir, "taste", "cinethos-taste-metadata-cache.json");
 }
 
 export async function readTasteMetadataCache(

@@ -2,7 +2,7 @@
  * Faz 1 — Migration Doğrulama Testleri
  * Çalıştırma: tsx --test tests/taste/migration.test.mjs
  *
- * KURAL: Bu testler data/cinetrack-data.json'a ASLA yazmaz — sadece okur.
+ * KURAL: Bu testler data/cinethos-data.json'a ASLA yazmaz — sadece okur.
  * Test fixture'ları sabit, kontrolü kolay veri içerir.
  */
 
@@ -367,9 +367,9 @@ describe("Migration — Orijinal veri korunması", () => {
 
 // --- Canlı veri testi (dosya varsa) ---
 describe("Migration — Canlı Veri (sadece dosya mevcutsa)", () => {
-  const dataPath = join(ROOT, "data", "cinetrack-data.json");
+  const dataPath = join(ROOT, "data", "cinethos-data.json");
 
-  it("data/cinetrack-data.json var ve okunabilir olmalı (varsa)", () => {
+  it("data/cinethos-data.json var ve okunabilir olmalı (varsa)", () => {
     if (!existsSync(dataPath)) {
       // Dosya yok — skip
       return;
@@ -427,7 +427,7 @@ describe("Migration — Canlı Veri (sadece dosya mevcutsa)", () => {
     }
   });
 
-  it("data/cinetrack-data.json migration sonrası değiştirilmemiş olmalı (byte kontrolü, dosya varsa)", () => {
+  it("data/cinethos-data.json migration sonrası değiştirilmemiş olmalı (byte kontrolü, dosya varsa)", () => {
     if (!existsSync(dataPath)) {
       return;
     }
@@ -438,7 +438,7 @@ describe("Migration — Canlı Veri (sadece dosya mevcutsa)", () => {
     assert.strictEqual(
       before.length,
       after.length,
-      "cinetrack-data.json büyüklüğü değişti — KURAL İHLALİ"
+      "cinethos-data.json büyüklüğü değişti — KURAL İHLALİ"
     );
   });
 });

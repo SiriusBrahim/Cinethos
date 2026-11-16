@@ -9,7 +9,7 @@
 | Dosya | Satır | Baskın sorumluluk | Taşınacağı yöneticiler |
 | --- | --- | --- | --- |
 | `src/App.tsx` | 4.651 | Kabuk state'i, sunucu senkron akışı, katalog/öneri hattı, işlem işleyicileri | Uygulama (kabuk), Veri (senkron), Öneri (katalog hattı), Kütüphane (işlemler), Deneyim (render) |
-| `src/core/cinetrack-core.ts` | 4.691 | Veri modeli, normalizasyon, puanlama, Zevk Haritası, aday havuzu | Veri (model), İçerik (normalizasyon), Kütüphane (kayıt yardımcıları), Öneri (puanlama/havuz), Zevk (harita) |
+| `src/core/cinethos-core.ts` | 4.691 | Veri modeli, normalizasyon, puanlama, Zevk Haritası, aday havuzu | Veri (model), İçerik (normalizasyon), Kütüphane (kayıt yardımcıları), Öneri (puanlama/havuz), Zevk (harita) |
 | `src/server/persistent-store.ts` | 4.230 | Katalog / türetilmiş profil / stok / künye / GitHub durum dosyaları | İçerik (katalog, stok, künye), Veri (dosya, senkron durumu) |
 | `src/server/github-bidirectional-sync.ts` | 4.754 | Uzak dosya denetimi + kayıpsız iki yönlü birleştirme | Veri/Senkron (Faz 2'de `SyncStorePort` arkasına) |
 | `src/server/excel-profile-backup.ts` | 3.447 | Excel/JSON profil yedeği, poster yerleşimi, XLSX paketleme | Veri (yedek), İçerik (poster) |
@@ -37,7 +37,7 @@
 
 **Faz 7 kararı:** App.tsx'te yeni iş mantığı yazılmaz. 2978–3227 bloğu Faz 3'te `library/operations/*` altına, 791–1361 Faz 2'de `data/synchronization/` altına, 1462–2844 Faz 6'da `modules/discover/state.ts` altına taşınır. Kalan state kabuğu `AppShell.tsx` + `useProfiles` olur.
 
-## 3. `src/core/cinetrack-core.ts` — blok bazında
+## 3. `src/core/cinethos-core.ts` — blok bazında
 
 | ≈ Satır | Blok | ● Sahip | ○ Okuyan | Faz |
 | --- | --- | --- | --- | --- |
@@ -50,7 +50,7 @@
 | 2788–3158 | `scoreCandidatesV3`, `syncPoolCandidatesWithTasteMap`, `isTasteMapCacheValid` | **Öneri** | Zevk | 6 |
 | 3159–4691 | Aday havuzu: `createDefaultPoolData`, `determineItemEra`, tür/popülerlik kovaları, havuz normalizasyonu | **Öneri** | İçerik | 6 |
 
-**Faz 1 kararı:** 1–214 aralığındaki tipler `core/media/types.ts`, medya anahtarı yardımcıları (`core/keys.ts`) `core/media/keys.ts` altına taşınır; `cinetrack-core.ts` yeniden export eder. Bu, 4 tip döngüsünü keser (§0 döngü tablosu).
+**Faz 1 kararı:** 1–214 aralığındaki tipler `core/media/types.ts`, medya anahtarı yardımcıları (`core/keys.ts`) `core/media/keys.ts` altına taşınır; `cinethos-core.ts` yeniden export eder. Bu, 4 tip döngüsünü keser (§0 döngü tablosu).
 
 ## 4. `src/server/persistent-store.ts` — bölüm bazında
 
@@ -92,7 +92,7 @@
 | ≈ Satır | Blok | ● Sahip |
 | --- | --- | --- |
 | 41–389 | Yardımcılar: stream, yazma önkoşulu (`If-Match`), SPA fallback, SHA-256 | Uygulama (sunucu kabuğu) |
-| 390–509 | `createCineTrackApp` kurulumu, `storage`/`persistentStore` bağlama, `/api/health` | Uygulama |
+| 390–509 | `createCinethosApp` kurulumu, `storage`/`persistentStore` bağlama, `/api/health` | Uygulama |
 | 510–568 | SQLite arşiv durumu ve yükleme | Veri |
 | 569–1269 | P0-01 yazma hattı: journal, optimistic concurrency, çift yönlü birleştirme | **Veri** |
 | 1270–1273 | TMDB vekili ve görsel vekili | İçerik |
@@ -131,10 +131,10 @@
 
 ## 10. Taşıma sırası (bu tablodan çıkan)
 
-1. **Faz 1:** `core/media/types.ts` + `core/media/keys.ts` — App.tsx ve cinetrack-core'daki tip bağımlılıklarını azaltır.
+1. **Faz 1:** `core/media/types.ts` + `core/media/keys.ts` — App.tsx ve cinethos-core'daki tip bağımlılıklarını azaltır.
 2. **Faz 2:** `data/` adaptörleri — `storage.ts` + `sqlite-primary-store.ts` + `persistent-store.ts` yazma yolları; `SyncStorePort` çıkarımı.
 3. **Faz 3:** `library/operations/*` (App.tsx 2978–3227) + `content/` (stock/series/poster).
-4. **Faz 6:** App.tsx 1462–2844 → `modules/discover/state.ts`; `cinetrack-core` puanlama blokları `recommendations/` altına sarmalanır.
+4. **Faz 6:** App.tsx 1462–2844 → `modules/discover/state.ts`; `cinethos-core` puanlama blokları `recommendations/` altına sarmalanır.
 5. **Faz 7:** App.tsx kabuğu `AppShell.tsx` + `presentation/layouts/*`; `AppModals` → `app/modals/`.
 
 > Bu tablo **taşıma kararı** değil, taşımanın sınırlarını gösteren envanterdir. Her blok taşınmadan önce ilgili test dosyası yeşil kalmalı (§9 test eşlemesi).

@@ -16,7 +16,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
   parseBackupText,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/core/cinethos-core.ts';
 import { mergeSavedItemListsLossless } from '../src/core/user-data-merge.ts';
 import { exportItemsToCsv, importItemsFromCsv } from '../src/core/exporters.ts';
 import { buildYearlyWrappedSummary } from '../src/core/wrapped-summary.ts';
@@ -25,12 +25,12 @@ import {
   stringifyDeterministic,
 } from '../src/server/persistent-store.ts';
 import { createDataStorage } from '../src/server/storage.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCinethosApp } from '../src/server/app.ts';
 import { resolveConfig } from '../src/server/config.ts';
 import { executeProfileBackupExport } from '../src/server/excel-profile-backup.ts';
 
 const TEST_OWNER = 'kunye-owner';
-const TEST_REPO = 'cinetrack-kunye-sync';
+const TEST_REPO = 'cinethos-kunye-sync';
 const TEST_BRANCH = 'main';
 const TEST_TOKEN = 'github_pat_11KUNYETESTTOKEN9999999999999999';
 
@@ -228,7 +228,7 @@ test('2. Ayrı sinema-kunyesi.json dosyası, /api/cinema-kunye uç noktaları ve
   const tmpDir = createTempDir();
   try {
     const dataDir = path.join(tmpDir, 'data');
-    const dataFile = path.join(dataDir, 'cinetrack-data.json');
+    const dataFile = path.join(dataDir, 'cinethos-data.json');
     const store = new PersistentDataStore({ dataDir });
     const storage = createDataStorage(dataFile, { persistentStore: store });
     const config = resolveConfig({
@@ -236,7 +236,7 @@ test('2. Ayrı sinema-kunyesi.json dosyası, /api/cinema-kunye uç noktaları ve
       HOST: '127.0.0.1',
       DATA_FILE: dataFile,
     });
-    const appBundle = createCineTrackApp({ config, storage, persistentStore: store });
+    const appBundle = createCinethosApp({ config, storage, persistentStore: store });
     const server = await new Promise((resolve) => {
       const s = appBundle.app.listen(0, '127.0.0.1', () => resolve(s));
     });
@@ -342,7 +342,7 @@ test('3. Profil JSON ve CSV tam yedeklemesi (contentId ile) ve geri yüklemede �
   const tmpDir = createTempDir();
   try {
     const dataDir = path.join(tmpDir, 'data');
-    const dataFile = path.join(dataDir, 'cinetrack-data.json');
+    const dataFile = path.join(dataDir, 'cinethos-data.json');
     const store = new PersistentDataStore({ dataDir });
     const storage = createDataStorage(dataFile, { persistentStore: store });
 
@@ -496,7 +496,7 @@ test('4. GitHub çift yönlü senkronizasyonda data/sinema-kunyesi.json kayıps�
 
   try {
     const dataDir = path.join(tmpDir, 'data');
-    const dataFile = path.join(dataDir, 'cinetrack-data.json');
+    const dataFile = path.join(dataDir, 'cinethos-data.json');
     const store = new PersistentDataStore({
       dataDir,
       githubToken: TEST_TOKEN,

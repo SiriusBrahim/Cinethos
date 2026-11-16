@@ -3,7 +3,7 @@
 // Olay güdümlü (event-driven) arka plan profil yeniden hesaplama koordinatörü.
 //
 // MUTLAK KURALLAR:
-// - data/cinetrack-data.json ASLA değiştirilmez (yalnızca ilk soğuk başlatmada okunur)
+// - data/cinethos-data.json ASLA değiştirilmez (yalnızca ilk soğuk başlatmada okunur)
 // - Ağır profil hesaplaması worker_threads (taste-profile-worker.ts) üzerinde çalışır
 // - Tüm data/taste/ yazımları atomiktir (taste-store üzerinden)
 // ===========================================================================
@@ -50,7 +50,7 @@ import type {
   TasteMetric,
   TasteProfile,
 } from "../core/taste/types.ts";
-import type { DataDocument } from "../core/cinetrack-core.ts";
+import type { DataDocument } from "../core/cinethos-core.ts";
 
 export interface RebuildCoordinatorResult {
   generationId: string;
@@ -192,24 +192,24 @@ async function computeBootstrapSignature(dataDir: string): Promise<string> {
   const files =
     dataDir === "data"
       ? [
-          "data/cinetrack-data.json",
+          "data/cinethos-data.json",
           "data/catalog/movies.json",
           "data/catalog/tv.json",
           "data/stock.json",
-          "data/taste/cinetrack-taste-events.json",
-          "data/taste/cinetrack-taste-index.json",
-          "data/taste/cinetrack-taste-profile.json",
-          "data/taste/cinetrack-taste-metadata-cache.json",
+          "data/taste/cinethos-taste-events.json",
+          "data/taste/cinethos-taste-index.json",
+          "data/taste/cinethos-taste-profile.json",
+          "data/taste/cinethos-taste-metadata-cache.json",
         ]
       : [
-          path.join(dataDir, "cinetrack-data.json"),
+          path.join(dataDir, "cinethos-data.json"),
           path.join(dataDir, "catalog", "movies.json"),
           path.join(dataDir, "catalog", "tv.json"),
           path.join(dataDir, "stock.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-events.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-index.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-profile.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-metadata-cache.json"),
+          path.join(dataDir, "taste", "cinethos-taste-events.json"),
+          path.join(dataDir, "taste", "cinethos-taste-index.json"),
+          path.join(dataDir, "taste", "cinethos-taste-profile.json"),
+          path.join(dataDir, "taste", "cinethos-taste-metadata-cache.json"),
         ];
   const parts = await Promise.all(files.map(fileSignature));
   return [CONFIG_VERSION, EXTRACTOR_VERSION, ...parts].join("|");
@@ -321,7 +321,7 @@ export function coerceItemToTasteMetadata(raw: Record<string, unknown> | null | 
 }
 
 /**
- * İçerik metadata girdilerini cinetrack-taste-index.json deposuna ekler/günceller.
+ * İçerik metadata girdilerini cinethos-taste-index.json deposuna ekler/günceller.
  */
 export async function upsertTasteMetadataInputs(
   inputs: TasteMetadataInput[],
@@ -503,7 +503,7 @@ export function triggerTasteProfileRebuild(
 /**
  * Taste indeksini ve olaylarını güncel veriden artımlı olarak senkronize eder.
  *
- * - cinetrack-data.json yalnızca OKUNUR (ASLA yazılmaz — Mutlak Kural)
+ * - cinethos-data.json yalnızca OKUNUR (ASLA yazılmaz — Mutlak Kural)
  * - Katalog, stok ve TMDB metadata önbelleği indeks girdilerine katılır
  * - Yeni tamamlanmış/puanlanmış kayıtlar olay olarak eklenir (idempotent)
  * - Değişiklik varsa profil yeniden hesaplanır; yoksa ağır iş atlanır
@@ -528,9 +528,9 @@ export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Pro
         readTasteMetadataCache(dataDir),
       ]);
 
-      // cinetrack-data.json SADECE OKUNUR (ASLA yazılmaz — Mutlak Kural)
+      // cinethos-data.json SADECE OKUNUR (ASLA yazılmaz — Mutlak Kural)
       const userDataPath =
-        dataDir === "data" ? "data/cinetrack-data.json" : path.join(dataDir, "cinetrack-data.json");
+        dataDir === "data" ? "data/cinethos-data.json" : path.join(dataDir, "cinethos-data.json");
       const dataDocRes = await readJsonFileWithRecoveryAsync<DataDocument>(userDataPath);
       if (dataDocRes.status !== "ok" && dataDocRes.status !== "recovered") {
         return;

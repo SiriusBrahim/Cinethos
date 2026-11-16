@@ -10,8 +10,8 @@
 | --- | --- | --- |
 | Tüm kaynak dosyaları listele | ✅ | [Envanter verisi §2–3](./faz0-envanter-veri.md) — 202 dosya, 82.134 satır, katman dağılımı |
 | Sorumluluklara göre sınıflandır | ✅ | Aynı belge §2 (15 katman) + [fonksiyon sahipliği](./faz0-fonksiyon-sahipligi.md) (15 büyük dosya, blok bazında) |
-| Büyük ve yoğun dosyaları belirle | ✅ | Envanter §3: `github-bidirectional-sync` 4.754 · `cinetrack-core` 4.691 · `App.tsx` 4.651 · `persistent-store` 4.230 · `excel-profile-backup` 3.447 |
-| Mevcut Manager/Service yapısını tespit et | ✅ | Envanter §15 — **73 otomatik tespit**. Elle doğrulanan ana servisler: `createDataStorage`, `createSqlitePrimaryStore`, `PersistentDataStore`, `GitHubBidirectionalSyncManager`, `createCineTrackApp`, `createTmdbProxyService`, `stockEngine`, `TasteStore`, `relationship-cache`, `offline-queue`, `api.ts` istemcisi |
+| Büyük ve yoğun dosyaları belirle | ✅ | Envanter §3: `github-bidirectional-sync` 4.754 · `cinethos-core` 4.691 · `App.tsx` 4.651 · `persistent-store` 4.230 · `excel-profile-backup` 3.447 |
+| Mevcut Manager/Service yapısını tespit et | ✅ | Envanter §15 — **73 otomatik tespit**. Elle doğrulanan ana servisler: `createDataStorage`, `createSqlitePrimaryStore`, `PersistentDataStore`, `GitHubBidirectionalSyncManager`, `createCinethosApp`, `createTmdbProxyService`, `stockEngine`, `TasteStore`, `relationship-cache`, `offline-queue`, `api.ts` istemcisi |
 | Kullanılmayan / tekrar eden / eski kodu belirle | ✅ | Envanter §14 — **11 dosya hiçbir yerden import edilmiyor** (aşağıda), 189 "dışa aktarılmış ama dışarıdan kullanılmıyor" adayı, 10 aynı adlı export |
 | Test dosyalarını kapsadıkları modüllerle eşleştir | ✅ | Envanter §9 — 26 test dosyası, hedef kaynaklar ve vaka sayıları |
 
@@ -33,7 +33,7 @@ Tarama yöntemi: statik + dinamik (`import()`), default import, `new URL(..., im
 | --- | --- | --- |
 | `App.tsx` hem kabuk hem kütüphane hem öneri hattı | `handleSaveItem` 2978, `handleSetStatus` 2997, `loadCategoryResults` 1510, render 4326 | Faz 3/6/7'de bölünür |
 | `storage.ts` + `persistent-store.ts` iki ayrı dosya yazıcısı | ikisi de `data/*.json` yazıyor; `DataDocument` 4 yol | Tek `PrimaryDataRepository` |
-| `core/cinetrack-core.ts` model + puanlama + Zevk Haritası + havuz | blok tablosu §3 | `core/media/*`, `taste/`, `recommendations/` |
+| `core/cinethos-core.ts` model + puanlama + Zevk Haritası + havuz | blok tablosu §3 | `core/media/*`, `taste/`, `recommendations/` |
 | `services/api.ts` TMDB + sunucu verisi + GitHub + yedek | api.ts blok tablosu §8 | `content/providers/tmdb`, `data/synchronization` |
 | `useItemActions` yalnız yardımcı; gerçek işlemler App'te | `useItemActions.ts` export'ları: 32/58/104/207 — `addItem` yok | Faz 3 `library/operations` |
 

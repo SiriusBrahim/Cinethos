@@ -1,15 +1,15 @@
-import { type DataDocument } from '../core/cinetrack-core.ts';
+import { type DataDocument } from '../core/cinethos-core.ts';
 import { get, set, del, createStore } from 'idb-keyval';
 
-const OFFLINE_QUEUE_STORAGE_KEY = 'cinetrack_offline_sync_queue_v1';
-const IDB_STORE_NAME = 'cinetrack_offline_queue_store';
+const OFFLINE_QUEUE_STORAGE_KEY = 'cinethos_offline_sync_queue_v1';
+const IDB_STORE_NAME = 'cinethos_offline_queue_store';
 let idbStoreRef: ReturnType<typeof createStore> | undefined;
 let pendingIdbWrite: Promise<void> | null = null;
 
 function getIdbStore() {
   if (typeof indexedDB === 'undefined') return undefined;
   if (!idbStoreRef) {
-    idbStoreRef = createStore('cinetrack-offline-queue-db', IDB_STORE_NAME);
+    idbStoreRef = createStore('cinethos-offline-queue-db', IDB_STORE_NAME);
   }
   return idbStoreRef;
 }
@@ -31,7 +31,7 @@ export interface EnqueueOfflineResult extends QueuedSyncSnapshot {
 }
 
 export const OFFLINE_QUEUE_MAX_ATTEMPTS = 5;
-export const OFFLINE_QUEUE_FAILED_EVENT = 'cinetrack:queue-failed';
+export const OFFLINE_QUEUE_FAILED_EVENT = 'cinethos:queue-failed';
 const OFFLINE_BACKOFF_BASE_MS = 2_000;
 const OFFLINE_BACKOFF_MAX_MS = 5 * 60_000;
 

@@ -1,4 +1,4 @@
-import type { Profile, SavedItem } from './cinetrack-core.ts';
+import type { Profile, SavedItem } from './cinethos-core.ts';
 import {
   enrichSavedItemsFromCinemaKunye,
   type CinemaKunyeDocument,

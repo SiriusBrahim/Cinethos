@@ -26,7 +26,7 @@ gerekçesi yazılmadan bırakılmamalıdır.
 
 - **Paketler:** `exceljs` → `uuid`, `gaxios` → `uuid`.
 - **Etki:** `uuid` danışmanlığı, tahmin edilebilir/`Math.random` tabanlı üretim
-  yollarına ilişkin orta önemde bir uyarıdır. CineTrack'te `uuid` yalnızca Excel
+  yollarına ilişkin orta önemde bir uyarıdır. Cinethos'te `uuid` yalnızca Excel
   çalışma kitabı iç kimlikleri ve Google API istemcisinin dahili izleme kimlikleri
   için kullanılır; güvenlik sınırı oluşturan bir token/oturum değeri üretmez.
 - **İstisna nedeni:** `exceljs` ve `gaxios` sürümleri `uuid`'nin yeni major

@@ -1,6 +1,6 @@
 import { get, set, del, clear, createStore, entries, delMany, type UseStore } from 'idb-keyval';
 import type { TmdbPersonCreditItem } from '../types/tmdb.ts';
-import type { ActorFetchStatus } from '../core/cinetrack-core.ts';
+import type { ActorFetchStatus } from '../core/cinethos-core.ts';
 
 export interface IdbWriteResult {
   persisted: boolean;
@@ -85,19 +85,19 @@ function getExtraDepotStore(
   if (!isIdbReady()) return undefined;
   switch (name) {
     case 'ct_skip_log':
-      if (!skipLogStore) skipLogStore = createStore('cinetrack-skip-log-db', 'ct_skip_log');
+      if (!skipLogStore) skipLogStore = createStore('cinethos-skip-log-db', 'ct_skip_log');
       return skipLogStore;
     case 'ct_ui_prefs':
-      if (!uiPrefsStore) uiPrefsStore = createStore('cinetrack-ui-prefs-db', 'ct_ui_prefs');
+      if (!uiPrefsStore) uiPrefsStore = createStore('cinethos-ui-prefs-db', 'ct_ui_prefs');
       return uiPrefsStore;
     case 'ct_actor_credits':
       if (!actorCreditsStore) {
-        actorCreditsStore = createStore('cinetrack-actor-credits-db', 'ct_actor_credits');
+        actorCreditsStore = createStore('cinethos-actor-credits-db', 'ct_actor_credits');
       }
       return actorCreditsStore;
     case 'ct_encodings':
       if (!encodingsStore) {
-        encodingsStore = createStore('cinetrack-encodings-db', 'ct_encodings');
+        encodingsStore = createStore('cinethos-encodings-db', 'ct_encodings');
       }
       return encodingsStore;
   }

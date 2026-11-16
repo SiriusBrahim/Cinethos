@@ -1,6 +1,6 @@
 // Cinethos Hibrit Yedek Birleştirme CLI
 // Kullanım: node scripts/hybrid-merge.mjs [csv-yolu] [--apply] [--server <url>]
-// Varsayılan: Downloads'taki en yeni cinetrack-profile-*.csv, kuru çalıştırma (önizleme).
+// Varsayılan: Downloads'taki en yeni cinethos-profile-*.csv, kuru çalıştırma (önizleme).
 // --apply: birleştirmeyi kaydeder (ardından UI'dan veya sync API'sinden GitHub'a eşitlenebilir).
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,11 +18,11 @@ if (!csvPath) {
   const downloads = path.join(os.homedir(), 'Downloads');
   const candidates = fs
     .readdirSync(downloads)
-    .filter((f) => /^cinetrack-profile-.*\.csv$/i.test(f))
+    .filter((f) => /^cinethos-profile-.*\.csv$/i.test(f))
     .sort()
     .reverse();
   if (candidates.length === 0) {
-    console.error('Downloads klasöründe cinetrack-profile-*.csv bulunamadı.');
+    console.error('Downloads klasöründe cinethos-profile-*.csv bulunamadı.');
     process.exit(1);
   }
   csvPath = path.join(downloads, candidates[0]);

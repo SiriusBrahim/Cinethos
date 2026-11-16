@@ -8,7 +8,7 @@ import express from 'express';
 
 import { parseDotenvContent, resolveConfig } from '../src/server/config.ts';
 import {
-  createCineTrackApp,
+  createCinethosApp,
   createSpaFallbackMiddleware,
   isStaticAssetRequestPath,
   resolveExportDocument,
@@ -22,7 +22,7 @@ import {
 } from '../src/server/excel-profile-backup.ts';
 import { resolveMediaType, makeMediaKey } from '../src/core/keys.ts';
 import { enforceStrictMediaTypePool } from '../src/core/recommendation-orchestrator.ts';
-import { normalizeProfile } from '../src/core/cinetrack-core.ts';
+import { normalizeProfile } from '../src/core/cinethos-core.ts';
 import {
   enqueueOfflineSyncSnapshotDurable,
   loadOfflineSyncSnapshot,
@@ -42,7 +42,7 @@ import {
 import { t } from '../src/i18n/index.ts';
 
 async function withServer(options, fn) {
-  const { app } = createCineTrackApp(options);
+  const { app } = createCinethosApp(options);
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const addr = server.address();
@@ -283,10 +283,10 @@ test('BUG-12 & EXT-05: Güvenlik başlıkları, /api/sync/status token koruması
         });
         assert.equal(validIfMatch.status, 200);
 
-        // 8) X-CineTrack-Force-Write: 1 ile açık zorlamalı yazma 200 dönmeli
+        // 8) X-Cinethos-Force-Write: 1 ile açık zorlamalı yazma 200 dönmeli
         const forcedPut = await fetch(`${baseUrl}/api/data`, {
           method: 'PUT',
-          headers: { ...authHeaders, 'X-CineTrack-Force-Write': '1' },
+          headers: { ...authHeaders, 'X-Cinethos-Force-Write': '1' },
           body: JSON.stringify(makeMinimalDoc()),
         });
         assert.equal(forcedPut.status, 200);
@@ -541,34 +541,34 @@ test('EXT-09, EXT-10, EXT-11, EXT-13 & BUG-13.2: Dotenv ayrıştırıcı, yapıl
   const dotenvSample = [
     '# Yorum satırı',
     'export TMDB_API_KEY="canli-anahtar-123" # satır içi yorum',
-    "CINETRACK_TOKEN='tek-tirnak#icinde-hash'",
+    "CINETHOS_TOKEN='tek-tirnak#icinde-hash'",
     'MULTILINE_NOTE="satir1',
     'satir2"',
     'BOZUK SATIR ESITTIR YOK',
-    'CINETRACK_PORT=4100 # port yorumu',
+    'CINETHOS_PORT=4100 # port yorumu',
   ].join('\n');
 
   const parsed = parseDotenvContent(dotenvSample, '.env.test');
   assert.equal(parsed.values.TMDB_API_KEY, 'canli-anahtar-123');
-  assert.equal(parsed.values.CINETRACK_TOKEN, 'tek-tirnak#icinde-hash');
+  assert.equal(parsed.values.CINETHOS_TOKEN, 'tek-tirnak#icinde-hash');
   assert.equal(parsed.values.MULTILINE_NOTE, 'satir1\nsatir2');
-  assert.equal(parsed.values.CINETRACK_PORT, '4100');
+  assert.equal(parsed.values.CINETHOS_PORT, '4100');
   assert.equal(parsed.warnings.length, 1);
 
-  // EXT-09: process.env > .env.local > .env önceliği ve CINETRACK_GITHUB_PAT > CINETRACK_GITHUB_TOKEN
+  // EXT-09: process.env > .env.local > .env önceliği ve CINETHOS_GITHUB_PAT > CINETHOS_GITHUB_TOKEN
   const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cfg-'));
   try {
     fs.writeFileSync(
       path.join(cfgDir, '.env'),
       [
         'PORT=3100',
-        'CINETRACK_GITHUB_TOKEN=legacy-env-token',
-        'CINETRACK_GITHUB_PAT=pat-from-dotenv',
+        'CINETHOS_GITHUB_TOKEN=legacy-env-token',
+        'CINETHOS_GITHUB_PAT=pat-from-dotenv',
       ].join('\n')
     );
     fs.writeFileSync(
       path.join(cfgDir, '.env.local'),
-      ['PORT=3200', 'CINETRACK_GITHUB_PAT=pat-from-dotenv-local'].join('\n')
+      ['PORT=3200', 'CINETHOS_GITHUB_PAT=pat-from-dotenv-local'].join('\n')
     );
 
     const cfg = resolveConfig({
@@ -579,7 +579,7 @@ test('EXT-09, EXT-10, EXT-11, EXT-13 & BUG-13.2: Dotenv ayrıştırıcı, yapıl
     });
     assert.equal(cfg.port, 3300);
     assert.equal(cfg.githubToken, 'pat-from-dotenv-local');
-    assert.equal(cfg.githubTokenSource, 'file:.env.local:CINETRACK_GITHUB_PAT');
+    assert.equal(cfg.githubTokenSource, 'file:.env.local:CINETHOS_GITHUB_PAT');
     assert.ok(cfg.warnings.every((w) => !w.includes('pat-from-dotenv')));
 
     // EXT-10: /api/sync/public-catalog-consent TMDB atıf onayı zorunluluğu

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { DataDocument, Profile, SavedItem } from '../core/cinetrack-core.ts';
+import type { DataDocument, Profile, SavedItem } from '../core/cinethos-core.ts';
 import {
   fetchSyncStatus,
   hybridMergeCsv,

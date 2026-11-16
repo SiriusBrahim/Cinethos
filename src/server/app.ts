@@ -13,7 +13,7 @@ import {
   type DataDocument,
   type Profile,
   type SavedItem,
-} from '../core/cinetrack-core.ts';
+} from '../core/cinethos-core.ts';
 import { createDataStorage, countTotalItems, type StorageOptions } from './storage.ts';
 import { resolveStorageDriver } from './sqlite-primary-store.ts';
 import { brandProfileFileName } from '../shared/brand.ts';
@@ -125,7 +125,7 @@ import {
   type ArchiveSnapshot,
 } from './sqlite-archive.ts';
 
-export interface CineTrackAppOptions extends StorageOptions, SecurityOptions, TmdbProxyServiceOptions {
+export interface CinethosAppOptions extends StorageOptions, SecurityOptions, TmdbProxyServiceOptions {
   dataDir?: string;
   persistentStore?: PersistentDataStore;
   security?: SecurityOptions;
@@ -184,7 +184,7 @@ interface ParsedWritePrecondition {
 }
 
 function parseWritePrecondition(req: Request): ParsedWritePrecondition {
-  const forceHeader = req.headers['x-cinetrack-force-write'];
+  const forceHeader = req.headers['x-cinethos-force-write'];
   let forceOverwrite =
     forceHeader === '1' ||
     forceHeader === 'true' ||
@@ -205,7 +205,7 @@ function parseWritePrecondition(req: Request): ParsedWritePrecondition {
     return { expectedRevision: null, hasInvalidIfMatch: true, forceOverwrite };
   }
 
-  const headerRev = req.headers['x-cinetrack-base-revision'];
+  const headerRev = req.headers['x-cinethos-base-revision'];
   if (typeof headerRev === 'string' && headerRev.trim()) {
     if (/^\d+$/.test(headerRev.trim())) {
       return { expectedRevision: Number(headerRev.trim()), hasInvalidIfMatch: false, forceOverwrite };
@@ -223,7 +223,7 @@ function parseWritePrecondition(req: Request): ParsedWritePrecondition {
 }
 
 function isBulkDeleteConfirmed(req: Request): boolean {
-  const headerVal = req.headers['x-cinetrack-confirm-drop'];
+  const headerVal = req.headers['x-cinethos-confirm-drop'];
   if (headerVal === '1' || headerVal === 'true') return true;
   if (req.body && typeof req.body === 'object' && req.body.confirmBulkDelete === true) return true;
   return false;
@@ -233,14 +233,14 @@ function parseMergeWriteOptions(req: Request): {
   mergeStrategy?: 'lossless';
   foldUnhydratedDefaultProfile: boolean;
 } {
-  const mergeHeader = String(req.headers['x-cinetrack-merge'] || '').trim().toLowerCase();
+  const mergeHeader = String(req.headers['x-cinethos-merge'] || '').trim().toLowerCase();
   const isLossless =
     mergeHeader === '1' ||
     mergeHeader === 'true' ||
     mergeHeader === 'lossless' ||
     Boolean(req.body && typeof req.body === 'object' && req.body.mergeStrategy === 'lossless');
 
-  const foldHeader = String(req.headers['x-cinetrack-unhydrated-default'] || '')
+  const foldHeader = String(req.headers['x-cinethos-unhydrated-default'] || '')
     .trim()
     .toLowerCase();
   const foldUnhydratedDefaultProfile =
@@ -387,7 +387,7 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   };
 }
 
-export function createCineTrackApp(options: CineTrackAppOptions): {
+export function createCinethosApp(options: CinethosAppOptions): {
   app: Express;
   storage: ReturnType<typeof createDataStorage>;
   tmdbProxy: ReturnType<typeof createTmdbProxyService>;
@@ -530,7 +530,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const snapshot = req.body as ArchiveSnapshot;
       const archiveDir = path.join(resolvedDataDir, 'archives');
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `cinetrack-archive-${stamp}.sqlite`;
+      const fileName = `cinethos-archive-${stamp}.sqlite`;
       const filePath = path.join(archiveDir, fileName);
       const result = await writeSqliteArchive(snapshot, filePath);
       res.setHeader('Content-Type', 'application/vnd.sqlite3');
@@ -1709,7 +1709,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       res.status(400).json({ ok: false, error: 'Token boş olamaz.' });
       return;
     }
-    persistentStore.updateGitHubToken(rawToken, 'env:CINETRACK_GITHUB_PAT');
+    persistentStore.updateGitHubToken(rawToken, 'env:CINETHOS_GITHUB_PAT');
     res.json({ ok: true, status: persistentStore.getSyncStatus() });
   });
 
@@ -2123,8 +2123,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${fileName}"`,
         'Content-Length': String(stat.size),
-        'X-CineTrack-SHA256': sha256,
-        'X-CineTrack-Filename': fileName,
+        'X-Cinethos-SHA256': sha256,
+        'X-Cinethos-Filename': fileName,
         'X-Content-Type-Options': 'nosniff',
       });
     } catch (err: any) {
@@ -2226,8 +2226,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${rawName}"`,
       'Content-Length': String(stat.size),
-      'X-CineTrack-SHA256': sha256,
-      'X-CineTrack-Filename': rawName,
+      'X-Cinethos-SHA256': sha256,
+      'X-Cinethos-Filename': rawName,
       'X-Content-Type-Options': 'nosniff',
     });
   });

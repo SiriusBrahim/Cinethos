@@ -8,7 +8,7 @@
 // - Yeni içerik indirilmesi kullanıcı zevkini değiştirmez (profil hesaplanmaz)
 // - Index dosyası: schemaVersion, revision, updatedAt, extractorVersion,
 //   taxonomyVersion, mappingVersion, items taşımalı
-// - data/cinetrack-data.json'a kesinlikle yazma
+// - data/cinethos-data.json'a kesinlikle yazma
 // ===========================================================================
 
 import type {
