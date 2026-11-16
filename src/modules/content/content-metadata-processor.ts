@@ -51,11 +51,20 @@ export const STRIPPED_PERSONAL_KEYS = new Set([
   'profile_id',
   'userid',
   'user_id',
+  'username',
+  'user_name',
+  'listname',
+  'list_name',
   'status',
   'list',
   'personal_rating',
   'personalrating',
   'personal_rating_cleared',
+  'rating',
+  'my_rating',
+  'myrating',
+  'userrating',
+  'user_rating',
   'ratedat',
   'rated_at',
   'completedat',
@@ -65,20 +74,118 @@ export const STRIPPED_PERSONAL_KEYS = new Set([
   'updatedat',
   'updated_at',
   'episodes_watched',
+  'episodeswatched',
   'current_season',
+  'currentseason',
   'season_progress',
+  'seasonprogress',
+  'watch_progress',
+  'watchprogress',
+  'watched_at',
+  'watchedat',
   'isdemo',
   'is_demo',
   'disliked',
+  'notinterested',
+  'not_interested',
   'hidden',
   'deleted_keys',
+  'deletedkeys',
   'addedtopoolat',
   'added_to_pool_at',
   'notes',
   'note',
+  'user_note',
+  'usernote',
   'personal_note',
   'personalnote',
   'personal_notes',
+  'personalnotes',
+  'comment',
+  'comments',
+  'yorum',
+  'favorite',
+  'favorites',
+  'favourite',
+  'favourites',
+  'favoriteactors',
+  'favorite_actors',
+]);
+
+/**
+ * MIA Faz 2 — Adım 2.1 (Dilim D): Ortak içerik deposu AÇIK ALLOWLIST sınırı.
+ *
+ * Bu kümede olmayan HER anahtar (hangi seviyede olursa olsun) varsayılan olarak
+ * atılır (default-deny). Yalnızca TMDB / lisanslı kaynaklardan gelen ortak
+ * doğrulanmış içerik metaverisi ortak havuza girebilir; profileId, kişisel
+ * puan, not, izleme durumu gibi kullanıcı alanlarının bu kümeye dahil
+ * edilmemesi tasarım gereğidir.
+ *
+ * Anahtarlar normalize biçimde tutulur: küçük harf + yalnızca alfanumerik
+ * karakterler (`original_title` → `originaltitle`, `originalTitle` →
+ * `originaltitle`). Böylece farklı yazım/kasalarla sınır aşılamaz.
+ */
+export const COMMON_METADATA_ALLOWLIST = new Set([
+  // Medya kimliği
+  'id',
+  'tmdbid',
+  'mediakey',
+  'mediatype',
+  'contentid',
+  'imdbid',
+  'externalids',
+  'adult',
+  // Başlıklar
+  'title',
+  'originaltitle',
+  'name',
+  'originalname',
+  // Özet ve slogan
+  'overview',
+  'tagline',
+  // Türler ve anahtar kelimeler
+  'genres',
+  'genreids',
+  'keywords',
+  'keywordids',
+  // Tarihler
+  'releasedate',
+  'firstairdate',
+  'lastairdate',
+  // Süre / sezon / bölüm
+  'runtime',
+  'runtimeminutes',
+  'episoderuntime',
+  'numberofseasons',
+  'numberofepisodes',
+  // Ülke / dil / prodüksiyon
+  'originallanguage',
+  'origincountry',
+  'productioncountries',
+  'productioncompanies',
+  'networks',
+  'createdby',
+  'belongstocollection',
+  'collection',
+  // İçerik kredileri ve kredi girdisi alanları (nested)
+  'credits',
+  'cast',
+  'crew',
+  'job',
+  'department',
+  'character',
+  'order',
+  // TMDB ortak puan/popülerlik (kişisel puan DEĞİL)
+  'voteaverage',
+  'votecount',
+  'popularity',
+  // Kaynak izlenebilirliği
+  'source',
+  'sourcerevision',
+  'acquiredat',
+  'fetchedat',
+  // İşlem bookkeeping bayrağı
+  'corrupt',
 ]);
 
 const TMDB_GENRE_ID_LABELS: Record<number, string> = {
@@ -183,8 +290,12 @@ export function computeDeterministicDataHash(payload: unknown): string {
   ].join('');
 }
 
+function normalizeKey(key: string): string {
+  return key.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function classifyStrippedKey(key: string): 'visual' | 'personal' | null {
-  const lower = key.trim().toLowerCase();
+  const lower = normalizeKey(key);
   if (STRIPPED_VISUAL_KEYS.has(lower)) return 'visual';
   if (STRIPPED_PERSONAL_KEYS.has(lower)) return 'personal';
   return null;
@@ -194,18 +305,23 @@ export interface SanitizeResult {
   readonly sanitized: Record<string, unknown>;
   readonly strippedVisualFields: string[];
   readonly strippedPersonalFields: string[];
+  /** Allowlist dışında kalan ve default-deny ile atılan bilinmeyen alanlar. */
+  readonly strippedUnknownFields: string[];
 }
 
 function sanitizeValueRecursive(
   value: unknown,
   visualOut: Set<string>,
   personalOut: Set<string>,
+  unknownOut: Set<string>,
   depth = 0
 ): unknown {
   if (depth > 6 || value === null || value === undefined) return value;
   if (typeof value !== 'object') return value;
   if (Array.isArray(value)) {
-    return value.map((entry) => sanitizeValueRecursive(entry, visualOut, personalOut, depth + 1));
+    return value.map((entry) =>
+      sanitizeValueRecursive(entry, visualOut, personalOut, unknownOut, depth + 1)
+    );
   }
   const obj = value as Record<string, unknown>;
   const clean: Record<string, unknown> = {};
@@ -219,23 +335,32 @@ function sanitizeValueRecursive(
       personalOut.add(k);
       continue;
     }
-    clean[k] = sanitizeValueRecursive(v, visualOut, personalOut, depth + 1);
+    // MIA Faz 2 — Adım 2.1: default-deny allowlist. Bilinmeyen anahtar hangi
+    // seviyede olursa olsun atılır; bu, denylist'in kaçıracağı yeni kişisel
+    // alanların ortak havuza sızmasını tasarım düzeyinde engeller.
+    if (!COMMON_METADATA_ALLOWLIST.has(normalizeKey(k))) {
+      unknownOut.add(k);
+      continue;
+    }
+    clean[k] = sanitizeValueRecursive(v, visualOut, personalOut, unknownOut, depth + 1);
   }
   return clean;
 }
 
-/** Ham nesneyi poster/backdrop ve kişisel alanlardan tamamen arındırır. */
+/** Ham nesneyi poster/backdrop, kişisel ve allowlist dışı alanlardan tamamen arındırır. */
 export function sanitizeRawContentInput(raw: unknown): SanitizeResult {
   const visualOut = new Set<string>();
   const personalOut = new Set<string>();
+  const unknownOut = new Set<string>();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return {
       sanitized: {},
       strippedVisualFields: [],
       strippedPersonalFields: [],
+      strippedUnknownFields: [],
     };
   }
-  const sanitized = sanitizeValueRecursive(raw, visualOut, personalOut, 0) as Record<
+  const sanitized = sanitizeValueRecursive(raw, visualOut, personalOut, unknownOut, 0) as Record<
     string,
     unknown
   >;
@@ -243,6 +368,7 @@ export function sanitizeRawContentInput(raw: unknown): SanitizeResult {
     sanitized,
     strippedVisualFields: [...visualOut].sort(),
     strippedPersonalFields: [...personalOut].sort(),
+    strippedUnknownFields: [...unknownOut].sort(),
   };
 }
 
@@ -618,6 +744,7 @@ export class ContentMetadataProcessor {
         invalidFields: ['root'],
         strippedVisualFields: [],
         strippedPersonalFields: [],
+        strippedUnknownFields: [],
         fieldCompleteness: 0,
         sanitizedRawMetadata: {},
         normalized: null,
@@ -626,7 +753,7 @@ export class ContentMetadataProcessor {
       };
     }
 
-    const { sanitized, strippedVisualFields, strippedPersonalFields } =
+    const { sanitized, strippedVisualFields, strippedPersonalFields, strippedUnknownFields } =
       sanitizeRawContentInput(rawInput);
     const { mediaKey, mediaType, tmdbId } = resolveIdentity(sanitized, issues, errors);
 
@@ -928,6 +1055,7 @@ export class ContentMetadataProcessor {
         invalidFields,
         strippedVisualFields,
         strippedPersonalFields,
+        strippedUnknownFields,
         fieldCompleteness: 0,
         sanitizedRawMetadata: sanitized,
         normalized: null,
@@ -1033,6 +1161,7 @@ export class ContentMetadataProcessor {
       invalidFields,
       strippedVisualFields,
       strippedPersonalFields,
+      strippedUnknownFields,
       fieldCompleteness,
       sanitizedRawMetadata: sanitized,
       normalized,
