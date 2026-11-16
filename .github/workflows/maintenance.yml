@@ -80,7 +80,9 @@ jobs:
       - name: Run maintenance analysis
         env:
           ANALYSIS_KIND: ${{ inputs.analysis || 'full' }}
-          COMPARE_BASELINE: ${{ github.event_name == 'workflow_dispatch' && inputs.compare_baseline || 'true' }}
+          # workflow_dispatch dışındaki tüm koşularda baseline varsa karşılaştırılır;
+          # manuel koşuda kullanıcı seçimi (false) korunur.
+          COMPARE_BASELINE: ${{ github.event_name != 'workflow_dispatch' || inputs.compare_baseline }}
         run: |
           set -euo pipefail
           BASELINE="docs/maintenance/baselines/m0-pre-faz3.json"
