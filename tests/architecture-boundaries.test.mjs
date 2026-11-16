@@ -47,7 +47,21 @@ const ALLOWED_VIOLATIONS = new Set([
   'core-purity :: src/core/cinetrack-core.ts :: idb-keyval',
   'core-purity :: src/core/cinetrack-core.ts :: ../services/api-client.ts',
   'core-purity :: src/core/relationship-explorer.ts :: ../services/encoding-service.ts',
+  // Aşağıdaki 2 kayıt ÖNCEDEN VAR OLAN ihlaldir: M0'ın geliştirilmiş çok satırlı
+  // import tarayıcısı görünür kılmıştır (ilk tarayıcı çok satırlı importları
+  // kaçırıyordu). scripts/maintenance/architecture-baseline.json içinde R2
+  // gerekçeleriyle belgelenmiştir; düzeltme kodlama ajanının R2 görevidir.
+  'core-purity :: src/core/relationship-explorer.ts :: ../services/storage-idb.ts',
+  'core-purity :: src/core/relationship-explorer.ts :: ../services/series-tv-seeds.ts',
   'core-purity :: src/core/taste/migration.ts :: crypto',
+]);
+
+// Önceden var olan döngüsel importlar (M0 geliştirilmiş tarayıcı görünür kıldı;
+// docs/maintenance/M0-DOGRULAMA-VE-ISLETIM.md §2'de belgelenmiştir, M3 kapsamı).
+// Döngü sayısı bu tabanı aşamaz ve yeni döngü testi başarısız kılar.
+const ALLOWED_CYCLES = new Set([
+  'src/server/persistent-store.ts -> src/server/github-bidirectional-sync.ts -> src/server/persistent-store.ts',
+  'src/core/relationship-wordlists.ts -> src/core/relationship-explorer.ts -> src/core/relationship-wordlists.ts',
 ]);
 
 function violationKey(ruleId, violation) {
@@ -237,15 +251,25 @@ test('Mimari ihlaller: yeni ihlal yok, allowlist güncel (bayat girdi yok)', () 
 });
 
 // ---------------------------------------------------------------------------
-// 4. Döngüsel import — 0'dan yukarı çıkamaz
+// 4. Döngüsel import — bilinen tabanı aşamaz, yeni döngü yasak
+//    (M0 geliştirilmiş tarayıcı, önceden var olan 2 döngüyü görünür kıldı;
+//    bkz. docs/maintenance/M0-DOGRULAMA-VE-ISLETIM.md §2. Yeni döngü FAIL eder.)
 // ---------------------------------------------------------------------------
-test('Döngüsel import sayısı 0 olmalı', () => {
+test('Döngüsel import: yalnızca belgelenmiş önceden var olan döngüler, yenisi yok', () => {
   const report = runArchitectureScan({ root: REPO_ROOT });
+  const formatCycle = (cycle) =>
+    (Array.isArray(cycle) ? cycle : [String(cycle)]).join(' -> ');
+  const unknown = report.cycles.filter((cycle) => !ALLOWED_CYCLES.has(formatCycle(cycle)));
   assert.deepEqual(
-    report.cycles,
+    unknown.map(formatCycle),
     [],
-    `döngüsel import tespit edildi:\n${report.cycles
-      .map((c) => `  - ${(c?.path ?? c?.cycle ?? JSON.stringify(c)).join(' → ')}`)
+    `YENİ döngüsel import tespit edildi — döngü sayısı artamaz:\n${unknown
+      .map((cycle) => `  - ${formatCycle(cycle)}`)
       .join('\n')}`
+  );
+  // Çift koruma: toplam döngü sayısı bilinen tabanı aşamaz.
+  assert.ok(
+    report.cycles.length <= ALLOWED_CYCLES.size,
+    `döngü sayısı izin verilen tabanı aşıyor: ${report.cycles.length} > ${ALLOWED_CYCLES.size}`
   );
 });
