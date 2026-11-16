@@ -103,6 +103,30 @@ export class ContentSemanticAnalyzer {
     };
   }
 
+  /**
+   * Faz 2 (TDD): Duygu vektörünü özellik demetinin güveniyle şeffaf biçimde birleştirir.
+   * Eksik alanlarda uydurma veri üretmez; demet güveni düşükse genel güven de düşer.
+   */
+  analyzeMood(
+    metadata: NormalizedContentMetadata,
+    featureBundle?: ContentFeatureBundle | null
+  ): ContentMoodVector {
+    const base = this.buildMoodVector(metadata);
+    const bundleConfidence = featureBundle?.confidence?.overallConfidence;
+    if (typeof bundleConfidence !== 'number' || !Number.isFinite(bundleConfidence)) {
+      return base;
+    }
+    const clamped = Math.max(0, Math.min(1, bundleConfidence));
+    return {
+      ...base,
+      overallConfidence: round2(base.overallConfidence * clamped),
+      dominantMoods: base.dominantMoods.map((d) => ({
+        ...d,
+        confidence: round2(d.confidence * clamped),
+      })),
+    };
+  }
+
   buildSemanticProfile(
     metadata: NormalizedContentMetadata,
     moodVector: ContentMoodVector

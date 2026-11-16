@@ -12,6 +12,13 @@ import {
 import { calculateItemWatchMinutes, getTvShowEpisodesCount } from '../utils/helpers.ts';
 import { TasteProfileDashboard } from './taste/TasteProfileDashboard.tsx';
 
+// Zevk motoru taksonomisini ana pakete taşımamak için kart isteğe bağlı yüklenir.
+const ProfileIdentityCard = React.lazy(() =>
+  import('./profile/ProfileIdentityCard.tsx').then((mod) => ({
+    default: mod.ProfileIdentityCard,
+  }))
+);
+
 interface ProfileStatsTabProps {
   effectiveActiveProfile: Profile;
   otherProfiles: Profile[];
@@ -19,6 +26,8 @@ interface ProfileStatsTabProps {
   genresMap: Record<number, string>;
   tasteEntries: Record<string, unknown>;
   cinemaKunye?: CinemaKunyeDocument | null;
+  /** Menüdeki geniş Sinema Kimliği görünümünü açar. */
+  onOpenIdentity?: () => void;
 }
 
 function formatMinutes(totalMinutes: number): {
@@ -59,6 +68,7 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
   genresMap,
   tasteEntries,
   cinemaKunye,
+  onOpenIdentity,
 }) => {
   const [genreMediaTypeFilter, setGenreMediaTypeFilter] = useState<'all' | 'movie' | 'tv'>('all');
   const [compareProfileId, setCompareProfileId] = useState<string>(
@@ -213,6 +223,21 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Sinema Kimliği — menüdeki geniş görünümle aynı canlı kaynak, kompakt özet */}
+      <React.Suspense
+        fallback={
+          <div className="identity-compact" role="status" aria-label="Sinema kimliği yükleniyor">
+            <div className="identity-compact-skeleton" aria-hidden="true">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <span key={index} className="identity-compact-skeleton-row" />
+              ))}
+            </div>
+          </div>
+        }
+      >
+        <ProfileIdentityCard onOpenIdentity={onOpenIdentity} />
+      </React.Suspense>
 
       {/* Movie & TV Separate Time Breakdown Grid */}
       <div className="profile-stats-grid">

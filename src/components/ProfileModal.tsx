@@ -62,6 +62,12 @@ interface ProfileModalProps {
   ) => void;
   isDemo?: boolean;
   onToggleDemoMode?: () => void;
+  /** Profil modalındaki kompakt kimlik kartından menüdeki geniş görünüme geçiş. */
+  onOpenIdentity?: () => void;
+  /** Profil + stok + posterleri tek SQLite arşivine yazıp indirir. */
+  onCreateSqliteArchive?: () => Promise<void>;
+  /** SQLite arşiv dosyasını ön izleme için inceler; onay App tarafında açılır. */
+  onRestoreSqliteArchive?: (file: File) => Promise<void>;
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
@@ -94,6 +100,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onMergeDuplicates,
   isDemo = false,
   onToggleDemoMode,
+  onOpenIdentity,
+  onCreateSqliteArchive,
+  onRestoreSqliteArchive,
 }) => {
   const [activeTab, setActiveTab] = useState<ProfileModalTabKey>('stats');
   const [name, setName] = useState(activeProfileName);
@@ -312,6 +321,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               genresMap={genresMap}
               tasteEntries={tasteEntries}
               cinemaKunye={cinemaKunye}
+              onOpenIdentity={onOpenIdentity}
             />
           )}
 
@@ -524,6 +534,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 onCreateInstantBackup={handleCreateInstantBackup}
                 onLoadServerBackups={handleLoadServerBackups}
                 onRestoreSnapshot={handleRestoreSnapshot}
+                onCreateSqliteArchive={onCreateSqliteArchive}
+                onRestoreSqliteArchive={onRestoreSqliteArchive}
               />
             </div>
           )}

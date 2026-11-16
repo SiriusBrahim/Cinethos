@@ -386,6 +386,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
     if (!currentIds.has(selectedNode.id)) {
       setSelectedNode(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: graf yalnızca veri değişince yeniden kurulur
   }, [graphData, selectedNode?.id]);
 
   const createGraph = (

@@ -4,9 +4,9 @@
  * Not: Bu testler gerçek disk yazımı yapar → geçici dizin kullanılır
  */
 
-import { describe, it, before, after } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -24,7 +24,7 @@ import {
 } from "../../src/server/taste-store.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_DIR = join(tmpdir(), `ct-taste-store-test-${Date.now()}`);
+const _TEST_DIR = join(tmpdir(), `ct-taste-store-test-${Date.now()}`);
 
 // taste-store'u test diziniyle yeniden bağlamak için modül-level patch
 // (TASTE_PATHS constants'ı değiştirip store fonksiyonlarını test ediyoruz)

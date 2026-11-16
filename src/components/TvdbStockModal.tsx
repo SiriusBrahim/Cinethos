@@ -125,6 +125,7 @@ export const TvdbStockModal: React.FC<TvdbStockModalProps> = ({
       void refreshStockStats();
       void handleTestConnection(getStoredTvdbApiKey());
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: bağlantı testi yalnızca anahtar değişince çalışır
   }, [isOpen]);
 
   if (!isOpen) return null;

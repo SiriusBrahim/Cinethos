@@ -11,6 +11,7 @@ import {
 import type { SavedItem } from './src/core/cinetrack-core.ts';
 import { createCineTrackApp, createSpaFallbackMiddleware } from './src/server/app.ts';
 import { isAiStudioContainerEnv, resolveConfig } from './src/server/config.ts';
+import { createServerLifecycle } from './src/server/server-lifecycle.ts';
 import { refreshEnvGitHubPat } from './src/server/github-token-refresh.ts';
 import { redactSecrets } from './src/server/persistent-store.ts';
 
@@ -34,7 +35,7 @@ const envFilePath = path.join(root, '.env');
 let githubTokenLive = resolved.githubToken;
 let schedulePostMutationSync: ((reason: string) => void) | null = null;
 
-const { app, storage, persistentStore } = createCineTrackApp({
+const { app, storage, persistentStore, startRuntimeModules, stopRuntimeModules } = createCineTrackApp({
   dataDir,
   maxDataBytes,
   maxProfiles,
@@ -81,6 +82,14 @@ const { app, storage, persistentStore } = createCineTrackApp({
   localEnvIsPublicRepo: resolved.localEnvIsPublicRepo,
   ...(resolved.authToken ? { authToken: resolved.authToken } : {}),
 });
+
+// MIA Faz 1 — Adım 1.2: Kompozisyon kökü yaşam döngüsü (başlatma + kontrollü kapatma).
+const lifecycle = createServerLifecycle({
+  startRuntimeModules,
+  stopRuntimeModules,
+  closeStorage: () => storage.closeSqliteStore(),
+});
+const registerLifecycleCleanup = lifecycle.addCleanup;
 
 async function startServer() {
   // GitHub OAuth token'ları (~8 saat) süresi dolduğunda Windows Kimlik Yöneticisi'nden
@@ -148,10 +157,21 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  httpServer.listen(port, listenHost, () => {
+  httpServer.listen(port, listenHost, async () => {
     console.log(
       `Cinethos is running at http://${listenHost}:${port} (bind policy: ${bindHost}, ${isDevMode ? 'development' : 'production'})`
     );
+
+    // MIA Faz 1 — Adım 1.2: Modüller yalnızca testte değil, gerçek sunucu
+    // açılışında da başlar; kapanışta kontrollü şekilde durdurulur.
+    try {
+      await lifecycle.start();
+    } catch (err) {
+      console.error('[Runtime] Modül başlatma hatası:', err instanceof Error ? err.message : err);
+      httpServer.close(() => process.exit(1));
+      return;
+    }
+    lifecycle.installSignalHandlers();
     console.log('Profil ve izleme listesi: Yerel dosya sistemi (data/cinetrack-data.json)');
     const syncStatus = persistentStore.getSyncStatus();
     console.log(
@@ -164,6 +184,11 @@ async function startServer() {
     let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingMutationWhileBusy = false;
     const MUTATION_AUTO_SYNC_DEBOUNCE_MS = 3500;
+
+    // Kapanışta bekleyen zamanlayıcılar temizlenir (MIA 1.2).
+    registerLifecycleCleanup?.(() => {
+      if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
+    });
 
     // Arka planda kayıpsız iki yönlü GitHub eşitlemesi çalıştırır (reconcileWithGitHub hiçbir kaydı silmez, birleştirir).
     const runSafeAutoReconcile = async (label: string) => {
@@ -220,6 +245,7 @@ async function startServer() {
     if (typeof startupSyncTimer.unref === 'function') {
       startupSyncTimer.unref();
     }
+    registerLifecycleCleanup?.(() => clearTimeout(startupSyncTimer));
 
     // 5 dakikada bir otomatik arka plan eşitlemesi (kayıpsız iki yönlü birleştirme)
     const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -230,6 +256,7 @@ async function startServer() {
     if (typeof autoSyncTimer.unref === 'function') {
       autoSyncTimer.unref();
     }
+    registerLifecycleCleanup?.(() => clearInterval(autoSyncTimer));
 
     // GitHub OAuth token süresi (~8 saat) dolmadan 6 saatte bir tazele
     const TOKEN_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -240,6 +267,12 @@ async function startServer() {
     if (typeof tokenRefreshTimer.unref === 'function') {
       tokenRefreshTimer.unref();
     }
+    registerLifecycleCleanup?.(() => clearInterval(tokenRefreshTimer));
+
+    // HTTP sunucusunun kendisi de kontrollü kapanışa kaydedilir.
+    registerLifecycleCleanup?.(() => {
+      httpServer.close();
+    });
   });
 }
 

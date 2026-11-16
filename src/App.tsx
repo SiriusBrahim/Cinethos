@@ -11,7 +11,7 @@ import { AddCustomModal } from './components/AddCustomModal.tsx';
 import { ProfileModal } from './components/ProfileModal.tsx';
 import { ImportChoiceModal } from './components/ImportChoiceModal.tsx';
 import { TvdbStockModal } from './components/TvdbStockModal.tsx';
-import { Toast } from './components/Toast.tsx';
+import { Toast, type ToastEntry, type ToastKind } from './components/Toast.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
@@ -373,10 +373,10 @@ export function App() {
   const [profileOpen, setProfileOpen] = useState<boolean>(false);
   const [tvdbModalOpen, setTvdbModalOpen] = useState<boolean>(false);
   const [pendingBackup, setPendingBackup] = useState<any | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
   const requestGateRef = useRef(createRequestGate());
-  const toastTimerRef = useRef<any>(null);
+  const toastTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const lastForYouQueryKeyRef = useRef<string>('');
   const confirmNextBulkSyncRef = useRef<boolean>(false);
   const selectedTypeRef = useRef<string>(selectedType);
@@ -564,10 +564,26 @@ export function App() {
     });
   }, [activeProfileId, selectedType, selectedSort, selectedGenre, hideListedItems, forYouSubTab]);
 
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
-    clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToastMessage(null), 7000);
+  const dismissToast = useCallback((id: number) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const showToast = useCallback((msg: string, kind: ToastKind = 'success') => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((prev) => [...prev.slice(-7), { id, message: msg, kind }]);
+    // UX-01: hata bildirimleri elle kapatılana kadar kalıcı; diğerleri otomatik söner.
+    if (kind !== 'error') {
+      const timer = setTimeout(() => {
+        toastTimersRef.current.delete(id);
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 7000);
+      toastTimersRef.current.set(id, timer);
+    }
   }, []);
 
   // Global Keyboard Shortcuts (IMP-08 & Section 6.5)
@@ -2647,6 +2663,7 @@ export function App() {
       }
       loadCategoryResults(category, 1, false, query, selectedProvider, false, selectedType, selectedGenre);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: aktif profil değişimi bu etkiyi tetiklememeli
   }, [tab, category, forYouSubTab, query, selectedProvider, selectedType, selectedGenre, hideListedItems, loadCategoryResults]);
 
   useEffect(() => {
@@ -3096,6 +3113,7 @@ export function App() {
           .catch(() => {});
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: detay zenginleştirme yalnızca liste uzunluğu değişince çalışmalı
   }, [savedItems.length]);
 
   // Filter & sort displayed items
@@ -3248,6 +3266,7 @@ export function App() {
       list = savedItems.filter((item) => item.status === listStatus);
     }
     return filterAndSortItems(list);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: liste filtresi yalnızca tab/listStatus değişiminde yeniden hesaplanmalı
   }, [
     tab,
     category,
@@ -4217,7 +4236,7 @@ export function App() {
         }}
       />
 
-      <Toast message={toastMessage} />
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </>
   );
 }

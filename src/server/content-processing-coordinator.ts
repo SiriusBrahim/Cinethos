@@ -17,7 +17,13 @@ import type {
   ModuleContext,
   ModuleHealth,
 } from '../contracts/index.ts';
+import type { DataDocument } from '../core/cinetrack-core.ts';
 import { parseMediaKey } from '../core/keys.ts';
+import {
+  collectInitialIndexItems,
+  createInitialIndexStats,
+  type InitialIndexStats,
+} from './initial-indexer.ts';
 import {
   ContentIntelligenceService,
   createContentIntelligenceService,
@@ -88,6 +94,7 @@ export class ContentProcessingCoordinator implements IApplicationModule {
   private eventSub: EventSubscription | null = null;
   private initialized = false;
   private started = false;
+  private initialIndexStats: InitialIndexStats = createInitialIndexStats();
 
   constructor(options: ContentProcessingCoordinatorOptions = {}) {
     const resolvedDataDir = path.resolve(options.dataDir || path.join(process.cwd(), 'data'));
@@ -201,9 +208,9 @@ export class ContentProcessingCoordinator implements IApplicationModule {
     const parsed = parseMediaKey(mediaKey);
     return this.queue.enqueue({
       mediaKey,
-      mediaType: parsed?.media_type,
+      mediaType: parsed?.type,
       tmdbId: parsed && /^\d+$/.test(parsed.id) ? Number(parsed.id) : undefined,
-      payload: rawItem ?? (parsed ? { id: Number(parsed.id), media_type: parsed.media_type } : null),
+      payload: rawItem ?? (parsed ? { id: Number(parsed.id), media_type: parsed.type } : null),
     });
   }
 
@@ -217,6 +224,57 @@ export class ContentProcessingCoordinator implements IApplicationModule {
       pageSize: options.pageSize ?? 25,
       yieldBetweenPages: true,
     });
+  }
+
+  /**
+   * MIA Faz 2 — Adım 2.7 (Dilim G): Başlangıç indekslemesi.
+   *
+   * Belgedeki beş liste kapsamını (izledim/izleyeceğim/izliyorum/ilgilenmiyorum/
+   * gizlenen) sayfalı olarak kuyruğa alır; normal kullanıcı olaylarıyla
+   * idempotent biçimde birleşir (aynı media_key için tek iş).
+   */
+  async runInitialIndexing(
+    doc: DataDocument | null | undefined,
+    options: { pageSize?: number } = {}
+  ): Promise<InitialIndexStats> {
+    this.repository.ensureInitialized();
+    this.initialIndexStats = {
+      ...createInitialIndexStats(),
+      status: 'running',
+      lastRunAt: new Date().toISOString(),
+    };
+    try {
+      const items = collectInitialIndexItems(doc);
+      const jobs: EnqueueContentJobInput[] = items.map((it) => ({
+        mediaKey: it.mediaKey,
+        mediaType: it.mediaType,
+        tmdbId: it.tmdbId,
+        payload: it.payload,
+      }));
+      const result = await this.queue.enqueueBatch(jobs, {
+        pageSize: options.pageSize ?? 25,
+        yieldBetweenPages: true,
+      });
+      this.initialIndexStats = {
+        ...this.initialIndexStats,
+        status: 'completed',
+        totalUnique: result.total,
+        queued: result.accepted,
+        rejected: result.rejected,
+      };
+    } catch (err) {
+      this.initialIndexStats = {
+        ...this.initialIndexStats,
+        status: 'failed',
+        failed: this.initialIndexStats.totalUnique,
+        lastError: err instanceof Error ? err.message : String(err),
+      };
+    }
+    return this.initialIndexStats;
+  }
+
+  getInitialIndexStats(): InitialIndexStats {
+    return { ...this.initialIndexStats };
   }
 
   processImmediate(rawItem: Record<string, unknown>): Promise<ProcessJobOutcome> {

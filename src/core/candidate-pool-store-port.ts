@@ -5,6 +5,8 @@ export interface CandidatePoolStorePort {
   hydrateCandidatePools(profileId: string): Promise<unknown>;
   loadPool(profileId: string, mediaType: 'movie' | 'tv'): PersistentCandidatePoolData;
   savePool(profileId: string, data: PersistentCandidatePoolData): void;
+  /** Port sahibinin bellek içi aynalarını sıfırlar (test izolasyonu için). */
+  resetMirrors?(): void;
 }
 
 let activePort: CandidatePoolStorePort | null = null;

@@ -10,7 +10,7 @@ import { createTokenAuthMiddleware } from '../src/server/security.ts';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
 import { createCineTrackApp } from '../src/server/app.ts';
 import {
-  enqueueOfflineSyncSnapshot,
+  enqueueOfflineSyncSnapshotDurable,
   loadOfflineSyncSnapshotAsync,
   clearOfflineSyncSnapshot,
   flushOfflineQueuePersistence,
@@ -56,15 +56,17 @@ import {
   resetStockEngineForTests,
 } from '../src/services/stock-engine.ts';
 import {
+  createDefaultTasteMapData,
+  createDefaultPoolData,
+} from '../src/core/cinetrack-core.ts';
+import {
   savePersistentTasteMap,
   hydrateDiscoveryHistoryIdb,
   savePersistentPoolData,
   hydrateCandidatePoolsIdb,
-  createDefaultTasteMapData,
-  createDefaultPoolData,
   flushCoreIdbWrites,
   resetCoreIdbMirrorsForTests,
-} from '../src/core/cinetrack-core.ts';
+} from '../src/services/discovery-storage.ts';
 
 /**
  * Lightweight W3C-compatible fake IndexedDB factory so idb-keyval exercises real IDB transactions in Node tests.
@@ -200,6 +202,10 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
   const remoteUnprotectedCfg = resolveConfig({ env: { CINETRACK_HOST: '0.0.0.0' } });
   assert.equal(remoteUnprotectedCfg.isRemoteHostWithoutToken, true);
 
+  // Cloud Run container environment (K_SERVICE) binds listenHost to 0.0.0.0 for TCP health probes
+  const cloudRunCfg = resolveConfig({ env: { K_SERVICE: 'ais-pre-123', PORT: '3000' } });
+  assert.equal(cloudRunCfg.listenHost, '0.0.0.0');
+
   const remoteNoTokenGuard = createTokenAuthMiddleware({ authToken: '', bindHost: '0.0.0.0' });
   let statusSent = 200;
   let bodySent = null;
@@ -282,7 +288,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
       ],
     };
 
-    const enq = enqueueOfflineSyncSnapshot(sampleDoc, 3);
+    const enq = await enqueueOfflineSyncSnapshotDurable(sampleDoc, 3);
     assert.equal(enq.persisted, true);
     await flushOfflineQueuePersistence();
     assert.equal(fakeLs.getItem('cinetrack_offline_sync_queue_v1'), null);
@@ -475,7 +481,9 @@ test('Aşama 2 (FEAT-02 & EXT-03): Yalıtılmış ct:profile, kompakt ct:user-li
   assert.equal(compactLoaded[0].id, 157336);
   assert.equal(compactLoaded[0].status, 'completed');
   assert.equal('overview' in compactLoaded[0], false);
-  assert.equal('poster_path' in compactLoaded[0], false);
+  assert.equal(compactLoaded[0].title, 'Interstellar');
+  assert.equal(compactLoaded[0].poster_path, '/interstellar.jpg');
+  assert.equal(compactLoaded[0].addedAt, '2026-02-01T00:00:00.000Z');
 
   // Adım 6: ct:surfaced FIFO eviction
   await recordSurfacedKeys(['movie:1', 'movie:2', 'movie:3', 'movie:4'], 5);

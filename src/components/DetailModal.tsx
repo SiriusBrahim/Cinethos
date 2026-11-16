@@ -165,6 +165,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
     return () => {
       active = false;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: detay yalnızca açılışta bir kez yüklenir
   }, [item?.id, item?.media_type, isOpen]);
 
   useEffect(() => {

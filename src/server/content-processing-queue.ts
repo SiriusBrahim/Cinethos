@@ -26,6 +26,7 @@ import {
 import {
   ContentMetadataSource,
   TransientMetadataFetchError,
+  hasSufficientDetail,
 } from './content-metadata-source.ts';
 
 export interface EnqueueContentJobInput {
@@ -81,8 +82,8 @@ function resolveJobIdentity(
   const parsed = keyCandidate ? parseMediaKey(keyCandidate) : null;
   const mediaType: MediaKind | null =
     input.mediaType ??
-    (parsed?.media_type === 'tv' || parsed?.media_type === 'movie'
-      ? parsed.media_type
+    (parsed?.type === 'tv' || parsed?.type === 'movie'
+      ? parsed.type
       : payload?.media_type === 'tv' || payload?.mediaType === 'tv'
         ? 'tv'
         : payload?.media_type === 'movie' || payload?.mediaType === 'movie'
@@ -302,6 +303,15 @@ export class ContentProcessingQueue {
     }
   }
 
+  /**
+   * MIA Faz 2 — Adım 2.3 (Dilim E): Transactional outbox ile kuyruğa alınan
+   * işler için pompa bildirimi. Enqueue repository transaction'ı içinde
+   * kalıcı hale geldikten sonra çağrılır.
+   */
+  notifyExternalEnqueue(): void {
+    this.schedulePump();
+  }
+
   private schedulePump(): void {
     if (!this.running || this.pumpScheduled) return;
     this.pumpScheduled = true;
@@ -392,6 +402,25 @@ export class ContentProcessingQueue {
     }
 
     try {
+      // Senaryo 7/13 koruması: Yük yeterli metaveri taşımıyorsa ve bu media_key için
+      // zaten tamamlanmış bir ortak kayıt varsa, kaydı 'failed' ile EZME; mevcut kaydı koru.
+      // (Başka bir kullanıcının aynı içeriği listeye eklemesi ortak kaydı bozmamalı.)
+      const existingCompleted = this.repository.getByMediaKey(job.media_key);
+      if (
+        existingCompleted &&
+        existingCompleted.processing_status === 'completed' &&
+        !hasSufficientDetail(parsedPayload)
+      ) {
+        if (updateQueueTable) {
+          this.repository.markJobCompleted(job.media_key);
+        }
+        return {
+          mediaKey: job.media_key,
+          status: 'skipped',
+          record: existingCompleted,
+        };
+      }
+
       const acquired = await this.metadataSource.acquireMetadata({
         mediaKey: job.media_key,
         mediaType: job.media_type,

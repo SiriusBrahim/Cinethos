@@ -53,7 +53,7 @@ export interface ContentMetadataSourceOptions {
 
 const DEFAULT_FETCH_TIMEOUT_MS = 8000;
 
-function hasSufficientDetail(payload: Record<string, unknown> | null | undefined): boolean {
+export function hasSufficientDetail(payload: Record<string, unknown> | null | undefined): boolean {
   if (!payload) return false;
   const hasTitle =
     (typeof payload.title === 'string' && payload.title.trim().length > 0) ||

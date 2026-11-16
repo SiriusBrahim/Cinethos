@@ -119,17 +119,16 @@ export class ContentEventSubscriber {
     const mediaType: MediaKind | null =
       payload.mediaType === 'tv' || payload.mediaType === 'movie'
         ? payload.mediaType
-        : parsed?.media_type ?? null;
+        : parsed?.type ?? null;
     const tmdbId = parsed && /^\d+$/.test(parsed.id) ? Number(parsed.id) : null;
     const canonicalKey = mediaType && tmdbId ? `${mediaType}:${tmdbId}` : null;
 
-    // Kalıcı eventId tekilleştirme (aynı olay ikinci kez geldiğinde tekrar işlem yapmaz)
-    const isNewEvent = this.repository.markEventProcessed(
-      event.eventId,
-      event.eventType,
-      canonicalKey
-    );
-    if (!isNewEvent) {
+    // MIA Faz 2 — Adım 2.3 (Dilim E): Olay kabulü artık transactional outbox
+    // desenindedir. Event, iş kalıcı olarak kuyruğa alınmadan "processed"
+    // işaretlenmez; enqueue başarısızsa olay tekrar denenebilir kalır.
+    // Önce salt-okunur tekilleştirme kontrolü yapılır; kalıcı INSERT, kuyruk
+    // kaydıyla aynı SQLite transaction'ı içinde yapılır.
+    if (this.repository.hasProcessedEvent(event.eventId)) {
       return {
         handled: true,
         deduplicated: true,
@@ -151,13 +150,27 @@ export class ContentEventSubscriber {
           mediaType,
           tmdbId
         );
-        this.queue.enqueue({
+        const accepted = this.repository.acceptEventTransactionally({
+          eventId: event.eventId,
+          eventType: event.eventType,
           mediaKey: canonicalKey,
-          mediaType,
-          tmdbId,
-          payload: metaPayload,
-          triggerEventId: event.eventId,
+          job: {
+            mediaKey: canonicalKey,
+            mediaType,
+            tmdbId,
+            payload: metaPayload,
+            triggerEventId: event.eventId,
+          },
         });
+        if (accepted.deduplicated) {
+          return {
+            handled: true,
+            deduplicated: true,
+            action: 'acknowledged-no-content-mutation',
+            mediaKey: canonicalKey,
+          };
+        }
+        this.queue.notifyExternalEnqueue();
         return {
           handled: true,
           deduplicated: false,
@@ -193,13 +206,27 @@ export class ContentEventSubscriber {
           mediaType,
           tmdbId
         );
-        this.queue.enqueue({
+        const accepted = this.repository.acceptEventTransactionally({
+          eventId: event.eventId,
+          eventType: event.eventType,
           mediaKey: canonicalKey,
-          mediaType,
-          tmdbId,
-          payload: metaPayload,
-          triggerEventId: event.eventId,
+          job: {
+            mediaKey: canonicalKey,
+            mediaType,
+            tmdbId,
+            payload: metaPayload,
+            triggerEventId: event.eventId,
+          },
         });
+        if (accepted.deduplicated) {
+          return {
+            handled: true,
+            deduplicated: true,
+            action: 'acknowledged-no-content-mutation',
+            mediaKey: canonicalKey,
+          };
+        }
+        this.queue.notifyExternalEnqueue();
         return {
           handled: true,
           deduplicated: false,
@@ -221,13 +248,27 @@ export class ContentEventSubscriber {
             mediaType,
             tmdbId
           );
-          this.queue.enqueue({
+          const accepted = this.repository.acceptEventTransactionally({
+            eventId: event.eventId,
+            eventType: event.eventType,
             mediaKey: canonicalKey,
-            mediaType,
-            tmdbId,
-            payload: metaPayload,
-            triggerEventId: event.eventId,
+            job: {
+              mediaKey: canonicalKey,
+              mediaType,
+              tmdbId,
+              payload: metaPayload,
+              triggerEventId: event.eventId,
+            },
           });
+          if (accepted.deduplicated) {
+            return {
+              handled: true,
+              deduplicated: true,
+              action: 'acknowledged-no-content-mutation',
+              mediaKey: canonicalKey,
+            };
+          }
+          this.queue.notifyExternalEnqueue();
           return {
             handled: true,
             deduplicated: false,
@@ -235,6 +276,8 @@ export class ContentEventSubscriber {
             mediaKey: canonicalKey,
           };
         }
+        // Kuyruğa iş üretilmeyen sonuçlar için idempotency kaydı yazılır.
+        this.repository.markEventProcessed(event.eventId, event.eventType, canonicalKey);
         return {
           handled: true,
           deduplicated: false,
@@ -245,6 +288,7 @@ export class ContentEventSubscriber {
 
       case 'LibraryItemRemoved': {
         // KURAL: Kullanıcı listesinden silse bile ortak content_intelligence kaydı SİLİNMEZ.
+        this.repository.markEventProcessed(event.eventId, event.eventType, canonicalKey);
         return {
           handled: true,
           deduplicated: false,
@@ -255,6 +299,7 @@ export class ContentEventSubscriber {
 
       case 'FavoriteActorChanged': {
         // Kişisel favori oyuncu seçimi ortak tabloya yazılmaz; idempotent onaylanır.
+        this.repository.markEventProcessed(event.eventId, event.eventType, canonicalKey);
         return {
           handled: true,
           deduplicated: false,
@@ -264,8 +309,10 @@ export class ContentEventSubscriber {
       }
 
       default:
+        // Kuyruğa iş üretmeyen bilinen olay türleri idempotent onaylanır.
+        this.repository.markEventProcessed(event.eventId, event.eventType, canonicalKey);
         return {
-          handled: false,
+          handled: true,
           deduplicated: false,
           action: 'acknowledged-no-content-mutation',
           mediaKey: canonicalKey,

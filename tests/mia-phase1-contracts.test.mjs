@@ -692,6 +692,7 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
         ['taste-engine', 'healthy'],
         ['backup-sync', 'healthy'],
         ['content-intelligence', 'healthy'],
+        ['initial-indexer', 'healthy'],
       ]
     );
 
@@ -755,7 +756,11 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
       body: JSON.stringify({ event: domEv }),
     });
     assert.equal(evRes2.status, 200);
-    assert.equal((await readTasteEvents(tmpDir)).length, 1);
+    // MIA Dilim F sonrası: PUT /api/data gerçek LibraryItemAdded olayını
+    // yayımlar (movie:550) ve taste motoru bunu işler; ardından domain-event
+    // gönderimi ikinci TasteEvent üretir. Aynı eventId'li ikinci POST
+    // tekilleştirilir → toplam 2 kayıt.
+    assert.equal((await readTasteEvents(tmpDir)).length, 2);
 
     // 4. Kurtarılamaz bozuk Taste events dosyasında HTTP 500 corrupt_json_file döner (sessiz []) yok
     const eventsPath = path.join(tmpDir, 'taste', 'cinetrack-taste-events.json');

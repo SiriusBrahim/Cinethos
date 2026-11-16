@@ -68,6 +68,8 @@ export interface NormalizedContentMetadata {
   readonly crew: readonly ContentCreditPerson[];
   readonly collection: ContentCollectionRef | null;
   readonly releaseDate: string | null;
+  /** Yalnızca TV: ilk yayın tarihi (movie için undefined). */
+  readonly firstAirDate?: string | null;
   readonly runtimeMinutes: number | null;
   readonly episodeRunTime: readonly number[];
   readonly numberOfSeasons: number | null;
@@ -102,6 +104,8 @@ export interface MetadataValidationResult {
   readonly invalidFields: readonly string[];
   readonly strippedVisualFields: readonly string[];
   readonly strippedPersonalFields: readonly string[];
+  /** Allowlist dışında kalan ve default-deny ile atılan bilinmeyen alanlar. */
+  readonly strippedUnknownFields: readonly string[];
   readonly fieldCompleteness: number;
   readonly sanitizedRawMetadata: Record<string, unknown>;
   readonly normalized: NormalizedContentMetadata | null;
