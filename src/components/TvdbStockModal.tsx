@@ -743,7 +743,7 @@ export const TvdbStockModal: React.FC<TvdbStockModalProps> = ({
                 </div>
 
                 <p className="text-xs text-[#8b9099] leading-relaxed">
-                  CineTrack içerisindeki yerel stok envanterini JSON veya CSV formatında cihazınıza indirin.
+                  Cinethos içerisindeki yerel stok envanterini JSON veya CSV formatında cihazınıza indirin.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

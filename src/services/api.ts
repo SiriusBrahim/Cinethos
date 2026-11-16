@@ -1755,7 +1755,7 @@ export async function downloadSqliteArchive(
     return {
       ok: true,
       blob,
-      fileName: match?.[1] || `cinetrack-archive-${Date.now()}.sqlite`,
+      fileName: match?.[1] || `cinethos-archive-${Date.now()}.sqlite`,
       ...(stats ? { stats } : {}),
     };
   } catch (error: any) {
