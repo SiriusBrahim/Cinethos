@@ -11,7 +11,7 @@
  * çoğaltılmaz (Faz 0 kararı).
  */
 
-import type { ProfileRef } from './common.ts';
+import type { LibraryListId, MediaKind, ProfileRef } from './common.ts';
 
 /**
  * Uygulama olayının temel modeli (kullanıcı planı §3 AppEvent ile birebir).
@@ -42,22 +42,62 @@ export interface AppEvent<TPayload = Record<string, unknown>> {
 }
 
 /**
- * Uygulama olay türleri → payload eşlemesi.
+ * AppEventMap — UYGULAMA OLAY KATALOĞU (Faz 1A ④).
  *
- * Somut olaylar (`LibraryItemAdded`, `LibraryRatingChanged`, `ProfileSwitched`
- * vb.) Faz 1A ④ adımında bu arayüze declaration-merging ile eklenecek.
- * Şimdilik bilinen ilk iki olay, Faz 4 pilot kapsamıyla uyumlu olarak
- * tanımlıdır (plan: "önce yalnızca LibraryItemAdded + LibraryRatingChanged").
+ * Kullanıcı planı §3 olay tablosunun tamamı. Kurallar:
+ * - Her olay payload'ı salt-okunurdur; işleyiciler payload'ı DEĞİŞTİREMEZ.
+ * - Yeni olay eklemek = bu eşlemeye yeni anahtar + payload tipi.
+ * - Faz 4 pilotu yalnızca `LibraryItemAdded` + `LibraryRatingChanged`
+ *   işleyecektir; diğer olaylar katalogda TANIMLI ama henüz yayınlanmaz
+ *   (yayınlanma Faz 3-7'de kademeli açılır).
+ * - `TasteEvent` (zevk öğrenme) bu katalogda YOKTUR — özel model kalır.
  */
 export interface AppEventMap {
+  /** İçerik bir listeye eklendi (Faz 4 pilotu). */
   'LibraryItemAdded': {
-    readonly mediaType: 'movie' | 'tv';
-    readonly list: string;
+    readonly mediaType: MediaKind;
+    readonly list: LibraryListId;
   };
+  /** İçerik bilgisi değişti (başlık notu, bölüm ilerlemesi vb. alan yazımları). */
+  'LibraryItemUpdated': {
+    readonly mediaType: MediaKind;
+    /** Değişen alan adları — artımlı işleme girdisi. */
+    readonly changedFields: readonly string[];
+  };
+  /** İzleme durumu değişti (liste değişimi). */
+  'LibraryStatusChanged': {
+    readonly mediaType: MediaKind;
+    readonly from: LibraryListId | null;
+    readonly to: LibraryListId;
+  };
+  /** Puan değişti (Faz 4 pilotu). `null` = puan kaldırıldı. */
   'LibraryRatingChanged': {
-    readonly mediaType: 'movie' | 'tv';
+    readonly mediaType: MediaKind;
     readonly rating: number | null;
     readonly previousRating?: number | null;
+  };
+  /** İçerik silindi (tombstone'a düştü — geri alma penceresi açık). */
+  'LibraryItemRemoved': {
+    readonly mediaType: MediaKind;
+    /** Silinmeden önceki liste — sinyal geri alma için. */
+    readonly previousList: LibraryListId | null;
+  };
+  /** Favori oyuncu listesi değişti. */
+  'FavoriteActorChanged': {
+    readonly change: 'added' | 'removed' | 'updated';
+    readonly actorId?: number;
+  };
+  /** Aktif profil değişti — arka plan işleyicileri uçuştaki işleri arşivler. */
+  'ProfileSwitched': {
+    readonly fromProfileId: string | null;
+    readonly toProfileId: string;
+  };
+  /** İçerik metaverisi tamamlandı (arka plan zenginleştirme işi bitti). */
+  'CatalogItemEnriched': {
+    readonly mediaKey: string;
+    readonly mediaType: MediaKind;
+    /** Tamamlanan alanlar (örn. ['posterPath','overview']). */
+    readonly enrichedFields: readonly string[];
   };
 }
 

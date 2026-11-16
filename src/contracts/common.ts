@@ -9,6 +9,16 @@
  * `DataDocument`) yapısal uyumludur; gerçek eşleme Faz 1B'de yapılır.
  */
 
+/** Medya türü — olay ve servis sözleşmelerinde ortak kullanılır. */
+export type MediaKind = 'movie' | 'tv';
+
+/**
+ * Kullanıcı liste kimlikleri (mevcut uygulama alanlarıyla uyumlu).
+ * Ortak katmanda tanımlıdır; hem servis hem olay sözleşmeleri kullanır
+ * (events ↔ services tip döngüsünü önlemek için).
+ */
+export type LibraryListId = 'watched' | 'watching' | 'watchlist' | 'not-interested';
+
 /**
  * Profil referansı — profil izolasyonunun temel sözleşmesi.
  *
