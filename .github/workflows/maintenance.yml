@@ -1,0 +1,60 @@
+name: Maintenance Analysis
+
+# Otomatik kod bakım modülü — M0 (gözlem modu).
+# Plan: docs/maintenance/OTOMATIK-KOD-BAKIM-ONARIM-PLANI.md
+#
+# Bu workflow yalnızca ölçer ve raporlar:
+#   - read-only `contents` izni ister, yazma token'ı almaz,
+#   - checkout kimlik bilgilerini kalıcı hale getirmez (persist-credentials: false),
+#   - branch/PR oluşturmaz, kaynak dosya değiştirmez.
+# Rapor GitHub Actions özetine ve `maintenance-report` artifact'ına yazılır.
+
+on:
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Her gece 03:00 UTC — bağımlılık/güvenlik ve statik analiz taraması.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Salt okunur bakım analizi
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository (read-only, no persisted credentials)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # package.json engines ile aynı sürüme sabitlenir; npm 11'in optional
+          # dependency denetimi mevcut lockfile'ı reddettiği için sürüm kaydırılmaz.
+          node-version: '22.18.0'
+          cache: npm
+
+      - name: Run maintenance analysis
+        env:
+          CI: '1'
+          FORCE_COLOR: '0'
+        run: node scripts/maintenance/analyze.mjs --install --report-dir maintenance-report
+
+      - name: Upload maintenance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-report
+          path: maintenance-report/
+          if-no-files-found: warn
+          retention-days: 30

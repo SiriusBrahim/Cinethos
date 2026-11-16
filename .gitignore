@@ -12,3 +12,4 @@ data/
 # Test ve build artefaktları
 test-results/
 playwright-report/
+maintenance-report/

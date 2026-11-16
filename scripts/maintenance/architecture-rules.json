@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "comment": "M0 mimari sınır kuralları. Yalnızca ölçüm/rapor içindir; otomatik düzeltme yapılmaz. Her kural ARCHITECTURE.md'deki bir sınıra dayanır.",
+  "rules": [
+    {
+      "id": "core-purity",
+      "description": "src/core yalnızca saf ve deterministik iş mantığı içerir; sunucu, istemci servisleri ve arayüz katmanlarına bağımlı olamaz.",
+      "rationale": "ARCHITECTURE.md §1 — Çekirdek Katman: tarayıcı DOM'undan ve Express sunucusundan bağımsız, saf ve deterministik modüller.",
+      "from": ["src/core/**"],
+      "forbidLayers": [
+        "server",
+        "services",
+        "hooks",
+        "components",
+        "app",
+        "features",
+        "modules",
+        "design-system"
+      ],
+      "forbidPackages": [
+        "react",
+        "react-dom",
+        "express",
+        "idb-keyval",
+        "framer-motion",
+        "lucide-react",
+        "react-force-graph-2d",
+        "cmdk",
+        "exceljs"
+      ],
+      "forbidNodeBuiltins": true
+    },
+    {
+      "id": "server-isolation",
+      "description": "Sunucu katmanı istemci arayüzüne (React bileşenleri, hook'lar, design-system) bağımlı olamaz.",
+      "rationale": "ARCHITECTURE.md §1 — Sunucu Katmanı çekirdek, sözleşme ve kalıcı veri modülleriyle çalışır; arayüz katmanından bağımsızdır.",
+      "from": ["server.ts", "src/server/**"],
+      "forbidLayers": ["components", "hooks", "features", "design-system"],
+      "forbidPackages": [
+        "react",
+        "react-dom",
+        "react-force-graph-2d",
+        "framer-motion",
+        "lucide-react",
+        "cmdk"
+      ],
+      "forbidNodeBuiltins": false
+    },
+    {
+      "id": "client-no-server",
+      "description": "İstemci arayüz katmanı (bileşen, hook, app, feature, design-system) sunucu katmanını veya Node yerleşik modüllerini import edemez.",
+      "rationale": "ARCHITECTURE.md §1 — istemci/sunucu katman ayrımı; tarayıcı paketi Node/Express bağımlılığı taşımaz. src/workers karma çalışma zamanlıdır (Node worker_threads + tarayıcı worker) ve bu kuralın dışında tutulur.",
+      "from": [
+        "src/components/**",
+        "src/hooks/**",
+        "src/app/**",
+        "src/features/**",
+        "src/design-system/**"
+      ],
+      "forbidLayers": ["server"],
+      "forbidPackages": ["express", "exceljs"],
+      "forbidNodeBuiltins": true
+    },
+    {
+      "id": "contracts-isolation",
+      "description": "Sözleşme katmanı yalnızca tip/veri tanımları içerir; çalışma zamanı katmanlarını import edemez.",
+      "rationale": "ARCHITECTURE.md §1 ve src/contracts/services.ts başlığı — sözleşmeler uygulama katmanlarına ve core'a bağımlı değildir.",
+      "from": ["src/contracts/**"],
+      "forbidLayers": [
+        "core",
+        "server",
+        "services",
+        "hooks",
+        "components",
+        "app",
+        "features",
+        "modules",
+        "design-system"
+      ],
+      "forbidPackages": ["react", "react-dom", "express"],
+      "forbidNodeBuiltins": true
+    }
+  ]
+}
