@@ -11,7 +11,7 @@ name: Maintenance Analysis
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, agent-2/phase-3]
   schedule:
     # Her gece 03:00 UTC — bağımlılık/güvenlik ve statik analiz taraması.
     - cron: '0 3 * * *'
