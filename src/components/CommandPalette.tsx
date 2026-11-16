@@ -4,8 +4,12 @@ import type { SavedItem } from '../core/cinetrack-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { displayTitle, getPoster, releaseYear } from '../utils/helpers.ts';
 import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
+import { MODULES, type ModuleId } from '../app/module-registry.ts';
 
-export type PaletteTab = 'discover' | 'list' | 'taste-map' | 'relationships';
+/**
+ * @deprecated M1: `ModuleId` kullan. Kayıt defteri tek doğruluk kaynağıdır.
+ */
+export type PaletteTab = ModuleId;
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -119,44 +123,25 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     };
   }, [query, isOpen]);
 
+  // M1: sekme komutları artık kayıt defterinden türetilir — modül eklemek
+  // CommandPalette'i de otomatik günceller (etiket/ikon/kısayol/anahtar kelimeler).
+  const tabCommands = useMemo<PaletteCommand[]>(
+    () =>
+      MODULES.map((module) => ({
+        id: `tab-${module.id}`,
+        label: module.label,
+        group: 'Sayfalar',
+        keywords: [...module.keywords],
+        icon: module.iconRef,
+        shortcut: module.shortcut,
+        run: () => onSelectTab(module.id),
+      })),
+    [onSelectTab]
+  );
+
   const commands = useMemo<PaletteCommand[]>(
     () => [
-      {
-        id: 'tab-discover',
-        label: 'Keşfet',
-        group: 'Sayfalar',
-        keywords: ['katalog', 'trend', 'öneri', 'discover'],
-        icon: '#icon-fire',
-        shortcut: '1',
-        run: () => onSelectTab('discover'),
-      },
-      {
-        id: 'tab-list',
-        label: 'Listem',
-        group: 'Sayfalar',
-        keywords: ['kütüphane', 'izlediklerim', 'list'],
-        icon: '#icon-library',
-        shortcut: '2',
-        run: () => onSelectTab('list'),
-      },
-      {
-        id: 'tab-taste-map',
-        label: 'Zevkim',
-        group: 'Sayfalar',
-        keywords: ['zevkim', 'kimliğim', 'istatistik', 'tat', 'dna'],
-        icon: '#icon-dna',
-        shortcut: '3',
-        run: () => onSelectTab('taste-map'),
-      },
-      {
-        id: 'tab-relationships',
-        label: 'İlişkiler ve Evrenler',
-        group: 'Sayfalar',
-        keywords: ['ilişkiler', 'ağ', 'evrenler', 'relationships'],
-        icon: '#icon-network',
-        shortcut: '4',
-        run: () => onSelectTab('relationships'),
-      },
+      ...tabCommands,
       {
         id: 'open-profile',
         label: 'Profil ve Ayarlar',
@@ -194,7 +179,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         run: onFocusSearch,
       },
     ],
-    [onFocusSearch, onOpenAddCustom, onOpenProfile, onQuickSave, onSelectTab]
+    [tabCommands, onFocusSearch, onOpenAddCustom, onOpenProfile, onQuickSave]
   );
 
   const needle = normalizeTr(query.trim());

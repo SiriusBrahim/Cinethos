@@ -28,31 +28,34 @@ for (const viewport of VIEWPORTS) {
     await mockApi(page);
 
     await page.goto('/');
-    await expect(page.locator('.app-header')).toBeVisible();
-    await expect(page.locator('main.shell')).toBeVisible();
 
-    const desktopNavVisible = await page.locator('.header-nav-tabs').isVisible();
-    const mobileNavVisible = await page.locator('.mobile-tab-bar').isVisible();
-    expect(desktopNavVisible || mobileNavVisible).toBe(true);
-
-    // Mobile uses the fixed bottom bar from <=768px, desktop keeps the header tab list.
+    // ef031af kabugu: <=768px mobil kabuk devrede (header gizli; MobileTopBar + MobileDock),
+    // 769-1023px arasi header nav listesi, >=1024px'te ise sidebar nav listesi gorunurdur
+    // (header-nav-tabs CSS ile gizlenir -- app.css @media min-width:1024px).
     if (viewport.width <= 768) {
-      expect(mobileNavVisible).toBe(true);
-      expect(desktopNavVisible).toBe(false);
+      await expect(page.locator('.mobile-topbar')).toBeVisible();
+      await expect(page.locator('.mobile-dock')).toBeVisible();
+      await expect(page.locator('.app-header')).toBeHidden();
+    } else if (viewport.width < 1024) {
+      await expect(page.locator('.app-header')).toBeVisible();
+      await expect(page.locator('.header-nav-tabs')).toBeVisible();
     } else {
-      expect(desktopNavVisible).toBe(true);
-      expect(mobileNavVisible).toBe(false);
+      await expect(page.locator('.app-header')).toBeVisible();
+      await expect(page.locator('.sidebar-nav-list')).toBeVisible();
     }
+    await expect(page.locator('main.shell')).toBeVisible();
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
     );
     expect(overflow, 'sayfa yatay olarak taşmamalı').toBeLessThanOrEqual(1);
 
-    await page.getByRole('tab', { name: 'Listem' })
-      .or(page.getByRole('button', { name: 'Listem' }))
-      .first()
-      .click();
+    // Gorunur gezinme ogesi uzerinden Listem'e gec (mobil dockta etiket 'Kutuphane').
+    if (viewport.width <= 768) {
+      await page.locator('.mobile-dock-btn', { hasText: 'Kütüphane' }).click();
+    } else {
+      await page.locator('[role="tab"]:visible', { hasText: 'Listem' }).first().click();
+    }
     await expect(page.getByText('E2E Alfa Filmi').first()).toBeVisible();
 
     await context.close();

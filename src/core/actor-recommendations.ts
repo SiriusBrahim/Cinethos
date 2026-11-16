@@ -3,7 +3,7 @@ import { apiFetch } from '../services/api-client.ts';
 import { findSaved } from './saved-index.ts';
 import { bayesianRating, clamp01 } from './rating-math.ts';
 import { matchesSelectedGenre } from './genre-matching.ts';
-import type { FavoriteActorInfo } from './cinetrack-core.ts';
+import type { FavoriteActorInfo } from './media/types.ts';
 
 export interface ActorRecommendationSignalBreakdown {
   actorPresence: number; // 0-30 (temel + kadro sırası/rol puanı)

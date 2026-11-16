@@ -1,4 +1,4 @@
-import type { PersistentCandidatePoolData } from './cinetrack-core.ts';
+import type { PersistentCandidatePoolData } from './media/types.ts';
 
 export interface CandidatePoolStorePort {
   hydrateDiscoveryHistory(profileId: string): Promise<unknown>;

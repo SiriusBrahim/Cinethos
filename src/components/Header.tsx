@@ -10,11 +10,13 @@ import { TmdbItem } from '../types/tmdb.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 import { BRAND_NAME } from '../shared/brand.ts';
 import { handleTabListKeyDown } from '../utils/tabListKeyboard.ts';
+import type { ModuleId } from '../app/module-registry.ts';
+import { HEADER_NAV_ITEMS } from '../app/navigation.ts';
 
 interface HeaderProps {
   profileName: string;
-  tab: 'discover' | 'list' | 'taste-map' | 'relationships' | 'identity' | 'universes';
-  onTabChange: (tab: any) => void;
+  tab: ModuleId;
+  onTabChange: (tab: ModuleId) => void;
   myListCount: number;
   streakDays: number;
   query: string;
@@ -250,45 +252,21 @@ export const Header: React.FC<HeaderProps> = ({
           aria-label="Ana Gezinme"
           onKeyDown={handleTabListKeyDown}
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'discover'}
-            className={`nav-tab-btn ${tab === 'discover' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('discover')}
-          >
-            <span>Keşfet</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'list'}
-            className={`nav-tab-btn ${tab === 'list' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('list')}
-          >
-            <span>Listem</span>
-            {myListCount > 0 && (
-              <span className="nav-tab-count tabular-nums">{myListCount}</span>
-            )}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'taste-map'}
-            className={`nav-tab-btn ${tab === 'taste-map' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('taste-map')}
-          >
-            <span>Zevkim</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'relationships'}
-            className={`nav-tab-btn ${tab === 'relationships' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('relationships')}
-          >
-            <span>Evrenler</span>
-          </button>
+          {HEADER_NAV_ITEMS.map(({ id, label, counter }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              className={`nav-tab-btn ${tab === id ? 'is-active' : ''}`}
+              onClick={() => onTabChange(id)}
+            >
+              <span>{label}</span>
+              {counter === 'myList' && myListCount > 0 && (
+                <span className="nav-tab-count tabular-nums">{myListCount}</span>
+              )}
+            </button>
+          ))}
         </nav>
 
         {/* Architectural Search Area (k / /) */}

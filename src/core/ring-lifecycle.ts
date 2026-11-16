@@ -1,8 +1,13 @@
-import type { PersistentTasteMapData, TasteMapEntry } from './cinetrack-core.ts';
+/**
+ * MIA Faz 1A ① — LifecycleRing/TasteRing tanımları `media/types.ts`'e taşındı;
+ * burada yeniden export edilir (uyumluluk). Bu dosya artık cinetrack-core'a
+ * dönmez → 4. tip döngüsü koparıldı.
+ */
+import type { PersistentTasteMapData, TasteMapEntry } from './media/types.ts';
 import { canonicalizeMediaKey } from './keys.ts';
 
-export type LifecycleRing = 'ring0' | 'ring1' | 'ring2';
-export type TasteRing = LifecycleRing | 'core' | 'inner' | 'outer' | 'orbit';
+export type { LifecycleRing, TasteRing } from './media/types.ts';
+import type { LifecycleRing, TasteRing } from './media/types.ts';
 
 export function inferLifecycleRing(
   mediaKey: string,
