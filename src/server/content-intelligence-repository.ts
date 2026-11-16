@@ -667,17 +667,29 @@ export class ContentIntelligenceRepository {
     const maxAttempts = Math.max(1, Math.min(10, Math.floor(job.maxAttempts ?? 3)));
 
     const existing = db
-      .prepare('SELECT status, payload_json FROM content_processing_queue WHERE media_key = ?')
+      .prepare('SELECT status, payload_json, updated_at FROM content_processing_queue WHERE media_key = ?')
       .get(job.mediaKey) as { status?: string; payload_json?: string | null } | undefined;
 
     if (existing?.status === 'processing') {
-      // Uçuştaki iş varken yeni yük varsa sakla ama ikinci processing kaydı açma
+      // Çalışan işin snapshot'ı değişmez. Yeni payload aynı satırda saklanır;
+      // updated_at, çalışan snapshot'tan kesinlikle daha ileri alınır.
+      // Worker tamamlandığında timestamp uyuşmazlığını görüp işi pending'e döndürür.
       if (sanitizedPayload) {
+        const nextUpdatedAt = new Date(
+          Math.max(Date.now(), Date.parse(existing.updated_at ?? '') + 1)
+        ).toISOString();
         db.prepare(
           `UPDATE content_processing_queue
-           SET payload_json = ?, source_revision = COALESCE(?, source_revision), updated_at = ?
-           WHERE media_key = ?`
-        ).run(sanitizedPayload, job.sourceRevision ?? null, nowIso, job.mediaKey);
+           SET payload_json = ?, source_revision = COALESCE(?, source_revision),
+               trigger_event_id = COALESCE(?, trigger_event_id), updated_at = ?
+           WHERE media_key = ? AND status = 'processing'`
+        ).run(
+          sanitizedPayload,
+          job.sourceRevision ?? null,
+          job.triggerEventId ?? null,
+          nextUpdatedAt,
+          job.mediaKey
+        );
       }
       return { enqueued: false, status: 'processing' };
     }
@@ -778,9 +790,27 @@ export class ContentIntelligenceRepository {
     return Number(res.changes ?? 0);
   }
 
-  markJobCompleted(mediaKey: string): void {
+  markJobCompleted(mediaKey: string, expectedUpdatedAt?: string): void {
     const db = this.requireDb();
     const nowIso = new Date().toISOString();
+    if (expectedUpdatedAt) {
+      const res = db.prepare(
+        `UPDATE content_processing_queue
+         SET status = 'completed', next_retry_at = NULL, last_error = NULL, updated_at = ?
+         WHERE media_key = ? AND status = 'processing' AND updated_at = ?`
+      ).run(nowIso, mediaKey, expectedUpdatedAt);
+      if ((res.changes ?? 0) === 0) {
+        // İş çalışırken daha yeni metadata geldiyse eski snapshot tamamlandı
+        // sayılamaz; güncel payload bir sonraki turda işlenmek üzere bekletilir.
+        db.prepare(
+          `UPDATE content_processing_queue
+           SET status = 'pending', attempts = 0, next_retry_at = NULL,
+               last_error = NULL, updated_at = ?
+           WHERE media_key = ? AND status = 'processing' AND updated_at != ?`
+        ).run(nowIso, mediaKey, expectedUpdatedAt);
+      }
+      return;
+    }
     db.prepare(
       `UPDATE content_processing_queue
        SET status = 'completed', next_retry_at = NULL, last_error = NULL, updated_at = ?
@@ -788,9 +818,30 @@ export class ContentIntelligenceRepository {
     ).run(nowIso, mediaKey);
   }
 
-  scheduleJobRetry(mediaKey: string, nextRetryAt: string, error: string): void {
+  scheduleJobRetry(
+    mediaKey: string,
+    nextRetryAt: string,
+    error: string,
+    expectedUpdatedAt?: string
+  ): void {
     const db = this.requireDb();
     const nowIso = new Date().toISOString();
+    if (expectedUpdatedAt) {
+      const res = db.prepare(
+        `UPDATE content_processing_queue
+         SET status = 'pending', next_retry_at = ?, last_error = ?, updated_at = ?
+         WHERE media_key = ? AND status = 'processing' AND updated_at = ?`
+      ).run(nextRetryAt, error, nowIso, mediaKey, expectedUpdatedAt);
+      if ((res.changes ?? 0) === 0) {
+        db.prepare(
+          `UPDATE content_processing_queue
+           SET status = 'pending', attempts = 0, next_retry_at = NULL,
+               last_error = NULL, updated_at = ?
+           WHERE media_key = ? AND status = 'processing' AND updated_at != ?`
+        ).run(nowIso, mediaKey, expectedUpdatedAt);
+      }
+      return;
+    }
     db.prepare(
       `UPDATE content_processing_queue
        SET status = 'pending', next_retry_at = ?, last_error = ?, updated_at = ?
@@ -798,9 +849,25 @@ export class ContentIntelligenceRepository {
     ).run(nextRetryAt, error, nowIso, mediaKey);
   }
 
-  markJobFailed(mediaKey: string, error: string): void {
+  markJobFailed(mediaKey: string, error: string, expectedUpdatedAt?: string): void {
     const db = this.requireDb();
     const nowIso = new Date().toISOString();
+    if (expectedUpdatedAt) {
+      const res = db.prepare(
+        `UPDATE content_processing_queue
+         SET status = 'failed', next_retry_at = NULL, last_error = ?, updated_at = ?
+         WHERE media_key = ? AND status = 'processing' AND updated_at = ?`
+      ).run(error, nowIso, mediaKey, expectedUpdatedAt);
+      if ((res.changes ?? 0) === 0) {
+        db.prepare(
+          `UPDATE content_processing_queue
+           SET status = 'pending', attempts = 0, next_retry_at = NULL,
+               last_error = NULL, updated_at = ?
+           WHERE media_key = ? AND status = 'processing' AND updated_at != ?`
+        ).run(nowIso, mediaKey, expectedUpdatedAt);
+      }
+      return;
+    }
     db.prepare(
       `UPDATE content_processing_queue
        SET status = 'failed', next_retry_at = NULL, last_error = ?, updated_at = ?
