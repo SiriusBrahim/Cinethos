@@ -1634,7 +1634,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
           const mediaKey =
             typeof payload.mediaKey === 'string'
               ? payload.mediaKey
-              : typeof ev.entityId === 'string' && /^(movie|tv):\\d+$/.test(ev.entityId)
+              : typeof ev.entityId === 'string' && /^(movie|tv):\d+$/.test(ev.entityId)
                 ? ev.entityId
                 : null;
           if (mediaKey) {
