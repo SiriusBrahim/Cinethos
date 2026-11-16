@@ -113,36 +113,76 @@ test('2.3.1 Allowlist derinlik sınırı: depth > 6 alt ağacı düşer, ham nes
 });
 
 // ---------------------------------------------------------------------------
-// 2. Opak event kimliği
+// 2. Opak event kimliği (deterministik — 200 tekrar)
 // ---------------------------------------------------------------------------
-test('2.3.2 Opak event kimliği: eventId profileId, mediaKey veya oyuncu ID içermez', () => {
-  const before = makeDoc([
-    {
-      id: 'profile-secret-42',
-      name: 'Gizli Profil',
-      items: [makeSavedItem(550, { personal_rating: 7 })],
-      favoriteActors: [{ id: 777, name: 'Aranan Oyuncu' }],
-    },
-  ]);
-  const after = makeDoc([
-    {
-      id: 'profile-secret-42',
-      name: 'Gizli Profil',
-      items: [makeSavedItem(550, { personal_rating: 9 }), makeSavedItem(27205)],
-      favoriteActors: [{ id: 777, name: 'Aranan Oyuncu' }, { id: 888, name: 'Yeni Oyuncu' }],
-    },
-  ]);
+// Not: Rastgele bir UUID ~%1,4 ihtimalle '777'/'888' gibi saf rakam dizileri
+// içerir; bu yüzden saf rakamsal ID'ler alt-dizge olarak DEĞİL, yalnızca
+// eşitlik ile denetlenir. Alt-dizge denetimi yalnızca hex dışı karakter
+// içeren tanımlayıcılara (deterministik olarak asla UUID'de bulunamayan)
+// uygulanır. Opaklığın asıl garantisi UUID biçim doğrulamasıdır.
+test('2.3.2 Opak event kimliği (200 tekrar): eventId UUID biçiminde ve kimlik sızdırmaz', () => {
+  const ITERATIONS = 200;
+  const ACTOR_IDS = ['777', '888'];
+  const seenEventIds = new Set();
 
-  const events = diffLibraryEvents(before, after);
-  assert.ok(events.length >= 3, `en az üç olay türetilmeli (mevcut: ${events.length})`);
+  for (let i = 0; i < ITERATIONS; i += 1) {
+    const before = makeDoc([
+      {
+        id: 'profile-secret-42',
+        name: 'Gizli Profil',
+        items: [makeSavedItem(550, { personal_rating: 7 })],
+        favoriteActors: [{ id: 777, name: 'Aranan Oyuncu' }],
+      },
+    ]);
+    const after = makeDoc([
+      {
+        id: 'profile-secret-42',
+        name: 'Gizli Profil',
+        items: [makeSavedItem(550, { personal_rating: 9 }), makeSavedItem(27205)],
+        favoriteActors: [{ id: 777, name: 'Aranan Oyuncu' }, { id: 888, name: 'Yeni Oyuncu' }],
+      },
+    ]);
 
-  for (const ev of events) {
-    const id = String(ev.eventId ?? '');
-    assert.doesNotMatch(id, /profile-secret-42/i, 'eventId profileId taşıyamaz');
-    assert.doesNotMatch(id, /(^|[^0-9])550([^0-9]|$)/, 'eventId mediaKey ID taşıyamaz');
-    assert.doesNotMatch(id, /777|888/, 'eventId favori oyuncu ID taşıyamaz');
-    assert.match(id, UUID_RE, `eventId opak UUID olmalı: ${id}`);
+    const events = diffLibraryEvents(before, after);
+    assert.ok(events.length >= 3, `tekrar ${i}: en az üç olay türetilmeli`);
+
+    for (const ev of events) {
+      const id = String(ev.eventId ?? '');
+
+      // (a) Opaklık garantisi: her eventId kriptografik UUID biçiminde olmalı.
+      assert.match(id, UUID_RE, `tekrar ${i}: eventId opak UUID olmalı: ${id}`);
+
+      // (b) Gerçek sızıntı senaryosu 1 — profileId: 'p','o','l','s','t','r'
+      //     hex dışı harfler içerir; bu alt-dizge bir UUID'de asla bulunamaz.
+      assert.ok(
+        !id.includes('profile-secret-42'),
+        `tekrar ${i}: eventId profileId taşıyamaz: ${id}`
+      );
+
+      // (c) Gerçek sızıntı senaryosu 2 — mediaKey: ':' hex dışıdır; 'movie'
+      //     'm','o','v' hex dışı harfler içerir; alt-dizge denetimi deterministiktir.
+      assert.ok(!id.includes('movie:550'), `tekrar ${i}: eventId mediaKey taşıyamaz: ${id}`);
+      assert.ok(!id.includes('movie-550'), `tekrar ${i}: eventId mediaKey taşıyamaz: ${id}`);
+
+      // (d) Saf rakamsal oyuncu ID'leri: yalnızca eşitlik denetimi (alt-dizge
+      //     değil) — rastgele UUID'de rakam dizisi bulunması sızıntı değildir.
+      for (const actorId of ACTOR_IDS) {
+        assert.notEqual(id, actorId, `tekrar ${i}: eventId doğrudan oyuncu ID olamaz`);
+      }
+
+      seenEventIds.add(id);
+    }
   }
+
+  // 200 tekrarda tek bir çakışan ID bile üretilememeli (rastgelelik kalitesi).
+  assert.equal(seenEventIds.size, ITERATIONS * 3, 'her eventId benzersiz olmalı');
+
+  // (e) Dedektör öz-denetimi: deterministik/kimlik taşıyan bir ID biçimi
+  //     UUID doğrulamasına takılmalıdır — testin sızıntıyı gerçekten yakaladığını
+  //     kanıtlar.
+  assert.equal(UUID_RE.test('lib-profile-secret-42-movie-550'), false);
+  assert.equal(UUID_RE.test('movie:550'), false);
+  assert.equal(UUID_RE.test('777'), false);
 });
 
 // ---------------------------------------------------------------------------
