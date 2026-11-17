@@ -11,7 +11,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -152,6 +152,25 @@ describe("R2-A1 — §3.1 p1-b64url kodlama", () => {
       assert.ok(!dir.includes("="), "Base64URL padding içermemeli");
       assert.strictEqual(decodeProfileIdSafe(dir), id);
       assert.strictEqual(encodeProfileIdSafe(decodeProfileIdSafe(dir)), dir);
+    }
+  });
+
+  it("Desen-geçerli kimlik uzayında round-trip ve alfabe kuralı korunur (TC-1)", () => {
+    const ids = [];
+    for (let i = 1; i <= 12; i += 1) ids.push(`p${i}`);
+    for (const ch of "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") {
+      ids.push(`profile-x${ch}`);
+      ids.push(`profile-${ch}x`);
+    }
+    ids.push(`profile-${"a".repeat(60)}`);
+    ids.push("profile-" + "A1_b-9".repeat(8));
+
+    for (const id of ids) {
+      assert.match(id, PROFILE_ID_PATTERN, `fixture desen dışı: ${id}`);
+      const dir = encodeProfileIdSafe(id);
+      assert.match(dir, /^p1-b64url-[A-Za-z0-9_-]+$/, `dizin alfabesi hatalı: ${dir}`);
+      assert.ok(!dir.includes("=") && !dir.includes("+") && !dir.includes("/"));
+      assert.strictEqual(decodeProfileIdSafe(dir), id);
     }
   });
 
@@ -401,5 +420,74 @@ describe("R2-A1 — §3.5 TASTE_PATHS / Taste API uyumluluğu", () => {
 
     const profile = JSON.parse(await readFile(paths.profile, "utf8"));
     assert.strictEqual(profile.mediaType, "movie");
+  });
+});
+
+// === §3.4 / §2.3 İzolasyon (TC-8) ===
+
+async function walkRelative(root, base = root) {
+  if (!existsSync(root)) return [];
+  const out = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const full = join(root, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await walkRelative(full, base)));
+    } else {
+      out.push(full.slice(base.length + 1));
+    }
+  }
+  return out.sort();
+}
+
+describe("R2-A1 — §2.3 Bozuk manifest izolasyonu ve yazım kapsamı", () => {
+  it("Manifest bozukken Taste dışı akışlar ve legacy store çalışmaya devam eder", async () => {
+    const dataDir = await makeDataDir();
+    const mapPath = resolveTasteProfileIdMapPath(dataDir);
+    await mkdir(join(dataDir, "taste", "profiles"), { recursive: true });
+    const corrupt = "{ \"version\": 1, \"entries\": [ ";
+    await writeFile(mapPath, corrupt, "utf8");
+
+    await assert.rejects(
+      () => readTasteProfileIdMap(dataDir),
+      (err) => err?.code === "profile_id_map_corrupt"
+    );
+    await assert.rejects(
+      () => ensureTasteProfileIdMapEntry("profile-isolation", dataDir),
+      (err) => err?.code === "profile_id_map_corrupt"
+    );
+
+    // Taste dışı akışlar: legacy store yazımı bu bozukluktan etkilenmez.
+    await appendTasteEvent(
+      {
+        eventId: "scope-isolation-1",
+        contentId: "movie:551",
+        eventType: "rating_changed",
+        payload: { previousValue: null, newValue: 7 },
+        recordedAt: AS_OF,
+        timeSource: "actual",
+        timePrecision: "exact",
+      },
+      dataDir
+    );
+    await writeTasteProfile(makeProfile(), dataDir);
+    assert.ok(existsSync(resolveTastePaths(dataDir).events), "legacy events yazılmalı");
+    assert.strictEqual(await readFile(mapPath, "utf8"), corrupt, "bozuk manifest onarılmamalı");
+  });
+
+  it("A1 çağrıları yalnızca verilen dataDir'e yazar (repo data/ dizini değişmez)", async () => {
+    const repoData = join(process.cwd(), "data");
+    const before = await walkRelative(repoData);
+
+    const dataDir = await makeDataDir();
+    const created = await ensureTasteProfileIdMapEntry("profile-scope-only", dataDir);
+    assert.ok(created.dir.startsWith(`${TASTE_PROFILE_ID_MAP_SCHEME}-`));
+
+    const scoped = resolveTastePathsForProfile("profile-scope-only", dataDir);
+    assert.ok(scoped.paths.profile.startsWith(dataDir), "profil yolu verilen dataDir altında olmalı");
+    assert.ok(scoped.root.startsWith(join(dataDir, "taste", "profiles")));
+    assert.ok(existsSync(resolveTasteProfileIdMapPath(dataDir)), "manifest geçici dizine yazılmalı");
+
+    const after = await walkRelative(repoData);
+    assert.deepStrictEqual(after, before, "repo data/ dizini A1 çağrılarıyla değişmemeli");
   });
 });

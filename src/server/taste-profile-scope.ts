@@ -671,7 +671,12 @@ export interface TasteLockRecord {
   expiresAt: string;
   heartbeatAt: string;
   ownerToken: string;
+  /** Eski (`pid:ts:uuid`) `.taste.lock` biçiminden okunduysa true — lease yok. */
+  legacy?: boolean;
 }
+
+/** Eski sürümün `.taste.lock` token biçimi: `pid:timestamp:uuid`. */
+const LEGACY_LOCK_TOKEN_PATTERN = /^(\d+):(\d+):([0-9a-fA-F-]{8,64})$/;
 
 export interface TasteScopedLockRequest {
   dataDir?: string;
@@ -785,6 +790,49 @@ function parseTasteLockRecord(raw: unknown, lockPath: string): TasteLockRecord {
 }
 
 /**
+ * Eski token biçimini kayda çevirir (yalnızca geri uyumluluk okuması).
+ * Bu kayıtta lease/hostname yoktur; bu nedenle yaş bazlı stale kararı
+ * **verilmez** — stale yalnızca PID ölüyse kabul edilir.
+ */
+function parseLegacyLockToken(text: string): TasteLockRecord | null {
+  const match = LEGACY_LOCK_TOKEN_PATTERN.exec(text.trim());
+  if (!match) return null;
+  const pid = Number(match[1]);
+  const createdAtMs = Number(match[2]);
+  if (!Number.isInteger(pid) || pid <= 0 || !Number.isFinite(createdAtMs)) {
+    return null;
+  }
+  const createdAt = new Date(createdAtMs).toISOString();
+  return {
+    lockId: `legacy-${pid}-${createdAtMs}`,
+    scope: TASTE_LOCK_DATA_SCOPE,
+    pid,
+    hostname: os.hostname(),
+    createdAt,
+    expiresAt: createdAt,
+    heartbeatAt: createdAt,
+    ownerToken: match[3]!,
+    legacy: true,
+  };
+}
+
+function parseTasteLockContent(text: string, lockPath: string): TasteLockRecord {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    const legacy = parseLegacyLockToken(text);
+    if (legacy) return legacy;
+    throw new TasteLockError(
+      "taste_lock_corrupt",
+      `Kilit dosyası geçerli JSON/eski token biçiminde değil: ${lockPath}`,
+      lockPath
+    );
+  }
+  return parseTasteLockRecord(raw, lockPath);
+}
+
+/**
  * Kilit kaydını okur. Yoksa null; bozuksa fail-closed hata (stale sayılmaz,
  * otomatik silme/onarım yok).
  */
@@ -800,17 +848,7 @@ export async function readTasteLockState(
     if ((err as { code?: string })?.code === "ENOENT") return null;
     throw err;
   }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    throw new TasteLockError(
-      "taste_lock_corrupt",
-      `Kilit dosyası geçerli JSON değil: ${lockPath}`,
-      lockPath
-    );
-  }
-  return parseTasteLockRecord(raw, lockPath);
+  return parseTasteLockContent(text, lockPath);
 }
 
 function makeTasteLockRecord(
@@ -855,6 +893,12 @@ export function isTasteLockProvablyStale(
   record: TasteLockRecord,
   nowMs: number = Date.now()
 ): boolean {
+  if (record.legacy) {
+    // Eski token biçiminde lease yok: yaş asla tek başına stale kanıtı değildir,
+    // yalnızca PID'in ölü olduğu kanıtı devralmaya izin verir.
+    if (record.pid === process.pid) return true;
+    return !isProcessAlive(record.pid);
+  }
   const expiresAtMs = Date.parse(record.expiresAt);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs > nowMs) return false;
   if (record.hostname !== os.hostname()) return true;
@@ -946,17 +990,7 @@ async function readTasteLockRecordAt(lockPath: string): Promise<TasteLockRecord 
     if ((err as { code?: string })?.code === "ENOENT") return null;
     throw err;
   }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    throw new TasteLockError(
-      "taste_lock_corrupt",
-      `Kilit dosyası geçerli JSON değil: ${lockPath}`,
-      lockPath
-    );
-  }
-  return parseTasteLockRecord(raw, lockPath);
+  return parseTasteLockContent(text, lockPath);
 }
 
 function resolveTimings(overrides?: Partial<TasteLockTimings>): TasteLockTimings {

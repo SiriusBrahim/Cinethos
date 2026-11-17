@@ -118,8 +118,10 @@ Parametreler taste scope’lu kilit altyapısında sabit/adlandırılmış yapı
 | Stale unlink yarışı | Koşulsuz `unlink` kaldırıldı. Devralma **rename-then-verify** ile yapılır: kilit dosyası benzersiz karantina adına atomik `rename` edilir (tek kazanan), taşınan kaydın `lockId`'si beklenen stale kayıtla eşleşirse karantina silinir ve yeni kilit normal yolla alınır. `lockId` farklıysa (araya canlı bir sahip girmişse) kayıt geri konur ve **devralma yapılmaz**; sahiplik sessizce devredilmez. |
 | Bırakma yarışı | `release()` de oku-ve-sil yerine `rename` + sahiplik (`lockId`/`ownerToken`/`scope`) doğrulaması kullanır: taşınan kayıt bize aitse silinir, değilse geri konur. Canlı bir sahibin kaydı asla silinmez. |
 | Heartbeat atomikliği | Yenileme öncesi diskteki kayıt `lockId`/`ownerToken`/`scope` ile karşılaştırılır; eşleşmezse yenileme yapılmaz, `lost` işaretlenir ve `withScopedTasteLock` görev başarılı görünse bile `taste_lock_lost` fırlatır (sessiz çifte sahiplik/başarı yok). |
-| Bozuk kilit | Parse/şema hatası `taste_lock_corrupt` ile fail-closed; dosya silinmez/onarılmaz. |
-| Süreç içi FIFO | Aynı `(dataDir, scope)` için süreç içi kuyruk korunur; farklı kapsamlar (manifest / profil / shared cache / legacy) birbirini kilitlemez. |
+| Bozuk kilit | Parse/şema hatası `taste_lock_corrupt` ile fail-closed; dosya silinmez/onarılmaz. Boş (0 bayt) kilit dosyası da bozuk sayılır — yarım yayın penceresi stale olarak yorumlanmaz (R-8). |
+| Süreç içi FIFO | Aynı `(dataDir, scope)` için süreç içi kuyruk korunur; iş bitince zincir `Map`'ten silinir (R-5). Farklı kapsamlar (manifest / profil / shared cache / legacy) birbirini kilitlemez; iki farklı `profile:` kapsamı eşzamanlı tutulabilir. |
+| Legacy `.taste.lock` statüsü | Eski sürümün yaş bazlı (`>15s` veya ölü PID → koşulsuz `unlink`) çalma mantığı **kaldırıldı**; aynı dosya adı yeni kayıt biçimiyle kullanılır. Eski sürümden kalan `pid:ts:uuid` token'ı okunabilir kalır (geri uyumluluk): bu kayıtta lease yoktur, sahte bir lease uydurulmaz ve **yaş asla stale kanıtı değildir**; devralma yalnızca PID ölüyse (aynı host varsayımı) yapılır. A2'de legacy kapsam da tamamen lease tabanına taşınacaktır. |
+| Kapsam sırası | Zorunlu sıra manifest → profil → shared cache. A1'de profil kilidi alındığında shared-cache kilidi örtük olarak alınmaz; ters yönde (cache altında profil) edinim yasaktır. |
 
 ## 4. Manifest ve profil kilitlerinin birlikte tutulacağı operasyonlar
 
@@ -195,7 +197,7 @@ Kriterler iki kalıcı test dosyasına dönüştürüldü (mevcut `tests/taste/*
 | PR #32 kriteri | Test dosyası | Test başlığı |
 |---|---|---|
 | §3.1 Kanonik id: boş/trim/`.`/`..`/ayraç/kontrol/traversal reddi | `taste-profile-scope.test.mjs` | `R2-A1 — §3.1 Kanonik profil kimliği` (6 test) |
-| §3.1 Reversible token kayıpsız encode/decode, sanitize değil | `taste-profile-scope.test.mjs` | `R2-A1 — §3.1 p1-b64url kodlama` (3 test) |
+| §3.1 Reversible token kayıpsız encode/decode, sanitize değil | `taste-profile-scope.test.mjs` | `R2-A1 — §3.1 p1-b64url kodlama` (4 test; desen-geçerli kimlik uzayı taraması dahil) |
 | §3.1 Çözümlenen yolun taste kökü içinde kalması | `taste-profile-scope.test.mjs` | `R2-A1 — §3.1 Profil yolu kök sınırı` (2 test) |
 | §3.2 `version/scheme/entries/byDir` birebir tutarlılık | `taste-profile-scope.test.mjs` | `R2-A1 — §3.2 Manifest şeması ve bütünlüğü` (4 test) |
 | §3.2 Çakışma/şema/sürüm uyumsuzluğunda fail-fast, otomatik onarım yok | `taste-profile-scope.test.mjs` | `§3.2 Manifest şeması ve bütünlüğü` + `§3.4 Bozuk manifest davranışı` |
@@ -203,14 +205,45 @@ Kriterler iki kalıcı test dosyasına dönüştürüldü (mevcut `tests/taste/*
 | §3.3 Manifest yokken yarışsız/tek yazar/doğrulamalı ilk oluşturma | `taste-profile-scope.test.mjs` | `§3.3 ...` (3 test, eşzamanlı 6 kimlik) |
 | §3.3 Manifest kilidinin ayrı kapsam olması | `taste-lock.test.mjs` | `Legacy kapsam .taste.lock yolunu korur...`, `Farklı kapsamlar birbirini kilitlemez` |
 | §3.4 Bozuk/uyumsuz manifestin teşhis edilebilir hata üretmesi | `taste-profile-scope.test.mjs` | `R2-A1 — §3.4 Bozuk manifest davranışı` (2 test) |
-| §3.4 Bozuk lock dosyasının stale sayılmaması (fail-closed) | `taste-lock.test.mjs` | `R2-A1 — Bozuk kilit fail-closed` (2 test) |
+| §3.4 Bozuk lock dosyasının stale sayılmaması (fail-closed) | `taste-lock.test.mjs` | `R2-A1 — Bozuk kilit fail-closed` (3 test; boş dosya/yarım yayın dahil) |
+| §3.4/§2.3 Bozuk manifestin Taste dışı akışları durdurmaması + yazım kapsamı | `taste-profile-scope.test.mjs` | `R2-A1 — §2.3 Bozuk manifest izolasyonu ve yazım kapsamı` (2 test) |
+| §1 Eski `.taste.lock` kaydıyla geri uyum, yaş bazlı çalmama | `taste-lock.test.mjs` | `R2-A1 — Legacy .taste.lock kaydı` (2 test) |
 | §3.5 `TASTE_PATHS`/IO çağıranlarının kırılmaması, legacy tetiklenmemesi | `taste-profile-scope.test.mjs` | `R2-A1 — §3.5 TASTE_PATHS / Taste API uyumluluğu` (3 test) |
 | §1 Heartbeat/lease yenileme, sahiplik kaybında fail-safe sonuç | `taste-lock.test.mjs` | `R2-A1 — Lease ve heartbeat` (2 test) |
 | Canlı kilidin çalınmaması (lease dolmamış) | `taste-lock.test.mjs` | `R2-A1 — Canlı kilit çalınmaz` (2 test) |
 | Stale unlink yarışının kapanması / tek sahiplik | `taste-lock.test.mjs` | `R2-A1 — Stale devralma yarışsız` (3 test) |
 | Kilit meta alanları ve sahiplik doğrulamalı bırakma | `taste-lock.test.mjs` | `Kilit edinilir, zorunlu meta alanlarıyla yazılır...`, `Bırakma yalnızca sahibindeyse dosyayı siler` |
+| Yalnızca sahibin lease yenileyebilmesi | `taste-lock.test.mjs` | `Yenileme yalnızca sahibin kaydı üzerinde kabul edilir` |
+| Kapsam izolasyonu/paralellik ve kilit sırası | `taste-lock.test.mjs` | `Farklı profil kapsamları eşzamanlı tutulabilir...`, `Profil kilidi altından shared-cache kilidi alınmaz...` |
 
 Testler `package.json` içindeki `test:taste` komutuna eklendi.
+
+### 7.1 PR #34 (Ajan 1) risklerinin karşılanma durumu
+
+| Risk | Öncelik | Bu PR'daki karşılık | Durum |
+|---|---|---|---|
+| R-1 Canlı kilidin yaş bazlı çalınması | P1 | Yaş kriteri tamamen kaldırıldı: stale = lease dolumu **ve** sahiplik doğrulanamaması; legacy kapsamda yaş hiç kullanılmaz | Karşılandı + test |
+| R-2 Stale unlink → çifte sahiplik | P1 | `link()` ile atomik yayınlama + `rename`/`lockId` doğrulamalı devralma; eşzamanlı devralmada tek kazanan testi | Karşılandı + test |
+| R-3 Case-insensitive FS dizin çakışması | P1 | **Kullanıcı kararıyla proje sonuna ertelendi** (bkz. §0) — kanonik kimlik harf katlanmaz, `PROFILE_ID_PATTERN` değişmedi; ertelenen düzeltme için fixture çifti: `profile-AAA` / `profile-AAG` | Ertelendi (bilinçli) |
+| R-4 Çift yol türetme | P2 | Tek `resolveTasteRoot` üzerinden çözümleme; kilit yolu da aynı kökten türetilir | Karşılandı |
+| R-5 FIFO anahtarı + Map büyümesi | P2 | Anahtar `(dataDir, scope)`; iş bitince zincir `Map`'ten silinir | Karşılandı |
+| R-6 Testlerin gerçek `data/`'ya yazması | P2 | Yeni testlerin tamamı geçici `dataDir` kullanır; ek olarak repo `data/` dizininin değişmediğini kanıtlayan test | Karşılandı + test |
+| R-7 Manifest bozulunca izolasyon | P2 | Fail-fast; bozuk manifestte legacy store yazımının sürdüğünü kanıtlayan test | Karşılandı + test |
+| R-8 Boş dosya / yarım yayın penceresi | P3 | Geçici dosya + `link` ile yayın (pencere yok); boş/bozuk dosya fail-closed | Karşılandı + test |
+| R-9 Sabit dosya adı testleri | P3 | `TASTE_PATHS`/legacy yollar ve integration testleri değişmedi, yeşil | Karşılandı |
+
+### 7.2 PR #34 §3 test envanteri (TC-1…TC-8) eşlemesi
+
+| TC | Kapsanan test(ler) |
+|---|---|
+| TC-1 Kimlik kodlama | `p1-b64url kodlama` (round-trip, alfabe/padding, desen-geçerli uzay taraması) |
+| TC-2 Fail-fast kimlik reddi | `§3.1 Kanonik profil kimliği` (6 test) |
+| TC-3 Yol sınırlaması | `§3.1 Profil yolu kök sınırı` |
+| TC-4 Manifest bütünlüğü | `§3.2 Manifest şeması ve bütünlüğü` (case çakışması R-3 kapsamı dışı — ertelendi) |
+| TC-5 Eşzamanlılık | `§3.3 Manifest ilk oluşturma ve eşzamanlılık`, `Farklı profil kapsamları eşzamanlı tutulabilir` |
+| TC-6 Scoped lock davranışı | `Kapsam kilidi edinme/bırakma`, `Canlı kilit çalınmaz`, `Stale devralma yarışsız`, `Lease ve heartbeat`, `Bozuk kilit fail-closed` |
+| TC-7 Legacy davranış korunumu | `§3.5 TASTE_PATHS / Taste API uyumluluğu`, `Legacy .taste.lock kaydı`, repo `data/` değişmezlik testi |
+| TC-8 İzolasyon ve kilit sırası | `§2.3 Bozuk manifest izolasyonu ve yazım kapsamı`, `Profil kilidi altından shared-cache kilidi alınmaz` |
 
 ## 8. Uygulama kaydı ve doğrulama (bu PR)
 
@@ -218,10 +251,10 @@ Testler `package.json` içindeki `test:taste` komutuna eklendi.
 |---|---|
 | Yeni | `src/server/taste-profile-scope.ts`: A1 kimlik/kodlama/manifest/kilit altyapısı |
 | Güncellenen | `src/server/taste-store.ts`: legacy yazım kilidi kapsam kilidine devredildi (`.taste.lock` adı ve tüm IO imzaları korunur), A1 yüzeyi re-export edildi |
-| Yeni testler | `tests/taste/taste-profile-scope.test.mjs` (23 test), `tests/taste/taste-lock.test.mjs` (13 test) |
+| Yeni testler | `tests/taste/taste-profile-scope.test.mjs` (26 test), `tests/taste/taste-lock.test.mjs` (19 test) |
 | Dokunulmayan | `taste-rebuild-coordinator.ts`, `taste-routes.ts`, `taste-service-adapter.ts`, `taste-metadata-hydrator.ts`, `src/core/taste/*`, sync/backup/restore, öneri davranışı |
 
-**Doğrulama:** `npm run test:taste` → 391 test, 0 fail (yeni 36 R2-A1 testi dahil). `npm run lint` (eslint + `tsc --noEmit` + `tsc -p tsconfig.tests.json`) temiz.
+**Doğrulama:** `npm run test:taste` → 400 test, 0 fail (yeni 45 R2-A1 testi dahil). `npm run lint` (eslint + `tsc --noEmit` + `tsc -p tsconfig.tests.json`) temiz. Yeni testler tekil çalıştırmada `45/45` geçer.
 
 **Bilinçli olarak yapılmayanlar:**
 

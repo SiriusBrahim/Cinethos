@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import {
   TASTE_LOCK_DATA_SCOPE,
   TASTE_PROFILE_ID_MAP_SCOPE,
+  TASTE_SHARED_METADATA_CACHE_SCOPE,
   acquireTasteLock,
   readTasteLockState,
   resolveTasteLockPath,
@@ -136,6 +137,56 @@ describe("R2-A1 — Kapsam kilidi edinme/bırakma", () => {
     });
     await legacy.release();
     await mapLock.release();
+  });
+
+  it("Profil kilidi altından shared-cache kilidi alınmaz (kilit sırası)", async () => {
+    const dataDir = await makeDataDir();
+    const handle = await acquireTasteLock({
+      dataDir,
+      scope: SCOPE,
+      timings: fastTimings({ leaseDurationMs: 60_000, heartbeatIntervalMs: 30_000 }),
+    });
+
+    assert.strictEqual(
+      await readTasteLockState(dataDir, TASTE_SHARED_METADATA_CACHE_SCOPE),
+      null,
+      "profil kilidi shared-cache kilidini örtük almamalı"
+    );
+    assert.strictEqual(await readTasteLockState(dataDir, TASTE_PROFILE_ID_MAP_SCOPE), null);
+
+    // Sıra: manifest → profil → cache. Profil kilidi tutulurken cache kilidi de alınabilir,
+    // ters yönde (cache altında profil) alınmaz.
+    const cache = await acquireTasteLock({
+      dataDir,
+      scope: TASTE_SHARED_METADATA_CACHE_SCOPE,
+      timings: fastTimings({ leaseDurationMs: 60_000, heartbeatIntervalMs: 30_000 }),
+    });
+    await cache.release();
+    await handle.release();
+  });
+
+  it("Farklı profil kapsamları eşzamanlı tutulabilir (global kilit değil)", async () => {
+    const dataDir = await makeDataDir();
+    const otherScope = "profile:p1-b64url-cHJvZmlsZS1vdGhlcg";
+    const started = Date.now();
+    const [a, b] = await Promise.all([
+      acquireTasteLock({
+        dataDir,
+        scope: SCOPE,
+        timings: fastTimings({ acquireTimeoutMs: 500, leaseDurationMs: 60_000, heartbeatIntervalMs: 30_000 }),
+      }),
+      acquireTasteLock({
+        dataDir,
+        scope: otherScope,
+        timings: fastTimings({ acquireTimeoutMs: 500, leaseDurationMs: 60_000, heartbeatIntervalMs: 30_000 }),
+      }),
+    ]);
+
+    assert.ok(Date.now() - started < 400, "iki farklı kapsam birbirini beklememeli");
+    assert.ok(existsSync(resolveTasteLockPath(dataDir, SCOPE)));
+    assert.ok(existsSync(resolveTasteLockPath(dataDir, otherScope)));
+    await a.release();
+    await b.release();
   });
 
   it("Aynı kapsam süreç içi FIFO ile serileştirilir", async () => {
@@ -305,6 +356,24 @@ describe("R2-A1 — Lease ve heartbeat", () => {
     await handle.release();
   });
 
+  it("Yenileme yalnızca sahibin kaydı üzerinde kabul edilir", async () => {
+    const dataDir = await makeDataDir();
+    const lockPath = resolveTasteLockPath(dataDir, SCOPE);
+    const handle = await acquireTasteLock({
+      dataDir,
+      scope: SCOPE,
+      timings: fastTimings({ leaseDurationMs: 60_000, heartbeatIntervalMs: 30_000 }),
+    });
+
+    const foreign = await seedLock(lockPath, SCOPE);
+    await assert.rejects(() => handle.renew(), (err) => err?.code === "taste_lock_lost");
+    assert.strictEqual(handle.lost, true, "sahiplik kaybı işaretlenmeli");
+
+    assert.strictEqual((await readTasteLockState(dataDir, SCOPE)).lockId, foreign.lockId);
+    await handle.release();
+    assert.ok(existsSync(lockPath), "yabancı kayıt bırakma ile silinmemeli");
+  });
+
   it("Sahiplik kaybedilirse kritik bölüm sonucu güvenilir sayılmaz", async () => {
     const dataDir = await makeDataDir();
     const lockPath = resolveTasteLockPath(dataDir, SCOPE);
@@ -360,6 +429,19 @@ describe("R2-A1 — Bozuk kilit fail-closed", () => {
     assert.strictEqual(await readFile(lockPath, "utf8"), corrupt, "bozuk kilit silinmemeli");
   });
 
+  it("Boş kilit dosyası (yarım yayın penceresi) stale sayılmaz", async () => {
+    const dataDir = await makeDataDir();
+    const lockPath = resolveTasteLockPath(dataDir, SCOPE);
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "", "utf8");
+
+    await assert.rejects(
+      () => acquireTasteLock({ dataDir, scope: SCOPE, timings: fastTimings() }),
+      (err) => err?.code === "taste_lock_corrupt"
+    );
+    assert.strictEqual(await readFile(lockPath, "utf8"), "", "boş kilit silinmemeli");
+  });
+
   it("Eksik alanlı kilit kaydı fail-fast reddedilir", async () => {
     const dataDir = await makeDataDir();
     const lockPath = resolveTasteLockPath(dataDir, SCOPE);
@@ -370,5 +452,62 @@ describe("R2-A1 — Bozuk kilit fail-closed", () => {
       () => acquireTasteLock({ dataDir, scope: SCOPE, timings: fastTimings() }),
       (err) => err?.code === "taste_lock_corrupt"
     );
+  });
+});
+
+// === Eski (.taste.lock token) biçimiyle geri uyumluluk ===
+
+describe("R2-A1 — Legacy .taste.lock kaydı", () => {
+  function legacyLockPath(dataDir) {
+    return resolveTasteLockPath(dataDir, TASTE_LOCK_DATA_SCOPE);
+  }
+
+  async function seedLegacyToken(dataDir, pid, ageMs) {
+    const lockPath = legacyLockPath(dataDir);
+    await mkdir(dirname(lockPath), { recursive: true });
+    const token = `${pid}:${Date.now() - ageMs}:${randomUUID()}`;
+    await writeFile(lockPath, token, "utf8");
+    return { lockPath, token };
+  }
+
+  it("Ölü PID'li eski token atomik devralınır", async () => {
+    const dataDir = await makeDataDir();
+    await seedLegacyToken(dataDir, findDeadPid(), 60_000);
+
+    const handle = await acquireTasteLock({
+      dataDir,
+      scope: TASTE_LOCK_DATA_SCOPE,
+      timings: fastTimings({ leaseDurationMs: 5000, heartbeatIntervalMs: 1000 }),
+    });
+
+    const onDisk = await readTasteLockState(dataDir, TASTE_LOCK_DATA_SCOPE);
+    assert.strictEqual(onDisk.lockId, handle.record.lockId);
+    assert.notStrictEqual(onDisk.legacy, true, "yeni kayıt güncel biçimde yazılmalı");
+
+    await handle.release();
+    assert.strictEqual(await readTasteLockState(dataDir, TASTE_LOCK_DATA_SCOPE), null);
+  });
+
+  it("Canlı PID'li eski token yaş nedeniyle çalınmaz", async () => {
+    const dataDir = await makeDataDir();
+    // Eski kodun yaş bazlı mantığı bu kaydı "stale" sayardı (yaş > 15s).
+    // Canlı ama bu süreç olmayan bir PID kullanılır (üst süreç).
+    const livePid = process.ppid;
+    const { lockPath, token } = await seedLegacyToken(dataDir, livePid, 3_600_000);
+
+    await assert.rejects(
+      () =>
+        acquireTasteLock({
+          dataDir,
+          scope: TASTE_LOCK_DATA_SCOPE,
+          timings: fastTimings({ acquireTimeoutMs: 150 }),
+        }),
+      (err) => err?.code === "taste_lock_timeout"
+    );
+
+    assert.strictEqual(await readFile(lockPath, "utf8"), token, "canlı legacy kilit korunmalı");
+    const state = await readTasteLockState(dataDir, TASTE_LOCK_DATA_SCOPE);
+    assert.strictEqual(state.legacy, true, "legacy kayıt olarak teşhis edilmeli");
+    assert.strictEqual(state.pid, livePid);
   });
 });
