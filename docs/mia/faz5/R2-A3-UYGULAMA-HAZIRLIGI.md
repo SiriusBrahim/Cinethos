@@ -2,14 +2,14 @@
 
 > **Base Commit:** `49142ca8d552d59b11894a7aa574cce4588c16ce` (master)
 > **Tarih:** 17 Kasım 2026
-> **Doküman Sürümü:** 1.0.0
+> **Doküman Sürümü:** 1.1.0 (hydration akışı izolasyon analizi eklendi)
 > **İlgili Plan:** `docs/mia/faz5/R2-A3-TEKNİK-ANALİZ-VE-PLAN.md` (v2.2.0, PR #38)
 > **Durum:** Hazırlık — **A3 kaynak kodu HENÜZ DEĞİŞTİRİLMEDİ.**
 
 > ⚠️ **Kapsam notu:** Bu doküman yalnızca A3 kodlamasına hazırlıktır. Kod yazımı, mimari
 > karar kesinleştirme ve migration içermez. Plan dokümanındaki ifadeler kaynağıyla
 > yeniden doğrulanmıştır; doğrulanamayan ifadeler "açık konu" olarak işaretlenmiştir
-> (bkz. §11) ve gerçek kabul edilmemiştir.
+> (bkz. §12) ve gerçek kabul edilmemiştir.
 
 ---
 
@@ -22,12 +22,13 @@
 5. [ProfileContext Uçtan Uca Aktarım Planı](#5-profilecontext-uçtan-uca-aktarım-planı)
 6. [ForProfile API Geçiş Tablosu](#6-forprofile-api-geçiş-tablosu)
 7. [Rebuild Coordinator Profil İzolasyonu Planı](#7-rebuild-coordinator-profil-izolasyonu-planı)
-8. [Test Senaryoları](#8-test-senaryoları)
-9. [Geriye Dönük Uyumluluk ve Regresyon Kontrolleri](#9-geriye-dönük-uyumluluk-ve-regresyon-kontrolleri)
-10. [Tamamlanma Kriterleri Özeti](#10-tamamlanma-kriterleri-özeti)
-11. [Açık Teknik Konular (Çözülemeyen / Kullanıcı Kararı)](#11-açık-teknik-konular)
-12. [Agent 2 İncelemesiyle Çakışabilecek Noktalar](#12-agent-2-incelemesiyle-çakışabilecek-noktalar)
-13. [Kesin Sınırlar — Karar Verilmeyen Konular](#13-kesin-sınırlar)
+8. [Hydration Akışı ve Profil İzolasyonu](#8-hydration-akışı-ve-profil-izolasyonu)
+9. [Test Senaryoları](#9-test-senaryoları)
+10. [Geriye Dönük Uyumluluk ve Regresyon Kontrolleri](#10-geriye-dönük-uyumluluk-ve-regresyon-kontrolleri)
+11. [Tamamlanma Kriterleri Özeti](#11-tamamlanma-kriterleri-özeti)
+12. [Açık Teknik Konular (Çözülemeyen / Kullanıcı Kararı)](#12-açık-teknik-konular)
+13. [Agent 2 İncelemesiyle Çakışabilecek Noktalar](#13-agent-2-incelemesiyle-çakışabilecek-noktalar)
+14. [Kesin Sınırlar — Karar Verilmeyen Konular](#14-kesin-sınırlar)
 
 ---
 
@@ -154,22 +155,37 @@ Bu hazırlık dokümanında hiçbir test sonucu çalıştırılmış/geçmiş ol
 | `upsertTasteMetadataInputs` | `taste-rebuild-coordinator.ts:333-369` | `profileId` parametresi; index/objections okuma ForProfile |
 | `activeRebuildChains` | `taste-rebuild-coordinator.ts:69` | Anahtar `${dataDir}:${profileId}` |
 | `bootstrapPromises`, `bootstrapSignatures` | `taste-rebuild-coordinator.ts:70-71` | Anahtar `${dataDir}:${profileId}` |
+| `runHydrationLoop` | `taste-rebuild-coordinator.ts:154-171` | `profileId` parametresi; içindeki `upsertTasteMetadataInputs(result.inputs, dataDir)` (satır 165) ve `triggerTasteProfileRebuild(dataDir)` (satır 167) çağrıları profil kapsamlı hâle getirilir; cache-hit turu davranışı düzeltilir (§8.5) |
+| `scheduleTasteMetadataHydration` | `taste-rebuild-coordinator.ts:172-186` | `profileId` parametresi; `activeHydrations` guard'ı profil kapsamlı (§8.4) |
+| `configureTasteHydration` | `taste-rebuild-coordinator.ts:144-152` | `hydrationApiKeys` anahtar şeması (§8.4); çağıranlar: `app.ts:571`, `taste-routes.ts:293` |
+| `hydrationApiKeys`, `activeHydrations` | `taste-rebuild-coordinator.ts:69-70` | Anahtar şeması `dataDir` → `${dataDir}:${profileId}` (değerlendirme: §8.4) |
 
 **Yeniden kullanılacak mevcut fonksiyonlar (değişiklik yok):**
 
 - `executeAggregationOffMainThread` — saf hesaplama, profil bağımsız (`:371-429`)
-- `computeBootstrapSignature` — veri kaynağı imzası (profil ataması açık konudur, bkz. §11.2)
+- `computeBootstrapSignature` — veri kaynağı imzası (profil ataması açık konudur, bkz. §12.2)
 - `ensureProfileTasteStoreEntry` / `resolveProfileTasteStore` — `src/server/taste-store.ts:181-196`
   (profil dizini + ID manifest girişi oluşturma A2'de hazır)
 - `coerceItemToTasteMetadata`, `configureTasteHydration`, `scheduleTasteMetadataHydration`
   — metadata akışı (yalnızca çağıran taraf profil parametresi alır)
+- `hydrateTasteMetadataBatch` — `src/server/taste-metadata-hydrator.ts:230-308`;
+  imzası **değişmez**: cache katmanı profil-agnostiktir, yalnızca çağıran zincir
+  profil kimliği taşır (§8.3)
 
 **Tamamlanma kriterleri:**
 
-- [ ] Coordinator modülünde global okuma/yazma API çağrısı kalmaz (bootstrap'in
-      `cinetrack-data.json` salt-okunur okuması hariçtir — bu bir Store API çağrısı değildir).
+- [ ] Coordinator modülünde global okuma/yazma Store API çağrısı **kalmaz**. Bu kriter
+      rebuild, bootstrap **ve hydration** akışlarının tamamını kapsar: `performRebuildOnce`,
+      `ensureInitialTasteBootstrap`, `upsertTasteMetadataInputs`, `runHydrationLoop` ve
+      `scheduleTasteMetadataHydration` içindeki tüm `readTaste*`/`writeTaste*` çağrıları
+      §6 tablosundaki ForProfile karşılıklarına geçmiştir. Tek istisna bootstrap'in
+      `cinetrack-data.json` salt-okunur okumasıdır (Store API çağrısı değildir, V18).
 - [ ] Farklı profiller için aynı anda tetiklenen rebuild'ler birbirini bloklamaz.
 - [ ] Aynı profil için ardışık rebuild'ler sıralanır (mevcut zincir davranışı korunur).
+- [ ] `activeHydrations`/`hydrationApiKeys` anahtarları profil kapsamlıdır; bir profilin
+      hydration'ı başka bir profilin hydration'ını engellemez (§8.4).
+- [ ] Metadata cache tamamen dolu olduğunda (`fetched === 0`) dahi çağıran profilin
+      Taste index'i cache'ten güncellenir; döngü index yazımını atlamaz (§8.5).
 
 ### WP-4 — Route ForProfile Geçişi
 
@@ -184,6 +200,8 @@ Bu hazırlık dokümanında hiçbir test sonucu çalıştırılmış/geçmiş ol
 - [ ] `taste-routes.ts` içinde global taste Store API importu kalmaz.
 - [ ] Her endpoint, WP-2'deki tek kaynaktan aldığı `profileId` ile ForProfile API çağırır.
 - [ ] `triggerTasteProfileRebuild` çağrıları profil kimliği ile yapılır (546, 596, 622, 732 civarı).
+- [ ] Route içi `upsertTasteMetadataInputs([meta], dataDir)` çağrıları (`taste-routes.ts:645, 707`)
+      profil kimliği ile ForProfile index yazımına geçer (§8.2).
 
 ### WP-5 — Adapter ForProfile Geçişi
 
@@ -205,12 +223,12 @@ Bu hazırlık dokümanında hiçbir test sonucu çalıştırılmış/geçmiş ol
 
 - [ ] Adapter içinde global taste Store API çağrısı kalmaz.
 - [ ] `profileContext` verilmediği senaryoda (opsiyonel param) mevcut davranış tanımlı ve test edilmiştir.
-- [ ] `processedEventIds` idempotency Set'inin profil kapsamı açıkça karara bağlanmıştır (bkz. §11.5).
+- [ ] `processedEventIds` idempotency Set'inin profil kapsamı açıkça karara bağlanmıştır (bkz. §12.5).
 
 ### WP-6 — Regresyon, Uyumluluk ve İzolasyon Testleri
 
 **Değişecek dosyalar:** `tests/taste/` altında yeni test dosyaları (isimler planlanan;
-plan dokümanı ile bu doküman arasındaki isim farkları §12.4'te işaretlidir).
+plan dokümanı ile bu doküman arasındaki isim farkları §13.4'te işaretlidir).
 
 | Dosya (planlanan) | Kapsam |
 |--------------------|--------|
@@ -267,7 +285,7 @@ createTasteRouter (taste-routes.ts:275-291)
 **Değişmeyenler:**
 
 - `initialProfileId` değeri (`'default'`) **dokunulmaz** — kimlik sözleşmesi kararı
-  kullanıcıya aittir (bkz. §13). WP-1 bu değerin ne olduğunu değiştirmez; yalnızca
+  kullanıcıya aittir (bkz. §14). WP-1 bu değerin ne olduğunu değiştirmez; yalnızca
   context'in taşınmasını sağlar.
 - `ProfileContext` sınıfı ve `createProfileContext` değişmez.
 - `switchProfile`/`commitRevision` akışları A3 kapsamı dışındadır.
@@ -288,9 +306,9 @@ yeni fonksiyon **gerekmez**.
 | `readTasteEvents(dataDir)` | `readTasteEventsForProfile(profileId, dataDir)` | routes: 316, 471 · adapter: 240 · coordinator: 433, 538 |
 | `appendTasteEventIdempotent(event, dataDir)` | `appendTasteEventIdempotentForProfile(profileId, event, dataDir)` | routes: 622 · adapter: 246 |
 | `writeTasteProfile(profile, dataDir, wm)` | `writeTasteProfileForProfile(profileId, profile, dataDir, wm)` | routes: 481, 524 · coordinator: 481 |
-| `readTasteIndex(dataDir)` | `readTasteIndexForProfile(profileId, dataDir)` | routes: 316, 391, 546 · coordinator: 434, 538 |
-| `writeTasteIndex(index, dataDir)` | `writeTasteIndexForProfile(profileId, index, dataDir)` | routes: 546, 596 |
-| `readTasteManifest(dataDir)` | `readTasteManifestForProfile(profileId, dataDir)` | routes: 458 · coordinator: 443, 482 · **istisna:** `app.ts:588` startup sağlık kontrolü (bkz. §11.4) |
+| `readTasteIndex(dataDir)` | `readTasteIndexForProfile(profileId, dataDir)` | routes: 316, 391, 546 · coordinator: 337 (upsert), 434, 538 |
+| `writeTasteIndex(index, dataDir)` | `writeTasteIndexForProfile(profileId, index, dataDir)` | routes: 546, 596 · coordinator (`upsertTasteMetadataInputs` üzerinden, satır 361): çağıranlar routes: 645, 707 · hydration: 165 · bootstrap: 625 |
+| `readTasteManifest(dataDir)` | `readTasteManifestForProfile(profileId, dataDir)` | routes: 458 · coordinator: 443, 482 · **istisna:** `app.ts:588` startup sağlık kontrolü (bkz. §12.4) |
 | `readTasteObjections(dataDir)` | `readTasteObjectionsForProfile(profileId, dataDir)` | routes: 546, 596 · coordinator: 336, 341 |
 | `writeTasteObjections(obj, dataDir)` | `writeTasteObjectionsForProfile(profileId, obj, dataDir)` | routes: 546, 596 |
 | `writeTasteEvents(events, dataDir)` | `writeTasteEventsForProfile(profileId, events, dataDir)` | coordinator: 635 (bootstrap) |
@@ -298,11 +316,13 @@ yeni fonksiyon **gerekmez**.
 
 **Notlar:**
 
-- Global API'lerin kendileri **değişmez**; yalnızca çağıranlar geçer (bkz. §13/§9).
+- Global API'lerin kendileri **değişmez**; yalnızca çağıranlar geçer (bkz. §14/§10).
 - Manifest ayrı yazma API'si gerekmez: profil yazmaları manifest'i kilit altında
   kendi içinde günceller (V12).
 - `readTasteMetadataCache`/`writeTasteMetadataCache` paylaşımlı kalmaya devam eder
-  (V22); profil bazlı cache ayrımı kapsam dışıdır (§13).
+  (V22); profil bazlı cache ayrımı kapsam dışıdır (§14).
+- Hydration zinciri (`runHydrationLoop` → `upsertTasteMetadataInputs` →
+  `triggerTasteProfileRebuild`) ayrıntılı izolasyon analizinde ele alınmıştır: §8.
 
 ---
 
@@ -330,14 +350,155 @@ yeni fonksiyon **gerekmez**.
    - `cinetrack-data.json` salt-okunur okuma kuralı (V18)
    - Metadata hidrasyon mimarisi (yalnızca çağıran profil parametresi alır)
 
+**Hydration akışı:** `ensureInitialTasteBootstrap` sonunda çağrılan
+`scheduleTasteMetadataHydration` (satır 651) ve tüm hydration zinciri ayrı bir
+bölümde analiz edilmiştir: **bkz. §8**. Bootstrap ile hydration'ın profil kapsamı
+orada birlikte ele alınmıştır.
+
 **Açık nokta:** Bootstrap'in kaynak verisi (`cinetrack-data.json`) profilsiz/global
 bir belgedir; hangi profilin bu veriden bootstrap edileceği ve imza anahtarının
-profile nasıl bağlanacağı tasarım sırasında netleştirilmelidir (§11.2). Bu doküman
+profile nasıl bağlanacağı tasarım sırasında netleştirilmelidir (§12.2). Bu doküman
 bu konuda karar vermez.
 
 ---
 
-## 8. Test Senaryoları
+## 8. Hydration Akışı ve Profil İzolasyonu
+
+> Bu bölüm v1.1.0'da eklenmiştir. WP-3'ün ilk kabul kriteri ("Coordinator modülünde
+> global okuma/yazma API çağrısı kalmaz") ilk sürümde hydration akışını kapsamıyordu;
+> bu bölüm eksik analizi tamamlar ve kriter §3 (WP-3) içinde yeniden yazılmıştır.
+
+### 8.1 Mevcut Akış (Kaynak Kodla Doğrulanmış)
+
+**Durum Map'leri (yalnızca `dataDir` anahtarlı):**
+
+| Map | Dosya:Satır | Anahtar | İçerik |
+|-----|-------------|---------|--------|
+| `hydrationApiKeys` | `taste-rebuild-coordinator.ts:69` | `dataDir` | TMDB API anahtarı |
+| `activeHydrations` | `taste-rebuild-coordinator.ts:70` | `dataDir` | Devam eden hydration döngüsü Promise'ı |
+
+**Fonksiyon zinciri (bugünkü hâliyle tamamen global):**
+
+```
+configureTasteHydration(dataDir, apiKey)                    [coordinator:144-152]
+  └─ hydrationApiKeys.set(dataDir, key)
+     Çağıranlar: app.ts:571 (startup), taste-routes.ts:293 (createTasteRouter)
+
+scheduleTasteMetadataHydration(dataDir, contentIds)         [coordinator:172-186]
+  └─ guard: activeHydrations.has(dataDir) → varsa SESSİZCE DÜŞER (dataDir başına tek döngü)
+
+runHydrationLoop(dataDir, contentIds)                       [coordinator:154-171]
+  └─ 24 tura kadar: hydrateTasteMetadataBatch({dataDir, apiKey, contentIds})
+       ├─ upsertTasteMetadataInputs(result.inputs, dataDir)   [satır 165 — GLOBAL index yazımı]
+       └─ triggerTasteProfileRebuild(dataDir)                 [satır 167 — GLOBAL rebuild zinciri]
+```
+
+**`upsertTasteMetadataInputs` (coordinator:333-369):** global `readTasteIndex`,
+`readTasteObjections`, `writeTasteIndex` kullanır (satır 336-337, 361).
+
+**Çağıranlar ve `contentIds` kaynağı:**
+
+| Çağıran | Dosya:Satır | contentIds kaynağı |
+|---------|-------------|--------------------|
+| `ensureInitialTasteBootstrap` | `coordinator:651` | `collectEvidenceContentIds(allEvents)` — `allEvents` **global** event deposundan (`readTasteEvents(dataDir)`, satır 538); profil değil, dataDir geneli |
+| Route: `POST /event` | `taste-routes.ts:645` | İstekle gelen tek metadata girdisi |
+| Route: `POST /domain-event` | `taste-routes.ts:707` | İstekle gelen tek metadata girdisi |
+
+**`hydrateTasteMetadataBatch`** (`taste-metadata-hydrator.ts:230-308`): paylaşımlı
+metadata cache'i (`shared-metadata-cache` kilidi, V22) okur; yalnızca cache'te
+olmayan `contentId`'leri TMDB'den çeker (`pending`, satır 241-243); cache'i kilit
+altında günceller (satır 289-296); `inputs` **yalnızca yeni çekilen** öğeleri
+içerir (satır 306).
+
+**Sonuç:** Hydration bugün profil izolasyonuna tamamen kapalıdır — index yazımı ve
+rebuild tetiklemesi globaldir, `contentIds` kümesi global event deposundan türetilir.
+A3'te bu akış profil kapsamlı hâle getirilmelidir.
+
+### 8.2 Profil Aidiyeti, `contentIds` Kaynağı ve Kimlik Taşıma Zinciri
+
+**Hangi profile ait?** A3'te hydration, ProfileContext'ten gelen **aktif profil
+kimliğiyle** çalışır (tek kimlik kaynağı: ProfileContext, §5). Hydration profil
+başına ayrı bir kimlik kaynağı üretmez.
+
+**`contentIds` kaynağı (A3 hedefi):**
+
+- Bootstrap yolu: `ensureInitialTasteBootstrap(profileId, dataDir)` kendi profilinin
+  event kümesini `readTasteEventsForProfile(profileId, dataDir)`'den alır ve
+  `collectEvidenceContentIds` bu **profil kapsamlı** küme üzerinde çalışır (satır 651
+  hedef hâli: `scheduleTasteMetadataHydration(profileId, dataDir, ...)`).
+- Route yolu: `taste-routes.ts:645, 707` çağrıları zaten aktif profilin isteğine
+  bağlıdır; profil kimliği WP-2'deki tek kaynaktan alınır.
+- `cinetrack-data.json`'dan türetilen girdiler (bootstrap, satır 596-621) profilsiz
+  global kaynaklardır; hangi profile yazılacağı §12.2'deki açık konuya bağlıdır ve
+  bu doküman atama yapmaz.
+
+**Kimlik taşıma zinciri (hedef imzalar):**
+
+```
+ensureInitialTasteBootstrap(profileId, dataDir)
+  └─ scheduleTasteMetadataHydration(profileId, dataDir, contentIds)
+       └─ runHydrationLoop(profileId, dataDir, contentIds)
+            ├─ hydrateTasteMetadataBatch({dataDir, apiKey, contentIds})   [imza değişmez]
+            ├─ upsertTasteMetadataInputs(result.inputs, profileId, dataDir)
+            └─ triggerTasteProfileRebuild(dataDir, profileId)
+```
+
+### 8.3 Ortak Metadata Cache vs Profil Kapsamlı Taste Index
+
+| Katman | Kapsam | A3'te durum |
+|--------|--------|-------------|
+| TMDB metadata cache (`cinetrack-taste-metadata-cache.json`) | `contentId` bazlı, **tüm profiller ortak**, `shared-metadata-cache` kilidi (V22) | **Ortak kalır** — TMDB fetch maliyeti profil başına çoğalmaz |
+| Taste index (`profiles/p1-b64url-.../cinetrack-taste-index.json`) | Profil kapsamlı | **Ayrık** — hydration sonrası upsert `writeTasteIndexForProfile` ile çağıran profilin index'ine yazar |
+
+**Ayrıştırma kuralı:** Hydration'ın **fetch+cache** katmanı profil-agnostiktir
+(`hydrateTasteMetadataBatch` imzası değişmez); hydration'ın **index yazımı** katmanı
+profil kapsamlıdır. Profil izolasyonu index ve rebuild katmanında uygulanır; cache
+katmanında uygulanmaz (bkz. §12.3).
+
+### 8.4 `activeHydrations` ve `hydrationApiKeys` Anahtar Değerlendirmesi
+
+**Soru:** Mevcut `dataDir` anahtarları yeterli mi? **Değerlendirme: Hayır** —
+index yazımı profil kapsamlı hâle geldiğinde:
+
+1. `activeHydrations` `dataDir` anahtarlı kalırsa, profil A için devam eden bir
+   hydration, profil B'nin hydration isteğini **sessizce düşürür**
+   (`if (activeHydrations.has(dataDir)) return;`, satır 177). B profilinin index'i
+   güncellenmeden kalır.
+2. Döngü (`runHydrationLoop`), hangi profilin index'ine yazacağını bilemez; mevcut
+   imza profil taşımaz.
+
+**Önerilen (WP-3 kapsamında uygulanacak, kullanıcı karar konusu değildir):**
+İki Map de §7'deki diğer haritalarla tutarlı biçimde `${dataDir}:${profileId}`
+anahtarına geçer. `hydrationApiKeys` için alternatif olarak API anahtarının
+profil-agnostik olması nedeniyle `dataDir` bazlı kalması da düşünülebilir; ancak
+tek anahtar şeması tutarlılığı için aynı şema önerilir. Kesin biçim WP-3
+uygulamasında netleştirilir.
+
+### 8.5 Aynı İçeriğin Birden Fazla Profilde Hydration'ı (Doğrulanmış Boşluk)
+
+**Senaryo:** Profil A ve Profil B aynı `contentId`'leri içeriyor.
+
+**Doğru olması gereken davranış:**
+
+1. TMDB fetch `contentId` başına **bir kez** yapılır; ikinci profil cache hit alır
+   (ortak cache'in getirisi, §8.3).
+2. Ancak her profilin **kendi index'i** cache'ten beslenmelidir.
+
+**Doğrulanmış boşluk:** `hydrateTasteMetadataBatch` cache tamamen doluysa
+`{ inputs: [], fetched: 0, remaining: ... }` döndürür (hydrator:246-253) ve
+`runHydrationLoop` `fetched === 0` olduğunda **turu ve döngüyü hemen bitirir**
+(coordinator:160-161). Sonuç: A profili içeriği cache'e doldurduktan sonra başlatılan
+B profili hydration'ı **index yazımını hiç yapmadan** çıkar. A3'te döngü, cache-hit
+turunda dahi profil index'ini cache'ten upsert etmelidir (WP-3 kabul kriteri olarak
+eklendi: §3 WP-3 son madde).
+
+**Rebuild etkileşimi:** Her profil kendi `${dataDir}:${profileId}` zincirinde rebuild
+tetikler; cache yazımı `shared-metadata-cache` kilidi altında profiller arası
+çakışmasızdır (V22).
+
+---
+
+## 9. Test Senaryoları
 
 > ⚠️ Aşağıdaki senaryolar **planlanmıştır**; bu hazırlık dokümanında test
 > **çalıştırılmamıştır**. Sayılar tahmindir.
@@ -367,6 +528,16 @@ bu konuda karar vermez.
 | Aynı profilde ardışık iki tetikleme | Zincirleme sıralama korunur |
 | Rebuild sonrası manifest | Profil dizininde güncellenir, global manifest etkilenmez |
 
+### Hydration (bkz. §8)
+
+| Senaryo | Beklenen |
+|---------|----------|
+| Aynı `contentId` iki profil için hydrate edilirse | TMDB fetch tek kez yapılır (ortak cache); **her iki profilin index'i** güncellenir (§8.5) |
+| Profil A hydration'ı sürerken Profil B hydration tetiklenirse | B düşmez; kendi `${dataDir}:${profileId}` döngüsünde çalışır (§8.4) |
+| Cache tamamen doluysa (`fetched === 0`) | Profil index'i cache'ten upsert edilir; döngü yazımı atlamaz (§8.5) |
+| Bootstrap sonrası hydration | `contentIds` yalnızca ilgili profilin event kümesinden türetilir (§8.2) |
+| Route kaynaklı metadata girdisi (`taste-routes.ts:645, 707`) | Yalnızca aktif profilin index'ine yazılır |
+
 ### WP-4/WP-5 (ForProfile geçişi)
 
 | Senaryo | Beklenen |
@@ -386,19 +557,19 @@ bu konuda karar vermez.
 
 ---
 
-## 9. Geriye Dönük Uyumluluk ve Regresyon Kontrolleri
+## 10. Geriye Dönük Uyumluluk ve Regresyon Kontrolleri
 
 **Korunması zorunlu davranışlar:**
 
 1. **Global Store API'leri değişmez** — `readTasteProfile(dataDir)` vb. imza ve
    davranış olarak bugünkü hâlini korur (V11'deki global blok: `taste-store.ts:335-490`).
-   Wrapper, yönlendirme veya migration **yapılmaz** (§13).
+   Wrapper, yönlendirme veya migration **yapılmaz** (§14).
 2. **Opsiyonel parametreler opsiyonel kalır** — `TasteServiceAdapterOptions.profileContext`
    ve yeni router options alanı zorunlu hâle getirilmez; mevcut çağıranlar kırılmaz.
 3. **`personalReadGuard` zinciri değişmez** (V21).
 4. **`cinetrack-data.json` salt-okunur kuralı** korunur (V18).
 5. **Profil ID manifest sözleşmesi değişmez** — `_profile-id-map.json` şeması,
-   `p1-b64url` dizin şeması ve `PROFILE_ID_PATTERN` dokunulmaz (V13, V14; §13).
+   `p1-b64url` dizin şeması ve `PROFILE_ID_PATTERN` dokunulmaz (V13, V14; §14).
 6. **Kilit davranışı** — lease/heartbeat/FIFO parametreleri değişmez.
 
 **Regresyon kontrol listesi (WP-6'da çalıştırılacak):**
@@ -411,7 +582,7 @@ bu konuda karar vermez.
 
 ---
 
-## 10. Tamamlanma Kriterleri Özeti
+## 11. Tamamlanma Kriterleri Özeti
 
 | Paket | Kriter |
 |-------|--------|
@@ -421,13 +592,13 @@ bu konuda karar vermez.
 | WP-4 | `taste-routes.ts`'de global Store importu kalmaz |
 | WP-5 | Adapter'de global Store çağrısı kalmaz; mevcut doğrulama akışı korunur |
 | WP-6 | `test:taste` + `lint` geçer; yeni izolasyon/akış testleri eklenir |
-| Genel | §13 sınırlarına hiçbir madde ihlal edilmez; test/CI çalıştırılmayan hiçbir sonuç çalıştırılmış gösterilmez |
+| Genel | §14 sınırlarına hiçbir madde ihlal edilmez; test/CI çalıştırılmayan hiçbir sonuç çalıştırılmış gösterilmez |
 
 ---
 
-## 11. Açık Teknik Konular
+## 12. Açık Teknik Konular (Çözülemeyen / Kullanıcı Kararı)
 
-### 11.1 "default" kimliği ForProfile API'leriyle çalışmaz (BLOKE EDİCİ — kullanıcı kararı)
+### 12.1 "default" kimliği ForProfile API'leriyle çalışmaz (BLOKE EDİCİ — kullanıcı kararı)
 
 `app.ts:494` ProfileContext'i `initialProfileId: 'default'` ile kurar (V3), ancak
 `PROFILE_ID_PATTERN` `'default'` kabul etmez (V14) ve `validateCanonicalProfileId`
@@ -438,31 +609,31 @@ ForProfile çağrıları runtime'da hata üretir.**
 plan dokümanı §12.4'te kullanıcı onayına sunulmuştur. **Bu hazırlık dokümanı seçim
 yapmaz**; A3 kodlaması bu karar olmadan anlamlı biçimde tamamlanamaz.
 
-### 11.2 Bootstrap kaynak verisinin profil ataması
+### 12.2 Bootstrap kaynak verisinin profil ataması
 
 `ensureInitialTasteBootstrap` global `cinetrack-data.json`'dan bootstrap eder (V16,
 V18). Bu verinin hangi profile ait sayılacağı ve `computeBootstrapSignature`'ın
 profil kapsamı tanımlı değildir. Tasarım sırasında çözülmesi gerekir; bu doküman
-veri taşıma/atama yapmaz (§13).
+veri taşıma/atama yapmaz (§14).
 
-### 11.3 Metadata cache paylaşımlılığı
+### 12.3 Metadata cache paylaşımlılığı
 
 Cache `contentId` bazlı ve tüm profiller arasında paylaşımlıdır (V22). Teorik
 çakışma riski düşüktür; profil bazlı cache ayrımı bu hazırlığın kapsamı dışındadır.
 
-### 11.4 Startup sağlık kontrolündeki global manifest okuması
+### 12.4 Startup sağlık kontrolündeki global manifest okuması
 
 `app.ts:588` `readTasteManifest(resolvedDataDir)` global okur (V19). Bunun profil
 kapsamına alınması (ve hangi profilin manifest'ine bakılacağı) ayrı bir tasarım
 noktasıdır; WP kapsamına alınmadı.
 
-### 11.5 Adapter `processedEventIds` Set'i
+### 12.5 Adapter `processedEventIds` Set'i
 
 `ServerTasteServiceAdapter.processedEventIds` profil bazlı değildir ve sınırsız
 büyür (`taste-service-adapter.ts:153`). Profil kapsamına alınması (anahtar biçimi:
 `eventId` mi `profileId:eventId` mi) ve bellek büyümesi A3 tasarımında netleştirilmelidir.
 
-### 11.6 Revision senkronizasyonu
+### 12.6 Revision senkronizasyonu
 
 ForProfile yazmalar `ProfileContext.commitRevision`'ı çağırmamaktadır
 (`taste-store.ts:551-575` yalnızca dosya yazar). Yazma sonrası revision'ın
@@ -470,7 +641,7 @@ nasıl güncelleneceği A3 tasarımında tanımlanmalıdır.
 
 ---
 
-## 12. Agent 2 İncelemesiyle Çakışabilecek Noktalar
+## 13. Agent 2 İncelemesiyle Çakışabilecek Noktalar
 
 Aşağıdaki maddeler Agent 2'nin paralel incelemesinde farklı yorumlanabilir;
 karar öncesi koordinasyon önerilir:
@@ -497,23 +668,41 @@ karar öncesi koordinasyon önerilir:
 6. **`upsertTasteMetadataInputs` kapsam etiketi:** Plan dokümanı bu fonksiyonu
    bazen "A2 entegrasyon" bazen "coordinator sorumluluğu" olarak sınıflandırır;
    bu doküman onu WP-3 (coordinator) içinde ele alır.
+7. **Hydration izolasyonu (v1.1.0 eki):** §8, WP-3 kapsamını hydration akışına
+   genişletir: `runHydrationLoop`/`scheduleTasteMetadataHydration`/`configureTasteHydration`
+   profil parametresi kazanır, `activeHydrations`/`hydrationApiKeys` anahtar şeması
+   değişir ve cache-hit turunda index upsert'i zorunlu hâle gelir (§8.5). Plan
+   dokümanı (PR #38) hydration akışını ayrıntılı ele almadığından bu genişletmenin
+   incelemede doğrulanması önerilir.
 
 ---
 
-## 13. Kesin Sınırlar
+## 14. Kesin Sınırlar — Karar Verilmeyen Konular
 
 Aşağıdaki konularda **bu hazırlık dokümanı karar vermez ve A3 kodlaması bu
 dokümandan yetki almaz**; tamamı kullanıcı kararıdır:
 
 | # | Konu | Sınır |
 |---|------|-------|
-| 1 | "default" profil kimliği sözleşmesinin değiştirilmesi | Karar yok — §11.1'de bloke edici olarak işaretli |
+| 1 | "default" profil kimliği sözleşmesinin değiştirilmesi | Karar yok — §12.1'de bloke edici olarak işaretli |
 | 2 | `PROFILE_ID_PATTERN` genişletilmesi | Yapılmayacak — pattern ve tüketici noktaları (V14) dokunulmaz |
 | 3 | `'profile-default'` dönüşümü | Yapılmayacak — yalnızca plan dokümanı §12.4'te seçenek olarak durur |
 | 4 | Eski global Taste verilerinin taşınması / migration | Yapılmayacak — `data/taste/` verisi olduğu gibi kalır |
-| 5 | Global API'lerin ForProfile wrapper'larına dönüştürülmesi | Yapılmayacak — global API'ler davranışını korur (§9.1) |
+| 5 | Global API'lerin ForProfile wrapper'larına dönüştürülmesi | Yapılmayacak — global API'ler davranışını korur (§10.1) |
 | 6 | A4 BackgroundManager Taste entegrasyonu | A3'e dahil değildir — `src/modules/background/*` dokunulmaz |
 | 7 | Backup, sync, restore, öneri algoritması | Dokunulmaz — `excel-profile-backup.ts`, `github-bidirectional-sync.ts`, `restore-journal.ts`, öneri modülleri kapsam dışı |
+
+---
+
+## Değişiklik Geçmişi
+
+- **v1.1.0:** §8 hydration akışı izolasyon analizi eklendi (mevcut akış doğrulaması,
+  profil aidiyeti ve `contentIds` kaynağı, ortak cache vs profil index ayrımı,
+  `activeHydrations`/`hydrationApiKeys` anahtar değerlendirmesi, çok profilli
+  hydration ve cache-hit boşluğu); WP-3 tablosu ve kabul kriteri hydration/bootstrap
+  dahil yeniden yazıldı; §6 ve §9 tabloları hydration çağrı zinciriyle güncellendi.
+  Kaynak kod değişmedi; test/CI çalıştırılmadı.
+- **v1.0.0:** İlk hazırlık dokümanı.
 
 ---
 
