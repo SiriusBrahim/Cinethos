@@ -103,3 +103,36 @@ Bu denetim yalnızca raporlamadır; kod, test, migration veya merge işlemi yap�
 
 ---
 *Kaynaklar: PR #29 (`15884724`), PR #30 (`6918ae9e`), PR #32 (`e317bd55`), `origin/master` @ `2ffe4bf82a5d512c1dafd7754498554e443c9098`.*
+
+---
+
+## 8. EK DENETİM — PR #32 commit `a0959e5` (2026-11-17)
+
+Ajan 2, B1 (P2) bulgusunu gideren `a0959e592281e6072fb8b1c9aa7394e48a70d1d6` ("docs(mia): R2-A1 koşullar belgesini düz Markdown biçimine dönüştür") commit'ini göndermiştir. Bağımsız doğrulama:
+
+| Kontrol | Sonuç |
+|---|---|
+| Yeni head SHA | `a0959e592281e6072fb8b1c9aa7394e48a70d1d6` ✓ (PR #32 OPEN, 2 commit: `e317bd55` → `a0959e5`) |
+| 1. Dosya düz Markdown mı? | **EVET** — dosya `# MIA Faz 5 — R2-A1 Kodlama Öncesi Uygulama Koşulları` başlığıyla düz Markdown olarak başlıyor; base64 imzası (`IyBNSUE...`) kalmamış; diff artık `128 insertions(+), 1 deletion(-)` (base64 satırının silinip gerçek içeriğin eklenmesi) |
+| 2. 128 satırlık onaylanan içerik korundu mu? | **EVET** — yeni dosya, ilk denetimde decode edilen `/tmp` kopyasıyla `diff` üzerinde **bayt bayt özdeş** (`IDENTIK`); hiçbir içerik ekleme/çıkarma/değişiklik yok |
+| 3. PR #30'un 4 koşulu hâlâ karşılanıyor mu? | **EVET** — içerik değişmediği için K1 (§1 heartbeat/lease), K2 (§2 kilit sırası + birlikte tutma), K3 (§3 kabul kriterleri), K4 (§4 PR #30 düzeltmeleri) aynen geçerli; §5'teki 6 açık karar da aynen korunuyor |
+| CI (yeni commit) | 3 kontrol ✅ — Lint/Test/Build/Smoke + Playwright E2E (run `44092926130`), Salt okunur bakım analizi (run `44092926131`) |
+| Kapsam | Yalnızca `docs/mia/faz5-r2-a1-uygulama-kosullari.md` — docs-only, kod/test değişikliği yok ✓ |
+
+### Güncellenmiş bulgu durumu
+
+- **B1 (P2) — ÇÖZÜLDÜ:** Belge artık düz Markdown; GitHub'da okunabilir ve diff incelenebilir. Merge'e format engeli kalmadı.
+- **B2, B3 (P3):** Değişmedi — A1 tasarım PR'ında sabitlenmesi gereken taahhütler olarak geçerli.
+- **B4 (P3):** PR #31 (R1) hâlâ merge edilmemiş durumda; süreç ön koşulu geçerli.
+- **B5 (P3):** A1 uygulama PR'ının denetiminde doğrulanacak.
+
+### Güncellenmiş nihai karar
+
+**APPROVED WITH CONDITIONS — koşul 1 (P2/B1) karşılandı; R2-A1 kodlamasına geçiş için kalan koşullar:**
+
+1. ~~PR #32 dosyası düz Markdown olarak yeniden commit edilmeli~~ → **TAMAMLANDI (`a0959e5`)**.
+2. §5'teki 6 açık karar + heartbeat/lease sayısal parametreleri + manifest+profil birlikte tutma operasyon listesi A1 tasarım PR'ında sabitlenmeli.
+3. PR #31 (R1) merge edilmeli.
+4. §3 kabul kriterlerinin kalıcı otomatik testlere dönüştürüldüğü A1 denetiminde doğrulanmalı.
+
+PR #32'nin merge edilmesi için artık format engeli yoktur; merge kararı kullanıcıya aittir. Bu ek denetim salt okunur incelemedir; PR #32 değiştirilmemiş, merge yapılmamıştır.
