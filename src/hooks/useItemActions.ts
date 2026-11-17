@@ -3,17 +3,32 @@
 // Puanlama (rateItem -> ratedAt) ve durum tamamlama (status === 'completed' -> completedAt)
 // işlemlerinde gerçek zamanlı ISO-8601 zaman damgalarını yönetir.
 // MIA Faz 1: Kütüphane mutasyonlarını AppEventBus + ProfileContext üzerinden yayınlar.
+// MIA Faz 3: Kayıt üretimi/zaman damgaları `modules/library/operations.ts`
+// (Library Manager ile ortak tek kaynak) üzerinden yapılır.
 // ===========================================================================
 
 import { createAppEvent } from '../app/app-event-bus.ts';
 import type {
   IEventPublisher,
   IProfileContext,
-  LibraryListId,
   TypedAppEvent,
   WriteProfileRef,
 } from '../contracts/index.ts';
-import { findSavedItem, normalizeSavedItem, type SavedItem } from '../core/cinetrack-core.ts';
+import {
+  buildLibraryItem,
+  mapWatchStatusToLibraryList,
+  type ItemWatchStatus,
+} from '../modules/library/operations.ts';
+
+// MIA Faz 3: kütüphane kuralları tek kaynakta (`modules/library/operations.ts`).
+// Eski import yolları bozulmasın diye buradan yeniden dışa açılır.
+export { mapWatchStatusToLibraryList, resolveItemActionTimestamps } from '../modules/library/operations.ts';
+export type {
+  ItemWatchStatus,
+  ResolvedItemTimestamps,
+  ResolveTimestampOptions,
+} from '../modules/library/operations.ts';
+import { findSavedItem, type SavedItem } from '../core/cinetrack-core.ts';
 import type { TasteEvent, TasteMetadataInput } from '../core/taste/types.ts';
 import {
   extractTasteMetadataFromItem,
@@ -52,17 +67,6 @@ function dispatchLiveTasteEvent(
   void postTasteEvent(event, metadata).catch((error) => {
     reportPersistenceFailure(error, undefined, onError ? (e) => onError(e) : undefined);
   });
-}
-
-export function mapWatchStatusToLibraryList(status?: ItemWatchStatus | string | null): LibraryListId {
-  switch (status) {
-    case 'completed':
-      return 'watched';
-    case 'watching':
-      return 'watching';
-    default:
-      return 'watchlist';
-  }
 }
 
 /**
@@ -116,85 +120,6 @@ export function emitHideTasteEvent(
   };
   dispatchLiveTasteEvent(event, rawItem, onError);
   return event;
-}
-
-export type ItemWatchStatus = 'watching' | 'watchlist' | 'completed';
-
-export interface ResolvedItemTimestamps {
-  effectiveStatus: ItemWatchStatus;
-  ratedAt?: string;
-  completedAt?: string;
-  addedAt: string;
-  updatedAt: string;
-  personalRatingCleared: boolean;
-}
-
-export interface ResolveTimestampOptions {
-  /** rateItem doğrudan çağrıldığında mevcut puan aynı olsa bile ratedAt yenilenir */
-  forceRatedAt?: boolean;
-  /** Test edilebilirlik için opsiyonel ISO zaman damgası (varsayılan: new Date().toISOString()) */
-  nowIso?: string;
-}
-
-/**
- * Puanlama ve durum geçişleri için V1.5 zaman damgalarını belirler.
- * - Yeni bir puan verildiğinde veya puan değiştiğinde `ratedAt` güncellenir.
- * - `status` 'completed' durumuna geçtiğinde `completedAt` güncellenir.
- * - Eski (imported) kayıtlarda ilgili alan değişmediyse `undefined` korunur.
- */
-export function resolveItemActionTimestamps(
-  existing: SavedItem | undefined,
-  requestedStatus: ItemWatchStatus,
-  personalRating: number | '',
-  options: ResolveTimestampOptions = {}
-): ResolvedItemTimestamps {
-  const nowIso = options.nowIso ?? new Date().toISOString();
-  const hasValidRating =
-    typeof personalRating === 'number' &&
-    Number.isFinite(personalRating) &&
-    personalRating >= 1 &&
-    personalRating <= 10;
-
-  const effectiveStatus: ItemWatchStatus =
-    hasValidRating && (requestedStatus === 'watchlist' || !requestedStatus)
-      ? 'completed'
-      : requestedStatus;
-
-  const existingHasValidRating = Boolean(
-    existing &&
-      existing.personal_rating !== '' &&
-      Number.isFinite(Number(existing.personal_rating)) &&
-      Number(existing.personal_rating) >= 1 &&
-      Number(existing.personal_rating) <= 10
-  );
-
-  const personalRatingCleared = Boolean(existingHasValidRating && !hasValidRating);
-
-  let ratedAt: string | undefined;
-  if (hasValidRating) {
-    const ratingChanged =
-      !existingHasValidRating || Number(existing?.personal_rating) !== personalRating;
-    ratedAt = options.forceRatedAt || ratingChanged ? nowIso : existing?.ratedAt;
-  } else {
-    ratedAt = undefined;
-  }
-
-  let completedAt: string | undefined;
-  if (effectiveStatus === 'completed') {
-    const transitionedToCompleted = !existing || existing.status !== 'completed';
-    completedAt = transitionedToCompleted ? nowIso : existing.completedAt;
-  } else {
-    completedAt = undefined;
-  }
-
-  return {
-    effectiveStatus,
-    ratedAt,
-    completedAt,
-    addedAt: existing?.addedAt || nowIso,
-    updatedAt: nowIso,
-    personalRatingCleared,
-  };
 }
 
 export interface UseItemActionsHandlers {
@@ -406,26 +331,24 @@ export function useItemActions(handlers: UseItemActionsHandlers): UseItemActions
     });
 
     const nowIso = new Date().toISOString();
-    const timestamps = resolveItemActionTimestamps(existing, status, personalRating, {
+    const normalized = buildLibraryItem({
+      existing,
+      incoming: item,
+      status,
+      rating: personalRating,
+      tracking,
       forceRatedAt,
       nowIso,
     });
-
-    const normalized = normalizeSavedItem({
-      ...existing,
-      ...item,
-      media_type: mediaType,
-      ...tracking,
-      status: timestamps.effectiveStatus,
-      personal_rating: personalRating || '',
-      personal_rating_cleared: timestamps.personalRatingCleared,
-      ratedAt: timestamps.ratedAt,
-      completedAt: timestamps.completedAt,
-      addedAt: timestamps.addedAt,
-      updatedAt: timestamps.updatedAt,
-      isDemo: false,
-    });
     if (!normalized) return null;
+    const timestamps = {
+      effectiveStatus: normalized.status as ItemWatchStatus,
+      ratedAt: normalized.ratedAt,
+      completedAt: normalized.completedAt,
+      addedAt: normalized.addedAt,
+      updatedAt: normalized.updatedAt ?? nowIso,
+      personalRatingCleared: Boolean(normalized.personal_rating_cleared),
+    };
 
     if (profileContext) {
       profileContext.assertWritable(profileRef);
@@ -527,33 +450,26 @@ export function useItemActions(handlers: UseItemActionsHandlers): UseItemActions
     const nextStatus: ItemWatchStatus =
       hasValidRating && currentStatus === 'watchlist' ? 'completed' : currentStatus;
 
-    // rateItem çalıştığında ratedAt alanı new Date().toISOString() ile güncellenir
+    // rateItem çalıştığında ratedAt alanı her durumda tazelenir (forceRatedAt).
     const ratedNowIso = new Date().toISOString();
-    const timestamps = resolveItemActionTimestamps(existing, nextStatus, rating, {
+    const normalized = buildLibraryItem({
+      existing,
+      incoming: item,
+      status: nextStatus,
+      rating: hasValidRating ? rating : '',
+      tracking,
       forceRatedAt: hasValidRating,
       nowIso: ratedNowIso,
     });
-
-    const normalized = normalizeSavedItem({
-      ...existing,
-      ...item,
-      media_type: mediaType,
-      ...tracking,
-      status: timestamps.effectiveStatus,
-      personal_rating: hasValidRating ? rating : '',
-      personal_rating_cleared: timestamps.personalRatingCleared,
-      ratedAt: hasValidRating ? ratedNowIso : undefined,
-      completedAt:
-        timestamps.effectiveStatus === 'completed'
-          ? !existing || existing.status !== 'completed'
-            ? ratedNowIso
-            : existing.completedAt
-          : undefined,
-      addedAt: timestamps.addedAt,
-      updatedAt: ratedNowIso,
-      isDemo: false,
-    });
     if (!normalized) return null;
+    const timestamps = {
+      effectiveStatus: normalized.status as ItemWatchStatus,
+      ratedAt: normalized.ratedAt,
+      completedAt: normalized.completedAt,
+      addedAt: normalized.addedAt,
+      updatedAt: normalized.updatedAt ?? ratedNowIso,
+      personalRatingCleared: Boolean(normalized.personal_rating_cleared),
+    };
 
     if (profileContext) {
       profileContext.assertWritable(profileRef);

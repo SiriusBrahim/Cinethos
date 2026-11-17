@@ -73,3 +73,39 @@ Cinethos'te kalıcı veri ve önbellek katmanları görevlerine göre kesin sın
    - **Hata Sınıflandırması ve Gizlilik**: `404` yalnızca dosya yokluğu olarak değerlendirilir; `401/403` (`auth_error`), `429` (`rate_limit`), `409` (`conflict` — en fazla 3 yeniden deneme), ağ kesintisi (`network_error`), bozuk JSON ve boyut aşımı ayrı sınıflandırılır, tüm hata metinlerinde gizli anahtarlar `redactSecrets` ile temizlenir.
 4. **TMDB Saklama Politikası Notu**:
    - Yerel katalog yalnızca uygulamanın kişisel öneri puanlaması ve çevrimdışı önbelleği için gerekli temel metaveri alanlarını saklar. TMDB API kullanım koşulları uyarınca TMDB verileri herkese açık bir katalog veya üçüncü taraf veri servisi olarak paylaşılmamalıdır.
+
+---
+
+## 5. MIA Faz 3 — Library Manager ve Content Manager
+
+Faz 3, kullanıcı kütüphanesi işlemleri ile ortak içerik verisi yönetimini iki merkezi servise ayırır. Her iki servis de Faz 1/2 altyapısını (Repository, EventBus, ModuleRegistry, ProfileContext, `ContentMetadataSource`, `ContentProcessingCoordinator`) **yeniden kullanır**; yeni bir repository, event bus veya TMDB istemcisi oluşturulmaz.
+
+### 5.1 Katmanlar ve dosyalar
+
+| Katman | Dosya | Sorumluluk |
+|---|---|---|
+| Ortak kurallar (saf) | `src/modules/library/operations.ts` | Liste ↔ izleme durumu eşlemesi, `ratedAt`/`completedAt`/`addedAt`/`updatedAt` geçişleri, normalize `SavedItem` üretimi (`buildLibraryItem`), içerik alanı allowlist'i (`pickContentFields`). Ağ/repository erişimi yoktur. |
+| Sunucu kütüphane servisi | `src/modules/library/service.ts` | `ILibraryService` uygulaması (`addItem`, `updateItem`, `removeItem`, `getItem`). `ServerPrimaryDataRepository` + `ProfileContext` + `AppEventBus` + `diffLibraryEvents` kullanır. |
+| Sunucu içerik servisi | `src/modules/content/service.ts` | `IContentService` uygulaması (`getMetadata`, `enrichMissing`, `searchCatalog`, `canonicalizeKey`). Mevcut `ContentMetadataSource` ve içerik kaydı/kuyruk portlarını kullanır. |
+| Katalog okuma genişletmesi | `src/server/content-metadata-source.ts` | `listCatalogEntries()` — Content Manager'ın katalog aramasını ikinci bir dosya okuyucusu olmadan yapması için mevcut okuyucunun üzerine eklenmiş tek metot. |
+| İstemci eylem katmanı | `src/hooks/useItemActions.ts` | Kayıt üretimini `buildLibraryItem` üzerinden yapar; kurallar artık tek kaynakta. Dışa açılan API ve EventBus davranışı değişmedi. |
+| Uygulama bağlama | `src/server/app.ts` | `createCineTrackApp` dönüşünde `libraryService` ve `contentService`; koordinatörün mevcut `metadataSource`/`getByMediaKey`/`enqueueRawItem` portları enjekte edilir. |
+
+### 5.2 Veri sınırları (değiştirilemez)
+
+1. **Kullanıcı verisi ortak içeriğe yazılamaz.** `LibraryService` yalnızca `data/cinetrack-data.json` içindeki profil kayıtlarını yazar; katalog, `content_records`, vektör/atmosfer alanları ve poster deposu bu servisin yazma kapsamı dışındadır.
+2. **Ortak içerik kullanıcıdan bağımsızdır.** `removeItem` yalnızca profil kaydını siler ve `deleted_keys` içine tombstone yazar; `ContentService` hiçbir kullanıcı kaydını silmez veya değiştirmez.
+3. **Film/dizi kimliği ayrıdır.** Tüm girişler `parseMediaKey` ile doğrulanır, `makeMediaKey` ile `movie:<id>` / `tv:<id>` kanonik biçimine getirilir. `ContentService.canonicalizeKey` yalnızca pozitif tamsayı kimliği kabul eder.
+4. **Kişisel puan ile TMDB puanı karışmaz.** `SavedItem.personal_rating` yalnızca kullanıcı girdisinden (`rating`) yazılır; `ContentMetadata.externalRating` TMDB `vote_average` değeridir ve kullanıcı kaydına aktarılmaz.
+5. **Metaveri kanalı allowlist ile sınırlıdır.** `AddLibraryItemInput.metadata` / `UpdateLibraryItemInput.metadata` içinden yalnızca `pickContentFields` allowlist'indeki içerik alanları kopyalanır; `status`, `personal_rating`, not, ilerleme ve profil alanları bu kanaldan yazılamaz.
+6. **Mevcut akışlar korunur.** `PUT /api/data` + `diffLibraryEvents` + `If-Match` revizyon davranışı, yedekleme, GitHub eşitleme, profil yönetimi ve tüm mevcut HTTP sözleşmeleri değişmedi; Faz 3 yalnızca yazma/okuma kurallarını merkezileştirir.
+
+### 5.3 Olay yayımı
+
+`LibraryService` her başarılı yazımdan sonra `diffLibraryEvents(before, after)` üretir ve olayları mevcut `AppEventBus` üzerinden yayınlar. Yeni olay türü eklenmemiştir. Kalıcı yazma başarılı olup olay yayımı başarısız olursa sonuç `ok: false` + `retryable: true` ve açıklayıcı mesajla döner (sessiz yutma yoktur).
+
+### 5.4 Kademeli entegrasyon ve kalan işler
+
+- Tek öğelik UI eylemleri `useItemActions` → `onCommitSavedItem` → `PUT /api/data` yolunu korur; kayıt üretimi artık Library Manager ile ortak `operations.ts` üzerindendir.
+- `libraryService` / `contentService`, `createCineTrackApp` üzerinden programatik istemcilere ve sonraki fazlardaki HTTP uçlarına hazırdır. UI'nin doğrudan `PUT /api/data` yazımının tamamen HTTP uçlarına taşınması kademeli olarak yapılacaktır (Faz 3 kapsamı dışında bırakılan test/CI işleriyle birlikte değerlendirilmelidir).
+- Eksik metadata zenginleştirme mevcut içerik kuyruğuna devredilir; kuyruk işleyicisi ve vektör üretimi Content Intelligence'ın sorumluluğunda kalır.
