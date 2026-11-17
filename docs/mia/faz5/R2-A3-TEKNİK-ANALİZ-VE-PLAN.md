@@ -1137,23 +1137,25 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 
 ### 15.2 Bloke Edici Sorunlar
 
-#### 🟡 **P1 Bloke Edici (A3 Sırasında Çözülmeli)**
+#### 🔴 P1 — A3 Kodlamasından Önce Kullanıcı Kararı Gereken
 
-1. ⚠️ **"default" profil kimlik sözleşmesi uyumsuzluğu** - PROFILE_ID_PATTERN tarafından kabul edilmiyor, validateCanonicalProfileId hata fırlatır
-   - **Çözüm:** Seçenekler §12.4'te belirtildi. Kullanıcı onayı gerektirir.
-   - **Etki:** A3 sırasında çözülmeli, A1 altyapısını değiştirmez
-   - **Dosya:** src/server/app.ts:494, src/core/cinetrack-core.ts:717, src/server/taste-profile-scope.ts:166
+1. ⚠️ **`default` profil kimlik sözleşmesi uyumsuzluğu** — `PROFILE_ID_PATTERN` tarafından kabul edilmiyor; `validateCanonicalProfileId()` hata fırlatır.
+   - **Karar:** §12.4'teki A/B/C seçeneklerinden biri kullanıcı tarafından seçilmelidir.
+   - **Blokaj:** Bu karar verilmeden `initialProfileId` değiştirilemez, kimlik pattern'i genişletilemez ve profil kapsamlı Store geçişi başlatılamaz.
+   - **Dosyalar:** `src/server/app.ts:494`, `src/core/cinetrack-core.ts:717`, `src/server/taste-profile-scope.ts:166`.
 
-2. ⚠️ **Adapter wiring eksik** - `app.ts:498-501` adapter oluşturulurken profileContext yollanmıyor
-   - **Çözüm:** Mevcut profileContext'i adapter'a aktar (src/server/app.ts:498-501)
-   - **Etki:** Minimal, TasteServiceAdapterOptions zaten profileContext?: IProfileContext destekliyor (src/server/taste-service-adapter.ts:38)
-   - **Dosya:** src/server/app.ts:498-501
+2. ⚠️ **Eski global Taste verilerinin korunma stratejisi** — yeni ForProfile yolları eski `data/taste/` verilerini otomatik olarak devralmaz.
+   - **Karar:** §12.4'teki eski veri erişimi ve kullanıcıya sunum davranışı kullanıcı tarafından onaylanmalıdır.
+   - **Blokaj:** Kullanıcı kararı olmadan migration, otomatik taşıma veya legacy erişimin kesilmesi yapılamaz.
 
-#### 🟡 **P1 Bloke Edici (A3 Sırasında Çözülmeli)**
+#### 🟡 P1 — A3 Uygulaması Sırasında Çözülecek Teknik İşler
 
-1. ⚠️ Route'lar global API kullanıyor (src/server/taste-routes.ts:305-725)
-2. ⚠️ Rebuild Coordinator profil kapsamlı değil (src/server/taste-rebuild-coordinator.ts:339-635)
-3. ⚠️ activeRebuildChains anahtarı sadece dataDir (src/server/taste-rebuild-coordinator.ts:488)
+1. ⚠️ **Adapter wiring eksik** — `app.ts:498-501` adapter oluşturulurken `profileContext` gönderilmiyor.
+   - **Çözüm:** Mevcut ProfileContext'i adapter'a aktar; `TasteServiceAdapterOptions` zaten `profileContext?: IProfileContext` destekliyor (`src/server/taste-service-adapter.ts:38`).
+   - **Ayrıca:** Aynı ProfileContext, `createTasteRouter` options üzerinden route katmanına ayrı olarak aktarılmalı.
+2. ⚠️ Route'lar global API kullanıyor (`src/server/taste-routes.ts:305-725`); onaylanan veri stratejisine göre uygun API yoluna geçirilmeli.
+3. ⚠️ Rebuild Coordinator profil kapsamlı değil (`src/server/taste-rebuild-coordinator.ts:339-635`).
+4. ⚠️ `activeRebuildChains` anahtarı yalnızca `dataDir` (`src/server/taste-rebuild-coordinator.ts:488`); profil kapsamı eklendiğinde `dataDir + profileId` ile ayrıştırılmalı.
 
 ### 15.3 Sonuç ve Başlama Koşulları
 
