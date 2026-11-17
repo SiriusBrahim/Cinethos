@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
-    branches: [main, master, agent-2/phase-3]
+    branches: [main, master, agent-2/phase-3, agent-2/phase-4-background-manager]
 
 jobs:
   verify:
