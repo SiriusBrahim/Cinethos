@@ -4,13 +4,61 @@
 // ===========================================================================
 
 import { randomUUID } from "node:crypto";
-import fsPromises from "node:fs/promises";
 import path from "node:path";
 import {
   CorruptJsonFileError,
   writeJsonFileAtomicAsync,
   readJsonFileWithRecoveryAsync,
 } from "./atomic-json.ts";
+import {
+  TASTE_LOCK_DATA_SCOPE,
+  withScopedTasteLock,
+} from "./taste-profile-scope.ts";
+
+// R2-A1 profil kapsamı yüzeyi (kanonik kimlik, kodlama, eşleme manifesti,
+// kapsam kilidi). A2 çağıranları tek giriş noktası olarak buradan kullanabilir.
+export {
+  TASTE_LOCK_DATA_SCOPE,
+  TASTE_LOCK_DEFAULTS,
+  TASTE_PROFILE_ID_MAP_FILENAME,
+  TASTE_PROFILE_ID_MAP_SCHEME,
+  TASTE_PROFILE_ID_MAP_SCOPE,
+  TASTE_PROFILE_ID_MAP_VERSION,
+  TASTE_PROFILE_ID_MAX_LENGTH,
+  TASTE_SHARED_METADATA_CACHE_SCOPE,
+  TasteLockError,
+  TasteProfileScopeError,
+  acquireTasteLock,
+  decodeProfileIdSafe,
+  encodeProfileIdSafe,
+  ensureTasteProfileIdMapEntry,
+  isTasteLockOwnedBy,
+  isTasteLockProvablyStale,
+  parseTasteProfileIdMap,
+  readTasteLockState,
+  readTasteProfileIdMap,
+  readTasteProfileIdMapEntry,
+  resolveTasteLockDir,
+  resolveTasteLockPath,
+  resolveTastePathsForProfile,
+  resolveTasteProfileIdMapPath,
+  resolveTasteProfilesRoot,
+  resolveTasteRoot,
+  validateCanonicalProfileId,
+  withScopedTasteLock,
+  writeTasteProfileIdMap,
+} from "./taste-profile-scope.ts";
+export type {
+  EnsureTasteProfileIdMapResult,
+  TasteLockHandle,
+  TasteLockRecord,
+  TasteLockTimings,
+  TasteProfileIdMap,
+  TasteProfileIdMapEntry,
+  TasteProfileScopePaths,
+  TasteProfileStorePaths,
+  TasteScopedLockRequest,
+} from "./taste-profile-scope.ts";
 import type {
   TasteEvent,
   TasteProfile,
@@ -100,105 +148,13 @@ function isValidJsonRecord<T extends object>(raw: unknown): T | null {
   return raw as T;
 }
 
-// === Yazma Serileştirme Kilidi (Faz 1B — süreç içi FIFO kuyruk + süreçler arası .taste.lock) ===
-const tasteWriteChains = new Map<string, Promise<unknown>>();
-const TASTE_FILE_LOCK_STALE_MS = 15_000;
-const TASTE_FILE_LOCK_TIMEOUT_MS = 10_000;
-
-function isProcessAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err: unknown) {
-    return (err as { code?: string })?.code === "EPERM";
-  }
-}
-
-async function withCrossProcessTasteLock<T>(
-  dataDir: string,
-  task: () => Promise<T>
-): Promise<T> {
-  const tasteDir =
-    dataDir === "data" ? TASTE_DATA_DIR : path.join(dataDir || "data", "taste");
-  await fsPromises.mkdir(tasteDir, { recursive: true });
-  const lockPath = path.join(tasteDir, ".taste.lock");
-  const token = `${process.pid}:${Date.now()}:${randomUUID()}`;
-  const deadline = Date.now() + TASTE_FILE_LOCK_TIMEOUT_MS;
-  let backoffMs = 4;
-
-  while (true) {
-    try {
-      const handle = await fsPromises.open(lockPath, "wx", 0o600);
-      try {
-        await handle.writeFile(token, "utf8");
-      } finally {
-        await handle.close();
-      }
-      break;
-    } catch (err: unknown) {
-      const code = (err as { code?: string })?.code;
-      if (code !== "EEXIST") {
-        throw err;
-      }
-
-      try {
-        const [stat, content] = await Promise.all([
-          fsPromises.stat(lockPath),
-          fsPromises.readFile(lockPath, "utf8").catch(() => ""),
-        ]);
-        const holderPid = Number(content.split(":")[0]);
-        const ageMs = Date.now() - stat.mtimeMs;
-        if (ageMs > TASTE_FILE_LOCK_STALE_MS || (holderPid > 0 && !isProcessAlive(holderPid))) {
-          await fsPromises.unlink(lockPath).catch(() => undefined);
-          continue;
-        }
-      } catch {
-        // Kilit başka bir işlem tarafından az önce serbest bırakılmış olabilir
-      }
-
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `Taste store dosya kilidi zaman aşımına uğradı (${lockPath}).`
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      backoffMs = Math.min(25, Math.round(backoffMs * 1.5));
-    }
-  }
-
-  try {
-    return await task();
-  } finally {
-    try {
-      const current = await fsPromises.readFile(lockPath, "utf8").catch(() => "");
-      if (!current || current === token) {
-        await fsPromises.unlink(lockPath).catch(() => undefined);
-      }
-    } catch {
-      // Temizleme hatası asıl iş sonucunu maskelememelidir
-    }
-  }
-}
-
+// === Yazma Serileştirme Kilidi (R2-A1 — süreç içi FIFO + kapsam kilidi) ===
+// Legacy/global taste yazımları `taste-data` kapsamını kullanır. Kilit dosyası
+// adı (`<taste-root>/.taste.lock`) geri uyumluluk için korunur; içerik artık
+// lockId/ownerToken/hostname/lease alanlı kayıt ve lease/heartbeat denetimiyle
+// yönetilir. Canlı kilit çalınmaz; stale devralma atomik ve kanıt koşulludur.
 function serializeTasteWrite<T>(dataDir: string, task: () => Promise<T>): Promise<T> {
-  const key = path.resolve(dataDir || "data");
-  const prev = tasteWriteChains.get(key) ?? Promise.resolve();
-  const next = prev.then(
-    () => withCrossProcessTasteLock(dataDir, task),
-    () => withCrossProcessTasteLock(dataDir, task)
-  );
-  const settled = next.then(
-    () => undefined,
-    () => undefined
-  );
-  tasteWriteChains.set(key, settled);
-  void settled.finally(() => {
-    if (tasteWriteChains.get(key) === settled) {
-      tasteWriteChains.delete(key);
-    }
-  });
-  return next;
+  return withScopedTasteLock({ dataDir, scope: TASTE_LOCK_DATA_SCOPE }, task);
 }
 
 // === Event Store ===
