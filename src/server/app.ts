@@ -49,6 +49,7 @@ import {
   subscribeTasteAdapterToEventBus,
 } from './taste-service-adapter.ts';
 import { readTasteManifest } from './taste-store.ts';
+import { validateCanonicalProfileId } from './taste-profile-scope.ts';
 import { configureTasteHydration } from './taste-rebuild-coordinator.ts';
 import {
   createContentProcessingCoordinator,
@@ -80,9 +81,21 @@ async function synchronizeProfileContext(
   context: ProfileContext,
   document: DataDocument
 ): Promise<void> {
-  const activeProfileId = String(
-    document.activeProfileId || document.profiles?.[0]?.id || 'default'
+  // R2-A3 §12.3: ProfileContext'e yalnızca kanonik profil kimliği yazılır;
+  // 'default' gibi kanonik olmayan bir değer sessizce context'e taşınmaz.
+  const candidateProfileId = String(
+    document.activeProfileId || document.profiles?.[0]?.id || ''
   );
+  let activeProfileId: string;
+  try {
+    activeProfileId = validateCanonicalProfileId(candidateProfileId);
+  } catch {
+    console.warn(
+      '[profile-context] Kanonik olmayan aktif profil kimliği; eşitleme atlandı:',
+      JSON.stringify(candidateProfileId)
+    );
+    return;
+  }
   // Number.isSafeInteger tip daraltması yapmadığı için açık typeof kontrolü gerekir.
   const revision =
     typeof document.revision === 'number' && Number.isSafeInteger(document.revision)
@@ -491,12 +504,15 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     },
   });
   const profileContext = createProfileContext({
-    initialProfileId: 'default',
+    // R2-A3 §12.3 mekanizma (a): açılış kimliği belge normalizasyonuyla hizalı
+    // (`PROFILE_ID_PATTERN` 'profile-default' kabul eder, 'default' kabul etmez).
+    initialProfileId: 'profile-default',
     initialRevision: 0,
     eventPublisher: eventBus,
   });
   const tasteAdapter = createServerTasteServiceAdapter({
     dataDir: resolvedDataDir,
+    profileContext,
     rebuildOnEvent: true,
   });
   const tmdbProxy = createTmdbProxyService(options);
@@ -2664,6 +2680,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     '/api/taste',
     personalReadGuard,
     createTasteRouter(resolvedDataDir, {
+      profileContext,
       tmdbApiKey: options.tmdbApiKey,
       eventBus,
       tasteAdapter,
