@@ -767,35 +767,64 @@ function triggerTasteProfileRebuild(
 
 A3 uygulaması **aşağıdaki sırayla** gerçekleştirilmelidir:
 
-#### 1. ProfileContext'in app/router/adapter zincirine aktarılması (P0)
-- **Dosya:** `src/server/app.ts`
-- **Fonksiyon:** `createServerTasteServiceAdapter()` çağrısı
-- **Değişiklik:** Mevcut profileContext'i adapter'a aktar
-- **Bağımlılık:** Yok (TasteServiceAdapterOptions zaten profileContext?: IProfileContext destekliyor)
+#### 1. ProfileContext'in app/router/adapter zincirine aktarılması (P1)
 
+**Zincir:** `app.ts` → `ProfileContext` → `TasteServiceAdapter` → `createTasteRouter` → `route handlers`
+
+**Sorumluluklar:**
+- **app.ts:** ProfileContext oluşturur ve adapter'a aktarır
+- **TasteServiceAdapter:** ProfileContext'i alır ve router'a aktarır
+- **createTasteRouter:** Router örnekini oluşturur, ProfileContext'i router options'a yerleştirir
+- **route handlers:** ProfileContext'e closure/dependency injection yoluyla erişir
+
+**Mevcut Durum:**
 ```typescript
-// src/server/app.ts:498-501 (mevcut)
+// src/server/app.ts:493-501
+const profileContext = createProfileContext({
+  initialProfileId: 'default',
+  initialRevision: 0,
+  eventPublisher: eventBus,
+});
 const tasteAdapter = createServerTasteServiceAdapter({
   dataDir: resolvedDataDir,
   rebuildOnEvent: true,
+  // ❌ profileContext YOK
 });
+```
 
-// ✅ A3 sonrası
+**Hedef Durum:**
+```typescript
+// src/server/app.ts:493-501
+const profileContext = createProfileContext({
+  initialProfileId: 'default',  // ⚠️ Karar bekliyor
+  initialRevision: 0,
+  eventPublisher: eventBus,
+});
 const tasteAdapter = createServerTasteServiceAdapter({
   dataDir: resolvedDataDir,
-  profileContext,  // ✅ YENİ - mevcut ProfileContext aktarılıyor
+  profileContext,  // ✅ ProfileContext aktarılıyor
   rebuildOnEvent: true,
 });
 ```
 
-**Not:** Adapter router'a aktarılacak. Route handler'larının ProfileContext'e ihtiyacı varsa router options veya closure üzerinden erişeceği açıkça belirtilecek. Fallback adapter oluşturuluyorsa onun da profil bağlamı alması sağlanacak.
+**Fallback Adapter:**
+```typescript
+// Fallback adapter örneği de aynı ProfileContext'i almalı
+const fallbackAdapter = createServerTasteServiceAdapter({
+  dataDir: resolvedDataDir,
+  profileContext,  // ✅ Aynı ProfileContext
+  rebuildOnEvent: false,
+});
+```
 
-#### 2. Profil kimliğinin route katmanında tek ve güvenilir kaynaktan alınması (P0)
+**⚠️ NOT:** `req.profileContext` gibi var olmayan request özellikleri kullanılmaz. ProfileContext zaten uygulama katmanında mevcut, dependency injection yoluyla aktarılır.
+
+#### 2. Profil kimliğinin route katmanında tek ve güvenilir kaynaktan alınması (P1)
 - **Dosya:** `src/server/taste-routes.ts`
-- **Yeni mekanizma:** `getProfileIdFromRequest()` fonksiyonu (ProfileContext/Query/Header)
+- **Yeni mekanizma:** `getProfileIdFromRequest(profileContext: ProfileContext)` - tek kaynak ProfileContext
 - **Bağımlılık:** ProfileContext wiring (app.ts → adapter → router)
 
-#### 3. Route Store çağrılarının ForProfile API'lerine geçirilmesi (P0)
+#### 3. Route Store çağrılarının ForProfile API'lerine geçirilmesi (P1)
 - **Dosya:** `src/server/taste-routes.ts`
 - **Değişiklik:** Tüm global API çağrıları → ForProfile API'leri
 - **Bağımlılık:** Profil kimliği alma mekanizması
@@ -823,7 +852,7 @@ const tasteAdapter = createServerTasteServiceAdapter({
 - **Değişiklik:** Global API'ler değişmeden kalmalı
 - **Bağımlılık:** Yok
 
-#### 8. İzolasyon, paralel işlem, legacy uyumluluk ve regresyon testleri (P0-P2)
+#### 8. İzolasyon, paralel işlem, legacy uyumluluk ve regresyon testleri (P1-P2)
 - **Dosya:** `tests/taste/*.test.mjs`
 - **Değişiklik:** Yeni test dosyaları
 - **Bağımlılık:** Tüm A3 değişiklikleri
@@ -836,7 +865,7 @@ const tasteAdapter = createServerTasteServiceAdapter({
 - Store API'leri ForProfile geçişi
 - Rebuild Coordinator profil kapsamlı hâle getirme
 - İzolasyon ve eşzamanlılık koruması
-- "default" → "profile-default" dönüştürme
+- "default" profil kimlik sözleşi (kullanıcı onayı gerektirir)
 
 **❌ A4'te Kalacak:**
 - BackgroundManager Taste entegrasyonu
