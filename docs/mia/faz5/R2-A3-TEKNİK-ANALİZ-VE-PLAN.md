@@ -156,7 +156,7 @@
 - **Mevcut Durum:**
   - ❌ Tüm read/write fonksiyonları global (`readTasteProfile(dataDir)`, vb.)
   - ❌ Profil kimliği parametre olarak alınmıyor
-  - ❌ `req.profileContext` **mevcut değil** (yeni mekanizma olarak oluşturulmalı)
+  - `req.profileContext` **mevcut değildir ve eklenmeyecektir**. Route katmanı ProfileContext'e `createTasteRouter` options/closure üzerinden erişecektir (bkz. §11.1).
 
 #### `src/server/taste-rebuild-coordinator.ts` (A2 - Arka Plan)
 - **Sorumluluk:** Profil yeniden hesaplama
@@ -336,7 +336,7 @@ const activeRebuildChains = new Map<string, Promise<RebuildCoordinatorResult>>()
 - ✅ `ProfileContext` `app.ts:493-496`'de `initialProfileId: 'default'` ile oluşturuluyor
 - ✅ Adapter `taste-service-adapter.ts:38`'de `profileContext?: IProfileContext` parametresini kabul ediyor
 - ❌ **SORUN:** `app.ts:498-501`'de adapter oluşturulurken `profileContext` **yollanmıyor** (wiring bağlantısı eksik)
-- ❌ `getDefaultProfileId()` **mevcut değil** (yeni mekanizma olarak oluşturulmalı)
+- `getDefaultProfileId()` **oluşturulmayacak**; profil kimliği için ikinci bir kaynak tanımlanmayacaktır. Tek kaynak ProfileContext'tir.
 
 ---
 
@@ -577,7 +577,7 @@ function triggerTasteProfileRebuild(dataDir: string = "data"): Promise<...> {
 **Çözüm:**
 - Profil kimliği, sunucu tarafında ProfileContext ile doğrulanmalı
 - Sadece aktif profilin verilerine erişim izni
-- `req.profileContext` **yeni mekanizma** olarak oluşturulmalı
+- `req.profileContext` **kullanılmayacak ve oluşturulmayacaktır**. Route katmanı ProfileContext'e router options/closure üzerinden erişecektir.
 
 ---
 
@@ -1025,15 +1025,19 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 - Adapter **ZATEN** `profileContext?: IProfileContext` parametresini destekliyor (src/server/taste-service-adapter.ts:38)
 - **Asıl eksiklik:** `app.ts → ProfileContext → { adapter, createTasteRouter }` wiring bağlantısı
 
-### 13.3 Düzeltme 3: req.profileContext ve getDefaultProfileId Mevcut Değil
+### 13.3 Düzeltme 3: Profil Kimliği Erişim Sözleşmesi
 
-**❌ Önceki Sürüm:**
-> `req.profileContext` ve `getDefaultProfileId` mevcut gibi gösterildi
+**Önceki sürümdeki yanlış yönlendirmeler:**
+- `req.profileContext` varmış gibi ele alınıyor veya request nesnesine eklenmesi öneriliyordu.
+- `getDefaultProfileId()` ikinci bir profil kimliği kaynağı olarak öneriliyordu.
 
-**✅ Düzeltme:**
-- `req.profileContext` **MEVCUT DEĞİL** - Yeni mekanizma olarak oluşturulmalı
-- `getDefaultProfileId()` **MEVCUT DEĞİL** - Yeni mekanizma olarak oluşturulmalı
-- Doküman güncellendi: "yeni mekanizma olarak açıkla"
+**Güncel ve geçerli tasarım:**
+- `req.profileContext` **kullanılmayacak ve oluşturulmayacak**.
+- `getDefaultProfileId()` **oluşturulmayacak**; varsayılan profil için ikinci bir kimlik otoritesi tanımlanmayacak.
+- Normal uygulama akışında tek kimlik otoritesi `ProfileContext`'tir.
+- `app.ts`, aynı ProfileContext örneğini adapter'a ve `createTasteRouter` options'a ayrı ayrı verir.
+- Route handler'ları ProfileContext'e router options/closure üzerinden erişir; geçerli profil kimliğini `ProfileContext.getCurrent()` üzerinden alır.
+- Bu düzenleme, `default` kimliğinin kanonik Store sözleşmesiyle uyumsuzluğu için §12.4'teki kullanıcı kararının yerine geçmez.
 
 ### 13.4 Düzeltme 4: Global API Wrapper Önerisi Kaldırıldı
 
@@ -1151,23 +1155,29 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 2. ⚠️ Rebuild Coordinator profil kapsamlı değil (src/server/taste-rebuild-coordinator.ts:339-635)
 3. ⚠️ activeRebuildChains anahtarı sadece dataDir (src/server/taste-rebuild-coordinator.ts:488)
 
-### 15.3 Sonuç
+### 15.3 Sonuç ve Başlama Koşulları
 
-**⚠️ Evet, ancak P1 bloke edici sorunlar A3 sırasında çözülmeli.**
+**Teknik planın durumu:** Doküman, mevcut mimariyi, A3 kapsamını, riskleri, test matrisini ve uygulama sırasını tanımlayan bir plan olarak teknik incelemeye sunulabilir. Bu durum, açık veri/kimlik kararlarının verilmiş olduğu veya A3 kodlamasının başlamasına izin verildiği anlamına gelmez.
 
-**Ön Koşullar:**
-1. ✅ Base commit `49142ca8d552d59b11894a7aa574cce4588c16ce` doğrulandı
-2. ⚠️ "default" profil kimliği sorunu için seçenekler belirtildi (kullanıcı onayı gerektirir)
-3. ⚠️ Adapter wiring sorunu A3 sırasında çözülmeli
+**A3 kodlamasına başlamadan önce kullanıcı onayı gereken kararlar:**
+1. §12.4'teki A/B/C seçeneklerinden hangisinin izleneceği: eski global Taste verilerinin A3 sonrasında nasıl korunacağı ve kullanıcıya nasıl sunulacağı.
+2. `ProfileContext` tarafından kullanılan `default` kimliğinin kanonik profil kimliği sözleşmesiyle nasıl uyumlu hâle getirileceği. Bu karar, eski global verilerin otomatik olarak taşınacağı anlamına gelmez; migration ayrıca kararlaştırılmalıdır.
 
-**İlk Adım:**
-1. "default" profil uyumsuzluğu çözülmeli
-2. Adapter wiring bağlantısı kurulmalı
-3. Route katmanı profil kimliği alma
+**Kullanıcı kararı verilmeden yapılmayacaklar:**
+- `initialProfileId: 'default'` değerini `profile-default` olarak değiştirmek.
+- `PROFILE_ID_PATTERN` veya A1 kimlik doğrulama sözleşmesini genişletmek.
+- Legacy global verileri profil dizinine kopyalamak, taşımak veya otomatik ilişkilendirmek.
+- A3'te legacy global okuma yolunun korunacağı ya da yeni profil yoluna geçileceği varsayımıyla kod yazmak.
 
-**Tahmini Süre:** 3-5 gün (tam zamanlı)
+**Kararlar verildikten sonra A3 uygulama sırası:**
+1. Onaylanan kimlik ve eski veri koruma kararını uygulama planına sabitlemek.
+2. `app.ts` içinde ProfileContext'i adapter'a ve `createTasteRouter` options'a ayrı ayrı aktarmak.
+3. Route katmanında profil kimliğini yalnızca ProfileContext'ten almak.
+4. Onaylanan veri stratejisine göre Store çağrılarını ForProfile veya legacy API davranışıyla uyumlu biçimde düzenlemek.
+5. Rebuild Coordinator'ı aynı profil/veri stratejisine göre kapsamlandırmak ve `activeRebuildChains` anahtarını `dataDir + profileId` olacak şekilde ayırmak.
+6. İzolasyon, geriye dönük uyumluluk, eşzamanlılık ve rebuild testlerini çalıştırmak.
 
----
+**Tahmini süre:** 3-5 gün (tam zamanlı); kararların netleşmesi, kod incelemesi ve test düzeltmeleri bu tahmine dahil değildir.
 
 ## Ekler
 
