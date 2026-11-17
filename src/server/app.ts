@@ -57,6 +57,9 @@ import {
 import { createContentIntelligenceRouter } from './content-intelligence-routes.ts';
 import { createLibraryService } from '../modules/library/service.ts';
 import { createContentService } from '../modules/content/service.ts';
+import { createBackgroundTaskRepository } from './background-task-repository.ts';
+import { createBackgroundManager } from '../modules/background/service.ts';
+import { createDefaultBackgroundHandlers } from '../modules/background/handlers.ts';
 import { diffLibraryEvents, findSavedItemByMediaKey } from './library-event-diff.ts';
 import type {
   EventSubscription,
@@ -449,6 +452,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   libraryService: ReturnType<typeof createLibraryService>;
   /** MIA Faz 3 — merkezi ortak içerik okuma hattı (IContentService). */
   contentService: ReturnType<typeof createContentService>;
+  /** MIA Faz 4 — kalıcı background görev yöneticisi. */
+  backgroundManager: ReturnType<typeof createBackgroundManager>;
   startRuntimeModules: () => Promise<void>;
   stopRuntimeModules: () => Promise<void>;
   tmdbProxy: ReturnType<typeof createTmdbProxyService>;
@@ -464,7 +469,27 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     storageDriver: options.storageDriver ?? resolveStorageDriver(),
   });
   const primaryRepository = createServerPrimaryDataRepository(storage);
-  const eventBus = createAppEventBus();
+
+  // MIA Faz 4 — Background Manager: kalıcı görev kuyruğu. Mevcut SQLite
+  // (`data/cinetrack.db`) ve AppEventBus yeniden kullanılır; paralel sistem yok.
+  const backgroundTaskRepository = createBackgroundTaskRepository({ dataDir: resolvedDataDir });
+  const backgroundManager = createBackgroundManager({
+    repository: backgroundTaskRepository,
+    handlers: createDefaultBackgroundHandlers(),
+    // Audit işleyicileri bilgi kaydı üretmez; yalnızca uyarı/hata sunucu
+    // günlüğüne yazılır (görev başına gürültü yok).
+    logger: {
+      warn: (message, data) => console.warn(`[BackgroundManager] ${message}`, data ?? ''),
+      error: (message, data) => console.error(`[BackgroundManager] ${message}`, data ?? ''),
+    },
+  });
+
+  // Kalıcılık kancası: olay + görev yazımı başarısızsa publish reddedilir.
+  const eventBus = createAppEventBus({
+    persistEvent: async (event) => {
+      await backgroundManager.acceptEvent(event);
+    },
+  });
   const profileContext = createProfileContext({
     initialProfileId: 'default',
     initialRevision: 0,
@@ -709,9 +734,15 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
 
   const startRuntimeModules = async () => {
     await moduleRegistry.startAll(serverModuleContext);
+    // Background Manager mevcut yaşam döngüsüne bağlanır. ModuleRegistry'ye ayrı
+    // kayıt eklenmez: `/api/health` modül listesi sözleşmesi (ve Agent 1 testleri)
+    // mevcut beş modül kimliğini doğrular; yönetici yine ModuleContext ile beslenir.
+    await backgroundManager.initialize(serverModuleContext);
+    await backgroundManager.start();
   };
 
   const stopRuntimeModules = async () => {
+    await backgroundManager.stop();
     await moduleRegistry.stopAll();
   };
 
@@ -2705,6 +2736,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     contentIntelligence,
     libraryService,
     contentService,
+    backgroundManager,
     startRuntimeModules,
     stopRuntimeModules,
     tmdbProxy,
