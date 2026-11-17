@@ -91,11 +91,12 @@
 #### 2.2.1 **Kesinlikle A3'te Yapılacak**
 
 1. **ProfileContext'in app/router/adapter zincirine aktarılması**
-   - `app.ts` mevcut ProfileContext nesnesini adapter'a aktaracak (satır 498-501)
+   - `app.ts` ProfileContext'i oluşturur (satır 493-496)
+   - Aynı ProfileContext, adapter oluşturulurken `profileContext` parametresiyle verilir (satır 498-501, bugün eksik)
    - Adapter zaten `profileContext?: IProfileContext` parametresini destekliyor (src/server/taste-service-adapter.ts:38)
-   - Adapter router'a aktarılacak
-   - Route handler'larının ProfileContext'e ihtiyacı varsa router options veya closure üzerinden erişeceği açıkça belirtilecek
-   - Fallback adapter oluşturuluyorsa onun da profil bağlamı alması sağlanacak
+   - Aynı ProfileContext, ayrıca `createTasteRouter` options üzerinden route katmanına aktarılır (satır 2666, bugün eksik)
+   - Route handler'ları ProfileContext'e router options/closure üzerinden erişir
+   - Fallback adapter oluşturuluyorsa aynı ProfileContext'i alır
 
 2. **Profil Kimliği Akış Yönetimi**
    - Çağrı zincirinde profil kimliğinin kaybolmasını önlemek
@@ -218,28 +219,34 @@
 
 ### 4.2 Hedef Akış (A3 Sonrası)
 
+Normal uygulama akışında profil kimliğinin **tek kaynağı ProfileContext**'tir (bkz. §10.1). HTTP isteği üzerinden (query/header/body) gelen profil kimliği doğrudan Store'a aktarılmaz. `app.ts` ProfileContext'i oluşturur; aynı context hem adapter'a (`profileContext` parametresiyle) hem `createTasteRouter` options üzerinden route katmanına verilir (bkz. §11.1).
+
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      HTTP Request (taste-routes.ts)                       │
-│  GET /api/taste/profile?profileId=profile-1                             │
-│  POST /api/taste/event + profileId (ProfileContext/Query/Header)      │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      HTTP Request (taste-routes.ts)                      │
+│  GET /api/taste/profile                                                  │
+│  POST /api/taste/event                                                   │
+│  (İstekte ayrıca profil kimliği taşıma sözleşmesi YOK)                   │
+└──────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      taste-routes.ts Handler                            │
-│  ✅ profileId parametresi alınıyor (ProfileContext/Query/Header)       │
-│  readTasteProfileForProfile(profileId, dataDir)  // Profil API         │
-│  appendTasteEventForProfile(profileId, event, dataDir)                  │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      taste-routes.ts Handler                             │
+│  ✅ Profil kimliği ProfileContext'ten alınıyor                           │
+│     (router options/closure; tek kaynak: ProfileContext)                 │
+│  const profileId = getProfileIdFromRequest(profileContext)               │
+│  readTasteProfileForProfile(profileId, dataDir)  // Profil API           │
+│  appendTasteEventForProfile(profileId, event, dataDir)                   │
+│  ❌ İstemciden gelen profileId doğrudan Store'a aktarılmaz               │
+└──────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────────┐
 │                      taste-store.ts (Profil Kapsamlı API)                │
-│  resolveTastePathsForProfile(profileId, dataDir)  // profiles/p1-...  │
-│  serializeTasteWriteForProfile(dataDir, profileDir, task)             │
-│  tasteProfileLockScope(profileDir)  // profile:p1-b64url-...           │
-└─────────────────────────────────────────────────────────────────────────┘
+│  resolveTastePathsForProfile(profileId, dataDir)  // profiles/p1-...     │
+│  serializeTasteWriteForProfile(dataDir, profileDir, task)                │
+│  tasteProfileLockScope(profileDir)  // profile:p1-b64url-...             │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.3 Profil Kimliği Kaybolma Noktaları
@@ -297,7 +304,7 @@ const { added } = await appendTasteEventIdempotent(tasteEvent, this.dataDir);  /
 
 **⚠️ NOT:** Adapter **zaten** `profileContext` parametresini destekliyor (`src/server/taste-service-adapter.ts:38`), ancak:
 - `app.ts:498-501`'de adapter oluşturulurken `profileContext` **yollanmıyor** (wiring bağlantısı eksik)
-- Bu, **app.ts → createTasteRouter → adapter wiring bağlantısı** eksikliği
+- Bu, **app.ts → ProfileContext → { adapter, createTasteRouter } wiring bağlantısı** eksikliği
 
 #### 🔴 **Kritik Nokta 3: taste-rebuild-coordinator.ts**
 
@@ -439,7 +446,7 @@ const tasteAdapter = createServerTasteServiceAdapter({
 });
 ```
 
-**Asıl eksiklik:** `app.ts → createTasteRouter → adapter` **wiring bağlantısı** kurulmamış.
+**Asıl eksiklik:** `app.ts → ProfileContext → { adapter, createTasteRouter }` **wiring bağlantısı** kurulmamış.
 
 ### 6.4 Global API'lerin Kaderi
 
@@ -483,14 +490,14 @@ function enqueueScopedLock<T>(key: string, task: () => Promise<T>): Promise<T> {
 
 ### 7.2 Risk Alanları
 
-#### 🔴 **Risk 1: Profil Kimliği Kaybolması (P0)**
+#### 🔴 **Risk 1: Profil Kimliği Kaybolması (P1)**
 
 **Senaryo:** HTTP isteğinde profileId parametresi yoksa veya yanlışsa
 
 **Etki:** Yanlış profile'in verileri okunur/yazılır
 
 **Çözüm:**
-- Tüm endpoint'lerde profileId zorunlu parametre (ProfileContext/Query/Header)
+- Profil kimliği ProfileContext'ten alınmalı (tek kaynak; bkz. §10.1)
 - ProfileContext doğrulama
 - Varsayılan profile'e dönüş engellenmeli
 
@@ -639,15 +646,17 @@ function triggerTasteProfileRebuild(dataDir: string = "data"): Promise<...> {
 
 ### 9.2 Kabul Kriterleri
 
-#### 🟢 **MUTLAK (P0)**
+#### 🟢 **MUTLAK — Zorunlu Kabul Kriterleri**
 
-1. ✅ Tüm taste endpoint'leri profil kimliği parametresi almalı (ProfileContext/Query/Header)
+1. ✅ Tüm taste endpoint'leri profil kimliğini ProfileContext'ten almalı (tek kaynak; bkz. §10.1)
 2. ✅ Tüm taste işlemleri profil kapsamlı API'leri kullanmalı
-3. ✅ `app.ts → createTasteRouter → adapter` wiring bağlantısı kurulmalı
+3. ✅ `app.ts → ProfileContext → { adapter, createTasteRouter }` wiring bağlantısı kurulmalı
 4. ✅ Profil kimliği doğrulama tüm katmanlarda çalışmalı
 5. ✅ `activeRebuildChains` anahtarı `${dataDir}:${profileId}` olmalı
 6. ✅ Legacy global API davranışı korunmalı
-7. ✅ A2 testleri geçmeli (`tests/taste/taste-profile-store.test.mjs`) - Bu doküman güncellemesinde çalıştırılmadı
+7. ⬜ A2 testlerinin geçmesi A3 kabul kriteridir (`tests/taste/taste-profile-store.test.mjs`) — Bu doküman güncellemesinde çalıştırılmadı, geçme durumu doğrulanmadı
+
+> ⚠️ **Kabul kriteri ≠ test sonucu:** Yukarıdaki maddeler A3'ün kabul kriterleri olarak tanımlanmıştır; testlerin kabul kriteri olması ile testlerin gerçekten çalıştırılıp geçmiş olması farklı konulardır. Bu doküman güncellemesinde test ve CI **çalıştırılmadı**; hiçbir kriter çalıştırılmış veya geçmiş olarak sunulmaz.
 
 #### 🟡 **ÖNERİLEN (P1)**
 
@@ -769,13 +778,19 @@ A3 uygulaması **aşağıdaki sırayla** gerçekleştirilmelidir:
 
 #### 1. ProfileContext'in app/router/adapter zincirine aktarılması (P1)
 
-**Zincir:** `app.ts` → `ProfileContext` → `TasteServiceAdapter` → `createTasteRouter` → `route handlers`
+**Zincir:** `app.ts` → `ProfileContext` → { `TasteServiceAdapter` (`profileContext` parametresi), `createTasteRouter` (options) } → `route handlers`
 
 **Sorumluluklar:**
-- **app.ts:** ProfileContext oluşturur ve adapter'a aktarır
-- **TasteServiceAdapter:** ProfileContext'i alır ve router'a aktarır
-- **createTasteRouter:** Router örnekini oluşturur, ProfileContext'i router options'a yerleştirir
-- **route handlers:** ProfileContext'e closure/dependency injection yoluyla erişir
+- **app.ts:** ProfileContext'i oluşturur (`src/server/app.ts:493-496`)
+- **app.ts:** Aynı ProfileContext'i adapter oluşturulurken `profileContext` parametresiyle verir (`src/server/app.ts:498-501`, bugün eksik)
+- **app.ts:** Aynı ProfileContext'i `createTasteRouter` options üzerinden route katmanına aktarır (`src/server/app.ts:2666`, bugün eksik)
+- **createTasteRouter:** Router örneğini oluşturur; ProfileContext'i options'tan route handler'larına closure/options yoluyla ulaştırır
+- **route handlers:** ProfileContext'e yalnızca router options/closure üzerinden erişir
+- **Fallback adapter:** `createTasteRouter` içinde oluşturuluyorsa (`src/server/taste-routes.ts:287-288`) aynı ProfileContext'i alır
+
+**Gerekli router options değişikliği (açık):** `createTasteRouter` imzasına (`src/server/taste-routes.ts:275-288`) yeni bir `profileContext?: IProfileContext` options alanı eklenmelidir. Mevcut options alanları: `tmdbApiKey`, `eventBus`, `tasteAdapter`, `deferAdapterSubscription`, `onDomainEvent`, `onRawTasteEvent`.
+
+> ⚠️ **Sorumluluk sınırı:** Adapter, router OLUŞTURMAZ ve ProfileContext'i router'a AKTARMAZ. ProfileContext'in dağıtımı `app.ts`'in sorumluluğudur; adapter yalnızca kendi doğrulamaları (`assertCurrent`/`assertWritable`) için context'i kullanır.
 
 **Mevcut Durum:**
 ```typescript
@@ -790,13 +805,14 @@ const tasteAdapter = createServerTasteServiceAdapter({
   rebuildOnEvent: true,
   // ❌ profileContext YOK
 });
+// src/server/app.ts:2666 — createTasteRouter options'ında profileContext YOK
 ```
 
 **Hedef Durum:**
 ```typescript
-// src/server/app.ts:493-501
+// src/server/app.ts (hedef)
 const profileContext = createProfileContext({
-  initialProfileId: 'default',  // ⚠️ Karar bekliyor
+  initialProfileId: 'default',  // ⚠️ Karar bekliyor (bkz. §12.4)
   initialRevision: 0,
   eventPublisher: eventBus,
 });
@@ -805,16 +821,23 @@ const tasteAdapter = createServerTasteServiceAdapter({
   profileContext,  // ✅ ProfileContext aktarılıyor
   rebuildOnEvent: true,
 });
+// ...
+app.use('/api/taste', personalReadGuard, createTasteRouter(resolvedDataDir, {
+  // ... mevcut options ...
+  profileContext,  // ✅ Aynı ProfileContext route katmanına da aktarılıyor
+}));
 ```
 
 **Fallback Adapter:**
 ```typescript
-// Fallback adapter örneği de aynı ProfileContext'i almalı
-const fallbackAdapter = createServerTasteServiceAdapter({
-  dataDir: resolvedDataDir,
-  profileContext,  // ✅ Aynı ProfileContext
-  rebuildOnEvent: false,
-});
+// src/server/taste-routes.ts (hedef) — fallback adapter aynı ProfileContext'i alır
+const tasteAdapter =
+  options.tasteAdapter ??
+  createServerTasteServiceAdapter({
+    dataDir,
+    profileContext: options.profileContext,  // ✅ Aynı ProfileContext
+    rebuildOnEvent: true,
+  });
 ```
 
 **⚠️ NOT:** `req.profileContext` gibi var olmayan request özellikleri kullanılmaz. ProfileContext zaten uygulama katmanında mevcut, dependency injection yoluyla aktarılır.
@@ -926,108 +949,59 @@ const profileContext = createProfileContext({
 
 **⚠️ TEŞHİS:** ProfileContext "default" kimliğini kabul ediyor; ancak taste-profile-scope.ts içindeki validateCanonicalProfileId() bu kimliği reddediyor. Uyumsuzluk ProfileContext ile Taste Store arasındaki kimlik sözleşmesinde.
 
-### 12.4 Çözüm Seçenekleri Karar Tablosu
+### 12.4 Eski Verilerin Korunması: Çözüm Seçenekleri (Karar Bekliyor)
 
-| Kriter | Seçenek A: "default" → "profile-default" | Seçenek B: PROFILE_ID_PATTERN Genişletme | Seçenek C: Geçici Çözüm (A3 Sonrası)
-|--------|------------------------------------------|-----------------------------------------|--------------------------------------|
-| **PROFILE_ID_PATTERN Uyumu** | ✅ Uyumlu | ✅ Uyumlu | ❌ Uyumsuz (geçici) |
-| **ProfileContext Değişikliği** | ⚠️ initialProfileId değişikliği | ❌ Değişiklik gerekli | ❌ Değişiklik gerekli |
-| **Taste Store Değişikliği** | ❌ Gerekli değil | ❌ A1 altyapısı değişikliği (kapsam dışı) | ❌ Gerekli değil |
-| **Veri Yolu Değişikliği** | ⚠️ data/taste/profiles/profile-default/ | ✅ Değişiklik yok | ⚠️ Geçici uyumsuzluk |
-| **Mevcut "default" Verileri** | ⚠️ Erişilemez (migration gerekir) | ✅ Tam uyumlu | ⚠️ Erişilemez (A3 sonrası migration) |
-| **Geriye Dönük Uyumluluk** | ⚠️ Migration gerektirir | ✅ Tam | ⚠️ Geçici kırılma |
-| **A1/A2 Altyapısı Etkisi** | ✅ Etkilenmez | ❌ Kapsam dışı değişiklik | ✅ Etkilenmez |
-| **Güvenlik Riski** | ✅ Risk yok | ⚠️ Pattern genişletme riski | ⚠️ Geçici bypass riski |
-| **Uygulama Kolaylığı** | ✅ Kolay | ❌ Zor | ⚠️ Orta |
+**SORU:** Eski global Taste verileri `data/taste/` altında kalırken yeni ForProfile API'leri `data/taste/profiles/...` altından çalışacak. A3 sonrasında eski veriler nasıl korunacak ve kullanıcıya nasıl sunulacak?
 
-#### Seçenek Karşılaştırması ve Açık Sorular
+Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı çözüm değildir:** A, kullanıcıya dönük akışı A3 boyunca legacy global yolda tutar (profil kapsamlı kullanıcı verisi oluşmaz); B, akışı hemen profil kapsamlı yapıya taşır ve eski veriyi ayrı tutar. İkisi farklı teslim kapsamlarıdır ve biri diğerinin ilk adımı olarak sunulamaz.
 
-**SORU: Eski global Taste verileri "data/taste/" altında kalırken yeni ForProfile API'leri "data/taste/profiles/..." altından okuyacak. A3 sonrasında eski veriler uygulamada nasıl korunacak ve kullanıcıya nasıl sunulacak?**
+> ⚠️ **Ortak not — "profile-default" yaklaşımı:** `initialProfileId: 'profile-default'` ataması, PROFILE_ID_PATTERN uyumsuzluğunu pattern'i değiştirmeden giderir; ancak bu yaklaşım eski `data/taste/` verilerini **kendiliğinden yeni profile TAŞIMAZ**. Eski veriler `data/taste/` altında ayrı kalır; aşağıdaki seçeneklerin tamamında veri ikiliği sorunu bu yaklaşımda da aynen vardır.
 
-##### Seçenek A: "default" → "profile-default" Dönüştürme
+#### Seçenek A — A3 boyunca legacy global okuma davranışını korumak
 
-**Uygulama:**
-```typescript
-// src/server/app.ts:494
-const profileContext = createProfileContext({
-  initialProfileId: 'profile-default',
-  initialRevision: 0,
-  eventPublisher: eventBus,
-});
-```
+**Tanım:** A3'te ProfileContext/adapter/router wiring kurulur; ancak kullanıcıya dönük taste okuma/yazma akışı A3 boyunca legacy global veri yolunda (`data/taste/`) kalır. ForProfile API'leri A3'te kullanıcı verisi için devreye alınmaz.
 
-**Veri Yolu Etkisi:**
-- Yeni profil verileri: `data/taste/profiles/p1-b64url-cG9maWxlLWRlZmF1bHQ=/`
-- Eski global veriler: `data/taste/` (değişmeden kalır)
-- **SORUN:** Eski veriler "profile-default" profiline aitmiş gibi görünmez, ayrı kalır
+| Kriter | Değerlendirme |
+|--------|---------------|
+| **Veri yolları** | Okuma/yazma `data/taste/` global yolunda kalır. Profil dizinleri (`data/taste/profiles/...`) A3'te kullanıcı verisi içermez. |
+| **Eski veriye erişim** | ✅ Kesintisiz; global API'ler değişmez. |
+| **Yeni veriye erişim** | ➖ Yok; ForProfile API'leri yalnızca altyapı/test düzeyinde kullanılabilir. |
+| **Geriye dönük uyumluluk** | ✅ Tam; mevcut davranış korunur. |
+| **Migration gereksinimi** | A3'te yok; sonraki aşamaya ertelenir (ayrı karar). |
+| **Kullanıcıya yansıyan davranış** | Değişmez; tek global taste veri seti görünür. |
+| **Riskler** | Profil izolasyonu A3'te kullanıcıya teslim edilmez; sonraki geçiş iki aşamalı iş yükü yaratır; global/profil kod yolları uzun süre ayrışır. |
 
-**Eski Veri Erişimi:**
-- ❌ ForProfile API'leri eski verileri göremez (farklı dizin)
-- ❌ Global API'ler eski verileri okuyabilir, ancak profil kapsamlı işlemlerde kullanılamaz
-- ⚠️ Kullanıcı eski verilerini göremez, yeni profile boş görünür
-- ⚠️ Migration gerektirir: Eski verilerin "profile-default" dizinine taşınması
+#### Seçenek B — Yeni profil kapsamlı yapıya geçmek, eski global verileri ayrı tutmak, sonraki aşamada kontrollü geçiş
 
-**Geriye Dönük Uyumluluk:**
-- ❌ Otomatik taşıma A3 kapsamında değil
-- ⚠️ Migration sonrasına ertelenecek
-- ⚠️ Kullanıcı verileri geçici olarak erişilemez olabilir
+**Tanım:** A3'te route/adapter/rebuild ForProfile API'lerine geçer; yeni veriler `data/taste/profiles/p1-b64url-.../` altında birikir. Eski `data/taste/` verileri olduğu gibi, dokunulmadan kalır. Kontrollü migration sonraki bir aşamada **ayrı bir karar** olarak yapılır.
 
-**Değerlendirme:** Minimal değişiklik ancak veri kaybı/kırılma riski var. Kullanıcı onayı gerektirir.
+| Kriter | Değerlendirme |
+|--------|---------------|
+| **Veri yolları** | Yeni veriler `data/taste/profiles/p1-b64url-.../`; eski veriler `data/taste/` (değişmez). İki yol bağımsız. |
+| **Eski veriye erişim** | Yalnızca legacy global API'ler üzerinden; profil kapsamlı endpoint'lerden görünmez. |
+| **Yeni veriye erişim** | ✅ ForProfile API'leri üzerinden. |
+| **Geriye dönük uyumluluk** | Legacy API'ler değişmez; ancak kullanıcıya dönük veri ikiye bölünür (data duality). |
+| **Migration gereksinimi** | A3 kapsamında yok; sonraki aşamada kontrollü geçiş zorunlu. |
+| **Kullanıcıya yansıyan davranış** | Mevcut taste verisi profil kapsamlı görünümlerde boş/eksik görünür; yeni olaylar profil bazında birikir. |
+| **Riskler** | Veri ikiliği, kullanıcı kafa karışıklığı ("profilim boş görünüyor"), iki veri kaynağının tutarsızlaşması. |
 
-##### Seçenek B: PROFILE_ID_PATTERN Genişletme
+#### Seçenek C — PROFILE_ID_PATTERN / kimlik sözleşmesini "default" destekleyecek şekilde değiştirmek
 
-**Uygulama:**
-```typescript
-// src/core/cinetrack-core.ts:717
-// Mevcut: /^(?:profile-[A-Za-z0-9_-]{1,60}|p\d{1,10})$/
-// Yeni: /^(?:profile-[A-Za-z0-9_-]{1,60}|p\d{1,10}|default)$/
-```
+**Tanım:** `PROFILE_ID_PATTERN` (`src/core/cinetrack-core.ts:717`) `|default` alternatifiyle genişletilir (veya kimlik sözleşmesi eşdeğer biçimde değiştirilir); `validateCanonicalProfileId('default')` kabul eder hâle gelir.
 
-**Veri Yolu Etkisi:**
-- Yeni profil verileri: `data/taste/profiles/p1-b64url-ZGVmYXVsdD0=/` (encodeProfileIdSafe('default'))
-- Eski global veriler: `data/taste/` (değişmeden kalır)
-- **SORUN:** Eski veriler hâlâ ayrı, yeni veriler yeni dizinde
+| Kriter | Değerlendirme |
+|--------|---------------|
+| **Veri yolları** | `default` profili için `data/taste/profiles/p1-b64url-.../` (`encodeProfileIdSafe('default')`); eski veriler `data/taste/` (değişmez). |
+| **Eski veriye erişim** | Yine yalnızca legacy global API'ler üzerinden. |
+| **Yeni veriye erişim** | ✅ `default` kimliğiyle ForProfile API'leri. |
+| **Geriye dönük uyumluluk** | ⚠️ A1 altyapısında (`validateCanonicalProfileId`, `encodeProfileIdSafe`/`decodeProfileIdSafe`, profil ID manifesti) kapsam dışı değişiklik; `PROFILE_ID_PATTERN`'ın diğer tüketicileri etkilenebilir. |
+| **Migration gereksinimi** | Pattern değişimi veri TAŞIMAZ; eski veriler yine ayrı kalır, migration yine gerekir. |
+| **Kullanıcıya yansıyan davranış** | B ile aynı ikilik; ayrıca sözleşme genişlemesinin sistem genelinde etkisi. |
+| **Riskler** | Kimlik sözleşmesinin gevşetilmesi (güvenlik/tutarlılık riski), A1 altyapısının yeniden tasarımı, A3 kapsam dışı değişiklik. |
 
-**Eski Veri Erişimi:**
-- ✅ ForProfile API'leri "default" kimliğini kabul eder
-- ❌ Eski veriler hâlâ `data/taste/` altında, yeni veriler `data/taste/profiles/` altında
-- ⚠️ Veri ikiliği: Aynı kimlik, farklı dizinler
-- ⚠️ Migration yine gerektirir
+#### Karar Durumu
 
-**A1/A2 Altyapısı Etkisi:**
-- ❌ A1 altyapısını değiştirmek A3 kapsamında kabul edilemez
-- ❌ Diğer bileşenler etkilenebilir
-- ❌ Kapsam dışı değişiklik
-
-**Değerlendirme:** Kapsam dışı, reddedilir.
-
-##### Seçenek C: A3 Boyunca Legacy Global Okuma Davranışını Korumak
-
-**Uygulama:**
-- A3 sırasında yeni profil kapsamlı işlemler ForProfile API'lerini kullanır
-- Eski global API'ler eski veri yolunu kullanmaya devam eder
-- Global ve profil kapsamlı veriler ayrı tutulur
-- Sonraki aşamada kontrollü geçiş yapılır
-
-**Veri Yolu Etkisi:**
-- Yeni profil verileri: `data/taste/profiles/p1-b64url-.../`
-- Eski global veriler: `data/taste/` (değişmeden kalır)
-- ✅ İki veri yolu birbirinden bağımsız
-
-**Eski Veri Erişimi:**
-- ✅ Global API'ler eski verileri okuyabilir
-- ✅ ForProfile API'leri yeni verileri okuyabilir
-- ⚠️ Kullanıcı hangi verileri gördüğünü anlamayabilir
-- ⚠️ Veri bütünlüğü sorunu: Aynı içerik farklı profillerde farklı taste verilerine sahip olabilir
-
-**Geriye Dönük Uyumluluk:**
-- ✅ Eski veriler korunur
-- ✅ Yeni veriler profil kapsamlı olabilir
-- ⚠️ Migration sonraki aşamada yapılmalı
-
-**Değerlendirme:** En güvenli seçenek, ancak veri ikiliği sorunu var. Kullanıcı onayı gerektirir.
-
-**⚠️ KARAR BEKLENİYOR:** Hiçbir seçenek kullanıcı onayı olmadan kesinleştirilmez. Her seçeneğin avantajları, dezavantajları ve riskleri açıkça belirtildi. Migration stratejisi ayrı bir karara bağlanmalıdır.
+**⚠️ KARAR BEKLENİYOR:** Hiçbir seçenek kullanıcı onayı olmadan kesinleştirilmez. Her seçeneğin avantajları, dezavantajları ve riskleri yukarıda açıkça belirtilmiştir. Migration stratejisi ayrı bir karara bağlanmalıdır.
 
 ---
 
@@ -1049,7 +1023,7 @@ const profileContext = createProfileContext({
 
 **✅ Düzeltme:**
 - Adapter **ZATEN** `profileContext?: IProfileContext` parametresini destekliyor (src/server/taste-service-adapter.ts:38)
-- **Asıl eksiklik:** `app.ts → createTasteRouter → adapter` wiring bağlantısı
+- **Asıl eksiklik:** `app.ts → ProfileContext → { adapter, createTasteRouter }` wiring bağlantısı
 
 ### 13.3 Düzeltme 3: req.profileContext ve getDefaultProfileId Mevcut Değil
 
@@ -1153,7 +1127,7 @@ const profileContext = createProfileContext({
 | Profil kimliği akış şeması belirlendi | ✅ | 10/10 |
 | Riskler belirlendi ve çözümler önerildi | ✅ | 10/10 |
 | Test matrisi hazır | ✅ | 10/10 |
-| Teknik kararlar alındı | ✅ | 10/10 |
+| Teknik kararlar | ⚠️ Seçenekler analiz edildi, nihai karar bekleniyor ("default" kimlik sözleşmesi kararı kullanıcı onayına bağlı) | 6/10 |
 | Uygulama sırası belirlendi | ✅ | 10/10 |
 | "default" profil uyumsuzluğu belirlendi | ✅ | 10/10 |
 
@@ -1201,14 +1175,14 @@ const profileContext = createProfileContext({
 
 **Sorumluluk Tanımları:**
 - **TasteServiceAdapter:** AppEvent → TasteEvent çevirimi, TasteStore entegrasyonu. Zaten `profileContext?: IProfileContext` parametresini destekliyor (src/server/taste-service-adapter.ts:38). **Yeni API/fonksiyon eklenmez.**
-- **createTasteRouter:** Router örneğini oluşturur. ProfileContext'i router options'a yerleştirir.
+- **createTasteRouter:** Router örneğini oluşturur. ProfileContext, app.ts tarafından options üzerinden verilir; route handler'larına closure/options yoluyla ulaştırılır. Router'ı oluşturmaz ve ProfileContext'i kendisi dağıtmaz.
 - **TasteRebuildCoordinator:** Profil yeniden hesaplama işlemleri. Global store kullanımını ForProfile API'lerine geçirmek gerekiyor.
 
 | Dosya | Değişiklik Türü | Öncelik |
 |-------|-----------------|---------|
-| src/server/app.ts | ProfileContext → adapter wiring | 🟡 P1 |
+| src/server/app.ts | ProfileContext → adapter + createTasteRouter options wiring | 🟡 P1 |
 | src/server/app.ts | "default" kimlik sözleşmesi çözümü | 🟡 P1 (kullanıcı onayı gerektirir) |
-| src/server/taste-routes.ts | Profil kimliği alma + ForProfile API geçişi | 🟡 P1 |
+| src/server/taste-routes.ts | createTasteRouter options'ına `profileContext` alanı ekleme + Profil kimliği alma + ForProfile API geçişi | 🟡 P1 |
 | src/server/taste-service-adapter.ts | ProfileContext aktarımı (zaten destek var) | 🟡 P1 |
 | src/server/taste-rebuild-coordinator.ts | Profil kapsamlı hâle getirme | 🟡 P1 |
 
@@ -1238,9 +1212,9 @@ const profileContext = createProfileContext({
 
 ## 📞 İletişim
 
-**PR URL:** https://github.com/SiriusBrahim/Cinethos/pull/37  
+**PR URL:** https://github.com/SiriusBrahim/Cinethos/pull/38  
 **Branch:** `vibe/r2-a3-technical-plan-v2-bd6aa2`  
-**Commit:** (yeniden oluşturulacak)  
+**Commit:** PR #38 dalının en güncel commit'i  
 **Base Commit:** `49142ca8d552d59b11894a7aa574cce4588c16ce`
 
 ---
@@ -1263,11 +1237,16 @@ const profileContext = createProfileContext({
 - [x] P1 bulgusu: "default" profil uyumsuzluğu eklendi
 - [x] P2/P3 düzeltmeleri eklendi
 - [x] Kaynak kodla tekrar doğrulanan fonksiyonlar listelendi
+- [x] §4.2 hedef akış şeması §10.1 ile hizalandı (tek kaynak: ProfileContext)
+- [x] §11.1 router wiring sorumlulukları düzeltildi (ProfileContext app.ts'ten adapter'a ve createTasteRouter options'a)
+- [x] §12.4 eski veri koruma seçenekleri üç ayrı alternatif (A/B/C) olarak ayrıştırıldı; karar kullanıcı onayına bırakıldı
+- [x] §9 kabul kriteri ile test sonucu ayrıştırıldı; test/CI çalıştırılmadı notu korundu
+- [x] Eski referanslar temizlendi (PR #37 → PR #38, sürüm 2.1.0 → 2.2.0, teslim bilgileri)
 
 ---
 
 **✅ DOKÜMAN TAMAMLANDI (Agent 2 Doğrulaması Sonrası)**  
-**Sürüm:** 2.1.0  
+**Sürüm:** 2.2.0  
 **Tarih:** 17 Kasım 2026  
 **Base Commit:** 49142ca8d552d59b11894a7aa574cce4588c16ce
 
@@ -1277,7 +1256,7 @@ const profileContext = createProfileContext({
 
 ### P1 Düzeltmeleri
 - ProfileContext analizini düzelt: ProfileContext 'default' değerini kabul ediyor, validateCanonicalProfileId reddediyor
-- 'profile-default' karar tablosu eklendi ve kesin uygulanacak çözüm olarak sunuldu
+- 'profile-default' karar tablosu eklendi ve kesin uygulanacak çözüm olarak sunuldu (v2.2.0'da yeniden açıldı; kesin çözüm değildir)
 - Adapter wiring planı tamamlandı: TasteServiceAdapterOptions zaten profileContext destekliyor
 
 ### P2 Düzeltmeleri
@@ -1297,5 +1276,14 @@ const profileContext = createProfileContext({
 - Global API riski doğru tanımlandı: Eski veriler ayrı tutulacak
 - Test ifadeleri düzeltildi: Çalıştırılmadı notu eklendi
 - Ek A sorumlulukları düzeltildi: Mevcut API destekleri belirtildi
+
+### Son Tutarlılık Düzeltmeleri (v2.2.0 devamı)
+
+- §4.2 hedef akış şeması §10.1 ile hizalandı: Profil kimliğinin tek kaynağı ProfileContext; query/header üzerinden profil seçimi ifadeleri kaldırıldı, istemciden gelen profileId doğrudan Store'a aktarılmaz
+- §11.1 router wiring sorumlulukları düzeltildi: ProfileContext app.ts tarafından hem adapter'a (`profileContext` parametresiyle) hem `createTasteRouter` options üzerinden route katmanına aktarılır; adapter router oluşturmaz ve ProfileContext'i router'a aktarmaz
+- §12.4 eski verilerin korunması seçenekleri üç ayrı alternatif (A/B/C) olarak yeniden yapılandırıldı; A ve B'nin farklı çözümler olduğu netleştirildi; "profile-default" yaklaşımının eski verileri kendiliğinden taşımadığı belirtildi; hiçbir seçenek kullanıcı onayı olmadan kesinleştirilmez
+- §9 kabul kriterleri ile test sonucu ayrıştırıldı: Testlerin kabul kriteri olması ile çalıştırılmış olması farklı konular; bu doküman güncellemesinde test ve CI çalıştırılmadı
+- §15.1 değerlendirme güncellendi: "Teknik kararlar" maddesi "seçenekler analiz edildi, nihai karar bekleniyor" durumuna alındı
+- Eski referanslar temizlendi: PR #37 → PR #38, alt bilgi sürümü 2.1.0 → 2.2.0, teslim bilgileri güncellendi
 
 **Test ve CI durumu:** Bu doküman güncellemesinde çalıştırılmadı
