@@ -16,6 +16,7 @@ import {
   readJsonFileWithRecoveryAsync,
   writeJsonFileAtomicAsync,
 } from "./atomic-json.ts";
+import { withTasteSharedMetadataCacheLock } from "./taste-store.ts";
 import type { TasteMetadataInput } from "../core/taste/types.ts";
 
 export type CachedTasteMetadata = TasteMetadataInput & {
@@ -47,7 +48,7 @@ export function resolveTasteMetadataCachePath(dataDir: string = "data"): string 
     : path.join(dataDir, "taste", "cinetrack-taste-metadata-cache.json");
 }
 
-export async function readTasteMetadataCache(
+async function readTasteMetadataCacheUnlocked(
   dataDir: string = "data"
 ): Promise<TasteMetadataCacheFile> {
   const result = await readJsonFileWithRecoveryAsync<TasteMetadataCacheFile>(
@@ -65,7 +66,15 @@ export async function readTasteMetadataCache(
   return { schemaVersion: 1, updatedAt: new Date().toISOString(), items: {} };
 }
 
-async function writeTasteMetadataCache(
+export async function readTasteMetadataCache(
+  dataDir: string = "data"
+): Promise<TasteMetadataCacheFile> {
+  return withTasteSharedMetadataCacheLock(dataDir, () =>
+    readTasteMetadataCacheUnlocked(dataDir)
+  );
+}
+
+async function writeTasteMetadataCacheUnlocked(
   cache: TasteMetadataCacheFile,
   dataDir: string
 ): Promise<void> {
@@ -73,6 +82,15 @@ async function writeTasteMetadataCache(
   await writeJsonFileAtomicAsync(
     resolveTasteMetadataCachePath(dataDir),
     JSON.stringify(cache, null, 2)
+  );
+}
+
+export async function writeTasteMetadataCache(
+  cache: TasteMetadataCacheFile,
+  dataDir: string = "data"
+): Promise<void> {
+  return withTasteSharedMetadataCacheLock(dataDir, () =>
+    writeTasteMetadataCacheUnlocked(cache, dataDir)
   );
 }
 
@@ -240,7 +258,7 @@ export async function hydrateTasteMetadataBatch(options: {
     };
   }
 
-  const inputs: TasteMetadataInput[] = [];
+  const fetchedItems: CachedTasteMetadata[] = [];
   let cursor = 0;
   let failed = 0;
   const concurrency = Math.min(
@@ -259,26 +277,34 @@ export async function hydrateTasteMetadataBatch(options: {
         failed += 1;
         continue;
       }
-      inputs.push(meta);
-      cache.items[contentId] = {
+      fetchedItems.push({
         ...meta,
         fetchedAt: new Date().toISOString(),
         source: "tmdb",
-      };
+      });
     }
   };
 
   await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
-  if (inputs.length > 0) {
-    await writeTasteMetadataCache(cache, dataDir);
+  if (fetchedItems.length > 0) {
+    await withTasteSharedMetadataCacheLock(dataDir, async () => {
+      const latest = await readTasteMetadataCacheUnlocked(dataDir);
+      for (const item of fetchedItems) {
+        latest.items[item.contentId] = item;
+      }
+      await writeTasteMetadataCacheUnlocked(latest, dataDir);
+    });
   }
 
+  const remaining =
+    pending.length - fetchedItems.filter((i) => !cache.items[i.contentId]).length;
+
   return {
-    inputs,
+    inputs: fetchedItems.map(({ fetchedAt: _f, source: _s, ...meta }) => meta),
     attempted: batch.length,
-    fetched: inputs.length,
+    fetched: fetchedItems.length,
     failed,
-    remaining: pending.length - inputs.length,
+    remaining: Math.max(0, remaining),
   };
 }

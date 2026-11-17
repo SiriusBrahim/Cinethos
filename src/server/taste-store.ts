@@ -12,8 +12,12 @@ import {
 } from "./atomic-json.ts";
 import {
   TASTE_LOCK_DATA_SCOPE,
+  TASTE_SHARED_METADATA_CACHE_SCOPE,
+  ensureTasteProfileIdMapEntry,
+  resolveTastePathsForProfile,
   withScopedTasteLock,
 } from "./taste-profile-scope.ts";
+import type { TasteProfileStorePaths } from "./taste-profile-scope.ts";
 
 // R2-A1 profil kapsamı yüzeyi (kanonik kimlik, kodlama, eşleme manifesti,
 // kapsam kilidi). A2 çağıranları tek giriş noktası olarak buradan kullanabilir.
@@ -108,6 +112,10 @@ export function resolveTastePaths(dataDir: string = "data"): TasteStorePaths {
 
 export const TASTE_PATHS: TasteStorePaths = resolveTastePaths("data");
 
+export function tasteProfileLockScope(profileDir: string): string {
+  return `profile:${profileDir}`;
+}
+
 function backupPathFor(filePath: string): string {
   return `${filePath}.bak`;
 }
@@ -157,6 +165,167 @@ function serializeTasteWrite<T>(dataDir: string, task: () => Promise<T>): Promis
   return withScopedTasteLock({ dataDir, scope: TASTE_LOCK_DATA_SCOPE }, task);
 }
 
+// === Profil Kapsamlı Yardımcılar (R2-A2) ===
+
+function serializeTasteWriteForProfile<T>(
+  dataDir: string,
+  profileDir: string,
+  task: () => Promise<T>
+): Promise<T> {
+  return withScopedTasteLock(
+    { dataDir, scope: tasteProfileLockScope(profileDir) },
+    task
+  );
+}
+
+async function resolveProfileTasteStore(
+  profileId: string,
+  dataDir: string
+): Promise<{ profileDir: string; paths: TasteProfileStorePaths }> {
+  const scoped = resolveTastePathsForProfile(profileId, dataDir);
+  return { profileDir: scoped.dir, paths: scoped.paths };
+}
+
+async function ensureProfileTasteStoreEntry(
+  profileId: string,
+  dataDir: string
+): Promise<{ profileDir: string; paths: TasteProfileStorePaths }> {
+  // Manifest kaydını global kilit altında garanti eder, sonra yol çözümle.
+  await ensureTasteProfileIdMapEntry(profileId, dataDir);
+  return resolveProfileTasteStore(profileId, dataDir);
+}
+
+async function writeManifestForPathsUnlocked(
+  paths: TasteStorePaths | TasteProfileStorePaths,
+  dataDir: string,
+  eventWatermark?: string
+): Promise<void> {
+  const previous =
+    eventWatermark === undefined
+      ? await readTasteManifestFromPaths(paths).catch((err) => {
+          if (err instanceof CorruptJsonFileError) return null;
+          throw err;
+        })
+      : null;
+  const manifest: TasteManifest = {
+    generationId: randomUUID(),
+    taxonomyVersion: TAXONOMY_VERSION,
+    algorithmVersion: ALGORITHM_VERSION,
+    configVersion: CONFIG_VERSION,
+    asOf: new Date().toISOString(),
+    files: {
+      taxonomy: paths.taxonomy,
+      index: paths.index,
+      events: paths.events,
+      profile: paths.profile,
+    },
+    eventWatermark: eventWatermark ?? previous?.eventWatermark ?? "",
+  };
+  await writeJsonFileAtomicAsync(paths.manifest, JSON.stringify(manifest, null, 2), {
+    backupPath: backupPathFor(paths.manifest),
+    validateParsed: (raw) => isValidJsonRecord<TasteManifest>(raw) !== null,
+  });
+}
+
+async function readTasteManifestFromPaths(
+  paths: TasteStorePaths | TasteProfileStorePaths
+): Promise<TasteManifest | null> {
+  const result = await readJsonFileWithRecoveryAsync<TasteManifest>(paths.manifest, {
+    backupPaths: [backupPathFor(paths.manifest)],
+    validate: isValidJsonRecord<TasteManifest>,
+    label: "cinetrack-taste-manifest.json",
+  });
+  if (result.status === "ok" || result.status === "recovered") {
+    return result.data;
+  }
+  if (result.status === "missing") {
+    return null;
+  }
+  throw new CorruptJsonFileError(paths.manifest, result.error);
+}
+
+async function readTasteEventsFromPaths(
+  paths: TasteStorePaths | TasteProfileStorePaths
+): Promise<TasteEvent[]> {
+  const result = await readJsonFileWithRecoveryAsync<TasteEvent[]>(paths.events, {
+    backupPaths: [backupPathFor(paths.events)],
+    validate: isValidTasteEventsArray,
+    label: "cinetrack-taste-events.json",
+  });
+  if (result.status === "ok" || result.status === "recovered") {
+    return Array.isArray(result.data) ? result.data : [];
+  }
+  if (result.status === "missing") {
+    return [];
+  }
+  throw new CorruptJsonFileError(paths.events, result.error);
+}
+
+async function readTasteProfileFromPaths(
+  paths: TasteStorePaths | TasteProfileStorePaths
+): Promise<TasteProfile | null> {
+  const result = await readJsonFileWithRecoveryAsync<TasteProfile>(paths.profile, {
+    backupPaths: [backupPathFor(paths.profile)],
+    validate: isValidJsonRecord<TasteProfile>,
+    label: "cinetrack-taste-profile.json",
+  });
+  if (result.status === "ok" || result.status === "recovered") {
+    return result.data;
+  }
+  if (result.status === "missing") {
+    return null;
+  }
+  throw new CorruptJsonFileError(paths.profile, result.error);
+}
+
+async function readTasteIndexFromPaths(
+  paths: TasteStorePaths | TasteProfileStorePaths
+): Promise<ContentTasteIndex | null> {
+  const result = await readJsonFileWithRecoveryAsync<ContentTasteIndex>(paths.index, {
+    backupPaths: [backupPathFor(paths.index)],
+    validate: isValidJsonRecord<ContentTasteIndex>,
+    label: "cinetrack-taste-index.json",
+  });
+  if (result.status === "ok" || result.status === "recovered") {
+    return result.data;
+  }
+  if (result.status === "missing") {
+    return null;
+  }
+  throw new CorruptJsonFileError(paths.index, result.error);
+}
+
+async function readTasteObjectionsFromPaths(
+  paths: TasteStorePaths | TasteProfileStorePaths
+): Promise<TasteFeatureObjection[]> {
+  const result = await readJsonFileWithRecoveryAsync<TasteFeatureObjection[]>(
+    paths.objections,
+    {
+      backupPaths: [backupPathFor(paths.objections)],
+      validate: isValidTasteObjectionsArray,
+      label: "cinetrack-taste-objections.json",
+    }
+  );
+  if (result.status === "ok" || result.status === "recovered") {
+    return Array.isArray(result.data) ? result.data : [];
+  }
+  if (result.status === "missing") {
+    return [];
+  }
+  throw new CorruptJsonFileError(paths.objections, result.error);
+}
+
+/** Shared metadata cache kilidi (A1 sıra/izolasyon kuralları). */
+export function withTasteSharedMetadataCacheLock<T>(
+  dataDir: string,
+  task: () => Promise<T>
+): Promise<T> {
+  return withScopedTasteLock(
+    { dataDir, scope: TASTE_SHARED_METADATA_CACHE_SCOPE },
+    task
+  );
+}
+
 // === Event Store ===
 
 /**
@@ -196,19 +365,7 @@ export async function appendTasteEvent(
  * Olay listesini oku — bozuksa önce `.bak` yedeğinden kurtarır; kurtarılamazsa açık hata fırlatır.
  */
 export async function readTasteEvents(dataDir: string = "data"): Promise<TasteEvent[]> {
-  const paths = resolveTastePaths(dataDir);
-  const result = await readJsonFileWithRecoveryAsync<TasteEvent[]>(paths.events, {
-    backupPaths: [backupPathFor(paths.events)],
-    validate: isValidTasteEventsArray,
-    label: "cinetrack-taste-events.json",
-  });
-  if (result.status === "ok" || result.status === "recovered") {
-    return Array.isArray(result.data) ? result.data : [];
-  }
-  if (result.status === "missing") {
-    return [];
-  }
-  throw new CorruptJsonFileError(paths.events, result.error);
+  return readTasteEventsFromPaths(resolveTastePaths(dataDir));
 }
 
 /**
@@ -253,19 +410,7 @@ export async function writeTasteProfile(
 export async function readTasteProfile(
   dataDir: string = "data"
 ): Promise<TasteProfile | null> {
-  const paths = resolveTastePaths(dataDir);
-  const result = await readJsonFileWithRecoveryAsync<TasteProfile>(paths.profile, {
-    backupPaths: [backupPathFor(paths.profile)],
-    validate: isValidJsonRecord<TasteProfile>,
-    label: "cinetrack-taste-profile.json",
-  });
-  if (result.status === "ok" || result.status === "recovered") {
-    return result.data;
-  }
-  if (result.status === "missing") {
-    return null;
-  }
-  throw new CorruptJsonFileError(paths.profile, result.error);
+  return readTasteProfileFromPaths(resolveTastePaths(dataDir));
 }
 
 // === Index Store ===
@@ -293,19 +438,7 @@ export async function writeTasteIndex(
 export async function readTasteIndex(
   dataDir: string = "data"
 ): Promise<ContentTasteIndex | null> {
-  const paths = resolveTastePaths(dataDir);
-  const result = await readJsonFileWithRecoveryAsync<ContentTasteIndex>(paths.index, {
-    backupPaths: [backupPathFor(paths.index)],
-    validate: isValidJsonRecord<ContentTasteIndex>,
-    label: "cinetrack-taste-index.json",
-  });
-  if (result.status === "ok" || result.status === "recovered") {
-    return result.data;
-  }
-  if (result.status === "missing") {
-    return null;
-  }
-  throw new CorruptJsonFileError(paths.index, result.error);
+  return readTasteIndexFromPaths(resolveTastePaths(dataDir));
 }
 
 // === Manifest ===
@@ -318,31 +451,7 @@ async function writeManifestUnlocked(
   eventWatermark?: string
 ): Promise<void> {
   const paths = resolveTastePaths(dataDir);
-  const previous =
-    eventWatermark === undefined
-      ? await readTasteManifest(dataDir).catch((err) => {
-          if (err instanceof CorruptJsonFileError) return null;
-          throw err;
-        })
-      : null;
-  const manifest: TasteManifest = {
-    generationId: randomUUID(),
-    taxonomyVersion: TAXONOMY_VERSION,
-    algorithmVersion: ALGORITHM_VERSION,
-    configVersion: CONFIG_VERSION,
-    asOf: new Date().toISOString(),
-    files: {
-      taxonomy: paths.taxonomy,
-      index: paths.index,
-      events: paths.events,
-      profile: paths.profile,
-    },
-    eventWatermark: eventWatermark ?? previous?.eventWatermark ?? "",
-  };
-  await writeJsonFileAtomicAsync(paths.manifest, JSON.stringify(manifest, null, 2), {
-    backupPath: backupPathFor(paths.manifest),
-    validateParsed: (raw) => isValidJsonRecord<TasteManifest>(raw) !== null,
-  });
+  await writeManifestForPathsUnlocked(paths, dataDir, eventWatermark);
 }
 
 /**
@@ -351,19 +460,7 @@ async function writeManifestUnlocked(
 export async function readTasteManifest(
   dataDir: string = "data"
 ): Promise<TasteManifest | null> {
-  const paths = resolveTastePaths(dataDir);
-  const result = await readJsonFileWithRecoveryAsync<TasteManifest>(paths.manifest, {
-    backupPaths: [backupPathFor(paths.manifest)],
-    validate: isValidJsonRecord<TasteManifest>,
-    label: "cinetrack-taste-manifest.json",
-  });
-  if (result.status === "ok" || result.status === "recovered") {
-    return result.data;
-  }
-  if (result.status === "missing") {
-    return null;
-  }
-  throw new CorruptJsonFileError(paths.manifest, result.error);
+  return readTasteManifestFromPaths(resolveTastePaths(dataDir));
 }
 
 // === V1.5 İtiraz (Objection) Deposu ===
@@ -374,22 +471,7 @@ export async function readTasteManifest(
 export async function readTasteObjections(
   dataDir: string = "data"
 ): Promise<TasteFeatureObjection[]> {
-  const paths = resolveTastePaths(dataDir);
-  const result = await readJsonFileWithRecoveryAsync<TasteFeatureObjection[]>(
-    paths.objections,
-    {
-      backupPaths: [backupPathFor(paths.objections)],
-      validate: isValidTasteObjectionsArray,
-      label: "cinetrack-taste-objections.json",
-    }
-  );
-  if (result.status === "ok" || result.status === "recovered") {
-    return Array.isArray(result.data) ? result.data : [];
-  }
-  if (result.status === "missing") {
-    return [];
-  }
-  throw new CorruptJsonFileError(paths.objections, result.error);
+  return readTasteObjectionsFromPaths(resolveTastePaths(dataDir));
 }
 
 /**
@@ -401,6 +483,147 @@ export async function writeTasteObjections(
 ): Promise<void> {
   return serializeTasteWrite(dataDir, async () => {
     const paths = resolveTastePaths(dataDir);
+    await writeJsonFileAtomicAsync(
+      paths.objections,
+      JSON.stringify(objections, null, 2),
+      {
+        backupPath: backupPathFor(paths.objections),
+        validateParsed: (raw) => isValidTasteObjectionsArray(raw) !== null,
+      }
+    );
+  });
+}
+
+// === Profil Kapsamlı Event Store (R2-A2) ===
+
+export async function appendTasteEventIdempotentForProfile(
+  profileId: string,
+  event: TasteEvent,
+  dataDir: string = "data"
+): Promise<{ added: boolean; total: number }> {
+  const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
+  return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
+    const events = await readTasteEventsFromPaths(paths);
+    if (events.some((e) => e.eventId === event.eventId)) {
+      return { added: false, total: events.length };
+    }
+    events.push(event);
+    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2), {
+      backupPath: backupPathFor(paths.events),
+      validateParsed: (raw) => isValidTasteEventsArray(raw) !== null,
+    });
+    return { added: true, total: events.length };
+  });
+}
+
+export async function appendTasteEventForProfile(
+  profileId: string,
+  event: TasteEvent,
+  dataDir: string = "data"
+): Promise<void> {
+  await appendTasteEventIdempotentForProfile(profileId, event, dataDir);
+}
+
+export async function readTasteEventsForProfile(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<TasteEvent[]> {
+  const { paths } = await resolveProfileTasteStore(profileId, dataDir);
+  return readTasteEventsFromPaths(paths);
+}
+
+export async function writeTasteEventsForProfile(
+  profileId: string,
+  events: TasteEvent[],
+  dataDir: string = "data"
+): Promise<void> {
+  const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
+  return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
+    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2), {
+      backupPath: backupPathFor(paths.events),
+      validateParsed: (raw) => isValidTasteEventsArray(raw) !== null,
+    });
+  });
+}
+
+// === Profil Kapsamlı Profile Store (R2-A2) ===
+
+export async function writeTasteProfileForProfile(
+  profileId: string,
+  profile: TasteProfile,
+  dataDir: string = "data",
+  eventWatermark?: string
+): Promise<void> {
+  const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
+  return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
+    await writeJsonFileAtomicAsync(paths.profile, JSON.stringify(profile, null, 2), {
+      backupPath: backupPathFor(paths.profile),
+      validateParsed: (raw) => isValidJsonRecord<TasteProfile>(raw) !== null,
+    });
+    await writeManifestForPathsUnlocked(paths, dataDir, eventWatermark);
+  });
+}
+
+export async function readTasteProfileForProfile(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<TasteProfile | null> {
+  const { paths } = await resolveProfileTasteStore(profileId, dataDir);
+  return readTasteProfileFromPaths(paths);
+}
+
+// === Profil Kapsamlı Index Store (R2-A2) ===
+
+export async function writeTasteIndexForProfile(
+  profileId: string,
+  index: ContentTasteIndex,
+  dataDir: string = "data"
+): Promise<void> {
+  const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
+  return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
+    await writeJsonFileAtomicAsync(paths.index, JSON.stringify(index, null, 2), {
+      backupPath: backupPathFor(paths.index),
+      validateParsed: (raw) => isValidJsonRecord<ContentTasteIndex>(raw) !== null,
+    });
+    await writeManifestForPathsUnlocked(paths, dataDir);
+  });
+}
+
+export async function readTasteIndexForProfile(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<ContentTasteIndex | null> {
+  const { paths } = await resolveProfileTasteStore(profileId, dataDir);
+  return readTasteIndexFromPaths(paths);
+}
+
+// === Profil Kapsamlı Manifest (R2-A2) ===
+
+export async function readTasteManifestForProfile(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<TasteManifest | null> {
+  const { paths } = await resolveProfileTasteStore(profileId, dataDir);
+  return readTasteManifestFromPaths(paths);
+}
+
+// === Profil Kapsamlı İtiraz (R2-A2) ===
+
+export async function readTasteObjectionsForProfile(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<TasteFeatureObjection[]> {
+  const { paths } = await resolveProfileTasteStore(profileId, dataDir);
+  return readTasteObjectionsFromPaths(paths);
+}
+
+export async function writeTasteObjectionsForProfile(
+  profileId: string,
+  objections: TasteFeatureObjection[],
+  dataDir: string = "data"
+): Promise<void> {
+  const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
+  return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
     await writeJsonFileAtomicAsync(
       paths.objections,
       JSON.stringify(objections, null, 2),
