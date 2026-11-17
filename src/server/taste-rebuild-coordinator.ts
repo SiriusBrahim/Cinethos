@@ -20,15 +20,19 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { CorruptJsonFileError, readJsonFileWithRecoveryAsync } from "./atomic-json.ts";
 import {
-  readTasteEvents,
-  writeTasteEvents,
-  readTasteIndex,
-  writeTasteIndex,
-  readTasteProfile,
-  writeTasteProfile,
-  readTasteManifest,
-  readTasteObjections,
+  readTasteEventsForProfile,
+  writeTasteEventsForProfile,
+  readTasteIndexForProfile,
+  writeTasteIndexForProfile,
+  readTasteProfileForProfile,
+  writeTasteProfileForProfile,
+  readTasteManifestForProfile,
+  readTasteObjectionsForProfile,
 } from "./taste-store.ts";
+import {
+  resolveTastePathsForProfile,
+  validateCanonicalProfileId,
+} from "./taste-profile-scope.ts";
 import {
   buildTasteIndex,
   createEmptyTasteIndex,
@@ -49,6 +53,7 @@ import {
   hydrateTasteMetadataBatch,
   readTasteMetadataCache,
   type CachedTasteMetadata,
+  type HydrationBatchResult,
 } from "./taste-metadata-hydrator.ts";
 import type {
   ContentTasteItem,
@@ -69,8 +74,17 @@ export interface RebuildCoordinatorResult {
 const activeRebuildChains = new Map<string, Promise<RebuildCoordinatorResult>>();
 const bootstrapPromises = new Map<string, Promise<void>>();
 const bootstrapSignatures = new Map<string, string>();
+/** TMDB API anahtarı profil-agnostik bir süreç kimlik bilgisidir: anahtar `dataDir`'dir. */
 const hydrationApiKeys = new Map<string, string>();
 const activeHydrations = new Map<string, Promise<void>>();
+
+/**
+ * Profil kapsamlı süreç içi Map anahtarı (R2-A3).
+ * `hydrationApiKeys` bilinçli olarak bu anahtarı KULLANMAZ (profil-agnostik kimlik bilgisi).
+ */
+function scopedTasteKey(dataDir: string, profileId: string): string {
+  return `${dataDir}:${profileId}`;
+}
 
 /** Taste indeksine daha zengin alanları tercih ederek iki metadata kaydını birleştirir. */
 function mergeTasteMetadata(
@@ -151,9 +165,82 @@ export function configureTasteHydration(
   }
 }
 
-async function runHydrationLoop(dataDir: string, contentIds: string[]): Promise<void> {
+export type HydrationStopReason =
+  | "no-content"
+  | "no-api-key"
+  | "cache-only"
+  | "fetch-failed"
+  | "completed"
+  | "max-rounds";
+
+export interface HydrationOutcome {
+  seededFromCache: number;
+  fetched: number;
+  failed: number;
+  stopReason: HydrationStopReason;
+}
+
+export type HydrationRoundClassification = "progress" | "fetch-failed" | "cache-only";
+
+/**
+ * Bir hidrasyon turunun sonucunu sınıflandırır.
+ * `fetched === 0` tek başına "cache hit" DEĞİLDİR: ağ hatası ve tamamlanmış
+ * cache birbirinden ayrılır (R2-A3 S6).
+ */
+export function classifyHydrationRound(
+  result: Pick<HydrationBatchResult, "fetched" | "failed" | "remaining">
+): HydrationRoundClassification {
+  if (result.fetched > 0) return "progress";
+  if (result.failed > 0) return "fetch-failed";
+  return "cache-only";
+}
+
+/**
+ * Ortak (shared) TMDB metadata cache'inden profil indeksine girdi besler.
+ * Cache tüm profillerle paylaşılır; yazılan index ve manifest profil kapsamlıdır.
+ */
+export async function seedProfileIndexFromCache(
+  profileId: string,
+  dataDir: string = "data",
+  contentIds: string[] = []
+): Promise<number> {
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
+  if (contentIds.length === 0) return 0;
+  const cache = await readTasteMetadataCache(dataDir);
+  const inputs: TasteMetadataInput[] = [];
+  for (const contentId of contentIds) {
+    const cached = cache.items[contentId];
+    if (!cached) continue;
+    const meta = tasteMetadataCacheToInput(cached);
+    if (meta) inputs.push(meta);
+  }
+  if (inputs.length === 0) return 0;
+  const stats = await upsertTasteMetadataInputs(canonicalProfileId, inputs, dataDir);
+  return stats.created + stats.updated;
+}
+
+/**
+ * Bir profilin index'ini ortak cache'ten tohumlar ve (anahtar varsa) TMDB'den
+ * eksik metadata'yı tamamlar. Tüm yazımlar profil kapsamlıdır.
+ */
+export async function hydrateProfileTasteIndex(
+  profileId: string,
+  dataDir: string = "data",
+  contentIds: string[] = []
+): Promise<HydrationOutcome> {
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
+  const seededFromCache = await seedProfileIndexFromCache(canonicalProfileId, dataDir, contentIds);
+  if (contentIds.length === 0) {
+    return { seededFromCache, fetched: 0, failed: 0, stopReason: "no-content" };
+  }
+
   const apiKey = hydrationApiKeys.get(dataDir);
-  if (!apiKey) return;
+  if (!apiKey) {
+    return { seededFromCache, fetched: 0, failed: 0, stopReason: "no-api-key" };
+  }
+
+  let fetched = 0;
+  let failed = 0;
   // Her turda bir parti çekip indeksi büyütür; içerik bitene kadar devam eder.
   for (let round = 0; round < 24; round += 1) {
     const result = await hydrateTasteMetadataBatch({
@@ -161,29 +248,50 @@ async function runHydrationLoop(dataDir: string, contentIds: string[]): Promise<
       apiKey,
       contentIds,
     });
-    if (result.fetched === 0) return;
-    await upsertTasteMetadataInputs(result.inputs, dataDir);
-    await triggerTasteProfileRebuild(dataDir);
-    if (result.remaining <= 0) return;
+    fetched += result.fetched;
+    failed += result.failed;
+    if (result.inputs.length > 0) {
+      await upsertTasteMetadataInputs(canonicalProfileId, result.inputs, dataDir);
+      await triggerTasteProfileRebuild(canonicalProfileId, dataDir);
+    }
+    if (result.fetched === 0) {
+      const classification = classifyHydrationRound(result);
+      return {
+        seededFromCache,
+        fetched,
+        failed,
+        stopReason: classification === "fetch-failed" ? "fetch-failed" : "cache-only",
+      };
+    }
+    if (result.remaining <= 0) {
+      return { seededFromCache, fetched, failed, stopReason: "completed" };
+    }
   }
+  return { seededFromCache, fetched, failed, stopReason: "max-rounds" };
 }
 
 /** Arka planda (istekleri bloklamadan) eksik TMDB metadata'sını toplar. */
 export function scheduleTasteMetadataHydration(
-  dataDir: string,
-  contentIds: string[]
+  profileId: string,
+  dataDir: string = "data",
+  contentIds: string[] = []
 ): void {
-  if (!hydrationApiKeys.get(dataDir) || contentIds.length === 0) return;
-  if (activeHydrations.has(dataDir)) return;
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
+  if (contentIds.length === 0) return;
+  const chainKey = scopedTasteKey(dataDir, canonicalProfileId);
+  if (activeHydrations.has(chainKey)) return;
 
-  const run = runHydrationLoop(dataDir, contentIds)
+  const run = hydrateProfileTasteIndex(canonicalProfileId, dataDir, contentIds)
+    .then(() => undefined)
     .catch(() => {
       // Hidrasyon hatası profil akışını bloklamaz
     })
     .finally(() => {
-      activeHydrations.delete(dataDir);
+      if (activeHydrations.get(chainKey) === run) {
+        activeHydrations.delete(chainKey);
+      }
     });
-  activeHydrations.set(dataDir, run);
+  activeHydrations.set(chainKey, run);
 }
 
 async function fileSignature(filePath: string): Promise<string> {
@@ -195,17 +303,23 @@ async function fileSignature(filePath: string): Promise<string> {
   }
 }
 
-async function computeBootstrapSignature(dataDir: string): Promise<string> {
-  const files =
+/**
+ * Bootstrap imzası: global kaynaklar (kullanıcı belgesi, katalog, stok, ortak
+ * metadata cache) + çağrılan PROFİLİN kendi event/index/profile dosyaları.
+ * Böylece bir profildeki değişiklik diğer profilin bootstrap'ini tetiklemez,
+ * ama kendi profilindeki değişiklik algılanır (R2-A3 S3).
+ */
+async function computeBootstrapSignature(
+  profileId: string,
+  dataDir: string
+): Promise<string> {
+  const globalFiles =
     dataDir === "data"
       ? [
           "data/cinetrack-data.json",
           "data/catalog/movies.json",
           "data/catalog/tv.json",
           "data/stock.json",
-          "data/taste/cinetrack-taste-events.json",
-          "data/taste/cinetrack-taste-index.json",
-          "data/taste/cinetrack-taste-profile.json",
           "data/taste/cinetrack-taste-metadata-cache.json",
         ]
       : [
@@ -213,13 +327,17 @@ async function computeBootstrapSignature(dataDir: string): Promise<string> {
           path.join(dataDir, "catalog", "movies.json"),
           path.join(dataDir, "catalog", "tv.json"),
           path.join(dataDir, "stock.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-events.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-index.json"),
-          path.join(dataDir, "taste", "cinetrack-taste-profile.json"),
           path.join(dataDir, "taste", "cinetrack-taste-metadata-cache.json"),
         ];
+  const profilePaths = resolveTastePathsForProfile(profileId, dataDir).paths;
+  const files = [
+    ...globalFiles,
+    profilePaths.events,
+    profilePaths.index,
+    profilePaths.profile,
+  ];
   const parts = await Promise.all(files.map(fileSignature));
-  return [CONFIG_VERSION, EXTRACTOR_VERSION, ...parts].join("|");
+  return [CONFIG_VERSION, EXTRACTOR_VERSION, profileId, ...parts].join("|");
 }
 
 /**
@@ -331,13 +449,15 @@ export function coerceItemToTasteMetadata(raw: Record<string, unknown> | null | 
  * İçerik metadata girdilerini cinetrack-taste-index.json deposuna ekler/günceller.
  */
 export async function upsertTasteMetadataInputs(
+  profileId: string,
   inputs: TasteMetadataInput[],
   dataDir: string = "data"
 ): Promise<{ created: number; updated: number }> {
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
   if (!inputs.length) return { created: 0, updated: 0 };
   const [existingIndexRaw, objections] = await Promise.all([
-    readTasteIndex(dataDir),
-    readTasteObjections(dataDir),
+    readTasteIndexForProfile(canonicalProfileId, dataDir),
+    readTasteObjectionsForProfile(canonicalProfileId, dataDir),
   ]);
   const existingIndex = existingIndexRaw ?? createEmptyTasteIndex();
   const asOf = new Date().toISOString();
@@ -358,7 +478,7 @@ export async function upsertTasteMetadataInputs(
   }
 
   if (stats.created > 0 || stats.updated > 0 || prunedObjections) {
-    await writeTasteIndex(index, dataDir);
+    await writeTasteIndexForProfile(canonicalProfileId, index, dataDir);
   }
 
   return { created: stats.created, updated: stats.updated };
@@ -428,12 +548,16 @@ async function executeAggregationOffMainThread(
   }
 }
 
-async function performRebuildOnce(dataDir: string = "data"): Promise<RebuildCoordinatorResult> {
+async function performRebuildOnce(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<RebuildCoordinatorResult> {
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
   const [events, index, existingProfile, objections] = await Promise.all([
-    readTasteEvents(dataDir),
-    readTasteIndex(dataDir),
-    readTasteProfile(dataDir),
-    readTasteObjections(dataDir),
+    readTasteEventsForProfile(canonicalProfileId, dataDir),
+    readTasteIndexForProfile(canonicalProfileId, dataDir),
+    readTasteProfileForProfile(canonicalProfileId, dataDir),
+    readTasteObjectionsForProfile(canonicalProfileId, dataDir),
   ]);
 
   const existingOverrides: Record<string, NonNullable<TasteMetric["manualOverride"]>> = {};
@@ -477,8 +601,13 @@ async function performRebuildOnce(dataDir: string = "data"): Promise<RebuildCoor
     existingOverrides
   );
 
-  await writeTasteProfile(profiles.unified, dataDir, projection.eventWatermark);
-  const manifest = await readTasteManifest(dataDir);
+  await writeTasteProfileForProfile(
+    canonicalProfileId,
+    profiles.unified,
+    dataDir,
+    projection.eventWatermark
+  );
+  const manifest = await readTasteManifestForProfile(canonicalProfileId, dataDir);
 
   return {
     generationId: manifest?.generationId ?? generationId,
@@ -492,17 +621,20 @@ async function performRebuildOnce(dataDir: string = "data"): Promise<RebuildCoor
  * Kuyruklanmış arka plan profil yeniden hesaplamasını tetikler.
  */
 export function triggerTasteProfileRebuild(
+  profileId: string,
   dataDir: string = "data"
 ): Promise<RebuildCoordinatorResult> {
-  const prevChain = activeRebuildChains.get(dataDir) ?? Promise.resolve(null);
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
+  const chainKey = scopedTasteKey(dataDir, canonicalProfileId);
+  const prevChain = activeRebuildChains.get(chainKey) ?? Promise.resolve(null);
   const nextRun = prevChain.then(
-    () => performRebuildOnce(dataDir),
-    () => performRebuildOnce(dataDir)
+    () => performRebuildOnce(canonicalProfileId, dataDir),
+    () => performRebuildOnce(canonicalProfileId, dataDir)
   );
-  activeRebuildChains.set(dataDir, nextRun);
+  activeRebuildChains.set(chainKey, nextRun);
   void nextRun.finally(() => {
-    if (activeRebuildChains.get(dataDir) === nextRun) {
-      activeRebuildChains.delete(dataDir);
+    if (activeRebuildChains.get(chainKey) === nextRun) {
+      activeRebuildChains.delete(chainKey);
     }
   });
   return nextRun;
@@ -516,23 +648,28 @@ export function triggerTasteProfileRebuild(
  * - Yeni tamamlanmış/puanlanmış kayıtlar olay olarak eklenir (idempotent)
  * - Değişiklik varsa profil yeniden hesaplanır; yoksa ağır iş atlanır
  */
-export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Promise<void> {
-  const running = bootstrapPromises.get(dataDir);
+export async function ensureInitialTasteBootstrap(
+  profileId: string,
+  dataDir: string = "data"
+): Promise<void> {
+  const canonicalProfileId = validateCanonicalProfileId(profileId);
+  const chainKey = scopedTasteKey(dataDir, canonicalProfileId);
+  const running = bootstrapPromises.get(chainKey);
   if (running) {
     return running;
   }
 
   const task = (async () => {
     try {
-      const signature = await computeBootstrapSignature(dataDir);
-      if (bootstrapSignatures.get(dataDir) === signature) {
+      const signature = await computeBootstrapSignature(canonicalProfileId, dataDir);
+      if (bootstrapSignatures.get(chainKey) === signature) {
         return;
       }
 
       const [existingEvents, existingProfile, manifest, metadataCache] = await Promise.all([
-        readTasteEvents(dataDir),
-        readTasteProfile(dataDir),
-        readTasteManifest(dataDir),
+        readTasteEventsForProfile(canonicalProfileId, dataDir),
+        readTasteProfileForProfile(canonicalProfileId, dataDir),
+        readTasteManifestForProfile(canonicalProfileId, dataDir),
         readTasteMetadataCache(dataDir),
       ]);
 
@@ -548,8 +685,17 @@ export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Pro
         return;
       }
 
-      const activeProfile =
-        doc.profiles.find((p) => p && p.id === doc.activeProfileId) ?? doc.profiles[0];
+      // R2-A3 S2: bootstrap hedefi belgenin aktif profiliyle birebir eşleşmek zorundadır.
+      // `profiles[0]` sessiz fallback'i YOKTUR; uyuşmazlıkta hiçbir şey yazılmaz.
+      if (doc.activeProfileId !== canonicalProfileId) {
+        console.warn(
+          `[taste-bootstrap] Hedef profil belgenin aktif profiliyle eşleşmiyor (hedef: ${canonicalProfileId}, belge: ${String(doc.activeProfileId)}); bootstrap atlandı.`
+        );
+        return;
+      }
+      const activeProfile = doc.profiles.find(
+        (p) => p && p.id === canonicalProfileId
+      );
       if (!activeProfile) {
         return;
       }
@@ -622,7 +768,11 @@ export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Pro
 
       const indexStats =
         metadataMap.size > 0
-          ? await upsertTasteMetadataInputs(Array.from(metadataMap.values()), dataDir)
+          ? await upsertTasteMetadataInputs(
+              canonicalProfileId,
+              Array.from(metadataMap.values()),
+              dataDir
+            )
           : { created: 0, updated: 0 };
 
       // Yeni olayları mevcutlarla birleştir (idempotent)
@@ -632,7 +782,7 @@ export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Pro
       let allEvents = existingEvents;
       if (additions.length > 0) {
         allEvents = [...existingEvents, ...additions];
-        await writeTasteEvents(allEvents, dataDir);
+        await writeTasteEventsForProfile(canonicalProfileId, allEvents, dataDir);
       }
 
       const versionChanged =
@@ -644,23 +794,30 @@ export async function ensureInitialTasteBootstrap(dataDir: string = "data"): Pro
         versionChanged;
 
       if (needsRebuild) {
-        await triggerTasteProfileRebuild(dataDir);
+        await triggerTasteProfileRebuild(canonicalProfileId, dataDir);
       }
 
       // Eksik keyword/dil/ülke alanlarını arka planda tamamla
-      scheduleTasteMetadataHydration(dataDir, collectEvidenceContentIds(allEvents));
+      scheduleTasteMetadataHydration(
+        canonicalProfileId,
+        dataDir,
+        collectEvidenceContentIds(allEvents)
+      );
 
-      bootstrapSignatures.set(dataDir, await computeBootstrapSignature(dataDir));
+      bootstrapSignatures.set(
+        chainKey,
+        await computeBootstrapSignature(canonicalProfileId, dataDir)
+      );
     } catch (err) {
       if (err instanceof CorruptJsonFileError) {
         throw err;
       }
       // Soğuk başlatma hatası ana uygulamayı bloklamaz
     } finally {
-      bootstrapPromises.delete(dataDir);
+      bootstrapPromises.delete(chainKey);
     }
   })();
 
-  bootstrapPromises.set(dataDir, task);
+  bootstrapPromises.set(chainKey, task);
   return task;
 }

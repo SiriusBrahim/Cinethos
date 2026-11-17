@@ -26,6 +26,7 @@ import {
 } from "../../src/core/taste/metric-labels.ts";
 import { createRecommendationAdapter } from "../../src/core/taste/recommendation-adapter.ts";
 import { createTasteRouter } from "../../src/server/taste-routes.ts";
+import { createProfileContext } from "../../src/app/ProfileContext.ts";
 import {
   notifyTasteProfileUpdated,
   subscribeTasteProfileUpdated,
@@ -326,6 +327,8 @@ describe("Derin Sinema Kabuk, Exclude Override ve V1.5 Etiket İtirazı", () => 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-derin-sinema-"));
     try {
       const userDoc = {
+        activeProfileId: "profile-default",
+        revision: 1,
         profiles: [
           {
             id: "profile-default",
@@ -353,9 +356,14 @@ describe("Derin Sinema Kabuk, Exclude Override ve V1.5 Etiket İtirazı", () => 
       const tasteDir = path.join(tmpDir, "taste");
       fs.mkdirSync(tasteDir, { recursive: true });
 
+      // R2-A3: router artık zorunlu ProfileContext ister (global fallback yok).
+      const profileContext = createProfileContext({
+        initialProfileId: "profile-default",
+        initialRevision: 1,
+      });
       const app = express();
       app.use(express.json());
-      app.use("/api/taste", createTasteRouter(tmpDir));
+      app.use("/api/taste", createTasteRouter(tmpDir, { profileContext }));
 
       const server = http.createServer(app);
       await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

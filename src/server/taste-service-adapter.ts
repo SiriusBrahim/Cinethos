@@ -29,11 +29,12 @@ import {
 import type { TasteEvent } from '../core/taste/types.ts';
 import { CorruptJsonFileError } from './atomic-json.ts';
 import {
-  appendTasteEventIdempotent,
-  readTasteEvents,
-  readTasteProfile,
+  appendTasteEventIdempotentForProfile,
+  readTasteEventsForProfile,
+  readTasteProfileForProfile,
 } from './taste-store.ts';
 import { triggerTasteProfileRebuild } from './taste-rebuild-coordinator.ts';
+import { TasteProfileScopeError, validateCanonicalProfileId } from './taste-profile-scope.ts';
 
 export interface TasteServiceAdapterOptions {
   dataDir?: string;
@@ -170,7 +171,8 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
     if (this.profileContext) {
       this.profileContext.assertCurrent(ref);
     }
-    const stored = await readTasteProfile(this.dataDir);
+    const profileId = validateCanonicalProfileId(ref.profileId);
+    const stored = await readTasteProfileForProfile(profileId, this.dataDir);
     if (!stored) return null;
     const revision =
       typeof ref.revision === 'number'
@@ -198,7 +200,8 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
         };
       }
 
-      await triggerTasteProfileRebuild(this.dataDir);
+      const profileId = validateCanonicalProfileId(ref.profileId);
+      await triggerTasteProfileRebuild(profileId, this.dataDir);
 
       // Uzun süren worker hesabından sonra profil değişmişse uyarı sinyali üret.
       if (this.profileContext) {
@@ -219,40 +222,61 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
 
   async processEvent(event: TypedAppEvent): Promise<OperationOutcome> {
     try {
+      const eventProfileId = validateCanonicalProfileId(event.profileId);
+      const activeProfileId = this.profileContext?.getCurrent().profileId;
+      // R2-A3 S4: kimlik otoritesi sunucudadır — istemcinin `profileId` alanı
+      // hedef profili seçemez; yalnızca aktif profille eşleşmesi doğrulanır.
+      if (activeProfileId && activeProfileId !== eventProfileId) {
+        return {
+          ok: false,
+          error: `Profil uyuşmazlığı: olay '${eventProfileId}' için geldi, aktif profil '${activeProfileId}'.`,
+          retryable: false,
+        };
+      }
+      const targetProfileId = activeProfileId ?? eventProfileId;
+
       if (this.profileContext) {
         this.profileContext.assertWritable({
-          profileId: event.profileId,
+          profileId: targetProfileId,
           revision: event.sourceRevision,
         });
       }
 
-      if (this.processedEventIds.has(event.eventId)) {
+      const memoryKey = `${targetProfileId}:${event.eventId}`;
+      if (this.processedEventIds.has(memoryKey)) {
         return { ok: true };
       }
 
       const tasteEvent = translateAppEventToTasteEvent(event);
       if (!tasteEvent) {
-        this.processedEventIds.add(event.eventId);
+        this.processedEventIds.add(memoryKey);
         return { ok: true };
       }
 
       // Kalıcı olay deposunda aynı eventId varsa çift kanıt/yeniden yazım yapma.
-      const existing = await readTasteEvents(this.dataDir);
+      const existing = await readTasteEventsForProfile(targetProfileId, this.dataDir);
       if (existing.some((e) => e.eventId === tasteEvent.eventId)) {
-        this.processedEventIds.add(event.eventId);
+        this.processedEventIds.add(memoryKey);
         return { ok: true };
       }
 
-      const { added } = await appendTasteEventIdempotent(tasteEvent, this.dataDir);
-      this.processedEventIds.add(event.eventId);
+      const { added } = await appendTasteEventIdempotentForProfile(
+        targetProfileId,
+        tasteEvent,
+        this.dataDir
+      );
+      this.processedEventIds.add(memoryKey);
 
       if (added && this.rebuildOnEvent) {
-        await triggerTasteProfileRebuild(this.dataDir);
+        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
       }
 
       return { ok: true };
     } catch (error) {
       if (error instanceof ProfileConflictError) {
+        return { ok: false, error: error.message, retryable: false };
+      }
+      if (error instanceof TasteProfileScopeError) {
         return { ok: false, error: error.message, retryable: false };
       }
       if (error instanceof CorruptJsonFileError) {
