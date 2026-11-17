@@ -4,8 +4,8 @@
 > **Base Commit:** `49142ca8d552d59b11894a7aa574cce4588c16ce`  
 > **Tarih:** 17 Kasım 2026  
 > **Durum:** A1 ve A2 tamamlandı, A3 planlama aşaması  
-> **Doküman Sürümü:** 2.3.0 (Agent 2 Nihai Denetim Raporu — REQUEST_CHANGES — Düzeltmeleri)  
-> **Önceki Sürüm:** 2.2.0
+> **Doküman Sürümü:** 2.4.0 (Birleşik Denetim Düzeltmeleri — kullanıcı kararları uygulandı; PR #39 v1.2.0 ile unifikasiyon)  
+> **Önceki Sürüm:** 2.3.0
 
 ---
 
@@ -160,6 +160,7 @@
   - ❌ Tüm read/write fonksiyonları global (`readTasteProfile(dataDir)`, vb.)
   - ❌ Profil kimliği parametre olarak alınmıyor
   - `req.profileContext` **mevcut değildir ve eklenmeyecektir**. Route katmanı ProfileContext'e `createTasteRouter` options/closure üzerinden erişecektir (bkz. §11.1).
+  - ⚠️ Stale-write korumasının gerçek sınırı (birleşik denetim P2-6): Store'un profil kapsamlı yazıcıları (`writeTasteProfileForProfile` `taste-store.ts:551-565`, `writeTasteIndexForProfile` `:577-590`) revision kontrolü **yapmaz**; yazma süren yazımda profil değişirse yine tamamlanır. Gerçek koruma üç aşamalıdır: (1) okuma öncesi `assertCurrent(ref)`, (2) mutasyon öncesi `assertWritable(ref)`, (3) **yazma sonrası** yeniden `assertWritable(ref)` (mevcut adapter kalıbı: `src/server/taste-service-adapter.ts:204-205`) veya revision damgalı yazım; aksi hâlde "stale write engellenir" iddiası kaynak kodla desteklenemez (bkz. §10.1).
 
 #### `src/server/taste-rebuild-coordinator.ts` (A2 - Arka Plan)
 - **Sorumluluk:** Profil yeniden hesaplama
@@ -247,7 +248,7 @@ Normal uygulama akışında route handler'ları profil kimliğini yalnızca Prof
 │  profileContext.assertWritable(ref)         // mutasyon öncesi           │
 │  appendTasteEventForProfile(ref.profileId, event, dataDir)              │
 │  ❌ İstemciden gelen profileId doğrudan Store'a aktarılmaz               │
-│  (istisna adayı: POST /domain-event — bkz. §4.3 Kritik Nokta 1 notu)     │
+│  (POST /domain-event dahil — otorite ProfileContext; bkz. §4.3)          │
 └──────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -292,7 +293,7 @@ router.get("/profile", async (_req, res) => {
 
 > ⚠️ **Bootstrap ve metadata upsert çağrıları da global'dir** (§5.1 tablosunda ayrı satırlar): `ensureInitialTasteBootstrap(dataDir)` 8 endpoint'te çağrılır (`taste-routes.ts:304, 318, 393, 497, 560, 640, 696, 734`); `upsertTasteMetadataInputs([meta], dataDir)` 2 endpoint'te çağrılır (`taste-routes.ts:645, 707`). Route store çağrıları ForProfile'a geçirilse bile bu çağrılar global store'a yazmaya ve global rebuild tetiklemeye devam eder (bkz. §11.1 adım 5).
 
-> ⚠️ **POST /domain-event istemci sözleşmesi (karar bekliyor):** Route, gövdedeki olayın `profileId` alanını zorunlu tutar (`taste-routes.ts:690-693`) ve adapter'a iletir; adapter `profileContext` bağlandığında `assertWritable({profileId: event.profileId, revision: event.sourceRevision})` çağırır (`taste-service-adapter.ts:222-227`) ve aktif profille uyuşmayan olayları 409 ile reddeder. Bu bir davranış değişikliğidir ve "istemciden gelen profileId doğrudan Store'a aktarılmaz" ilkesiyle yüzeyi çelişen tek noktadır; sözleşme (istemci profileId'si aktif profile eşit olmalı / alan kaldırılmalı) kullanıcı kararına bırakılmıştır (bkz. §15.3).
+> ✅ **POST /domain-event kimlik otoritesi (KARAR VERİLDİ — v2.4.0, birleşik denetim P2-11):** Route, gövdedeki olayın `profileId` alanını zorunlu tutar (`taste-routes.ts:690-693`) ve adapter'a iletir; adapter `profileContext` bağlandığında `assertWritable({profileId: event.profileId, revision: event.sourceRevision})` çağırır (`taste-service-adapter.ts:222-227`) ve uyuşmayan olayları 409 ile reddeder. **Onaylanan kural:** istemciden gelen `profileId` **yetkili kimlik değildir**; hedef profil her zaman `profileContext.getCurrent().profileId`'dir; `sourceRevision` sunucu tarafında doğrulanır; profil veya revision uyuşmazlığında istek reddedilir; istemci verisi sunucu kimlik otoritesini geçersiz kılamaz. Bu kural "istemciden gelen profileId doğrudan Store'a aktarılmaz" ilkesiyle **uyumludur**: `event.profileId` yalnızca doğrulama girdisidir, store hedefi değildir (bkz. §15.2, PR #39 WP-2/WP-5).
 
 #### 🔴 **Kritik Nokta 2: taste-service-adapter.ts**
 
@@ -407,19 +408,21 @@ const activeRebuildChains = new Map<string, Promise<RebuildCoordinatorResult>>()
 | 480 | `performRebuildOnce()` | `writeTasteProfile()` | Global |
 | 481 | `performRebuildOnce()` | `readTasteManifest()` | Global |
 | 533 | `ensureInitialTasteBootstrap()` | `readTasteEvents()` | Global |
-| 534 | `ensureInitialTasteBootstrap()` | `readTasteIndex()` | Global |
-| 535 | `ensureInitialTasteBootstrap()` | `readTasteProfile()` | Global |
-| 536 | `ensureInitialTasteBootstrap()` | `readTasteObjections()` | Global |
+| 534 | `ensureInitialTasteBootstrap()` | `readTasteProfile()` | Global |
+| 535 | `ensureInitialTasteBootstrap()` | `readTasteManifest()` | Global |
+| 536 | `ensureInitialTasteBootstrap()` | `readTasteMetadataCache()` | Global (paylaşımlı cache; bootstrap'ta `readTasteIndex`/`readTasteObjections` çağrısı YOKTUR) |
 | 625 | `ensureInitialTasteBootstrap()` | `upsertTasteMetadataInputs()` | Global |
 | 635 | `ensureInitialTasteBootstrap()` | `writeTasteEvents()` | Global |
 | 647 | `ensureInitialTasteBootstrap()` | `triggerTasteProfileRebuild()` | Global |
 | 651 | `ensureInitialTasteBootstrap()` | `scheduleTasteMetadataHydration()` | Global (hydr. döngüsü) |
 | 165 | `runHydrationLoop()` | `upsertTasteMetadataInputs()` | Global |
-| 167 | `runHydrationLoop()` | `triggerTasteProfileRebuild()` | Global |
+| 166 | `runHydrationLoop()` | `triggerTasteProfileRebuild()` | Global |
 | 339-340 | `upsertTasteMetadataInputs()` | `readTasteIndex()`, `readTasteObjections()` | Global |
 | 361 | `upsertTasteMetadataInputs()` | `writeTasteIndex()` | Global |
 
-**Map yapıları (satır 69-73):** `activeRebuildChains` (69), `bootstrapPromises` (70), `bootstrapSignatures` (71), `hydrationApiKeys` (72), `activeHydrations` (73) — beşinin anahtarı da yalnızca `dataDir`'dir; profil kapsamlı değildir (bkz. §7.2 Risk 3 ve Risk 4).
+**Map yapıları (satır 69-73):** `activeRebuildChains` (69), `bootstrapPromises` (70), `bootstrapSignatures` (71), `hydrationApiKeys` (72), `activeHydrations` (73) — bugün beşinin anahtarı da yalnızca `dataDir`'dir. **A3 hedefi:** `activeRebuildChains`, `bootstrapPromises`, `bootstrapSignatures` ve `activeHydrations` `${dataDir}:${profileId}` anahtarına geçer; `hydrationApiKeys` ise `dataDir` anahtarlı **kalır** (birleşik denetim P1-1: TMDB API anahtarı profil-agnostik bir süreç kimlik bilgisidir; bkz. §10.3, §10.4).
+
+**Bootstrap okuma gerçekleri (birleşik denetim P2-4 düzeltmesi):** Bootstrap'ta `readTasteIndex`/`readTasteObjections` çağrısı **yoktur**; profil index'i `upsertTasteMetadataInputs` üzerinden güncellenir (satır 623-625) ve cache→input çevirimi `tasteMetadataCacheToInput` (`:136-142`) ile yapılır (satırlar 614-619).
 
 ### 5.4 app.ts
 
@@ -451,7 +454,7 @@ const activeRebuildChains = new Map<string, Promise<RebuildCoordinatorResult>>()
 
 **✅ YETERLİ** - A2'de eklenen `ForProfile` API'leri A3 için **tamamen yeterlidir**.
 
-✅ **DÜZELTME:** Önceki sürümde `appendTasteEventIdempotentForProfile()` ve `writeTasteManifestForProfile()` eksik olarak gösterilmişti. **Gerçek durum:** `appendTasteEventIdempotentForProfile()` **mevcut** (satır 499). `writeTasteManifestForProfile()` **gerçekten eksik**; ancak A3'te manifest yazım ihtiyacı sınırlıdır: profil kapsamlı manifest yazımı store'da `writeManifestForPathsUnlocked()` üzerinden yapılır (`src/server/taste-store.ts:198`; kullanım: 454, 563, 588) ve profil kapsamlı profil/index yazıcıları (`writeTasteProfileForProfile` 551-565, `writeTasteIndexForProfile` 577-590) manifest'i güncellemez. Olay tabanlı akışta manifest yazımı gerekmez: `appendTasteEventForProfile` (`taste-store.ts:519-524`) sonrası `rebuildOnEvent` zinciri `performRebuildOnce()`'ı tetikler ve manifest rebuild içinde yeniden üretilir. A3'te manifest'i doğrudan yazan yeni bir profil kapsamlı kod yolu eklenirse bu boşluk o adımda ele alınmalıdır (bkz. PR #39 §7).
+✅ **DÜZELTME:** Önceki sürümde `appendTasteEventIdempotentForProfile()` ve `writeTasteManifestForProfile()` eksik olarak gösterilmişti. **Gerçek durum:** `appendTasteEventIdempotentForProfile()` **mevcut** (satır 499). `writeTasteManifestForProfile()` adında ayrı bir export **yoktur ve gerekmez**: profil yazıcıları manifest'i kilit altında **kendileri günceller** — `writeTasteProfileForProfile` (`taste-store.ts:551-565`, manifest güncellemesi `:563`) ve `writeTasteIndexForProfile` (`taste-store.ts:577-590`, manifest güncellemesi `:588`) her ikisi de `writeManifestForPathsUnlocked` çağırır (`src/server/taste-store.ts:198`). Olay tabanlı akışta ayrıca manifest yazımı gerekmez: `appendTasteEventForProfile` (`taste-store.ts:519-524`) sonrası `rebuildOnEvent` zinciri `performRebuildOnce()`'ı tetikler ve manifest rebuild içinde yeniden üretilir. A3'te manifest'i yazıcılar dışında doğrudan yazan yeni bir profil kapsamlı kod yolu eklenirse `writeManifestForPathsUnlocked` kalıbı o adımda kullanılmalıdır (bkz. PR #39 §7).
 
 Tüm gerekli CRUD işlemleri profil kapsamlı olarak mevcut:
 - Event: ekle (idempotent), oku, toplu yaz
@@ -571,7 +574,7 @@ function triggerTasteProfileRebuild(dataDir: string = "data"): Promise<...> {
 
 **Sorun:** `dataDir` bazlı, profil bazlı değil
 
-**Çözüm:** `activeRebuildChains` anahtarı `${dataDir}:${profileId}` olmalı; aynı standardın diğer dört Map'e de uygulanması gerekir (bkz. §10.3, §10.4)
+**Çözüm:** `activeRebuildChains` anahtarı `${dataDir}:${profileId}` olmalı; aynı standardın `bootstrapPromises`, `bootstrapSignatures` ve `activeHydrations` Map'lerine de uygulanması gerekir. `hydrationApiKeys` ise `dataDir` anahtarlı **kalır** — TMDB API anahtarı profil-agnostik bir süreç kimlik bilgisidir; tek yazma noktası `configureTasteHydration(dataDir, apiKey)` (`taste-rebuild-coordinator.ts:144-152`) profil parametresi almaz ve `${dataDir}:${profileId}` anahtarına geçirilirse hydration her profil için sessizce hiç çalışmaz (birleşik denetim P1-1; bkz. §10.3, §10.4)
 
 #### 🟡 **Risk 4: Bootstrap ve Metadata Akışının Profil Kapsamı (P1)**
 
@@ -585,6 +588,8 @@ function triggerTasteProfileRebuild(dataDir: string = "data"): Promise<...> {
 **Bu nedenle profileId parametresi eklemek tek başına yeterli değildir:** Bootstrap'e profil kimliği parametresi eklense bile olaylar global dosyaya yazılmaya devam ederse kontaminasyon sürer. Seçenek B onaylanırsa zorunlu kural: profil kapsamlı rebuild **yalnızca ForProfile API'lerini** okur/yazar, legacy global dosyalara asla dokunmaz.
 
 **Bootstrap Map'lerinin profil kapsamı:** `bootstrapPromises` (satır 70) ve `bootstrapSignatures` (satır 71) anahtarı yalnızca `dataDir`'dir; ilk profil için başlatılan bootstrap, ikinci profilin bootstrap'ını engeller/atlar. Her ikisi de `${dataDir}:${profileId}` anahtarına geçirilmelidir.
+
+**Hedef profil garantisi (birleşik denetim P1-3):** Bootstrap'in hedef profili ve verinin türetildiği profil iki ayrı kimliktir: aktif profil `doc.profiles.find((p) => p && p.id === doc.activeProfileId) ?? doc.profiles[0]` ile seçilir (`taste-rebuild-coordinator.ts:551-552` — bulunamazsa belgedeki **ilk profile** düşer), item'lar bu aktif profilden okunur (`:600`), olaylar ise `migrateExistingData({ dataDocument: doc, asOf })` içinde `doc.activeProfileId`'den üretilir (`src/core/taste/migration.ts:59-61`) ve hedef `profileId`'ye yazılır (`:635`). Hedef ≠ belgenin aktif profili olduğunda bir profilin item/event verisi başka profilin deposuna yazılabilir. **Kural (A3'te zorunlu güvenlik kuralı):** Bootstrap yalnızca `profileId === doc.activeProfileId` iken yazım yapar; aksi hâlde no-op + açık uyarı. `doc.profiles[0]` fallback'i kaldırılır ya da açık gerekçeyle korunur; `migrateExistingData` çıktısı ancak bu uyum sağlandığında hedefe yazılır. Not: "Bootstrap'in profil başına tam işleyişinin A4'e bırakılması" bir inceleme önerisidir, karar değildir; bu kural A3'te uygulanır.
 
 **Metadata akışı:** `upsertTasteMetadataInputs` (satır 333-369) ve `runHydrationLoop` (satır 154-171) global index okur/yazar; ayrıntılı hydration izolasyon analizi PR #39 §8 ile hizalıdır (fetch+cache ortak kalır, index yazımı profil kapsamlı olur).
 
@@ -602,7 +607,7 @@ function triggerTasteProfileRebuild(dataDir: string = "data"): Promise<...> {
 **Çözüm:**
 - Metadata cache, contentId bazlı olduğundan sorun minimal
 - Cache okuma/yazma, shared metadata cache kilidi ile korunmalı (mevcut: ✅ `withTasteSharedMetadataCacheLock` — `src/server/taste-store.ts:319-327`)
-- Profil kapsamı gereken katman cache DEĞİL, hydration döngüsünün index yazımıdır (bkz. §3.1, PR #39 §8.3)
+- Profil kapsamı gereken katman cache DEĞİL, hydration döngüsünün index yazımıdır (bkz. §3.1, PR #39 §8.3). `hydrationApiKeys` bu profil kapsamının dışındadır: API anahtarı profil-agnostik bir süreç kimlik bilgisidir ve `dataDir` anahtarlı kalır (birleşik denetim P1-1; bkz. §10.3)
 
 #### 🟡 **Risk 6: İstemciden Gelen Profil Kimliğinin Güven Sınırı (P2 - YENİ)**
 
@@ -687,14 +692,14 @@ function triggerTasteProfileRebuild(dataDir: string = "data"): Promise<...> {
 
 #### 🟢 **MUTLAK — Zorunlu Kabul Kriterleri**
 
-1. ✅ Tüm taste endpoint'leri profil kimliğini ProfileContext'ten almalı; istek başına `ProfileRef` yakalanmalı, okuma öncesi `assertCurrent(ref)`, mutasyon öncesi `assertWritable(ref)` çağrılmalı (tek kaynak; bkz. §4.2, §10.1)
-2. ⬜ Tüm taste işlemleri profil kapsamlı API'leri kullanmalı — **Koşullu:** §12.4'te Seçenek A onaylanırsa kullanıcıya dönük okuma/yazma akışı A3 boyunca legacy global yolda kalır; bu kriter Seçenek B/C onayına bağlıdır
+1. ✅ Tüm taste endpoint'leri profil kimliğini ProfileContext'ten almalı; istek başına `ProfileRef` yakalanmalı, okuma öncesi `assertCurrent(ref)`, mutasyon öncesi `assertWritable(ref)` çağrılmalı (tek kaynak; bkz. §4.2, §10.1). Store yazıcıları revision kontrolü yapmadığından (`taste-store.ts:551-565, 577-590`) uzun süren yazma akışlarında **yazma sonrası yeniden `assertWritable(ref)`** çağrılmalı (mevcut adapter kalıbı: `taste-service-adapter.ts:204-205`) veya yazım revision damgası taşımalıdır (bkz. §10.1)
+2. ⬜ Tüm taste işlemleri profil kapsamlı API'leri kullanmalı — **Karar verildi (v2.4.0):** §12.4 Karar Durumu'nda onaylanan B esasına göre kullanıcıya dönük akış profil kapsamlı API'lere geçer; eski global veri korunur ve otomatik dağıtım/migration yapılmaz. Kriter artık koşullu değildir
 3. ✅ `app.ts → ProfileContext → { adapter, createTasteRouter }` wiring bağlantısı kurulmalı (aynı örnek iki kanala da verilir; bkz. §11.1)
 4. ✅ Profil kimliği doğrulama tüm katmanlarda çalışmalı (`validateCanonicalProfileId` → `resolveTastePathsForProfile` zinciri)
-5. ✅ Coordinator'daki beş Map'in tamamı (`activeRebuildChains`, `bootstrapPromises`, `bootstrapSignatures`, `hydrationApiKeys`, `activeHydrations` — `taste-rebuild-coordinator.ts:69-73`) `${dataDir}:${profileId}` anahtarına geçirilmeli
+5. ✅ Coordinator Map'lerinde (`taste-rebuild-coordinator.ts:69-73`) `activeRebuildChains` (69), `bootstrapPromises` (70), `bootstrapSignatures` (71) ve `activeHydrations` (73) `${dataDir}:${profileId}` anahtarına geçirilmeli; `hydrationApiKeys` (72) `dataDir` anahtarlı **kalır** — API anahtarı profil-agnostik süreç kimlik bilgisidir ve tek yazma noktası `configureTasteHydration(dataDir, apiKey)` (`:144-152`) profil parametresi almaz (bkz. §10.3, §10.4)
 6. ✅ Legacy global API davranışı korunmalı; global API'ler ForProfile'a **yönlendirilmez** (yönlendirme testi önerisi kaldırıldı; yerine "davranış değişmedi" regresyonu gelir — bkz. §9.1.2)
 7. ✅ Coordinator modülünde global okuma/yazma API çağrısı kalmaz — `performRebuildOnce`, `ensureInitialTasteBootstrap`, `upsertTasteMetadataInputs`, `runHydrationLoop` ve bootstrap/hydration akışları dahil (bkz. §5.3, PR #39 §8)
-8. ⬜ `getCurrent()` üzerinden alınan profil kimliği `validateCanonicalProfileId`'den her zaman geçmeli (açılış anı tutarlılığı; bkz. §12.3)
+8. ⬜ `getCurrent()` üzerinden alınan profil kimliği `validateCanonicalProfileId`'den her zaman geçmeli (açılış anı tutarlılığı; bkz. §12.3). **Bu kriter zorunludur:** mevcut kaynakta `synchronizeProfileContext()` kimliği doğrulamadan context'e yazar (`app.ts:83-85`); senkronizasyon `validateCanonicalProfileId` ile doğrulamalı veya geçersiz/kanonik olmayan kimliği reddetmelidir; aksi hâlde pencere her eksik/geçersiz veri belgesi yüklemesinde yeniden açılır (bkz. §12.3)
 9. ⬜ A2 testlerinin geçmesi A3 kabul kriteridir (`tests/taste/taste-profile-store.test.mjs`, `taste-profile-scope.test.mjs`) — Bu doküman güncellemesinde çalıştırılmadı, geçme durumu doğrulanmadı
 
 > ⚠️ **Kabul kriteri ≠ test sonucu:** Yukarıdaki maddeler A3'ün kabul kriterleri olarak tanımlanmıştır; testlerin kabul kriteri olması ile testlerin gerçekten çalıştırılıp geçmiş olması farklı konulardır. Bu doküman güncellemesinde test ve CI **çalıştırılmadı**; hiçbir kriter çalıştırılmış veya geçmiş olarak sunulmaz.
@@ -810,7 +815,7 @@ function triggerTasteProfileRebuild(
 }
 ```
 
-> ⚠️ **NOT:** Önceki sürümdeki `(dataDir: string = "data", profileId: string)` imzası geçersizdi: TypeScript'te zorunlu bir parametre varsayılanlı parametrenin arkasına gelemez. Yeni imzada `profileId` ilk parametredir.
+> ℹ️ **İmza tekbiçimleme (birleşik denetim P2-2):** `triggerTasteProfileRebuild(profileId, dataDir)` imzası PR #39 (v1.2.0) ile birebir aynıdır (PR #39 §6, §7.2, §13.2); önceki sürümdeki `(dataDir, profileId)` çelişkisi ve bu notun eski hatalı TypeScript gerekçesi kaldırılmıştır — varsayılanlı parametreden sonra zorunlu parametre TypeScript'te zaten geçerlidir. Sıra, A2 store konvansiyonu `(profileId, …, dataDir)` ile tutarlıdır.
 
 **Çağrı noktaları (9):** imza değişikliği tüm çağrıları etkiler:
 
@@ -826,7 +831,7 @@ function triggerTasteProfileRebuild(
 | Coordinator: `ensureInitialTasteBootstrap()` | `src/server/taste-rebuild-coordinator.ts:647` |
 | Tanım | `src/server/taste-rebuild-coordinator.ts:494` |
 
-Aynı anahtar standardı diğer coordinator Map'lerine de uygulanmalıdır (`bootstrapPromises`, `bootstrapSignatures`, `hydrationApiKeys`, `activeHydrations` — satır 70-73). Hydration Map anahtarlarının değerlendirmesi PR #39 §8.4 ile uyumludur.
+Aynı anahtar standardı `bootstrapPromises` (70), `bootstrapSignatures` (71) ve `activeHydrations` (73) Map'lerine de uygulanmalıdır. `hydrationApiKeys` (72) ise `dataDir` anahtarlı **kalır** (birleşik denetim P1-1): TMDB API anahtarı profil-agnostik bir süreç kimlik bilgisidir; tek yazma noktası `configureTasteHydration(dataDir, apiKey)` (`:144-152`) profil parametresi almaz ve `${dataDir}:${profileId}` anahtarına geçirilirse `runHydrationLoop`/`scheduleTasteMetadataHydration` anahtarı bulamaz, hidrasyon her profil için sessizce hiç çalışmaz. Karar PR #39 §8.4 ile aynı dildir.
 
 ### 10.4 Karar 4: Coordinator Fonksiyonlarının Gerçek Sınırları
 
@@ -840,8 +845,8 @@ Aynı anahtar standardı diğer coordinator Map'lerine de uygulanmalıdır (`boo
 **✅ A3 Hedefi:**
 1. `performRebuildOnce(profileId, dataDir)` - Profil kapsamlı
 2. `ensureInitialTasteBootstrap(profileId, dataDir)` - Profil kapsamlı; bootstrap Map'leri de profil anahtarlı
-3. `upsertTasteMetadataInputs`/`runHydrationLoop` - metadata fetch+cache ortak kalır, index yazımı profil kapsamlı olur (PR #39 §8.3)
-4. Beş Map'in tamamı `${dataDir}:${profileId}` anahtarlı
+3. `upsertTasteMetadataInputs`/`runHydrationLoop` - metadata fetch+cache ortak kalır, index yazımı profil kapsamlı olur (PR #39 §8.3); cache→index beslemesi bootstrap (satırlar 614-619) ve hydration cache-hit turu için tek ortak yardımcı üzerinden yapılır (`seedProfileIndexFromCache`, birleşik denetim P2-9; PR #39 §8.5)
+4. `activeRebuildChains`, `bootstrapPromises`, `bootstrapSignatures`, `activeHydrations` `${dataDir}:${profileId}` anahtarlı; `hydrationApiKeys` `dataDir` anahtarlı kalır (profil-agnostik süreç kimlik bilgisi; bkz. §10.3)
 
 ---
 
@@ -851,7 +856,7 @@ Aynı anahtar standardı diğer coordinator Map'lerine de uygulanmalıdır (`boo
 
 A3 uygulaması **aşağıdaki sırayla** gerçekleştirilmelidir:
 
-> ⚠️ **Öncelik notu:** Adım 3 ve 5, §12.4'teki kullanıcı kararına **koşulludur** (Seçenek A onaylanırsa kullanıcıya dönük akış legacy global yolda kalır). Adım 1, 2, 4, 6, 7 ve 8 kullanıcı kararı gerektirmeyen teknik ön koşullardır.
+> ℹ️ **Öncelik notu (v2.4.0):** §12.4 kararları kullanıcı tarafından **verilmiştir**: eski global veri korunur, otomatik dağıtım/migration yapılmaz; kullanıcıya dönük taste akışı profil kapsamlı ForProfile API'lerine geçer (bkz. §12.4 Karar Durumu). Adımların tamamı (1-8) teknik ön koşullardır; koşullu adım kalmamıştır.
 
 #### 1. ProfileContext'in app/router/adapter zincirine aktarılması (P1)
 
@@ -863,11 +868,13 @@ A3 uygulaması **aşağıdaki sırayla** gerçekleştirilmelidir:
 - **app.ts:** Aynı ProfileContext'i `createTasteRouter` options üzerinden route katmanına aktarır (`src/server/app.ts:2666`, bugün eksik)
 - **createTasteRouter:** Router örneğini oluşturur; ProfileContext'i options'tan route handler'larına closure/options yoluyla ulaştırır
 - **route handlers:** ProfileContext'e yalnızca router options/closure üzerinden erişir
-- **Fallback adapter:** `createTasteRouter` içinde oluşturuluyorsa (`src/server/taste-routes.ts:287-288`) aynı ProfileContext'i alır
+- **Fallback adapter:** `createTasteRouter` içinde oluşturuluyorsa (`src/server/taste-routes.ts:294-295`) aynı ProfileContext'i alır
 
-**Gerekli router options değişikliği (açık):** `createTasteRouter` imzasına (`src/server/taste-routes.ts:275-288`) yeni bir `profileContext?: IProfileContext` options alanı eklenmelidir. Mevcut options alanları: `tmdbApiKey`, `eventBus`, `tasteAdapter`, `deferAdapterSubscription`, `onDomainEvent`, `onRawTasteEvent`.
+**Gerekli router options değişikliği (açık):** `createTasteRouter` imzasına (`src/server/taste-routes.ts:275-293`) yeni bir **ZORUNLU** `profileContext: IProfileContext` options alanı eklenmelidir (isteğe bağlı değildir). Mevcut options alanları: `tmdbApiKey`, `eventBus`, `tasteAdapter`, `deferAdapterSubscription`, `onDomainEvent`, `onRawTasteEvent`. `profileContext` verilmeden `createTasteRouter` çağrısı tanımlı bir açık hata üretir; küresel fallback **eklenmez**.
 
 > ⚠️ **Sorumluluk sınırı:** Adapter, router OLUŞTURMAZ ve ProfileContext'i router'a AKTARMAZ. ProfileContext'in dağıtımı `app.ts`'in sorumluluğudur; adapter yalnızca kendi doğrulamaları (`assertCurrent`/`assertWritable`) için context'i kullanır.
+
+> ✅ **Kullanıcı kararı uygulandı (birleşik denetim P1-2 — zorunlu `profileContext`):** Router options'ta `profileContext` **zorunludur**; profil-siz çağrı için global fallback **eklenmez**. Mevcut profil-siz route testleri açık bir `ProfileContext` sağlayacak şekilde güncellenir — örnek: `tests/taste/stock-and-live-profile.test.mjs:358` router'ı `createTasteRouter(tmpDir)` olarak options'sız kurar ve `/metric`, `/override`, `/objection` uçlarında başarı bekler. İlgili test matrisi kriteri "mevcut testler değişmeden geçer" değil, **"profil-siz testler açık ProfileContext ile güncellenerek geçer"** olarak değiştirilir (bkz. §9.2).
 
 **Mevcut Durum:**
 ```typescript
@@ -924,10 +931,10 @@ const tasteAdapter =
 - **Yeni mekanizma:** `getProfileRef(profileContext: IProfileContext)` - tek erişim noktası ProfileContext; handler ProfileRef yakalayıp `assertCurrent`/`assertWritable` çağırır (bkz. §10.1)
 - **Bağımlılık:** ProfileContext wiring (app.ts → adapter → router)
 
-#### 3. Route Store çağrılarının ForProfile API'lerine geçirilmesi (P1 — §12.4 kararına koşullu)
+#### 3. Route Store çağrılarının ForProfile API'lerine geçirilmesi (P1)
 - **Dosya:** `src/server/taste-routes.ts`
 - **Değişiklik:** Global API çağrıları → ForProfile API'leri
-- **Koşul:** §12.4 kullanıcı kararı — Seçenek A onaylanırsa kullanıcıya dönük okuma/yazma çağrıları A3 boyunca legacy global yolda kalır. Bootstrap/upsert çağrıları (`taste-routes.ts:304, 318, 393, 497, 560, 640, 696, 734` ve `645, 707`) her iki seçenekte de profil kapsamlı hâle getirilmelidir (bkz. §5.1, adım 5).
+- **Karar uygulandı (v2.4.0):** Kullanıcıya dönük taste okuma/yazma çağrıları profil kapsamlı ForProfile API'lerine geçer; eski `data/taste/` global verisi olduğu gibi korunur ve otomatik dağıtım/migration yapılmaz (bkz. §12.4 Karar Durumu). Bootstrap/upsert çağrıları (`taste-routes.ts:304, 318, 393, 497, 560, 640, 696, 734` ve `645, 707`) da profil kapsamlı hâle getirilir (bkz. §5.1, adım 5).
 - **Bağımlılık:** Profil kimliği alma mekanizması
 
 #### 4. Rebuild Coordinator'ın profil kapsamlı hâle getirilmesi (P1)
@@ -940,12 +947,12 @@ const tasteAdapter =
 
 #### 5. Bootstrap ve metadata güncelleme akışlarının profil kapsamının belirlenmesi (P1)
 - **Dosya:** `src/server/taste-rebuild-coordinator.ts`
-- **Değişiklik:** Hedef imza `ensureInitialTasteBootstrap(profileId, dataDir)`; `bootstrapPromises`/`bootstrapSignatures` Map'leri `${dataDir}:${profileId}` anahtarına geçer (satır 70-71). Metadata akışında fetch+cache katmanı ortak kalır; `upsertTasteMetadataInputs`/`runHydrationLoop`'un index yazımı profil kapsamlı olur (PR #39 §8.3). Bootstrap'in okuduğu kaynak olay kümesi (aktif profil; `migration.ts:59-78`) §12.4 kararıyla uyumlu seçilir.
+- **Değişiklik:** Hedef imza `ensureInitialTasteBootstrap(profileId, dataDir)`; `bootstrapPromises`/`bootstrapSignatures` Map'leri `${dataDir}:${profileId}` anahtarına geçer (satır 70-71). Metadata akışında fetch+cache katmanı ortak kalır; `upsertTasteMetadataInputs`/`runHydrationLoop`'un index yazımı profil kapsamlı olur (PR #39 §8.3). **Hedef profil garantisi (P1-3):** bootstrap yalnızca `profileId === doc.activeProfileId` iken yazım yapar; aksi hâlde no-op + uyarı (`doc.profiles[0]` fallback'i `coordinator:551-552`; `migrateExistingData` olayları `doc.activeProfileId`'den üretir: `migration.ts:59-61`; bkz. §7.2 Risk 4). **Tek ortak yardımcı (P2-9):** cache→index beslemesi bootstrap (satırlar 614-619) ve hydration cache-hit turu için tek `seedProfileIndexFromCache(profileId, dataDir, contentIds)` yardımcısı üzerinden yapılır (`tasteMetadataCacheToInput`, `coordinator:136-142`; PR #39 §8.5).
 - **Bağımlılık:** Rebuild Coordinator tamamlama
 
 #### 6. Coordinator Map anahtarlarının düzenlenmesi (P1)
-- **Dosya:** `src/server/taste-rebuild-coordinator.ts:69-73` (beş Map'in tamamı)
-- **Değişiklik:** Anahtar `${dataDir}:${profileId}`
+- **Dosya:** `src/server/taste-rebuild-coordinator.ts:69-73`
+- **Değişiklik:** `activeRebuildChains` (69), `bootstrapPromises` (70), `bootstrapSignatures` (71) ve `activeHydrations` (73) anahtarı `${dataDir}:${profileId}`; `hydrationApiKeys` (72) `dataDir` anahtarlı **kalır** (profil-agnostik süreç kimlik bilgisi; bkz. §10.3)
 - **Bağımlılık:** Rebuild Coordinator tamamlama
 
 #### 7. Legacy global API davranışının korunması (P2)
@@ -1028,7 +1035,7 @@ const profileContext = createProfileContext({
 });
 ```
 
-**Açılış penceresi:** Sunucu başlangıcından birincil depolamanın ilk `synchronizeProfileContext()` çağrısına kadar (`app.ts:540`) ProfileContext `"default"` taşır. Bu pencerede bir taste isteği gelirse `resolveTastePathsForProfile('default', dataDir)` kanonik doğrulamadan hata fırlatır (`src/server/taste-profile-scope.ts:165-166`).
+**Açılış penceresi:** Sunucu başlangıcından birincil depolamanın ilk `synchronizeProfileContext()` çağrısına kadar (`app.ts:540`) ProfileContext `"default"` taşır. Bu pencerede bir taste isteği gelirse `resolveTastePathsForProfile('default', dataDir)` kanonik doğrulamadan hata fırlatır (`src/server/taste-profile-scope.ts:166-169`). **Pencerenin açılma koşulları (birleşik denetim P2-5):** pencere yalnızca ilk yükleme öncesi değildir; `synchronizeProfileContext()` kimliği doğrulamadan yazar (`document.activeProfileId || document.profiles?.[0]?.id || 'default'` — `app.ts:83-85`). Belge **yok/eksik** veya **kanonik olmayan `activeProfileId`** içeren her belge yüklemesi pencereyi yeniden açar. **A3 kuralı:** senkronizasyon `validateCanonicalProfileId` (`src/server/taste-profile-scope.ts:125-173`) ile doğrulamalı veya geçersiz kimliği reddetmelidir; geçersiz kimlik davranışı açık hata olarak tanımlanır (bkz. §9.2 kriter 8, PR #39 §12.1).
 
 #### ProfileContext Kullanımı
 - `ProfileContext.getCurrent()` - açılış penceresinde `"default"`, ilk eşitlemeden sonra belgedeki değer (`profile-default`) döndürür
@@ -1037,7 +1044,7 @@ const profileContext = createProfileContext({
 
 **ℹ️ TEŞHİS (güncel):** Uyumsuzluk kalıcı bir veri sorunu değil, **açılış anı kimlik tutarlılığı** sorunudur. Bu, §12.4'teki kullanıcı kararından AYRI bir teknik konudur ve A3 uygulaması sırasında çözülecek teknik işlerdendir (bkz. §15.2). İki olası mekanizma vardır: (a) `initialProfileId`'in belge normalizasyonuyla (`profile-default`) hizalanması, (b) ilk `synchronizeProfileContext()` tamamlanana kadar taste route'larının geçici olarak gate'lenmesi. Hangisinin seçileceği A3 uygulama zamanında karara bağlanır; bu doküman karar vermez.
 
-### 12.4 Eski Verilerin Korunması: Çözüm Seçenekleri (Karar Bekliyor)
+### 12.4 Eski Verilerin Korunması: Çözüm Seçenekleri (KARAR VERİLDİ — B ESASI)
 
 **SORU:** Eski global Taste verileri `data/taste/` altında kalırken yeni ForProfile API'leri `data/taste/profiles/...` altından çalışacak. A3 sonrasında eski veriler nasıl korunacak ve kullanıcıya nasıl sunulacak?
 
@@ -1093,7 +1100,14 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 
 #### Karar Durumu
 
-**⚠️ KARAR BEKLENİYOR:** Hiçbir seçenek kullanıcı onayı olmadan kesinleştirilmez. Her seçeneğin avantajları, dezavantajları ve riskleri yukarıda açıkça belirtilmiştir. Migration stratejisi ayrı bir karara bağlanmalıdır.
+**✅ KARAR VERİLDİ (kullanıcı onayı — v2.4.0):** Seçenek **B esası** uygulanır; onaylanan karar şu maddelerden oluşur:
+> - Eski global Taste verisi diğer profillere **otomatik dağıtılmaz**.
+> - Mevcut global veri **korunur**; `data/taste/` yoluna dokunulmaz.
+> - Profil aktarımı **otomatik yapılmaz**.
+> - Hangi profile aktarılacağı **açıkça belirlenmeden migration yapılmaz**; kontrollü geçiş, hedef profil açıkça belirlendiğinde ayrı bir kararla yapılır.
+> - Legacy global API davranışı ve geriye dönük uyumluluk sınırları **açıkça belgelenir** (bkz. §6.4, §10.2).
+>
+> Seçenek A ve C uygulanmaz. B'nin bilinen veri ikiliği riski kullanıcıya yansıyan davranış olarak yukarıdaki tabloda belgelenmiştir; onay bu riskin bilinmesiyle verilmiştir.
 
 ---
 
@@ -1213,7 +1227,8 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 | Adapter profileContext yollanmıyor | `src/server/app.ts:498-501` | ❌ | Wiring eksik |
 | Route'lar global API kullanıyor | `src/server/taste-routes.ts:302-740` (kayıt; çağrılar 305-735) | ❌ | 25+ global API çağrısı + 8 bootstrap + 2 upsert |
 | Coordinator global store kullanıyor | `src/server/taste-rebuild-coordinator.ts:154-171, 333-369, 431-492, 519-660` | ❌ | Rebuild + upsert + bootstrap + hydration global |
-| Coordinator Map anahtarları | `src/server/taste-rebuild-coordinator.ts:69-73` | ❌ | Beş Map'in tamamı sadece dataDir |
+| Coordinator Map anahtarları | `src/server/taste-rebuild-coordinator.ts:69-73` | ❌ | Beş Map'in tamamı sadece dataDir (A3 hedefi: dört Map `${dataDir}:${profileId}`, `hydrationApiKeys` `dataDir` kalır) |
+| `computeBootstrapSignature` yalnızca global dosyaları imzalıyor | `src/server/taste-rebuild-coordinator.ts:198-226` | ❌ | Profil kapsamlı dosya girdisi yok; imza girdisi profil dosya kümesine genişletilmeli (birleşik denetim P2-8) |
 
 ---
 
@@ -1228,7 +1243,7 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 | Profil kimliği akış şeması belirlendi | ✅ |
 | Riskler belirlendi ve çözümler önerildi | ✅ |
 | Test matrisi hazır | ✅ |
-| Teknik kararlar | ⚠️ Seçenekler analiz edildi, nihai karar bekleniyor ("default" kimlik sözleşmesi ve eski veri stratejisi kararları kullanıcı onayına bağlı) |
+| Teknik kararlar | ✅ Kullanıcı kararları verildi (v2.4.0): eski global veri stratejisi B esası (§12.4 Karar Durumu); /domain-event kimlik otoritesi sunucuda (§4.3, §15.2). Açılış mekanizması seçimi (initialProfileId hizalama / route gating) uygulama zamanında yapılır (§12.3) |
 | Uygulama sırası belirlendi | ✅ |
 | Açılış anı kimlik tutarsızlığı belirlendi | ✅ |
 
@@ -1236,13 +1251,17 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 
 ### 15.2 Bloke Edici Sorunlar
 
-#### 🔴 P1 — A3 Kodlamasından Önce Kullanıcı Kararı Gereken
+#### ✅ KARAR VERİLDİ — Kullanıcı Onayı Sonucu (v2.4.0)
 
-1. ⚠️ **Eski global Taste verilerinin korunma stratejisi** — yeni ForProfile yolları eski `data/taste/` verilerini otomatik olarak devralmaz; `profile-default` yaklaşımı da taşımaz (bkz. §12.4 ortak not).
-   - **Karar:** §12.4'teki A/B/C seçeneklerinden biri kullanıcı tarafından seçilmelidir. **C önerilmez:** A1 kimlik sözleşmesi değişikliği taşır ve tüketicileri geniştir (bkz. §12.4 Seçenek C).
-   - **Blokaj:** Kullanıcı kararı olmadan migration, otomatik taşıma veya legacy erişimin kesilmesi yapılamaz.
-2. ⚠️ **POST /domain-event istemci sözleşmesi** — route gövdedeki `event.profileId` alanını zorunlu tutar (`src/server/taste-routes.ts:690-693`); adapter `assertWritable({profileId: event.profileId, revision: event.sourceRevision})` ile aktif profile uymayan olayları reddeder (`src/server/taste-service-adapter.ts:222-227`).
-   - **Karar:** İstemci profileId'sinin zorunluluğu, aktif profile eşitlik şartı veya alanın kaldırılması kullanıcının kararına bırakılmıştır (bkz. §4.3 Kritik Nokta 1).
+1. ✅ **Eski global Taste verilerinin korunma stratejisi (§12.4 — B esası):** kullanıcı kararı verildi:
+   - Eski global veri otomatik olarak profillere dağıtılmaz; mevcut `data/taste/` verisi korunur.
+   - Profil aktarımı otomatik yapılmaz; hedef profil açıkça belirlenmeden migration yapılmaz.
+   - Legacy global API davranışı ve geriye dönük uyumluluk sınırları açıkça belgelenir (§6.4, §10.2).
+   - **C uygulanmaz:** A1 kimlik sözleşmesi değişikliği taşır ve tüketicileri genişletir (bkz. §12.4 Seçenek C).
+2. ✅ **POST /domain-event kimlik otoritesi (§4.3 Kritik Nokta 1):** kullanıcı kararı verildi:
+   - İstemciden gelen `profileId` yetkili kimlik değildir; sunucu aktif profili `ProfileContext` üzerinden belirler (`profileContext.getCurrent().profileId` her zaman store hedefidir).
+   - `sourceRevision` sunucu tarafında doğrulanır; profil veya revision uyuşmazlığında istek 409 ile reddedilir.
+   - İstemci verisi sunucu kimlik otoritesini geçersiz kılamaz (`taste-routes.ts:690-693`; `taste-service-adapter.ts:222-227`).
 
 #### 🟡 P1 — A3 Uygulaması Sırasında Çözülecek Teknik İşler
 
@@ -1251,34 +1270,34 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
    - **Ayrıca:** Aynı ProfileContext, `createTasteRouter` options üzerinden route katmanına ayrı olarak aktarılmalı.
 2. ⚠️ Route'lar global API kullanıyor (`src/server/taste-routes.ts:302-740`; 8 bootstrap + 2 upsert çağrısı dahil); onaylanan veri stratejisine göre uygun API yoluna geçirilmeli.
 3. ⚠️ Rebuild Coordinator profil kapsamlı değil (`src/server/taste-rebuild-coordinator.ts:154-171, 333-369, 431-492, 519-660`; bootstrap + hydration dahil).
-4. ⚠️ Coordinator Map anahtarları yalnızca `dataDir` (`src/server/taste-rebuild-coordinator.ts:69-73`, beş Map); profil kapsamı eklendiğinde `dataDir + profileId` ile ayrıştırılmalı.
+4. ⚠️ Coordinator Map anahtarları yalnızca `dataDir` (`src/server/taste-rebuild-coordinator.ts:69-73`); profil kapsamı eklenirken `activeRebuildChains`, `bootstrapPromises`, `bootstrapSignatures`, `activeHydrations` `${dataDir}:${profileId}` anahtarına geçirilir; `hydrationApiKeys` `dataDir` anahtarlı kalır (bkz. §10.3).
 5. ⚠️ Açılış anı kimlik tutarlılığı: açılış penceresinde `"default"` kimliğiyle taste isteği gelmemesi sağlanmalı (bkz. §12.3).
 
 ### 15.3 Sonuç ve Başlama Koşulları
 
 **Teknik planın durumu:** Doküman, mevcut mimariyi, A3 kapsamını, riskleri, test matrisini ve uygulama sırasını tanımlayan bir plan olarak teknik incelemeye sunulabilir. Bu durum, açık veri/kimlik kararlarının verilmiş olduğu veya A3 kodlamasının başlamasına izin verildiği anlamına gelmez.
 
-**A3 kodlamasına başlamadan önce kullanıcı onayı gereken kararlar:**
-1. §12.4'teki A/B/C seçeneklerinden hangisinin izleneceği: eski global Taste verilerinin A3 sonrasında nasıl korunacağı ve kullanıcıya nasıl sunulacağı (C önerilmez; bkz. §12.4).
-2. POST /domain-event istemci sözleşmesi: istemci `profileId`'sinin zorunluluğu, aktif profile eşitlik şartı veya alanın kaldırılması (bkz. §4.3, §15.2).
+**Kullanıcı onayı gerektiren kararlar (v2.4.0 itibarıyla VERİLDİ):**
+1. ✅ Eski global Taste verisi: otomatik dağıtım yok, mevcut veri korunur, otomatik profil aktarımı yok, hedef profil belirlenmeden migration yok, legacy davranış/uyumluluk sınırları belgelenir (B esası; bkz. §12.4 Karar Durumu).
+2. ✅ POST /domain-event kimlik otoritesi: hedef profil her zaman `profileContext.getCurrent().profileId`; `event.profileId`/`sourceRevision` yalnızca doğrulama girdisi; uyuşmazlıkta 409 (bkz. §4.3, §15.2).
 
 **A3 uygulaması sırasında çözülecek teknik ön koşullar (kullanıcı kararı gerektirmez):**
 1. Açılış anı kimlik tutarlılığı: açılış penceresinde `"default"` kimliğiyle taste isteği gelmemesi (bkz. §12.3; `initialProfileId` hizalaması veya route gating, uygulama zamanında seçilir).
 2. Adapter/router wiring: ProfileContext'in adapter'a ve `createTasteRouter` options'a aktarılması (bkz. §11.1).
 3. Coordinator profil kapsamı: beş Map'in `${dataDir}:${profileId}` anahtarına geçirilmesi; bootstrap + hydration dahil (bkz. §7.2 Risk 4, PR #39 §8).
-4. Bootstrap kaynak verisi atfı ve hydration cache-hit boşluğu: PR #39 §11'deki açık konular.
+4. Bootstrap kaynak verisi atfı ve hydration cache-hit boşluğu: PR #39 §8.5 (cache-hit) ve §12.2 (bootstrap atfı) maddeleri.
 5. `app.ts:588` startup manifest okumasının kapsam kararı (PR #39 §12.4).
 
 **Kullanıcı kararı verilmeden yapılmayacaklar:**
 - `PROFILE_ID_PATTERN` veya A1 kimlik doğrulama sözleşmesini genişletmek.
 - Legacy global verileri profil dizinine kopyalamak, taşımak veya otomatik ilişkilendirmek.
-- A3'te legacy global okuma yolunun korunacağı ya da yeni profil yoluna geçileceği varsayımıyla kod yazmak.
+- Eski global veriyi otomatik profillere dağıtmak, otomatik profil aktarımı yapmak veya hedef profile belirlenmeden migration çalıştırmak (§12.4 Karar Durumu'nda açıkça korunmuştur).
 
-**Kararlar verildikten sonra A3 uygulama sırası:**
+**A3 uygulama sırası (kararlar v2.4.0 itibarıyla verildi; başlama için ayrı onay gereklidir):**
 1. Onaylanan kimlik ve eski veri koruma kararını uygulama planına sabitlemek.
 2. `app.ts` içinde ProfileContext'i adapter'a ve `createTasteRouter` options'a ayrı ayrı aktarmak.
 3. Route katmanında profil kimliğini yalnızca ProfileContext'ten almak.
-4. Onaylanan veri stratejisine göre Store çağrılarını ForProfile veya legacy API davranışıyla uyumlu biçimde düzenlemek.
+4. Kullanıcıya dönük Store çağrılarını profil kapsamlı ForProfile API'lerine geçirmek; legacy global veriye dokunmaz (§12.4 Karar Durumu).
 5. Rebuild Coordinator'ı aynı profil/veri stratejisine göre kapsamlandırmak ve `activeRebuildChains` anahtarını `dataDir + profileId` olacak şekilde ayırmak.
 6. İzolasyon, geriye dönük uyumluluk, eşzamanlılık ve rebuild testlerini çalıştırmak.
 
@@ -1354,14 +1373,16 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 - [x] Kaynak kodla tekrar doğrulanan fonksiyonlar listelendi
 - [x] §4.2 hedef akış şeması §10.1 ile hizalandı (tek kaynak: ProfileContext)
 - [x] §11.1 router wiring sorumlulukları düzeltildi (ProfileContext app.ts'ten adapter'a ve createTasteRouter options'a)
-- [x] §12.4 eski veri koruma seçenekleri üç ayrı alternatif (A/B/C) olarak ayrıştırıldı; karar kullanıcı onayına bırakıldı
+- [x] §12.4 eski veri koruma seçenekleri üç ayrı alternatif (A/B/C) olarak ayrıştırıldı; karar kullanıcı tarafından **onaylandı (B esası)** (v2.4.0)
+- [x] POST /domain-event kimlik otoritesi kullanıcı kararıyla kesinleştirildi (sunucu otoritesi; 409 reddi) (v2.4.0)
+- [x] Birleşik denetim P1-1/P1-2/P1-3 ve P2-1..P2-11 düzeltmeleri uygulandı; PR #39 (v1.2.0) ile imza/Map/tablo unifikasiyonu yapıldı (v2.4.0)
 - [x] §9 kabul kriteri ile test sonucu ayrıştırıldı; test/CI çalıştırılmadı notu korundu
 - [x] Eski referanslar temizlendi (PR #37 → PR #38, sürüm 2.1.0 → 2.2.0, teslim bilgileri)
 
 ---
 
-**✅ DOKÜMAN GÜNCELLENDİ (Agent 2 Nihai Denetim Raporu — REQUEST_CHANGES — Sonrası)**  
-**Sürüm:** 2.3.0  
+**✅ DOKÜMAN GÜNCELLENDİ (Birleşik Denetim Raporu — PR #38 + PR #39 — Sonrası)**  
+**Sürüm:** 2.4.0  
 **Tarih:** 17 Kasım 2026  
 **Base Commit:** 49142ca8d552d59b11894a7aa574cce4588c16ce
 
@@ -1429,3 +1450,31 @@ Aşağıda **üç ayrı alternatif** karşılaştırılmaktadır. **A ve B aynı
 - PR #39 §8 hydration analiziyle hizalama sağlandı (ortak metadata cache, profil kapsamlı index yazımı)
 
 **Test ve CI durumu:** Bu doküman güncellemesinde çalıştırılmadı
+
+---
+
+## Değişiklik Özeti (v2.4.0)
+
+### Kullanıcı Kararları (uygulandı)
+- Eski global Taste verisi: otomatik dağıtım yok, mevcut `data/taste/` verisi korunur, otomatik profil aktarımı yok, hedef profil açıkça belirlenmeden migration yok, legacy davranış/uyumluluk sınırları belgelenir (§12.4 Karar Durumu — B esası; §15.2/§15.3)
+- POST /domain-event kimlik otoritesi: istemci `profileId` yetkili değildir; hedef profil her zaman `profileContext.getCurrent().profileId`; `sourceRevision` sunucuda doğrulanır; uyuşmazlıkta 409; istemci sunucu otoritesini geçersiz kılamaz (§4.3 Kritik Nokta 1, §15.2)
+
+### P1 Düzeltmeleri (birleşik denetim)
+- Map anahtar şeması düzeltildi: `activeRebuildChains`, `bootstrapPromises`, `bootstrapSignatures`, `activeHydrations` `${dataDir}:${profileId}`; `hydrationApiKeys` `dataDir` anahtarlı kalır — API anahtarı profil-agnostik süreç kimlik bilgisidir; profil anahtarlı yapılsaydı hidrasyon sessizce hiç çalışmazdı (§5.3, §7.2 Risk 3/5, §9.2 kriter 5, §10.3, §10.4, §11.1 adım 6, §14.2, §15.2)
+- Router için `profileContext` zorunlu hâle getirildi; global fallback yok; profil-siz mevcut testler (`tests/taste/stock-and-live-profile.test.mjs:358`) açık ProfileContext ile güncellenecek; kriter "güncellenen testlerle geçer" (§11.1 adım 1, §9.2)
+- Bootstrap hedef profil garantisi eklendi: yalnızca `profileId === doc.activeProfileId` iken yazım; `doc.profiles[0]` fallback'i ve `migrateExistingData` atfı belgelendi (§7.2 Risk 4, §11.1 adım 5)
+
+### P2 Düzeltmeleri (birleşik denetim)
+- Manifest gerçek davranışı: profil yazıcıları manifest'i kilit altında kendileri günceller (`writeManifestForPathsUnlocked` `taste-store.ts:198`; kullanım `:563`, `:588`); ayrı `writeTasteManifestForProfile` gerekmez (§6.2)
+- Hatalı TypeScript gerekçesi kaldırıldı; `triggerTasteProfileRebuild(profileId, dataDir)` imzası PR #39 ile tekleştirildi (§10.3)
+- Bootstrap okuma satırları düzeltildi: 533 events / 534 profile / 535 manifest / 536 metadata-cache; bootstrap'ta readTasteIndex/readTasteObjections yok (§5.3)
+- Açılış penceresi tanımı genişletildi; `synchronizeProfileContext` kanonik doğrulama/reddetme kuralı zorunlu kriter yapıldı (§12.3, §9.2 kriter 8)
+- Stale-write gerçek sınırı: yazıcılar revision kontrolü yapmaz; yazma sonrası yeniden `assertWritable` (adapter `:204-205`) veya revision damgalı yazım zorunlu (§10.1)
+- Fallback adapter satır referansı 287-288 → 294-295; bootstrap okuma satırları düzeltildi (§11.1)
+
+### Tutarlılık (PR #39 v1.2.0 ile)
+- `seedProfileIndexFromCache(profileId, dataDir, contentIds)` tek ortak cache→index yardımcısı (bootstrap + hydration cache-hit) (§10.4, §11.1 adım 5)
+- `computeBootstrapSignature` profil kapsamı eksikliği §14.2'ye doğrulanmış sorun olarak eklendi (P2-8)
+- PR #39 açık konu referansı §11 → §8.5/§12.2 olarak düzeltildi (§15.3)
+
+**Test ve CI durumu:** Bu doküman güncellemesinde çalıştırılmadı.
