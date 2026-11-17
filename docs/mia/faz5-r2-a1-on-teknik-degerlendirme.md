@@ -128,3 +128,74 @@ Aşağıdaki liste A1 uygulama PR'ının test planında yer almalıdır; bu dene
 ## 5. Sınırlar
 
 Bu denetim salt okunur inceleme ve raporlamadır: kod, test, şema veya CI değişikliği yapılmamış; tasarım kararı Ajan 2 adına verilmemiş; master'a push veya merge yapılmamıştır.
+
+---
+
+## 6. EK DENETİM — PR #35 Tasarımının Bu İncelemeyle Karşılaştırılması (2026-11-17)
+
+**Denetlenen tasarım:** PR #35 — `docs/mia/faz5-r2-a1-tasarim.md` (Ajan 2, dal `agent-2/phase-5-r2-a1-tasarim`, HEAD `3cfc009e837b4f3e1e26b7bf4aebf58b6d530e0d`, base master, OPEN, docs-only, düz Markdown ✓).
+
+### 6.1 Dokuz riskin tasarımda karşılanma durumu
+
+| Risk | Tasarımdaki karşılık | Durum |
+|---|---|---|
+| **R-1 (P1)** canlı kilit çalma | §3.1: stale kararı yalnızca "lease dolumu + sahiplik doğrulanamaması" ile; `staleMtimeFallbackMs=15000` açıkça "yalnızca geri-uyumluluk/teşhis sinyali; stale kararı tek başına mtime'a dayanmaz" olarak indirgenmiş | **KARŞILANDI** (kural düzeyi) — tek eksik: legacy `.taste.lock`'un yaş-bazlı çalma davranışının A1'de dokunulmadan bırakılıp bırakılmadığı açıkça yazılmamış (P3) |
+| **R-2 (P1)** unlink yarışı / çifte sahiplik | §3.1: "yalnız bu durumda atomik yeniden sahiplenme denenebilir" + bozuk lock fail-closed | **KISMEN** — atomik sahiplenme **mekanizması** belirtilmemiş (rename-tabanlı mı, token-koşullu silme mi?); boş-token penceresi (R-8) ayrıca ele alınmamış (P2) |
+| **R-3 (P1)** case-insensitive FS çakışması | Tasarımda **hiç geçmiyor** (§1.2 yalnızca manifest otoritesi + aynı id/dir çakışma kuralı) | **KARŞILANMADI** — aşağıda somut karşı örnek kanıtlandı (§6.2). Tasarımın gidermesi zorunludur (P1) |
+| **R-4 (P2)** çift yol türetme | §2.1 manifest yolu her iki dataDir durumu için tanımlı; §6.2 `resolveTasteProfileMapPath` | **KISMEN** — `resolveTastePaths` özel durumu (:40) ile kilit `tasteDir` türetmesinin (:120-122) tek fonksiyonda birleştirileceği açıkça yazılmamış (P3) |
+| **R-5 (P2)** serileştirme anahtarı + Map büyümesi | §6.2 scope anahtarları tanımlı (`__profile-id-map__`, `profile:<dir>`, `shared-metadata-cache`) | **KISMEN** — süreç içi FIFO anahtar şemasının profil bazına uyarlanması ve `tasteWriteChains` temizliği adreslenmemiş (P3, A2 hazırlığı) |
+| **R-6 (P2)** testlerin gerçek `data/`'ya yazması | §6.4: bu turda test değişikliği yok; checklist A1'de testlere dönüşecek | **KISMEN** — A1 test planında **geçici dataDir zorunluluğu** açıkça ifade edilmemiş (P3) |
+| **R-7 (P2)** manifest bozukluğu izolasyonu | §2.3: fail-fast + "Taste dışı akışlar etkilenmez" | **KARŞILANDI** (tasarım düzeyi) — kalıcı izolasyon testi A1'de zorunlu |
+| **R-8 (P3)** boş-token penceresi | Adreslenmemiş | **KARŞILANMADI** (P3) — A1 uygulama detayı olarak netleştirilmeli |
+| **R-9 (P3)** sabit dosya adı testleri | §6.3: `TASTE_PATHS` legacy kalır, kaldırma A2+ | **KARŞILANDI** — mevcut integration testleri yeşil kalmaya devam eder |
+
+### 6.2 R-3 doğrulaması: somut çakışma kanıtı (tasarımın en önemli eksiği)
+
+Tasarım §1.2, Base64URL kodlamasının uzunluk sınırını doğru hesaplar (bağımsız doğrulama: 128 karakterlik kanonik id → padding'siz Base64URL 171 karakter + `p1-b64url-` öneki = 181 < 255 FS segment sınırı ✓; roundtrip + yeniden §1.1 doğrulaması kuralı ✓). Ancak **büyük/küçük harf duyarsız dosya sistemlerindeki çakışma riski tasarımda hiç ele alınmamıştır** ve risk teorik değildir — somut karşı örnek:
+
+```
+profile-AAA  →  p1-b64url-cHJvZmlsZS1BQUE
+profile-AAG  →  p1-b64url-cHJvZmlsZS1BQUe
+
+toLowerCase karşılaştırma: "chjvzmlszs1bque" == "chjvzmlszs1bque"  → AYNI DİZİN
+```
+
+Her iki kimlik de `PROFILE_ID_PATTERN` (cinetrack-core.ts:717) ile geçerlidir. macOS (APFS varsayılan) veya Windows üzerinde bu iki **farklı profil** aynı fiziksel dizine düşer → profil izolasyonu sessizce bozulur. Brute-force tarama, `profile-AA?` uzayında birden fazla çakışan çift üretti (ör. `profile-AAB` ↔ `profile-AAH`, `profile-AAa` ↔ `profile-AAg`); 300.000 rastgele id taramasında genel çakışma çıkmadı ancak desen-geçerli çiftler **deterministik olarak mevcut**.
+
+- **Etki:** P1 — iki profilin Taste verisi aynı dizinde birleşir; manifest `byDir` doğrulaması bunu ancak çakışma **gerçekleştikten sonra** yakalar, önlemez.
+- **Önerilen çözüm (tasarım §1.2/§2.2'ye eklenmeli):** Manifest ilk oluşturmada `byDir` benzersizliğini **case-normalize edilmiş** anahtar üzerinde de denetlemek (case-insensitive çakışmayı proaktif reddetmek) veya dizin adına case-duyarlılığı koruyan bileşen (ör. içerik-hash soneki) eklemek. Karar Ajan 2'nindir; ancak boşluk tasarımın giderilmeden A1 kodlamasına geçilmemelidir.
+- **Zorunlu test:** Yukarıdaki `profile-AAA`/`profile-AAG` çifti fixture olarak kullanılmalı; case-insensitive çakışmada fail-fast kanıtlanmalı.
+
+### 6.3 R-1 ve R-2 kilit güvenliği değerlendirmesi
+
+- **R-1:** Tasarım, PR #32 §1 ile bağlayıcı heartbeat/lease kurallarını (sahiplik doğrulamalı yenileme, koşullu atomik heartbeat, lease dolumunda zorla çalma yasağı, kanıta dayalı stale, bozuk lock fail-closed, token eşleşmeli bırakma) eksiksiz devralıyor; sayısal değerler (`lockAcquireTimeoutMs=10000`, `leaseDurationMs=30000`, `heartbeatIntervalMs=10000=lease/3`) mevcut kilit timeout'u (:109) ve PR #32 §1 önerisiyle uyumlu. Kural düzeyinde **çözülmüş**; A1 uygulamasında bu kuralların gerçek koda dönüşümü testle kanıtlanmalı.
+- **R-2:** "Atomik yeniden sahiplenme" taahhüdü var ama mekanizma belirsiz. Mevcut kodda unlink-sonrası-`wx` deseni (:150-157) iki bekleyenin yarışına açıktır. A1 tasarım/uygulamada mekanizmanın (ör. `rename`-tabanlı takeover veya token-koşullu silme + yeniden doğrulama) açıkça seçilmesi ve yarış testiyle kanıtlanması zorunludur. Boş-token penceresi (R-8) de aynı başlıkta ele alınmalı.
+
+### 6.4 Tasarımda eksik kalan kararlar ve gerekli testler
+
+1. **(P1)** R-3 case-insensitive çakışma çözümü (§6.2) + fixture tabanlı fail-fast test.
+2. **(P2)** R-2 atomik sahiplenme mekanizmasının seçimi ve eşzamanlı takeover yarış testi; R-8 boş-token penceresi davranışı.
+3. **(P2)** A1 test planının bu rapor §3'teki TC-1…TC-8 envanteri ve PR #32 §3 checklist'iyle **madde madde eşlendiği izlenebilirlik tablosu**; geçici dataDir zorunluluğu (R-6).
+4. **(P3)** Legacy `.taste.lock` yaş-bazlı çalma davranışının A1 kapsamındaki statüsünün açıkça yazılması (dokunulmadan bırakma + A2'de lease tabanına geçiş planı).
+5. **(P3)** `tasteWriteChains` profil-bazlı anahtar şeması ve temizliği (R-5, A2 hazırlığı).
+6. **(Kullanıcı kararı — tasarımca doğru biçimde açık bırakılmış)** S1 canlı veri kanıtı/onaylı kopya ve S3 nihai sunum tercihi (§5/§6.5).
+
+### 6.5 Tasarımın güçlü yönleri (bağımsız değerlendirme)
+
+- §1.1 kanonik doğrulama, `PROFILE_ID_PATTERN` ile uyumlu sıkı alt küme; sanitize/replace yasağı doğru.
+- §2.2 manifest şeması (`version/scheme/entries/byDir`, birebir türetilmiş bütünlük, fail-fast) PR #30/PR #32 koşullarıyla birebir uyumlu.
+- §4 operasyon bazlı kilit tablosu, PR #32 §2.3'teki "operasyon listesi yazılmalı" koşulunu (PR #33 B3) karşılıyor; nested cache kilidi yasağı korunuyor.
+- §6.3/§6.4 kapsam ayrımı (A1 davranış koruyucu, imza kırılmıyor; A2–A5 ayrımı) önceki denetimlerle tutarlı.
+- PR #32 §5 açık kararlarından (1),(2),(3),(6) bu belgede kesinleştirilmiş; (4),(5) kullanıcı kararı olarak açık — doğru yaklaşım.
+
+### 6.6 Güncellenmiş nihai karar
+
+**APPROVED WITH CONDITIONS — R2-A1 kodlamasına geçilebilir; ancak aşağıdaki koşullar A1 uygulama PR'ında (ve R-3 için tasarım revizyonunda) karşılanmalıdır:**
+
+1. **(P1, tasarım revizyonu)** R-3 case-insensitive çakışma çözümü PR #35 tasarımına eklenmelidir; mevcut hâliyle bu boşlukla kodlamaya başlanmamalıdır.
+2. **(P2, A1 PR)** R-2 atomik sahiplenme mekanizması + R-8 boş-token penceresi netleştirilip yarış testiyle kanıtlanmalı.
+3. **(P2, A1 PR)** Test planı TC-1…TC-8 + PR #32 §3 eşleme tablosuyla sunulmalı; geçici dataDir zorunlu.
+4. **(P3)** Legacy lock statüsü ve FIFO anahtar şeması notları işlenmeli.
+5. **(Süreç ön koşulu)** PR #31 (R1) merge edilmeli; S1/S3 kullanıcı kararları açık.
+
+Bu ek denetim salt okunur incelemedir; PR #35 değiştirilmemiş, merge yapılmamış, master'a push yapılmamıştır.
