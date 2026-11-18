@@ -91,7 +91,9 @@ Bunlar test başarısızlığı değil, Faz 5'in plan kabul kriteri eksikleridir
 Faz 6 puan-paritesi testi başarılı; ancak ana plan §1 Yönetici 6 ile uygulama kaydı arasında iki açık fark var:
 
 - Ana plan `App.tsx` içindeki `forYou*` / `catalog*` durumlarının `src/modules/discover/state.ts` altına taşınmasını Faz 6'ya koyuyor. `docs/mia/faz6-oneri-yoneticisi.md` bu işi Faz 7'ye erteliyor. Bu, plan değişikliği olarak onaylanmalı veya Faz 6 kapsamında tamamlanmalı.
-- `IRecommendationService` sözleşmesindeki `getRecommendations(ref, limit)` ve `refresh(ref)` metotları uygulanmamış; Faz 6 raporu bunu açıkça erteliyor. `src/modules/recommendations/index.ts` manager facade'ı var, ancak sözleşme uygulaması ve planlanan tek giriş noktası/service bağlantısı tamamlanmamış.
+- `IRecommendationService` sözleşmesindeki `getRecommendations(ref, limit)` ve `refresh(ref)` metotları uygulanmamış; Faz 6 raporu bunu açıkça erteliyor.
+- Genel mimari kuralındaki `manifest.ts` + `service.ts` giriş noktaları `src/modules/recommendations/` altında yok; yalnızca `index.ts` facade'ı ve alt yöneticiler var.
+- `src/modules/discover/state.ts` bulunmuyor; `forYou*` / `catalog*` state hâlâ `App.tsx` içinde. Faz 6 kaydı bu işi Faz 7'ye ertelemiş.
 
 ## 5. Test/CI PR'ında yapılanlar
 
