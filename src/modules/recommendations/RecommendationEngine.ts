@@ -1,3 +1,18 @@
+/**
+ * MIA Faz 6 — Öneri Motoru (bağımsız yönetici).
+ *
+ * Taşınan kaynak: `src/core/recommendation-orchestrator.ts`. Algoritma
+ * DEĞİŞTİRİLMEDİ; aynı girdi aynı puanı üretir (kanıt:
+ * `tests/phase6-recommendation-manager.test.mjs` önce/sonra karşılaştırması).
+ *
+ * SINIRLAR (kullanıcı planı §1 Yönetici 6, §4):
+ * - Kullanıcı hafızasına (kanıt defteri, kütüphane kayıtları) YAZMAZ.
+ * - Yalnızca Zevk Haritası/profil özetini ve katalog adaylarını okur; ürettiği
+ *   türetilmiş profil paketini çağıran katman kalıcılaştırır.
+ * - Saf hesaplama `src/core/` içinde kalır; bu yönetici orkestrasyon ve
+ *   gösterim/açıklama sınırlarını sahiplenir.
+ */
+
 import {
   ALGORITHM_VERSION,
   buildTasteProfileV3,
@@ -12,168 +27,17 @@ import {
   type SavedItem,
   type TasteMapEntry,
   type TasteRing,
-} from './cinetrack-core.ts';
-import { canonicalizeMediaKey, makeMediaKey, parseMediaKey, resolveMediaType } from './keys.ts';
+} from '../../core/cinetrack-core.ts';
+import { canonicalizeMediaKey, makeMediaKey, parseMediaKey } from '../../core/keys.ts';
 import {
   computeSourceCatalogSignature,
   DERIVED_PROFILE_SCHEMA_VERSION,
   validateDerivedProfileCache,
   type DerivedCacheInvalidReason,
   type DerivedProfileCacheDocument,
-} from './derived-profile-cache.ts';
-
-function isValidLifecycleRing(val: unknown): val is 'ring0' | 'ring1' | 'ring2' {
-  return val === 'ring0' || val === 'ring1' || val === 'ring2';
-}
-
-/**
- * Gösterim halkasını (ring0 / ring1 / ring2) kalıcı Zevk Haritası kaydından veya
- * doğru yaşam döngüsü çıkarımından çözümler; `ring1` değerini asla varsayılan `ring0` ile ezmez.
- */
-export function resolveDisplayedLifecycleRing(
-  itemOrEntry: any,
-  tasteMap?: PersistentTasteMapData | null
-): 'ring0' | 'ring1' | 'ring2' {
-  const cand =
-    itemOrEntry?.candidate && typeof itemOrEntry.candidate === 'object'
-      ? itemOrEntry.candidate
-      : itemOrEntry;
-  const key = cand && cand.id != null ? canonicalizeMediaKey(makeMediaKey(cand)) : '';
-  const lastKeys = Array.isArray(tasteMap?.lastRecommendedKeys)
-    ? tasteMap!.lastRecommendedKeys
-    : [];
-
-  if (key && tasteMap) {
-    const mapEntry = tasteMap.entries?.[key] || tasteMap.archivedEntries?.[key];
-    if (mapEntry) {
-      if (isValidLifecycleRing(mapEntry.ring)) {
-        return mapEntry.ring;
-      }
-      return inferLifecycleRing(key, mapEntry, lastKeys);
-    }
-    if (lastKeys.some((k) => canonicalizeMediaKey(k) === key)) {
-      return 'ring1';
-    }
-  }
-
-  const explicitRing =
-    itemOrEntry?.lifecycleRing ??
-    itemOrEntry?.ring ??
-    cand?.lifecycleRing ??
-    cand?.ring ??
-    itemOrEntry?.selectionRing;
-
-  if (isValidLifecycleRing(explicitRing)) {
-    return explicitRing;
-  }
-
-  if (key) {
-    return inferLifecycleRing(key, cand || itemOrEntry, lastKeys);
-  }
-
-  return 'ring0';
-}
-
-/**
- * Film-only veya TV-only modlarında karşı medya tipinin havuza ya da vitrine sızmasını katı biçimde engeller.
- * `media_type` alanı olmayan belirsiz kayıtları tahmin etmeden uyarı günlüğüyle eler (EXT-04).
- */
-export function enforceStrictMediaTypePool<T extends Record<string, any>>(
-  items: T[],
-  targetType: 'all' | 'movie' | 'tv' | string
-): T[] {
-  if (!Array.isArray(items)) return [];
-
-  return items.filter((entry) => {
-    const cand = entry?.candidate && typeof entry.candidate === 'object' ? entry.candidate : entry;
-    if (!cand || typeof cand !== 'object') return false;
-    const resolvedType = resolveMediaType(cand);
-    if (resolvedType === 'unknown') {
-      console.warn(
-        `[Recommendation] media_type alanı belirsiz kayıt havuzdan elendi (id=${String(
-          cand.id ?? 'bilinmiyor'
-        )}).`
-      );
-      return false;
-    }
-    if (targetType !== 'movie' && targetType !== 'tv') return true;
-    return resolvedType === targetType;
-  });
-}
-
-/**
- * Seçilmiş öneri grubunu (`picked` veya `restored`) UI bileşenlerine gidecek kart verilerine
- * ve gerekçe haritasına dönüştürür (`ring1` durumunu koruyarak).
- */
-export function mapRecommendationBatchToDisplayItems(
-  batchEntries: any[],
-  tasteMap?: PersistentTasteMapData | null,
-  targetType: 'all' | 'movie' | 'tv' | string = 'all'
-): {
-  displayItems: any[];
-  reasonsMap: Map<string, string>;
-} {
-  const strictEntries = enforceStrictMediaTypePool(batchEntries, targetType);
-  const reasonsMap = new Map<string, string>();
-
-  const displayItems = strictEntries.map((entry: any) => {
-    const cand = entry?.candidate && typeof entry.candidate === 'object' ? entry.candidate : entry;
-    const key = canonicalizeMediaKey(makeMediaKey(cand));
-    const mapEntry = tasteMap?.entries?.[key] || tasteMap?.archivedEntries?.[key];
-
-    const tagsList: string[] = Array.isArray(entry?.tags) && entry.tags.length > 0
-      ? entry.tags
-      : Array.isArray(mapEntry?.tags) && mapEntry.tags.length > 0
-      ? mapEntry.tags
-      : Array.isArray(cand?.tags)
-      ? cand.tags
-      : [];
-
-    if (key) {
-      reasonsMap.set(key, tagsList.join(' · '));
-    }
-
-    const tasteScore =
-      mapEntry?.tasteScore ??
-      mapEntry?.matchScore ??
-      Math.max(
-        1,
-        Math.min(100, Math.round(Number(cand?.tasteScore ?? entry?.tasteScore ?? entry?.score) || 75))
-      );
-
-    const priorityScore =
-      mapEntry?.priorityScore ??
-      Math.max(
-        1,
-        Math.min(
-          100,
-          Math.round(Number(cand?.priorityScore ?? entry?.priorityScore ?? entry?.score) || tasteScore)
-        )
-      );
-
-    const resolvedRing = resolveDisplayedLifecycleRing(entry, tasteMap);
-
-    return {
-      ...cand,
-      matchScore: tasteScore,
-      tasteScore,
-      priorityScore,
-      tags: tagsList,
-      scoreCoverage:
-        mapEntry?.scoreCoverage ?? entry?.scoreCoverage ?? (cand?.cast?.length ? 'enriched' : 'basic'),
-      confidenceLevel:
-        mapEntry?.confidenceLevel ??
-        entry?.confidenceLevel ??
-        (cand?.cast?.length ? 'high' : 'standard'),
-      ring: resolvedRing,
-      lifecycleRing: resolvedRing,
-      ...(entry?.selectionRing ? { selectionRing: entry.selectionRing } : {}),
-      tasteMapEntry: mapEntry,
-    };
-  });
-
-  return { displayItems, reasonsMap };
-}
+} from '../../core/derived-profile-cache.ts';
+import { enforceStrictMediaTypePool } from './CandidatePoolManager.ts';
+import { resolveDisplayedLifecycleRing } from './ExplanationManager.ts';
 
 /**
  * Keşfet sekmelerindeki (Gündemdekiler, Gizli Cevherler, Popüler vb.) içerikleri
@@ -185,23 +49,31 @@ export function enrichCatalogItemsWithTaste(params: {
   preferences: Preferences;
   genresMap: Record<number, string>;
   tasteMap?: PersistentTasteMapData | null;
+  /**
+   * Faz 6: Referans zamanı. Öneri puanlaması zaman duyarlıdır (tazelik/bağlam);
+   * önce/sonra karşılaştırma testinin deterministik olması için dışarıdan
+   * verilebilir. Verilmezse mevcut davranış (güncel zaman) korunur.
+   */
+  now?: Date | number | string;
   /** Faz 6: Gölge modda taste adapter (TP-037). Sıralama değişmez, sadece loglanır. */
   tasteAdapter?: {
     logFit?: (contentId: string, fit: number, confidence: string) => void;
   };
 }): any[] {
-  const { items, savedItems, preferences, genresMap, tasteMap } = params;
+  const { items, savedItems, preferences, genresMap, tasteMap, now } = params;
   if (!Array.isArray(items) || items.length === 0) return items;
 
   const tasteProfile = buildTasteProfileV3(savedItems, {
     lambda: 1,
     dislikedKeys: preferences.disliked,
+    ...(now !== undefined ? { now: new Date(now).getTime() } : {}),
   });
   const scored = scoreCandidatesV3(items, tasteProfile, {
     weights: RECOMMENDATION_WEIGHTS_V3,
     genreNames: genresMap,
     mood: preferences.mood,
     tasteMap: tasteMap || undefined,
+    ...(now !== undefined ? { now } : {}),
   });
 
   return scored.map((s) => {
@@ -410,6 +282,10 @@ export function hydrateTasteMapWithDerivedCache(params: {
   };
 }
 
+function isValidLifecycleRing(val: unknown): val is 'ring0' | 'ring1' | 'ring2' {
+  return val === 'ring0' || val === 'ring1' || val === 'ring2';
+}
+
 /**
  * Kalıcı `PersistentTasteMapData` üzerinden sunucudaki `data/profiles/<profileId>.json`
  * dosyasına yazılacak şema-2 uyumlu türetilmiş veri paketini oluşturur.
@@ -469,5 +345,25 @@ export function buildDerivedProfilePayloadFromTasteMap(params: {
     profileFingerprint,
     sourceCatalogHash: resolvedCatalogHash,
     items: derivedItemsPayload,
+  };
+}
+
+export interface RecommendationEngine {
+  readonly enrichCatalogItemsWithTaste: typeof enrichCatalogItemsWithTaste;
+  readonly hydrateTasteMapWithDerivedCache: typeof hydrateTasteMapWithDerivedCache;
+  readonly buildDerivedProfilePayloadFromTasteMap: typeof buildDerivedProfilePayloadFromTasteMap;
+  readonly enforceStrictMediaTypePool: typeof enforceStrictMediaTypePool;
+}
+
+/**
+ * Öneri motoru yöneticisi. Durum tutmaz; tüm işlemler girdi → çıktı saftır.
+ * Hafızaya yazmaz — kalıcılaştırma çağıran katmanın sorumluluğundadır.
+ */
+export function createRecommendationEngine(): RecommendationEngine {
+  return {
+    enrichCatalogItemsWithTaste,
+    hydrateTasteMapWithDerivedCache,
+    buildDerivedProfilePayloadFromTasteMap,
+    enforceStrictMediaTypePool,
   };
 }

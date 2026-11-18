@@ -1698,7 +1698,7 @@ test('Spec Faz E & F: Anahtar migrasyonu (lastRecommendedAt dahil), idempotency,
     hydrateTasteMapWithDerivedCache,
     mapRecommendationBatchToDisplayItems,
     resolveDisplayedLifecycleRing,
-  } = await import('../src/core/recommendation-orchestrator.ts');
+  } = await import('../src/modules/recommendations/index.ts');
 
   // 1. Eski (movie-123 / tv-456) ve yeni (movie:123 / tv:456) anahtarların kayıpsız birleştirilmesi + lastRecommendedAt korunumu
   const rawLegacyTasteMap = {

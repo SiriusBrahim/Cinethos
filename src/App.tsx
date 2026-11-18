@@ -119,7 +119,7 @@ import {
   enrichCatalogItemsWithTaste,
   hydrateTasteMapWithDerivedCache,
   mapRecommendationBatchToDisplayItems,
-} from './core/recommendation-orchestrator.ts';
+} from './modules/recommendations/index.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';

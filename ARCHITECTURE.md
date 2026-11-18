@@ -12,7 +12,7 @@ Tarayıcı DOM'undan ve Express sunucusundan bağımsız, saf ve deterministik i
 - `src/core/limits.ts`: Tek kaynaklı veri ve koleksiyon sınırları (`DEFAULT_MAX_DATA_BYTES = 25 * 1024 * 1024` = 25 MiB, `DEFAULT_MAX_PROFILES = 20`, `DEFAULT_MAX_ITEMS_PER_PROFILE = 25_000`, `DEFAULT_MAX_SNAPSHOTS = 7`) ve UTF-8 bayt ölçümü (`measureUtf8Bytes`).
 - `src/core/keys.ts`: Medya anahtarlarının (`movie:123`, `tv:456`) kanonikleştirilmesi, eski anahtarların (`movie-123`) dönüştürülmesi ve çakışan `TasteMapEntry` kayıtlarının (`shownCount`, `skippedCount`, `ringDemotions`, `lastShownAt`, `lastRecommendedAt`, `impressionHistory`) kayıpsız ve idempotent biçimde birleştirilmesi (`migratePersistentTasteMapData`).
 - `src/core/derived-profile-cache.ts`: Türetilmiş profil önbelleği şeması (`DERIVED_PROFILE_SCHEMA_VERSION = 2`), nesne anahtarı sırasından ve yazma zaman damgalarından (`generatedAt`, `calculatedAt`) bağımsız deterministik içerik özeti (`computeDerivedProfileContentHash`), kaynak katalog imzası (`computeSourceCatalogSignature`) ve önbellek geçerlilik denetimi (`validateDerivedProfileCache`).
-- `src/core/recommendation-orchestrator.ts`: React bileşenlerinden bağımsız öneri akışı yardımcıları; kalıcı Zevk Haritasından doğru yaşam döngüsü halkası çözümleme (`resolveDisplayedLifecycleRing` — `ring1` değerinin `ring0` ile ezilmesini önler), katı film/dizi havuz ayrımı (`enforceStrictMediaTypePool`), doğrulanmış sunucu önbelleğini kaynak veriyi ezmeden Zevk Haritasına aktarma (`hydrateTasteMapWithDerivedCache`) ve şema-2 türetilmiş profil paketi üretimi (`buildDerivedProfilePayloadFromTasteMap`).
+- `src/core/cinetrack-core.ts` öneri puanlama çekirdeği (`scoreCandidatesV3`, `RECOMMENDATION_WEIGHTS_V3`, halka yönetimi) saf hâlde kalır; orkestrasyon/açıklama katmanı Faz 6'da `src/modules/recommendations/` yöneticisine taşınmıştır (bkz. §7).
 - `src/core/cinetrack-core.ts`: Veri şeması doğrulama (`normalizeDataDocument`, `parseBackupText`), 15 sinyalli `TasteProfileV3` ve `scoreCandidatesV3` öneri motoru, `ring0` / `ring1` / `ring2` yaşam döngüsü yönetimi, `500 + 500` bağımsız film/dizi aday havuzu (`replenishCandidatePool`) ve oyuncu filmografisi kuyruk yöneticisi (`fetchActorCreditsBatch`).
 - `src/core/relationship-explorer.ts`: `relationship-v3` deterministik ilişki keşif grafiği (`universe`, `person`, `semantic`, `atmosphere`, `contrast`), profil ve havuz imzaları (`computeRelationshipProfileSignature`, `computeRelationshipPoolSignature`).
 - `src/core/evaluation.ts`: Öneri motorunun ardışık yenilemelerde `ring1RepeatRate`, `ring0Utilization`, `genreEntropy` ve `typeBalanceAccuracy` metriklerini ölçen çevrimdışı değerlendirme çatısı (`evaluateRecommendationEngine`).
@@ -148,3 +148,27 @@ Faz 4, domain olaylarını kalıcı hale getirir ve yalnızca kayıtlı işleyic
 ### 6.4 ModuleRegistry notu
 
 `background-manager`, `/api/health` modül listesi sözleşmesini (ve mevcut doğrulama testlerini) bozmamak için registry'ye ayrı kimlik olarak eklenmemiştir; `ModuleContext` ile beslenip `startRuntimeModules`/`stopRuntimeModules` içinde başlatılır/durdurulur. Registry'ye taşıma, health listesi güncellendiğinde tek satırlık değişikliktir.
+
+---
+
+## 7. MIA Faz 6 — Öneri ve Keşif Yöneticisi
+
+Faz 6, öneri orkestrasyonunu çekirdekten ayırıp bağımsız bir yöneticiye taşır. **Algoritma ve puanlama değişmedi**: aynı girdi aynı `tasteScore` / `matchScore` / `priorityScore`, halka ve gerekçe çıktısını üretir. Kanıt, `tests/phase6-recommendation-manager.test.mjs` içindeki önce/sonra karşılaştırmasıdır (altın anlık görüntü: `tests/fixtures/faz6-recommendation-before-scores.json`).
+
+### 7.1 Katmanlar ve dosyalar
+
+| Katman | Dosya | Sorumluluk |
+|---|---|---|
+| Motor | `src/modules/recommendations/RecommendationEngine.ts` | `enrichCatalogItemsWithTaste`, `hydrateTasteMapWithDerivedCache`, `buildDerivedProfilePayloadFromTasteMap`; isteğe bağlı `now` ile deterministik puanlama. |
+| Aday havuzu | `src/modules/recommendations/CandidatePoolManager.ts` | Katı film/dizi havuz ayrımı (`enforceStrictMediaTypePool`); puanlama yapmaz. |
+| Açıklama | `src/modules/recommendations/ExplanationManager.ts` | `ring0`/`ring1`/`ring2` çözümlemesi (`ring1` ezilmez) ve kart/gerekçe eşlemesi. |
+| Değerlendirme | `src/modules/recommendations/EvaluationManager.ts` | `core/evaluation.ts` çevrimdışı koşumunun yönetici yüzü; metrik formülleri çekirdekte kalır. |
+| Sıralama | `src/modules/recommendations/RankingManager.ts` | Oyuncu kaynaklı önerilerin puanlama/çeşitlendirme yüzü; algoritma `core/actor-recommendations.ts` içinde korunur. |
+| Dış yüz | `src/modules/recommendations/index.ts` | `createRecommendationManager()` — `id: 'recommendations'`, alt yöneticiler ve saf işlevler. UI yalnızca bu yüzü import eder. |
+
+### 7.2 Sınırlar
+
+1. **Hafızaya yazmaz.** Yönetici kanıt defterine, kütüphane kayıtlarına veya profil verisine yazmaz; türetilmiş paketi çağıran katman kalıcılaştırır.
+2. **Çekirdek saf kalır.** `src/core/cinetrack-core.ts` puanlama matematiğinin tek sahibidir; yönetici onu yeniden uygulamaz.
+3. **Tek yol.** `src/core/recommendation-orchestrator.ts` kaldırıldı; `App.tsx` ve testler işlevleri `src/modules/recommendations/index.ts` üzerinden alır.
+4. **Eski sonuçlar korunur.** Taşınma öncesi alınan puan anlık görüntüsü, taşınma sonrası çıktıyla birebir eşleşir; sıralama, halka ve gerekçeler dahil.

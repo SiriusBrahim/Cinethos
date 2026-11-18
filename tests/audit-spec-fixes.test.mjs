@@ -21,7 +21,7 @@ import {
   getPosterCacheStats,
 } from '../src/server/excel-profile-backup.ts';
 import { resolveMediaType, makeMediaKey } from '../src/core/keys.ts';
-import { enforceStrictMediaTypePool } from '../src/core/recommendation-orchestrator.ts';
+import { enforceStrictMediaTypePool } from '../src/modules/recommendations/index.ts';
 import { normalizeProfile } from '../src/core/cinetrack-core.ts';
 import {
   enqueueOfflineSyncSnapshotDurable,
