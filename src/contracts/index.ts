@@ -13,6 +13,7 @@ export type {
   MediaKey,
   MediaKind,
   ModuleHealth,
+  OperationErrorCode,
   OperationOutcome,
   ProfileConflictReason,
   ProfileRef,

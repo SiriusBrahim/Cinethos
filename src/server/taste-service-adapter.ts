@@ -231,6 +231,7 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
           ok: false,
           error: `Profil uyuşmazlığı: olay '${eventProfileId}' için geldi, aktif profil '${activeProfileId}'.`,
           retryable: false,
+          code: 'profile-not-active',
         };
       }
       const targetProfileId = activeProfileId ?? eventProfileId;
@@ -273,22 +274,85 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
 
       return { ok: true };
     } catch (error) {
-      if (error instanceof ProfileConflictError) {
-        return { ok: false, error: error.message, retryable: false };
-      }
-      if (error instanceof TasteProfileScopeError) {
-        return { ok: false, error: error.message, retryable: false };
-      }
-      if (error instanceof CorruptJsonFileError) {
-        return { ok: false, error: error.message, retryable: false };
-      }
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        retryable: true,
-      };
+      return toAdapterOutcome(error);
     }
   }
+
+  /**
+   * R2-A4 — ertelenmiş (kaçırılmış) olayın telafisi.
+   *
+   * Canlı abonelik sırasında hedef profil aktif olmadığı için yazılmamış olay,
+   * hedef profil aktif olduğunda bu yöntemle işlenir. Fark: olay geçmişe ait
+   * olduğundan `sourceRevision` eşitliği ARANMAZ; yalnızca profil kimliği
+   * doğrulanır. Yazma `eventId` ile idempotenttir; yeniden hesap tetiklenir.
+   */
+  async processDeferredEvent(event: TypedAppEvent): Promise<OperationOutcome> {
+    try {
+      const eventProfileId = validateCanonicalProfileId(event.profileId);
+      const activeProfileId = this.profileContext?.getCurrent().profileId;
+      if (activeProfileId && activeProfileId !== eventProfileId) {
+        return {
+          ok: false,
+          error: `Telafi için hedef profil aktif değil: olay '${eventProfileId}', aktif profil '${activeProfileId}'.`,
+          retryable: false,
+          code: 'profile-not-active',
+        };
+      }
+      const targetProfileId = activeProfileId ?? eventProfileId;
+      const memoryKey = `${targetProfileId}:${event.eventId}`;
+      if (this.processedEventIds.has(memoryKey)) {
+        return { ok: true };
+      }
+
+      const tasteEvent = translateAppEventToTasteEvent(event);
+      if (!tasteEvent) {
+        this.processedEventIds.add(memoryKey);
+        return { ok: true };
+      }
+
+      const existing = await readTasteEventsForProfile(targetProfileId, this.dataDir);
+      if (existing.some((e) => e.eventId === tasteEvent.eventId)) {
+        this.processedEventIds.add(memoryKey);
+        return { ok: true };
+      }
+
+      const { added } = await appendTasteEventIdempotentForProfile(
+        targetProfileId,
+        tasteEvent,
+        this.dataDir
+      );
+      this.processedEventIds.add(memoryKey);
+
+      if (added && this.rebuildOnEvent) {
+        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
+      }
+
+      // Uzun süren hesaptan sonra profil değişmediyse sonuç hedef profile aittir;
+      // değiştiyse yeni profile yazma yapılmadı, yalnızca kendi profiline yazıldı.
+      return { ok: true };
+    } catch (error) {
+      return toAdapterOutcome(error);
+    }
+  }
+}
+
+/** Hata sınıflarını yapısal `code` alanıyla sonuçlandırır (metin ayrıştırması yok). */
+function toAdapterOutcome(error: unknown): OperationOutcome {
+  if (error instanceof ProfileConflictError) {
+    return { ok: false, error: error.message, retryable: false, code: 'profile-conflict' };
+  }
+  if (error instanceof TasteProfileScopeError) {
+    return { ok: false, error: error.message, retryable: false, code: 'invalid-profile' };
+  }
+  if (error instanceof CorruptJsonFileError) {
+    return { ok: false, error: error.message, retryable: false, code: 'corrupt-store' };
+  }
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+    retryable: true,
+    code: 'unavailable',
+  };
 }
 
 export function createServerTasteServiceAdapter(
@@ -323,10 +387,8 @@ export function subscribeTasteAdapterToEventBus(
         // Taste yalnızca sunucudaki aktif profile yazabilir; başka profile ait
         // iç EventBus olayı beklenen bir kapsam dışı bırakmadır.
         // HTTP /domain-event rotası ayrı olarak 409 döndürmeye devam eder.
-        const inactiveProfileEvent =
-          !outcome.retryable &&
-          typeof outcome.error === 'string' &&
-          outcome.error.startsWith("Profil uyuşmazlığı: olay '");
+        // R2-A4: hata metni ayrıştırılmaz; yapısal kod tek otoritedir.
+        const inactiveProfileEvent = !outcome.retryable && outcome.code === 'profile-not-active';
         if (inactiveProfileEvent) {
           onSkipped?.(event, outcome);
           return;

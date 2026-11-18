@@ -61,6 +61,8 @@ import { createContentService } from '../modules/content/service.ts';
 import { createBackgroundTaskRepository } from './background-task-repository.ts';
 import { createBackgroundManager } from '../modules/background/service.ts';
 import { createDefaultBackgroundHandlers } from '../modules/background/handlers.ts';
+import { createTasteEventSyncHandler } from '../modules/background/taste-handlers.ts';
+import { describeTasteLegacyState } from './taste-legacy-status.ts';
 import { diffLibraryEvents, findSavedItemByMediaKey } from './library-event-diff.ts';
 import type {
   EventSubscription,
@@ -515,6 +517,9 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     profileContext,
     rebuildOnEvent: true,
   });
+  // R2-A4: canlı abonelikte aktif olmayan profile ait olduğu için atlanan
+  // olaylar, kalıcı kuyruktan hedef profil aktif olduğunda telafi edilir.
+  backgroundManager.registerHandlers([createTasteEventSyncHandler(tasteAdapter)]);
   const tmdbProxy = createTmdbProxyService(options);
   const tvdbProxy = createTvdbProxyService({ tvdbApiKey: options.tvdbApiKey });
   const persistentStore =
@@ -543,6 +548,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   let primaryStorageStarted = false;
   let tasteSub: EventSubscription | null = null;
   let tasteErrorCount = 0;
+  let tasteSkippedCount = 0;
   let lastTasteError: string | null = null;
   let backupSyncStarted = false;
 
@@ -597,9 +603,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
               (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
           },
           (ev, outcome) => {
+            // R2-A4: atlanan olay kaybolmaz; kalıcı kuyrukta hedef profil için
+            // bekler. Sayaç sağlık raporunda görünür (sessiz kayıp yok).
+            tasteSkippedCount += 1;
             const reason = !outcome.ok ? outcome.error ?? '' : '';
             console.info(
-              `[Taste] Aktif olmayan profile ait iç olay yazılmadı: ${ev.eventId} (${ev.profileId}). ${reason}`
+              `[Taste] Aktif olmayan profile ait iç olay kuyruğa bırakıldı: ${ev.eventId} (${ev.profileId}). ${reason}`
             );
           }
         );
@@ -612,21 +621,27 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     async healthCheck(): Promise<ModuleHealth> {
       try {
         const manifest = await readTasteManifest(resolvedDataDir);
+        // R2-A5: legacy veri salt okunur sınıflandırılır; hiçbir profile
+        // otomatik bağlanmaz. Sağlık raporunda açıkça görünür.
+        const legacy = await describeTasteLegacyState(resolvedDataDir);
+        const legacyDetail = legacy.present
+          ? `legacy=${legacy.scenario ?? 'unknown'}${legacy.mappingUnreadable ? ' (mapping unreadable)' : ''}`
+          : 'legacy=none';
         if (lastTasteError) {
           return {
             moduleId: 'taste-engine',
             status: 'degraded',
-            detail: `errors=${tasteErrorCount}; ${lastTasteError}`,
+            detail: `errors=${tasteErrorCount}; skipped=${tasteSkippedCount}; ${legacyDetail}; ${lastTasteError}`,
           };
         }
         return {
           moduleId: 'taste-engine',
           status: tasteSub ? 'healthy' : 'degraded',
           detail: manifest
-            ? `generation=${manifest.generationId}`
+            ? `generation=${manifest.generationId}; skipped=${tasteSkippedCount}; ${legacyDetail}`
             : tasteSub
-              ? 'subscribed (bootstrap pending)'
-              : 'stopped',
+              ? `subscribed (bootstrap pending); skipped=${tasteSkippedCount}; ${legacyDetail}`
+              : `stopped; skipped=${tasteSkippedCount}; ${legacyDetail}`,
         };
       } catch (err) {
         return {
