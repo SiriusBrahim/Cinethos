@@ -1719,6 +1719,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       // enqueue edilir (tüm kütüphaneyi her PUT'ta yeniden kuyruğa almıyoruz).
       const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
       for (const ev of libraryEvents) {
+        let hintItem: ReturnType<typeof findSavedItemByMediaKey>;
         try {
           // Plan 2.5 — gerekli kaynak ipuçları: olayı türeten kaydın ortak
           // (allowlist) metaverisi hint olarak kaydedilir; kişisel alanlar
@@ -1731,7 +1732,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
               : typeof (ev.payload as Record<string, unknown> | undefined)?.mediaKey === 'string'
                 ? String((ev.payload as Record<string, unknown>).mediaKey)
                 : '';
-          const hintItem =
+          hintItem =
             findSavedItemByMediaKey(result.document, hintMediaKey) ??
             findSavedItemByMediaKey(beforeDoc, hintMediaKey);
           if (hintItem) {
