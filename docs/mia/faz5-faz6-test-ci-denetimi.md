@@ -32,7 +32,7 @@ Hata `tests/mia-phase1-contracts.test.mjs` içindeki “Son Kabul P1” testinde
 Aynı commit'in salt okunur Maintenance Analysis koşusu:
 https://github.com/SiriusBrahim/Cinethos/actions/runs/44376624602
 
-Bu koşu ayrı ortamda `npm test 519/519`, `test:taste 436/436`, lint/typecheck, build ve production audit adımlarını PASS raporlamıştır. Bu fark testte zamanlama/temizlik yarışı olduğunu gösteriyor; ana CI'daki başarısızlık göz ardı edilmemelidir. Başarısız job için ikinci deneme başlatıldı; sonucu ayrıca kontrol edilmelidir.
+Bu koşu ayrı ortamda `npm test 519/519`, `test:taste 436/436`, lint/typecheck, build ve production audit adımlarını PASS raporlamıştır. Bu fark testte zamanlama/temizlik yarışı olduğunu gösteriyor; ilk başarısızlık göz ardı edilmemelidir. Aynı commit için ikinci CI denemesi (attempt 2) **PASS** oldu: `npm test 519/519`, `test:taste 436/436`, lint/typecheck, build, production smoke ve Playwright E2E başarılı. Kod değişmeden tekrarın geçmesi, ilk hatanın zamanlama kaynaklı flaky test olduğunu doğruluyor.
 
 Faz 6 test dosyasındaki 6 testin tamamı ilk CI çıktısında PASS:
 - önce/sonra puan, sıralama ve halka eşitliği
@@ -108,4 +108,4 @@ Yeni regresyon testleri ve test-temizlik düzeltmesi henüz GitHub CI'da çalı�
 
 - Faz 5: **REQUEST_CHANGES** — A4 veri kaybı/retry riskleri ve Memory/Relationships modül eksikleri var.
 - Faz 6: **REQUEST_CHANGES** — skor-paritesi testi geçiyor; ancak IRecommendationService ve planlanan discover state taşıması eksik.
-- CI: **FAIL (ana job)** — 1/520 test dosyası asenkron geçici-dizin temizliği yarışıyla başarısız; bağımsız bakım analizi aynı test setini PASS raporladı. Tekrar koşusu sonucu bekleniyor.
+- CI: **PASS (attempt 2)** — ilk denemede 520 testten 519 PASS / 1 flaky test dosyası hatası görüldü; aynı commit'in ikinci denemesinde 519/519 PASS, taste 436/436 PASS, build/smoke ve E2E PASS. Faz 5/6 kapsamı yine de mimari eksikler nedeniyle REQUEST_CHANGES.
