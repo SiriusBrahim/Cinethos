@@ -120,6 +120,8 @@ import {
   hydrateTasteMapWithDerivedCache,
   mapRecommendationBatchToDisplayItems,
 } from './modules/recommendations/index.ts';
+import { createClientLibraryService } from './modules/library/client-service.ts';
+import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
@@ -163,8 +165,6 @@ import {
 import { getItemEncodingSync, maintainEncodingsDepot } from './services/encoding-service.ts';
 import { runIdbSchemaMigrationsOnce } from './services/idb-schema-version.ts';
 import { computeProfileCentroid, cosineSimilarity } from './core/encoding.ts';
-import { advanceTvEpisodeProgress } from './core/tv-progress.ts';
-import { mergeDuplicateSavedPair } from './core/duplicate-detector.ts';
 import {
   checkWeeklyAutoBackup,
   recordProfileChangeAndMaybeBackup,
@@ -2798,9 +2798,30 @@ export function App() {
     }
   };
 
+  // MIA Faz 7 — TEK veri hattı: bütün kütüphane yazımları bu servis örneğinden
+  // geçer. Mobil alt gezinme, masaüstü sekmeleri, kartlar, modallar ve
+  // çekmece aynı örneği kullanır; ikinci bir yazma yolu yoktur.
+  const libraryService = createClientLibraryService({
+    getSavedItems: () => savedItemsRef.current,
+    applySavedItem: commitSavedItem,
+    applySavedItems: (next) => {
+      savedItemsRef.current = next;
+      setSavedItems(next);
+    },
+    applyTombstone: (mediaKey, deletedAtIso) => {
+      const nextDeleted = normalizeDeletedKeys({
+        ...deletedKeysRef.current,
+        [mediaKey]: deletedAtIso,
+      });
+      deletedKeysRef.current = nextDeleted;
+      setDeletedKeys(nextDeleted);
+    },
+  });
+
   const { saveItem, setItemStatus, markCompleted, dislikeItem, hideItem } = useItemActions({
     getSavedItems: () => savedItemsRef.current,
     onCommitSavedItem: commitSavedItem,
+    service: libraryService,
   });
 
   const handleSaveItem = (
@@ -2860,23 +2881,12 @@ export function App() {
   };
 
   const handleIncrementTvEpisode = (targetItem: SavedItem) => {
-    const nowIso = new Date().toISOString();
-    const progressedItem = advanceTvEpisodeProgress(targetItem, nowIso);
-    const transitionedToCompleted =
-      targetItem.status !== 'completed' && progressedItem.status === 'completed';
-    const updatedItem: SavedItem = transitionedToCompleted
-      ? { ...progressedItem, completedAt: nowIso }
-      : progressedItem;
-    setSavedItems((prev) => {
-      const next = prev.map((entry) =>
-        makeMediaKey(entry) === makeMediaKey(targetItem) ? updatedItem : entry
-      );
-      savedItemsRef.current = next;
-      return next;
-    });
+    const result = libraryService.advanceEpisode(targetItem);
+    if (!result) return;
+    const updatedItem = result.item;
     void recordProfileChangeAndMaybeBackup();
     const seriesTitle = displayTitle(updatedItem);
-    if (transitionedToCompleted) {
+    if (result.transitionedToCompleted) {
       showToast(`✓ "${seriesTitle}" tüm bölümler izlendi olarak tamamlandı!`);
     } else {
       showToast(
@@ -2892,54 +2902,16 @@ export function App() {
     dropId: SavedItem['id'],
     mediaType: 'movie' | 'tv'
   ) => {
-    const { mergedItems, mergedItem, removedKey } = mergeDuplicateSavedPair(
-      savedItemsRef.current,
-      keepId,
-      dropId,
-      mediaType
-    );
-    if (!mergedItem) return;
-
-    const dropKey = removedKey || makeMediaKey(mediaType, dropId);
-
-    setDeletedKeys((prev) => {
-      const nextDeleted = normalizeDeletedKeys({ ...prev, [dropKey]: new Date().toISOString() });
-      deletedKeysRef.current = nextDeleted;
-      return nextDeleted;
-    });
-
-    setSavedItems(() => {
-      savedItemsRef.current = mergedItems;
-      return mergedItems;
-    });
+    const result = libraryService.mergeDuplicates(keepId, dropId, mediaType);
+    if (!result) return;
 
     void recordProfileChangeAndMaybeBackup();
-    showToast(`✓ "${displayTitle(mergedItem)}" çift kaydı başarıyla birleştirildi.`);
+    showToast(`✓ "${displayTitle(result.mergedItem)}" çift kaydı başarıyla birleştirildi.`);
   };
 
   const handleRemoveItem = (item: any) => {
     const itemKey = makeMediaKey(item);
-    const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
-    const targetTitle = (item.title || item.name || '').trim().toLowerCase();
-    if (itemKey.startsWith('movie:') || itemKey.startsWith('tv:')) {
-      const deletedAtIso = new Date().toISOString();
-      setDeletedKeys((prev) => {
-        const nextDeleted = normalizeDeletedKeys({ ...prev, [itemKey]: deletedAtIso });
-        deletedKeysRef.current = nextDeleted;
-        return nextDeleted;
-      });
-    }
-    setSavedItems((prev) => {
-      const next = prev.filter(
-        (entry) =>
-          makeMediaKey(entry) !== itemKey &&
-          (!targetTitle ||
-            entry.media_type !== mediaType ||
-            (entry.title || '').trim().toLowerCase() !== targetTitle)
-      );
-      savedItemsRef.current = next;
-      return next;
-    });
+    libraryService.removeItem(item);
 
     try {
       const currentTasteMap = loadPersistentTasteMap(activeProfileIdRef.current);
@@ -4034,53 +4006,8 @@ export function App() {
         </div>
       </footer>
 
-      {/* Mobil 56px sticky alt tab bar (v6 spec Section 2.2 / 5) */}
-      <nav className="mobile-tab-bar" aria-label="Mobil Gezinme">
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'discover' ? 'active' : ''}`}
-          onClick={() => setTab('discover')}
-          aria-label="Keşfet"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-film" /></svg>
-          <span className="mobile-tab-label">Keşfet</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'list' ? 'active' : ''}`}
-          onClick={() => setTab('list')}
-          aria-label="Listem"
-        >
-          <span className="mobile-tab-icon-wrap">
-            <svg className="icon" aria-hidden="true"><use href="#icon-bookmark" /></svg>
-            {allListCount > 0 && (
-              <span className="mobile-tab-badge">{allListCount > 99 ? '99+' : allListCount}</span>
-            )}
-          </span>
-          <span className="mobile-tab-label">Listem</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'taste-map' ? 'active' : ''}`}
-          onClick={() => setTab('taste-map')}
-          aria-label="Zevkim"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-dna" /></svg>
-          <span className="mobile-tab-label">Zevkim</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'relationships' ? 'active' : ''}`}
-          onClick={() => setTab('relationships')}
-          aria-label="İlişkiler"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-network" /></svg>
-          <span className="mobile-tab-label">İlişkiler</span>
-        </button>
-      </nav>
+      {/* Mobil 56px sticky alt tab bar — kayıt defterinden türetilir (Faz 7) */}
+      <MobileBottomNav tab={tab} myListCount={allListCount} onSelectTab={setTab} />
 
       {/* Modals & Drawers */}
       <DetailModal

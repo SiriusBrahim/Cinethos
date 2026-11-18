@@ -4,11 +4,23 @@ import { SavedItem, makeMediaKey } from '../core/cinetrack-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { TmdbItem } from '../types/tmdb.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
+import { HEADER_NAV_ITEMS } from '../app/navigation.ts';
+import type { ModuleId } from '../app/module-registry.ts';
+
+/**
+ * MIA Faz 7 — Masaüstü üst sekmeleri uygulama yöneticisinin modül kayıt
+ * defterinden türetilir (`HEADER_NAV_ITEMS`). Header kendi sekme listesini
+ * TUTMAZ; geçersiz sekme kimlikleri (`identity`/`universes`) kaldırıldı.
+ * Etiketler mevcut masaüstü metnini korur.
+ */
+const DESKTOP_LABEL_OVERRIDES: Readonly<Partial<Record<ModuleId, string>>> = {
+  'taste-map': 'Kimliğim',
+};
 
 interface HeaderProps {
   profileName: string;
-  tab: 'discover' | 'list' | 'taste-map' | 'relationships' | 'identity' | 'universes';
-  onTabChange: (tab: any) => void;
+  tab: ModuleId;
+  onTabChange: (tab: ModuleId) => void;
   myListCount: number;
   query: string;
   onSearchChange: (q: string) => void;
@@ -222,50 +234,29 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="brand-title">Cinethos</span>
         </div>
 
-        {/* Primary Desktop Nav Tabs (Section 4) */}
+        {/* Primary Desktop Nav Tabs (Section 4) — kayıt defterinden türetilir */}
         <nav className="header-nav-tabs" role="tablist" aria-label="Ana Gezinme">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'discover'}
-            className={`nav-tab-btn ${tab === 'discover' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('discover')}
-          >
-            <span>Keşfet</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'list'}
-            className={`nav-tab-btn ${tab === 'list' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('list')}
-          >
-            <span>Listem</span>
-            {myListCount > 0 && (
-              <>
-                {' '}
-                <span className="nav-tab-badge tabular-nums">{myListCount}</span>
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'taste-map' || tab === 'identity'}
-            className={`nav-tab-btn ${tab === 'taste-map' || tab === 'identity' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('identity')}
-          >
-            <span>Kimliğim</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'relationships' || tab === 'universes'}
-            className={`nav-tab-btn ${tab === 'relationships' || tab === 'universes' ? 'is-active' : ''}`}
-            onClick={() => onTabChange('universes')}
-          >
-            <span>Evrenler</span>
-          </button>
+          {HEADER_NAV_ITEMS.map((item) => {
+            const isActive = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                className={`nav-tab-btn ${isActive ? 'is-active' : ''}`}
+                onClick={() => onTabChange(item.id)}
+              >
+                <span>{DESKTOP_LABEL_OVERRIDES[item.id] ?? item.label}</span>
+                {item.counter === 'myList' && myListCount > 0 && (
+                  <>
+                    {' '}
+                    <span className="nav-tab-badge tabular-nums">{myListCount}</span>
+                  </>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Expandable Search Area (k / /) */}
