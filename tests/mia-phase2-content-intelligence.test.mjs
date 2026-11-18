@@ -783,3 +783,56 @@ test('Faz 2 Repository: Doğrudan yazmada bile görsel ve kişisel alanları sı
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+
+test('Faz 2 Repository: kuyruk payload birleşimi zengin metadata kaybını önler', async () => {
+  const tmpDir = await makeTempDir('cinetrack-queue-payload-merge-');
+  const repo = createContentIntelligenceRepository({ dataDir: tmpDir });
+  const db = new DatabaseSync(path.join(tmpDir, 'cinetrack.db'));
+  try {
+    repo.ensureInitialized();
+
+    repo.enqueueJob({
+      mediaKey: 'movie:550',
+      mediaType: 'movie',
+      tmdbId: 550,
+      payload: makeRichMovie(),
+    });
+    repo.enqueueJob({
+      mediaKey: 'movie:550',
+      mediaType: 'movie',
+      tmdbId: 550,
+      payload: { id: 550, media_type: 'movie' },
+    });
+    const richThenKeyOnly = db
+      .prepare('SELECT payload_json FROM content_processing_queue WHERE media_key = ?')
+      .get('movie:550');
+    const preserved = JSON.parse(richThenKeyOnly.payload_json);
+    assert.equal(preserved.title, 'Fight Club');
+    assert.ok(preserved.overview);
+    assert.ok(Array.isArray(preserved.genres));
+
+    repo.enqueueJob({
+      mediaKey: 'movie:551',
+      mediaType: 'movie',
+      tmdbId: 551,
+      payload: { id: 551, media_type: 'movie' },
+    });
+    repo.enqueueJob({
+      mediaKey: 'movie:551',
+      mediaType: 'movie',
+      tmdbId: 551,
+      payload: makeRichMovie({ id: 551, title: 'Se7en' }),
+    });
+    const keyOnlyThenRich = db
+      .prepare('SELECT payload_json FROM content_processing_queue WHERE media_key = ?')
+      .get('movie:551');
+    const enriched = JSON.parse(keyOnlyThenRich.payload_json);
+    assert.equal(enriched.title, 'Se7en');
+    assert.ok(enriched.overview);
+  } finally {
+    db.close();
+    repo.close();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});

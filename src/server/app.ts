@@ -588,11 +588,20 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     },
     async start() {
       if (!tasteSub) {
-        tasteSub = subscribeTasteAdapterToEventBus(eventBus, tasteAdapter, (ev, outcome) => {
-          tasteErrorCount += 1;
-          lastTasteError =
-            (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
-        });
+        tasteSub = subscribeTasteAdapterToEventBus(
+          eventBus,
+          tasteAdapter,
+          (ev, outcome) => {
+            tasteErrorCount += 1;
+            lastTasteError =
+              (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
+          },
+          (ev, outcome) => {
+            console.info(
+              `[Taste] Aktif olmayan profile ait iç olay yazılmadı: ${ev.eventId} (${ev.profileId}). ${outcome.error ?? ''}`
+            );
+          }
+        );
       }
     },
     async stop() {
@@ -1741,9 +1750,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
                 ? ev.entityId
                 : null;
           if (mediaKey) {
-            // Key-only enqueue kişisel alan taşımaz; metadata worker tarafından
-            // lisanslı kaynaktan çözülür. Bu çağrı başarısızsa dış catch 500 döner.
-            contentIntelligence.enqueueHiddenOrDislikedItem(mediaKey);
+            // Önce olayın türetildiği allowlist metadata ipucunu koru.
+            // Yalnızca belge içinde eşleşen kayıt bulunamazsa key-only fallback kullan.
+            contentIntelligence.enqueueHiddenOrDislikedItem(
+              mediaKey,
+              hintItem as unknown as Record<string, unknown> | undefined
+            );
           } else {
             console.warn(
               `[Olay] ${ev.eventType} teslim edilemedi (${ev.eventId}):`,

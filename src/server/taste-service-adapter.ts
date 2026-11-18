@@ -312,12 +312,25 @@ const TASTE_SUBSCRIBED_DOMAIN_EVENTS = [
 export function subscribeTasteAdapterToEventBus(
   subscriber: IEventSubscriber,
   adapter: IMemoryService,
-  onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void
+  onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void,
+  onSkipped?: (event: TypedAppEvent, outcome: OperationOutcome) => void
 ): EventSubscription {
   const subs: EventSubscription[] = TASTE_SUBSCRIBED_DOMAIN_EVENTS.map((eventType) =>
     subscriber.subscribe(eventType, async (event) => {
       const outcome = await adapter.processEvent(event);
       if (!outcome.ok) {
+        // PUT /api/data tüm profillerin library farklarını yayınlayabilir.
+        // Taste yalnızca sunucudaki aktif profile yazabilir; başka profile ait
+        // iç EventBus olayı beklenen bir kapsam dışı bırakmadır.
+        // HTTP /domain-event rotası ayrı olarak 409 döndürmeye devam eder.
+        const inactiveProfileEvent =
+          !outcome.retryable &&
+          typeof outcome.error === 'string' &&
+          outcome.error.startsWith("Profil uyuşmazlığı: olay '");
+        if (inactiveProfileEvent) {
+          onSkipped?.(event, outcome);
+          return;
+        }
         onError?.(event, outcome);
         throw new Error(outcome.error || `Taste olay kalıcılığı başarısız (${event.eventType})`);
       }
