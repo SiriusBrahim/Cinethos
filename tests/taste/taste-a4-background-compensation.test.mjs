@@ -19,14 +19,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createAppEvent } from '../../src/app/app-event-bus.ts';
+import { createAppEvent, createAppEventBus } from '../../src/app/app-event-bus.ts';
 import { createProfileContext } from '../../src/app/ProfileContext.ts';
-import { createServerTasteServiceAdapter } from '../../src/server/taste-service-adapter.ts';
+import { createServerTasteServiceAdapter, subscribeTasteAdapterToEventBus } from '../../src/server/taste-service-adapter.ts';
 import { readTasteEventsForProfile } from '../../src/server/taste-store.ts';
 import { createBackgroundTaskRepository } from '../../src/server/background-task-repository.ts';
 import { createBackgroundManager } from '../../src/modules/background/service.ts';
 import { createLibraryItemAddedHandler } from '../../src/modules/background/handlers.ts';
-import { createTasteEventSyncHandler } from '../../src/modules/background/taste-handlers.ts';
+import { createTasteEventSyncHandler, TASTE_EVENT_SYNC_HANDLER_ID } from '../../src/modules/background/taste-handlers.ts';
 
 async function makeTempDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'ct-taste-a4-compensation-'));
@@ -163,6 +163,73 @@ test('R2-A4 aktif profilin olayı için telafi görevi üretilmez', async () => 
     assert.notEqual(tasks[0].handlerId, 'intelligence.taste-event-sync');
   } finally {
     await runtime.manager.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+
+test('R2-A4 yarış: persistEvent sırasında aktif profil değişirse atlanan olay için telafi görevi kaybolmamalı', async () => {
+  const tmpDir = await makeTempDir();
+  const profileContext = createProfileContext({
+    initialProfileId: 'profile-a',
+    initialRevision: 1,
+  });
+  const adapter = createServerTasteServiceAdapter({
+    dataDir: tmpDir,
+    profileContext,
+    rebuildOnEvent: false,
+  });
+  const repository = createBackgroundTaskRepository({ dataDir: tmpDir });
+  const manager = createBackgroundManager({
+    repository,
+    handlers: [createLibraryItemAddedHandler(), createTasteEventSyncHandler(adapter)],
+    profileContext,
+  });
+  const eventBus = createAppEventBus({
+    persistEvent: async (event) => {
+      // Persist aşamasında olay aktif profile ait; hemen ardından profil değişir.
+      await manager.acceptEvent(event);
+      await profileContext.switchProfile('profile-b', 2);
+    },
+  });
+  const skipped = [];
+  const subscription = subscribeTasteAdapterToEventBus(
+    eventBus,
+    adapter,
+    undefined,
+    (event, outcome) => skipped.push({ eventId: event.eventId, code: outcome.code })
+  );
+
+  try {
+    const event = makeEvent({
+      eventId: 'evt-a4-profile-switch-race',
+      ref: { profileId: 'profile-a', revision: 1 },
+    });
+    await eventBus.publish(event);
+
+    assert.deepEqual(skipped, [
+      { eventId: 'evt-a4-profile-switch-race', code: 'profile-not-active' },
+    ]);
+
+    assert.ok(
+      manager.listTasks().some((task) => task.handlerId === TASTE_EVENT_SYNC_HANDLER_ID),
+      'canlı abonelikte profil değişimi nedeniyle atlanan olay için kalıcı telafi görevi bulunmalı'
+    );
+
+    await manager.start();
+    await profileContext.switchProfile('profile-a', 3);
+    const completed = await pumpUntil(manager, () =>
+      manager.listTasks().every((task) => task.status === 'completed')
+    );
+    assert.equal(completed, true, 'profil geri açıldığında telafi görevi tamamlanmalı');
+    assert.deepEqual(
+      (await readTasteEventsForProfile('profile-a', tmpDir)).map((item) => item.eventId),
+      ['evt-a4-profile-switch-race']
+    );
+    assert.deepEqual(await readTasteEventsForProfile('profile-b', tmpDir), []);
+  } finally {
+    subscription.unsubscribe();
+    await manager.stop();
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
