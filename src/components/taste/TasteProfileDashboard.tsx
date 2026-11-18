@@ -3,7 +3,7 @@
 // Takımyıldızı (Constellation Grid) + Kategori Filtreleri + Kanıt Modalı
 // ===========================================================================
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
@@ -24,6 +24,12 @@ import {
 import { useTasteProfile } from "../../hooks/useTasteProfile.ts";
 import { GlassCard } from "../ui/GlassCard.tsx";
 import { TasteMetricDetail } from "./TasteMetricDetail.tsx";
+import { TasteComparePanel } from "./TasteComparePanel.tsx";
+import { TasteEvolutionPanel } from "./TasteEvolutionPanel.tsx";
+import {
+  fetchTasteOverview,
+  type TasteOverviewClientResponse,
+} from "../../services/taste-api.ts";
 
 const CATEGORIES = [
   { id: "all", label: "Tümü" },
@@ -48,6 +54,26 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
 }) => {
   const { profile, status, error, reload, applyOverride, removeOverride } =
     useTasteProfile();
+  const [overview, setOverview] = useState<TasteOverviewClientResponse | null>(null);
+  const [overviewStatus, setOverviewStatus] = useState<"loading" | "success" | "error">("loading");
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+
+  const refreshOverview = useCallback(async () => {
+    setOverviewStatus("loading");
+    setOverviewError(null);
+    try {
+      const nextOverview = await fetchTasteOverview();
+      setOverview(nextOverview);
+      setOverviewStatus("success");
+    } catch (err: unknown) {
+      setOverviewError(err instanceof Error ? err.message : "Zevk karşılaştırma verileri yüklenemedi.");
+      setOverviewStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOverview();
+  }, [refreshOverview]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [onlyWithSignal, setOnlyWithSignal] = useState<boolean>(false);
   const [activeMetricId, setActiveMetricId] = useState<string | null>(null);
@@ -194,7 +220,10 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
 
             <button
               type="button"
-              onClick={() => void reload()}
+              onClick={() => {
+                void reload();
+                void refreshOverview();
+              }}
               aria-label="Zevk profilini yenile"
               className="btn-ghost text-xs px-3.5 py-2.5"
             >
@@ -364,6 +393,62 @@ export const TasteProfileDashboard: React.FC<TasteProfileDashboardProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Film/Dizi karşılaştırması ve zamana bağlı zevk evrimi — yalnızca Taste Engine verisi. */}
+      {overviewStatus === "loading" && !overview && (
+        <div className="glass-panel rounded-2xl p-5 text-sm text-cinema-textMuted" role="status">
+          Film/Dizi karşılaştırması ve zevk evrimi yükleniyor…
+        </div>
+      )}
+
+      {overviewStatus === "error" && !overview && (
+        <div className="glass-panel rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3 border border-cinema-danger/30" role="alert">
+          <span className="text-sm text-cinema-textMuted">
+            Karşılaştırma ve evrim verileri yüklenemedi: {overviewError}
+          </span>
+          <button type="button" onClick={() => void refreshOverview()} className="btn-ghost text-xs">
+            Yeniden Dene
+          </button>
+        </div>
+      )}
+
+      {overview && (
+        <>
+          <section className="space-y-4" aria-labelledby="taste-media-comparison-title">
+            <header>
+              <h2 id="taste-media-comparison-title" className="text-xl font-bold text-cinema-textPrimary">
+                Film / Dizi Karşılaştırması
+              </h2>
+              <p className="text-xs text-cinema-textMuted mt-1">
+                Film ve dizi profilleri ayrı hesaplanır; bu bölüm yalnızca aralarındaki farkları gösterir.
+              </p>
+            </header>
+            <TasteComparePanel
+              movieProfile={overview.movie}
+              seriesProfile={overview.series}
+              movieCount={overview.movieAnalyzedCount}
+              seriesCount={overview.seriesAnalyzedCount}
+              onSelectMetric={setActiveMetricId}
+            />
+          </section>
+
+          <section className="space-y-4" aria-labelledby="taste-evolution-title">
+            <header>
+              <h2 id="taste-evolution-title" className="text-xl font-bold text-cinema-textPrimary">
+                Zevk Evrimi
+              </h2>
+              <p className="text-xs text-cinema-textMuted mt-1">
+                Aylık snapshot geçmişi ve uzun vadeli eğilimden ayrışan güncel sinyaller.
+              </p>
+            </header>
+            <TasteEvolutionPanel
+              snapshots={overview.monthlySnapshots}
+              drifts={overview.drifts}
+              onSelectMetric={setActiveMetricId}
+            />
+          </section>
+        </>
       )}
 
       {/* Kanıt ve Manuel Kontrol Modalı */}
