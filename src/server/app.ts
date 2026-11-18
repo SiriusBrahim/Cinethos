@@ -597,8 +597,9 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
               (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
           },
           (ev, outcome) => {
+            const reason = !outcome.ok ? outcome.error ?? '' : '';
             console.info(
-              `[Taste] Aktif olmayan profile ait iç olay yazılmadı: ${ev.eventId} (${ev.profileId}). ${outcome.error ?? ''}`
+              `[Taste] Aktif olmayan profile ait iç olay yazılmadı: ${ev.eventId} (${ev.profileId}). ${reason}`
             );
           }
         );
