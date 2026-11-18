@@ -1719,7 +1719,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       // enqueue edilir (tüm kütüphaneyi her PUT'ta yeniden kuyruğa almıyoruz).
       const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
       for (const ev of libraryEvents) {
-        let hintItem: ReturnType<typeof findSavedItemByMediaKey>;
+        let hintItem: ReturnType<typeof findSavedItemByMediaKey> = undefined;
         try {
           // Plan 2.5 — gerekli kaynak ipuçları: olayı türeten kaydın ortak
           // (allowlist) metaverisi hint olarak kaydedilir; kişisel alanlar
