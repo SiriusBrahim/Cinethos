@@ -22,7 +22,7 @@ import path from 'node:path';
 import { createAppEvent, createAppEventBus } from '../../src/app/app-event-bus.ts';
 import { createProfileContext } from '../../src/app/ProfileContext.ts';
 import { createServerTasteServiceAdapter, subscribeTasteAdapterToEventBus } from '../../src/server/taste-service-adapter.ts';
-import { readTasteEventsForProfile } from '../../src/server/taste-store.ts';
+import { readTasteEventsForProfile, readTasteProfileForProfile, resolveTastePathsForProfile } from '../../src/server/taste-store.ts';
 import { createBackgroundTaskRepository } from '../../src/server/background-task-repository.ts';
 import { createBackgroundManager } from '../../src/modules/background/service.ts';
 import { createLibraryItemAddedHandler } from '../../src/modules/background/handlers.ts';
@@ -230,6 +230,42 @@ test('R2-A4 yarış: persistEvent sırasında aktif profil değişirse atlanan o
   } finally {
     subscription.unsubscribe();
     await manager.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+
+test('R2-A4 retry: olay yazıldıktan sonra rebuild başarısızsa tekrar deneme profili yeniden oluşturmalı', async () => {
+  const tmpDir = await makeTempDir();
+  const runtime = await makeRuntime(tmpDir);
+  try {
+    const paths = resolveTastePathsForProfile('profile-a', tmpDir).paths;
+    // Olay deposu yazılabilir kalırken profil çıktı dosyasını yazılamaz hâle getir.
+    await fs.mkdir(paths.profile, { recursive: true });
+
+    const event = makeEvent({
+      eventId: 'evt-a4-rebuild-retry',
+      ref: { profileId: 'profile-a', revision: 1 },
+    });
+    const first = await runtime.adapter.processDeferredEvent(event);
+    assert.equal(first.ok, false, 'ilk rebuild yazma hatasıyla başarısız olmalı');
+    assert.equal(first.retryable, true);
+    assert.deepEqual(
+      (await readTasteEventsForProfile('profile-a', tmpDir)).map((item) => item.eventId),
+      ['evt-a4-rebuild-retry'],
+      'kanıt olayı rebuild hatasına rağmen kalıcılaşmış olmalı'
+    );
+
+    // Altyapı hatası giderildi; aynı kuyruk görevi tekrar çalıştırılır.
+    await fs.rm(paths.profile, { recursive: true, force: true });
+    const retry = await runtime.adapter.processDeferredEvent(event);
+    assert.deepEqual(retry, { ok: true });
+    assert.ok(
+      await readTasteProfileForProfile('profile-a', tmpDir),
+      'event zaten var diye erken dönülmemeli; eksik profil rebuild edilmelidir'
+    );
+  } finally {
+    await runtime.manager.stop();
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
