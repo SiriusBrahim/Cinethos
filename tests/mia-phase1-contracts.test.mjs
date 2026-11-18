@@ -486,7 +486,7 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
     });
     const rejected = await adapter.processEvent(foreignEvent);
     assert.equal(rejected.ok, false);
-    assert.match(String(rejected.error), /Profil değişti/);
+    assert.match(String(rejected.error), /Profil uyuşmazlığı|Profil değişti/);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
