@@ -111,3 +111,61 @@ Yeni regresyon testleri ve test-temizlik düzeltmesi henüz GitHub CI'da çalı�
 - Faz 5: **REQUEST_CHANGES** — A4 veri kaybı/retry riskleri ve Memory/Relationships modül eksikleri var.
 - Faz 6: **REQUEST_CHANGES** — skor-paritesi testi geçiyor; ancak IRecommendationService ve planlanan discover state taşıması eksik.
 - CI: **PASS (attempt 2)** — ilk denemede 520 testten 519 PASS / 1 flaky test dosyası hatası görüldü; aynı commit'in ikinci denemesinde 519/519 PASS, taste 436/436 PASS, build/smoke ve E2E PASS. Faz 5/6 kapsamı yine de mimari eksikler nedeniyle REQUEST_CHANGES.
+
+
+## 7. Faz 6 bağımsız doğrulama — commit `f4da5a24`
+
+**Kaynak karşılaştırması:** `7a6fdf0..f4da5a2` aralığı tek Faz 6 commit'inden oluşuyor. 17 dosyada değişiklik var; eski `src/core/recommendation-orchestrator.ts` kaldırılmış, `src/modules/recommendations/` altında beş alt yönetici ve bir dış yüz oluşturulmuş. `src/App.tsx` ve önceki import tüketicileri yeni modül yoluna geçirilmiş.
+
+### 7.1 GitHub Actions — attempt 2 doğrulandı
+
+Run: https://github.com/SiriusBrahim/Cinethos/actions/runs/44376624617
+
+Aynı commit için:
+- **Attempt 1:** Unit Tests adımı başarısız; diğer Playwright E2E işi başarılı. Ana doğrulama job'ında sonraki Taste / build / production smoke adımları bu nedenle atlandı.
+- **Attempt 2:** iki CI işi de başarılı.
+  - `npm run lint`: ESLint + uygulama TypeScript + test TypeScript PASS.
+  - `npm test`: **519/519 PASS**.
+  - `npm run test:taste`: **436/436 PASS**.
+  - `npm run build`: PASS.
+  - Production dependency audit: **0 critical / 0 high / 26 moderate**; high eşikli CI adımı PASS.
+  - Production smoke (`npm prune --omit=dev` sonrası sunucu açılışı, API ve deep-link): PASS.
+  - Playwright E2E: **11/11 PASS**.
+- Ayrı salt okunur Maintenance Analysis run #44376624602: npm test 519/519, Taste 436/436, lint/typecheck/build ve production audit PASS. Mimari analiz 578 kenar, 5 ihlal, 0 döngü raporladı; ihlaller mevcut mimari allowlist/baseline kapsamında değerlendirilmelidir.
+
+**Flaky test notu:** Attempt 1'de görülen `tests/mia-phase1-contracts.test.mjs` geçici dizin / arka plan Taste rebuild temizliği yarışı gerçek bir test kararsızlığıdır. Attempt 2'nin aynı commit'te geçmesi ilk başarısızlığı geçersiz kılmaz. PR #43'teki rebuild tamamlanmasını bekleme düzeltmesi hedefe alınmalı; Agent 2 dalına taşındıktan sonra yeni CI koşusunda doğrulanmalıdır.
+
+### 7.2 Faz 6 kod incelemesi
+
+**Olumlu doğrulamalar**
+- Öneri orkestrasyonu tek modül sınırına taşınmış; eski çekirdek dosyası silinmiş.
+- `App.tsx` yeni `src/modules/recommendations/index.ts` giriş noktasını kullanıyor.
+- `CandidatePoolManager` ve `ExplanationManager` önceki dosyadaki davranışları koruyor; eski ve yeni havuz filtresi karşılaştırıldığında belirsiz medya türünü eleme ve movie/tv/all davranışı aynı.
+- `enrichCatalogItemsWithTaste` için eklenen isteğe bağlı `now` parametresi testte sabit referans zamanını sağlıyor; parametre verilmediğinde güncel zaman varsayılanı korunuyor.
+- Faz 6 testleri 6/6 PASS: sabit veri seti ile önce/sonra skor ve sıra karşılaştırması, tekrar koşum determinizmi, yönetici kurulumu, import sınırı, film/dizi havuz ayrımı, değerlendirme/sıralama facade kontrolleri.
+- Puanlama matematiği `src/core/cinetrack-core.ts` içinde bırakılmış; bu commit'te puanlama formüllerini yeniden uygulayan bir değişiklik tespit edilmedi.
+
+**P2 — Önce/sonra parity testinin kapsamı kısmi**
+- `tests/phase6-recommendation-manager.test.mjs` altın fixture karşılaştırmasını `enrichCatalogItemsWithTaste` ve `mapRecommendationBatchToDisplayItems` çıktıları için yapıyor.
+- Aynı commit ile taşınan `hydrateTasteMapWithDerivedCache` ve `buildDerivedProfilePayloadFromTasteMap` için önce/sonra altın çıktı karşılaştırması bulunmuyor.
+- Mevcut testler bu fonksiyonların çeşitli davranışlarını kapsasa da taşınma öncesi/sonrası tam çıktı eşitliği kanıtı değiller. Bu nedenle rapordaki “tüm öneri motoru çıktıları birebir aynı” ifadesi yalnızca test edilen puanlama/gösterim akışıyla sınırlandırılmalı veya iki yardımcı için de parity fixture eklenmeli.
+
+**P2 — Üretim bundle uyarısı**
+- Vite build başarılı; ancak ana JS chunk yaklaşık **810 kB** (minify sonrası) ve 500 kB uyarısı veriyor.
+- `TasteProfileDashboard.tsx`, `App.tsx` tarafından dynamic import edilirken `ProfileStatsTab.tsx` tarafından static import edildiğinden `INEFFECTIVE_DYNAMIC_IMPORT` uyarısı çıkıyor. Lazy-load hedefleniyorsa statik import zinciri ayrıca ele alınmalı. Bu build hatası değil, performans/bundle bölme iyileştirmesidir.
+
+### 7.3 Faz 6 kabul kriteri / açık işler
+
+Ajan 2'nin kendi raporundaki iki eksik, ana plan §1 Yönetici 6 ile tutarlı:
+- `App.tsx` içindeki `forYou*` / `catalog*` state hâlâ App içinde; `src/modules/discover/state.ts`, `useForYou`, `useCatalog` oluşturulmamış.
+- `IRecommendationService` sözleşmesinin `getRecommendations(ref, limit)` ve `refresh(ref)` uçları uygulanmamış.
+
+Bunlar Faz 6'nın tüm kabul kriterleri tamamlandı denmesini engeller. Ajan 2 bunları Faz 7'ye ertelediğini açıkça kaydetmiş; plan sahibi bu kapsam değişikliğini onaylamalı veya eksikler tamamlanmalı.
+
+### 7.4 Faz 6 sonucu
+
+- **Kod taşıma / skor paritesi:** doğrulanan kapsamda PASS.
+- **GitHub CI:** attempt 2 PASS; attempt 1 flaky test hatası ayrıca açık risk.
+- **Tam Faz 6 kabulü:** REQUEST_CHANGES / INCOMPLETE — discover state ve IRecommendationService açık işleri nedeniyle.
+- **Ek test önerisi:** hydrate + payload yardımcıları için önce/sonra fixture/parity testi; recommendation-specific browser E2E ise henüz yok.
+- Bu denetim uygulama kaynak kodunu değiştirmez. PR #43'teki A4/A5 regresyon testleri de Agent 2 dalına henüz alınmadığı için bu CI koşusu onları çalıştırmamıştır.
