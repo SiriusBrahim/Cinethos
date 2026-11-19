@@ -93,7 +93,31 @@ export interface ModuleHealth {
   readonly detail?: string;
 }
 
+/**
+ * Yapısal hata kodu — çağıranların hata metnine bağımlı olmadan karar
+ * verebilmesi için (MIA Faz 5 R2-A4).
+ *
+ * - `profile-not-active`: olay/işlem hedef profili aktif profil değil; yazma
+ *   YAPILMADI. Kuyruktaki iş, hedef profil aktif olunca yeniden denenir.
+ * - `profile-conflict`: revision çelişkisi (bayat yazma).
+ * - `invalid-profile`: kanonik olmayan profil kimliği.
+ * - `corrupt-store`: depo dosyası bozuk/okunamıyor.
+ * - `unavailable`: geçici altyapı hatası.
+ */
+export type OperationErrorCode =
+  | 'profile-not-active'
+  | 'profile-conflict'
+  | 'invalid-profile'
+  | 'corrupt-store'
+  | 'unavailable';
+
 /** Genel işlem sonucu — servis sözleşmelerinde hata sinyali için. */
 export type OperationOutcome =
   | { readonly ok: true }
-  | { readonly ok: false; readonly error: string; readonly retryable: boolean };
+  | {
+      readonly ok: false;
+      readonly error: string;
+      readonly retryable: boolean;
+      /** Yapısal hata kodu; metin ayrıştırması yerine bunu kullanın. */
+      readonly code?: OperationErrorCode;
+    };

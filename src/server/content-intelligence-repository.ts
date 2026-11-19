@@ -83,6 +83,55 @@ function loadDatabaseSync(): (new (file: string) => DatabaseLike) | null {
   }
 }
 
+function isQueuePayloadObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Aynı içerik için gelen kuyruk payload'larını kayıpsız birleştirir.
+ * Key-only payload zengin metadata'yı silemez; zengin payload da key-only
+ * kaydı tamamlayabilir.
+ */
+function mergeQueuePayloadValues(existing: unknown, incoming: unknown): unknown {
+  if (incoming === null || incoming === undefined || incoming === '') return existing;
+  if (existing === null || existing === undefined || existing === '') return incoming;
+
+  if (Array.isArray(existing) && Array.isArray(incoming)) {
+    const merged = [...existing];
+    for (const value of incoming) {
+      const signature = JSON.stringify(value);
+      if (!merged.some((item) => JSON.stringify(item) === signature)) merged.push(value);
+    }
+    return merged;
+  }
+
+  if (isQueuePayloadObject(existing) && isQueuePayloadObject(incoming)) {
+    const merged: Record<string, unknown> = { ...existing };
+    for (const [key, value] of Object.entries(incoming)) {
+      merged[key] = key in merged ? mergeQueuePayloadValues(merged[key], value) : value;
+    }
+    return merged;
+  }
+
+  return incoming;
+}
+
+function mergeQueuePayloadJson(
+  existingJson: string | null | undefined,
+  incomingJson: string | null
+): string | null {
+  if (!incomingJson) return existingJson ?? null;
+  if (!existingJson) return incomingJson;
+  try {
+    return JSON.stringify(
+      mergeQueuePayloadValues(JSON.parse(existingJson) as unknown, JSON.parse(incomingJson) as unknown)
+    );
+  } catch {
+    // Yeni payload sanitizer tarafından üretilmiş geçerli JSON'dur.
+    return incomingJson;
+  }
+}
+
 export class ContentIntelligenceRepository {
   private readonly dataDir: string;
   private readonly filePath: string;
@@ -687,6 +736,8 @@ export class ContentIntelligenceRepository {
       updated_at?: string | null;
     } | undefined;
 
+    const mergedPayload = mergeQueuePayloadJson(existing?.payload_json, sanitizedPayload);
+
     if (existing?.status === 'processing') {
       // Çalışan işin snapshot'ı değişmez. Yeni payload aynı satırda saklanır;
       // updated_at, çalışan snapshot'tan kesinlikle daha ileri alınır.
@@ -701,7 +752,7 @@ export class ContentIntelligenceRepository {
                trigger_event_id = COALESCE(?, trigger_event_id), updated_at = ?
            WHERE media_key = ? AND status = 'processing'`
         ).run(
-          sanitizedPayload,
+          mergedPayload,
           job.sourceRevision ?? null,
           job.triggerEventId ?? null,
           nextUpdatedAt,
@@ -711,7 +762,7 @@ export class ContentIntelligenceRepository {
       return { enqueued: false, status: 'processing' };
     }
 
-    if (existing?.status === 'pending' && sanitizedPayload === existing.payload_json) {
+    if (existing?.status === 'pending' && mergedPayload === existing.payload_json) {
       return { enqueued: false, status: 'pending' };
     }
 
@@ -738,7 +789,7 @@ export class ContentIntelligenceRepository {
       job.mediaType,
       job.tmdbId,
       job.sourceRevision ?? null,
-      sanitizedPayload,
+      mergedPayload,
       job.triggerEventId ?? null,
       maxAttempts,
       nowIso,

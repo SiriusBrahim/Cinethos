@@ -7,16 +7,22 @@ import path from "node:path";
 import { Router, type Response } from "express";
 import { CorruptJsonFileError, readJsonFileWithRecoveryAsync } from "./atomic-json.ts";
 import {
-  readTasteProfile,
-  writeTasteProfile,
-  readTasteEvents,
-  appendTasteEventIdempotent,
-  readTasteManifest,
-  readTasteIndex,
-  writeTasteIndex,
-  readTasteObjections,
-  writeTasteObjections,
+  readTasteEventsForProfile,
+  appendTasteEventIdempotentForProfile,
+  readTasteManifestForProfile,
+  readTasteIndexForProfile,
+  writeTasteIndexForProfile,
+  readTasteObjectionsForProfile,
+  writeTasteObjectionsForProfile,
+  readTasteProfileForProfile,
+  writeTasteProfileForProfile,
 } from "./taste-store.ts";
+import { TasteProfileScopeError, validateCanonicalProfileId } from "./taste-profile-scope.ts";
+import {
+  ProfileConflictError,
+  type IProfileContext,
+  type WriteProfileRef,
+} from "../contracts/index.ts";
 import { explainMetric, type EvidenceItem } from "../core/taste/profile-explainer.ts";
 import { aggregateProfiles } from "../core/taste/profile-aggregator.ts";
 import type {
@@ -266,15 +272,34 @@ function enrichEvidenceList(
 }
 
 function handleTasteRouteError(res: Response, err: unknown, fallbackError: string) {
+  // R2-A3: profil/revision çelişkileri HTTP 409 ile döner (S5).
+  if (err instanceof ProfileConflictError) {
+    return res.status(409).json({ error: err.message, code: err.reason });
+  }
+  if (err instanceof TasteProfileScopeError) {
+    return res.status(409).json({ error: err.message, code: err.code });
+  }
   if (err instanceof CorruptJsonFileError) {
     return res.status(500).json({ error: err.message, code: err.code });
   }
   return res.status(500).json({ error: fallbackError });
 }
 
+/**
+ * R2-A3: route katmanında profil kimliğinin TEK kaynağı ProfileContext'tir.
+ * Kimlik istekten (query/header/body) alınmaz; kanonik olmayan kimlik reddedilir.
+ */
+function requireProfileRef(profileContext: IProfileContext): WriteProfileRef {
+  const current = profileContext.getCurrent();
+  const profileId = validateCanonicalProfileId(current.profileId);
+  return { profileId, revision: current.revision };
+}
+
 export function createTasteRouter(
   dataDir: string = "data",
   options: {
+    /** R2-A3: zorunlu — global Taste API'sine sessiz fallback YOKTUR. */
+    profileContext: IProfileContext;
     tmdbApiKey?: string;
     eventBus?: AppEventBus;
     tasteAdapter?: ServerTasteServiceAdapter;
@@ -287,12 +312,19 @@ export function createTasteRouter(
       event: TasteEvent,
       rawMetadata?: Record<string, unknown>
     ) => Promise<void> | void;
-  } = {}
+  }
 ): Router {
+  if (!options?.profileContext) {
+    throw new Error(
+      "createTasteRouter: profileContext zorunludur (R2-A3) — global Taste API'sine fallback yoktur."
+    );
+  }
+  const profileContext = options.profileContext;
   const router = Router();
   configureTasteHydration(dataDir, options.tmdbApiKey || process.env.TMDB_API_KEY);
   const tasteAdapter =
-    options.tasteAdapter ?? createServerTasteServiceAdapter({ dataDir, rebuildOnEvent: true });
+    options.tasteAdapter ??
+    createServerTasteServiceAdapter({ dataDir, profileContext, rebuildOnEvent: true });
   const eventBus = options.eventBus ?? createAppEventBus();
   if (!options.deferAdapterSubscription) {
     subscribeTasteAdapterToEventBus(eventBus, tasteAdapter);
@@ -301,8 +333,10 @@ export function createTasteRouter(
   // GET /api/taste/profile
   router.get("/profile", async (_req, res) => {
     try {
-      await ensureInitialTasteBootstrap(dataDir);
-      const profile = await readTasteProfile(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
+      const profile = await readTasteProfileForProfile(ref.profileId, dataDir);
       if (!profile) {
         return res.status(404).json({ error: "Profil bulunamadı" });
       }
@@ -315,12 +349,14 @@ export function createTasteRouter(
   // GET /api/taste/overview — Kimliğim Genel Bakış + Film vs Dizi + Zevk Evrimi
   router.get("/overview", async (_req, res) => {
     try {
-      await ensureInitialTasteBootstrap(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
       const [storedUnified, events, index, objections] = await Promise.all([
-        readTasteProfile(dataDir),
-        readTasteEvents(dataDir),
-        readTasteIndex(dataDir),
-        readTasteObjections(dataDir),
+        readTasteProfileForProfile(ref.profileId, dataDir),
+        readTasteEventsForProfile(ref.profileId, dataDir),
+        readTasteIndexForProfile(ref.profileId, dataDir),
+        readTasteObjectionsForProfile(ref.profileId, dataDir),
       ]);
 
       if (!storedUnified) {
@@ -390,8 +426,10 @@ export function createTasteRouter(
   // GET /api/taste/metric/:id
   router.get("/metric/:id", async (req, res) => {
     try {
-      await ensureInitialTasteBootstrap(dataDir);
-      const profile = await readTasteProfile(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
+      const profile = await readTasteProfileForProfile(ref.profileId, dataDir);
       if (!profile) {
         return res.status(404).json({ error: "Profil bulunamadı" });
       }
@@ -403,7 +441,7 @@ export function createTasteRouter(
       }
 
       const [index, summaryLookup] = await Promise.all([
-        readTasteIndex(dataDir),
+        readTasteIndexForProfile(ref.profileId, dataDir),
         buildContentSummaryLookup(dataDir),
       ]);
       const explanation = explainMetric(metricId, profile, index?.items ?? {});
@@ -423,15 +461,17 @@ export function createTasteRouter(
       }
 
       res.json({ metric, explanation });
-    } catch {
-      res.status(500).json({ error: "Metrik okunamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Metrik okunamadı");
     }
   });
 
   // GET /api/taste/evidence/:metricId
   router.get("/evidence/:metricId", async (req, res) => {
     try {
-      const profile = await readTasteProfile(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      const profile = await readTasteProfileForProfile(ref.profileId, dataDir);
       if (!profile) {
         return res.status(404).json({ error: "Profil bulunamadı" });
       }
@@ -449,28 +489,32 @@ export function createTasteRouter(
         negMass: metric.evidence.negMass,
         uncertainMass: metric.evidence.uncertainMass,
       });
-    } catch {
-      res.status(500).json({ error: "Kanıt okunamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Kanıt okunamadı");
     }
   });
 
   // GET /api/taste/manifest
   router.get("/manifest", async (_req, res) => {
     try {
-      const manifest = await readTasteManifest(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      const manifest = await readTasteManifestForProfile(ref.profileId, dataDir);
       if (!manifest) {
         return res.status(404).json({ error: "Manifest bulunamadı" });
       }
       res.json(manifest);
-    } catch {
-      res.status(500).json({ error: "Manifest okunamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Manifest okunamadı");
     }
   });
 
   // GET /api/taste/events
   router.get("/events", async (_req, res) => {
     try {
-      const events = await readTasteEvents(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      const events = await readTasteEventsForProfile(ref.profileId, dataDir);
       res.json({ events, count: events.length });
     } catch (err) {
       handleTasteRouteError(res, err, "Olaylar okunamadı");
@@ -494,8 +538,10 @@ export function createTasteRouter(
         return res.status(400).json({ error: `Geçersiz mode: ${mode}` });
       }
 
-      await ensureInitialTasteBootstrap(dataDir);
-      const profile = await readTasteProfile(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
+      const profile = await readTasteProfileForProfile(ref.profileId, dataDir);
       if (!profile) {
         return res.status(404).json({ error: "Profil bulunamadı" });
       }
@@ -513,10 +559,11 @@ export function createTasteRouter(
         value: mode === "exclude" ? 0 : safeVal,
         mode: mode as ManualOverrideMode,
       };
-      await writeTasteProfile(profile, dataDir);
+      profileContext.assertWritable(ref);
+      await writeTasteProfileForProfile(ref.profileId, profile, dataDir);
       res.json({ success: true, metric });
-    } catch {
-      res.status(500).json({ error: "Manuel kontrol uygulanamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Manuel kontrol uygulanamadı");
     }
   });
 
@@ -524,7 +571,9 @@ export function createTasteRouter(
   router.delete("/override/:metricId", async (req, res) => {
     try {
       const metricId = req.params.metricId;
-      const profile = await readTasteProfile(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      const profile = await readTasteProfileForProfile(ref.profileId, dataDir);
       if (!profile) {
         return res.status(404).json({ error: "Profil bulunamadı" });
       }
@@ -535,10 +584,11 @@ export function createTasteRouter(
       }
 
       delete metric.manualOverride;
-      await writeTasteProfile(profile, dataDir);
+      profileContext.assertWritable(ref);
+      await writeTasteProfileForProfile(ref.profileId, profile, dataDir);
       res.json({ success: true, metric });
-    } catch {
-      res.status(500).json({ error: "Override kaldırılamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Override kaldırılamadı");
     }
   });
 
@@ -557,10 +607,12 @@ export function createTasteRouter(
         return res.status(400).json({ error: "Geçersiz itiraz isteği" });
       }
 
-      await ensureInitialTasteBootstrap(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
       const [objections, index] = await Promise.all([
-        readTasteObjections(dataDir),
-        readTasteIndex(dataDir),
+        readTasteObjectionsForProfile(ref.profileId, dataDir),
+        readTasteIndexForProfile(ref.profileId, dataDir),
       ]);
 
       const alreadyExists = objections.some(
@@ -572,23 +624,24 @@ export function createTasteRouter(
           metricId,
           createdAt: new Date().toISOString(),
         });
-        await writeTasteObjections(objections, dataDir);
+        profileContext.assertWritable(ref);
+        await writeTasteObjectionsForProfile(ref.profileId, objections, dataDir);
       }
 
       if (index?.items?.[contentId]?.features?.[metricId]) {
         delete index.items[contentId].features[metricId];
-        await writeTasteIndex(index, dataDir);
+        await writeTasteIndexForProfile(ref.profileId, index, dataDir);
       }
 
-      const rebuildResult = await triggerTasteProfileRebuild(dataDir);
+      const rebuildResult = await triggerTasteProfileRebuild(ref.profileId, dataDir);
       res.json({
         success: true,
         contentId,
         metricId,
         generationId: rebuildResult.generationId,
       });
-    } catch {
-      res.status(500).json({ error: "Etiket itirazı kaydedilemedi" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Etiket itirazı kaydedilemedi");
     }
   });
 
@@ -603,18 +656,21 @@ export function createTasteRouter(
         return res.status(400).json({ error: "Geçersiz istek" });
       }
 
-      const objections = await readTasteObjections(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      const objections = await readTasteObjectionsForProfile(ref.profileId, dataDir);
       const filtered = objections.filter(
         (o) => !(o.contentId === contentId && o.metricId === metricId)
       );
-      await writeTasteObjections(filtered, dataDir);
-      const rebuildResult = await triggerTasteProfileRebuild(dataDir);
+      profileContext.assertWritable(ref);
+      await writeTasteObjectionsForProfile(ref.profileId, filtered, dataDir);
+      const rebuildResult = await triggerTasteProfileRebuild(ref.profileId, dataDir);
       res.json({
         success: true,
         generationId: rebuildResult.generationId,
       });
-    } catch {
-      res.status(500).json({ error: "Etiket itirazı geri alınamadı" });
+    } catch (err) {
+      handleTasteRouteError(res, err, "Etiket itirazı geri alınamadı");
     }
   });
 
@@ -637,12 +693,14 @@ export function createTasteRouter(
         return res.status(400).json({ error: "Geçersiz olay" });
       }
 
-      await ensureInitialTasteBootstrap(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
 
       if (body && "metadata" in body && body.metadata) {
         const meta = coerceItemToTasteMetadata(body.metadata as Record<string, unknown>);
         if (meta) {
-          await upsertTasteMetadataInputs([meta], dataDir);
+          await upsertTasteMetadataInputs(ref.profileId, [meta], dataDir);
         }
       }
 
@@ -653,9 +711,10 @@ export function createTasteRouter(
             ? (body.metadata as Record<string, unknown>)
             : undefined;
 
-      const { added } = await appendTasteEventIdempotent(event, dataDir);
+      profileContext.assertWritable(ref);
+      const { added } = await appendTasteEventIdempotentForProfile(ref.profileId, event, dataDir);
       const rebuildResult = added
-        ? await triggerTasteProfileRebuild(dataDir)
+        ? await triggerTasteProfileRebuild(ref.profileId, dataDir)
         : { generationId: undefined };
 
       if (options.onRawTasteEvent) {
@@ -693,7 +752,26 @@ export function createTasteRouter(
         return res.status(400).json({ error: "Geçersiz domain olayı" });
       }
 
-      await ensureInitialTasteBootstrap(dataDir);
+      // R2-A3 S5: kimlik otoritesi sunucudadır; istemci profileId'si yalnızca doğrulama girdisidir.
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      let claimedProfileId: string;
+      try {
+        claimedProfileId = validateCanonicalProfileId(event.profileId);
+      } catch {
+        return res.status(409).json({
+          error: "Geçersiz profil kimliği",
+          code: "invalid_profile_id",
+        });
+      }
+      if (claimedProfileId !== ref.profileId) {
+        return res.status(409).json({
+          error: "Profil uyuşmazlığı: olay aktif profille eşleşmiyor.",
+          code: "profile-switched",
+        });
+      }
+
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
       const rawMeta =
         body && "rawMetadata" in body && body.rawMetadata && typeof body.rawMetadata === "object"
           ? (body.rawMetadata as Record<string, unknown>)
@@ -704,7 +782,7 @@ export function createTasteRouter(
       if (body && "metadata" in body && body.metadata) {
         const meta = coerceItemToTasteMetadata(body.metadata as Record<string, unknown>);
         if (meta) {
-          await upsertTasteMetadataInputs([meta], dataDir);
+          await upsertTasteMetadataInputs(ref.profileId, [meta], dataDir);
         }
       }
 
@@ -731,8 +809,10 @@ export function createTasteRouter(
   // POST /api/taste/rebuild — Manuel/istemci tetiklemeli arka plan profil yeniden hesaplama
   router.post("/rebuild", async (_req, res) => {
     try {
-      await ensureInitialTasteBootstrap(dataDir);
-      const rebuildResult = await triggerTasteProfileRebuild(dataDir);
+      const ref = requireProfileRef(profileContext);
+      profileContext.assertCurrent(ref);
+      await ensureInitialTasteBootstrap(ref.profileId, dataDir);
+      const rebuildResult = await triggerTasteProfileRebuild(ref.profileId, dataDir);
       res.json({
         success: true,
         generationId: rebuildResult.generationId,

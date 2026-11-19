@@ -92,6 +92,14 @@ export interface BackgroundTaskHandler {
   readonly version: string;
   readonly eventTypes: readonly (keyof AppEventMap)[];
   /**
+   * R2-A4: `true` ise görev yalnızca hedef profil AKTİFKEN çalıştırılır.
+   * Hedef profili aktif olmayan görevler kiralanmaz (deneme hakkı tüketilmez) ve
+   * aktif profil değişiminde pompa uyandırılarak telafi edilir. Canlı abonelik
+   * zaten aktif profilin olaylarını işlediğinden bu tür görevler yalnızca
+   * kaçırılmış (aktif olmayan profile ait) olaylar için üretilir.
+   */
+  readonly profileScoped?: boolean;
+  /**
    * Etki burada yapılır. Hata fırlatırsa görev durumu hata sınıfına göre
    * `retry_wait` veya `failed` olur; diğer görevler etkilenmez.
    */
@@ -155,7 +163,13 @@ export interface BackgroundTaskStore {
   getEvent(eventId: string): BackgroundEventRecord | null;
   getTask(taskId: string): BackgroundTaskRecord | null;
   listTasks(options?: BackgroundTaskListOptions): BackgroundTaskRecord[];
-  claimNextTask(leaseMs?: number, nowIso?: string): BackgroundTaskRecord | null;
+  claimNextTask(
+    leaseMs?: number,
+    nowIso?: string,
+    profileId?: string
+  ): BackgroundTaskRecord | null;
+  /** R2-A4: hedef profili aktif olmayan görevi deneme hakkı tüketmeden bekletir. */
+  deferTask(taskId: string, reason: string, nowIso?: string): void;
   markCompleted(taskId: string, nowIso?: string): void;
   scheduleRetry(taskId: string, nextRetryAt: string, error: string, nowIso?: string): void;
   markFailed(taskId: string, error: string, nowIso?: string): void;

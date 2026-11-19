@@ -49,6 +49,7 @@ import {
   subscribeTasteAdapterToEventBus,
 } from './taste-service-adapter.ts';
 import { readTasteManifest } from './taste-store.ts';
+import { validateCanonicalProfileId } from './taste-profile-scope.ts';
 import { configureTasteHydration } from './taste-rebuild-coordinator.ts';
 import {
   createContentProcessingCoordinator,
@@ -60,6 +61,8 @@ import { createContentService } from '../modules/content/service.ts';
 import { createBackgroundTaskRepository } from './background-task-repository.ts';
 import { createBackgroundManager } from '../modules/background/service.ts';
 import { createDefaultBackgroundHandlers } from '../modules/background/handlers.ts';
+import { createTasteEventSyncHandler } from '../modules/background/taste-handlers.ts';
+import { describeTasteLegacyState } from './taste-legacy-status.ts';
 import { diffLibraryEvents, findSavedItemByMediaKey } from './library-event-diff.ts';
 import type {
   EventSubscription,
@@ -80,9 +83,21 @@ async function synchronizeProfileContext(
   context: ProfileContext,
   document: DataDocument
 ): Promise<void> {
-  const activeProfileId = String(
-    document.activeProfileId || document.profiles?.[0]?.id || 'default'
+  // R2-A3 §12.3: ProfileContext'e yalnızca kanonik profil kimliği yazılır;
+  // 'default' gibi kanonik olmayan bir değer sessizce context'e taşınmaz.
+  const candidateProfileId = String(
+    document.activeProfileId || document.profiles?.[0]?.id || ''
   );
+  let activeProfileId: string;
+  try {
+    activeProfileId = validateCanonicalProfileId(candidateProfileId);
+  } catch {
+    console.warn(
+      '[profile-context] Kanonik olmayan aktif profil kimliği; eşitleme atlandı:',
+      JSON.stringify(candidateProfileId)
+    );
+    return;
+  }
   // Number.isSafeInteger tip daraltması yapmadığı için açık typeof kontrolü gerekir.
   const revision =
     typeof document.revision === 'number' && Number.isSafeInteger(document.revision)
@@ -491,14 +506,20 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     },
   });
   const profileContext = createProfileContext({
-    initialProfileId: 'default',
+    // R2-A3 §12.3 mekanizma (a): açılış kimliği belge normalizasyonuyla hizalı
+    // (`PROFILE_ID_PATTERN` 'profile-default' kabul eder, 'default' kabul etmez).
+    initialProfileId: 'profile-default',
     initialRevision: 0,
     eventPublisher: eventBus,
   });
   const tasteAdapter = createServerTasteServiceAdapter({
     dataDir: resolvedDataDir,
+    profileContext,
     rebuildOnEvent: true,
   });
+  // R2-A4: canlı abonelikte aktif olmayan profile ait olduğu için atlanan
+  // olaylar, kalıcı kuyruktan hedef profil aktif olduğunda telafi edilir.
+  backgroundManager.registerHandlers([createTasteEventSyncHandler(tasteAdapter)]);
   const tmdbProxy = createTmdbProxyService(options);
   const tvdbProxy = createTvdbProxyService({ tvdbApiKey: options.tvdbApiKey });
   const persistentStore =
@@ -527,6 +548,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   let primaryStorageStarted = false;
   let tasteSub: EventSubscription | null = null;
   let tasteErrorCount = 0;
+  let tasteSkippedCount = 0;
   let lastTasteError: string | null = null;
   let backupSyncStarted = false;
 
@@ -572,11 +594,24 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     },
     async start() {
       if (!tasteSub) {
-        tasteSub = subscribeTasteAdapterToEventBus(eventBus, tasteAdapter, (ev, outcome) => {
-          tasteErrorCount += 1;
-          lastTasteError =
-            (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
-        });
+        tasteSub = subscribeTasteAdapterToEventBus(
+          eventBus,
+          tasteAdapter,
+          (ev, outcome) => {
+            tasteErrorCount += 1;
+            lastTasteError =
+              (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
+          },
+          (ev, outcome) => {
+            // R2-A4: atlanan olay kaybolmaz; kalıcı kuyrukta hedef profil için
+            // bekler. Sayaç sağlık raporunda görünür (sessiz kayıp yok).
+            tasteSkippedCount += 1;
+            const reason = !outcome.ok ? outcome.error ?? '' : '';
+            console.info(
+              `[Taste] Aktif olmayan profile ait iç olay kuyruğa bırakıldı: ${ev.eventId} (${ev.profileId}). ${reason}`
+            );
+          }
+        );
       }
     },
     async stop() {
@@ -586,21 +621,27 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     async healthCheck(): Promise<ModuleHealth> {
       try {
         const manifest = await readTasteManifest(resolvedDataDir);
+        // R2-A5: legacy veri salt okunur sınıflandırılır; hiçbir profile
+        // otomatik bağlanmaz. Sağlık raporunda açıkça görünür.
+        const legacy = await describeTasteLegacyState(resolvedDataDir);
+        const legacyDetail = legacy.present
+          ? `legacy=${legacy.scenario ?? 'unknown'}${legacy.mappingUnreadable ? ' (mapping unreadable)' : ''}`
+          : 'legacy=none';
         if (lastTasteError) {
           return {
             moduleId: 'taste-engine',
             status: 'degraded',
-            detail: `errors=${tasteErrorCount}; ${lastTasteError}`,
+            detail: `errors=${tasteErrorCount}; skipped=${tasteSkippedCount}; ${legacyDetail}; ${lastTasteError}`,
           };
         }
         return {
           moduleId: 'taste-engine',
           status: tasteSub ? 'healthy' : 'degraded',
           detail: manifest
-            ? `generation=${manifest.generationId}`
+            ? `generation=${manifest.generationId}; skipped=${tasteSkippedCount}; ${legacyDetail}`
             : tasteSub
-              ? 'subscribed (bootstrap pending)'
-              : 'stopped',
+              ? `subscribed (bootstrap pending); skipped=${tasteSkippedCount}; ${legacyDetail}`
+              : `stopped; skipped=${tasteSkippedCount}; ${legacyDetail}`,
         };
       } catch (err) {
         return {
@@ -1694,6 +1735,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       // enqueue edilir (tüm kütüphaneyi her PUT'ta yeniden kuyruğa almıyoruz).
       const libraryEvents = diffLibraryEvents(beforeDoc, result.document);
       for (const ev of libraryEvents) {
+        let hintItem: ReturnType<typeof findSavedItemByMediaKey> = undefined;
         try {
           // Plan 2.5 — gerekli kaynak ipuçları: olayı türeten kaydın ortak
           // (allowlist) metaverisi hint olarak kaydedilir; kişisel alanlar
@@ -1706,7 +1748,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
               : typeof (ev.payload as Record<string, unknown> | undefined)?.mediaKey === 'string'
                 ? String((ev.payload as Record<string, unknown>).mediaKey)
                 : '';
-          const hintItem =
+          hintItem =
             findSavedItemByMediaKey(result.document, hintMediaKey) ??
             findSavedItemByMediaKey(beforeDoc, hintMediaKey);
           if (hintItem) {
@@ -1725,9 +1767,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
                 ? ev.entityId
                 : null;
           if (mediaKey) {
-            // Key-only enqueue kişisel alan taşımaz; metadata worker tarafından
-            // lisanslı kaynaktan çözülür. Bu çağrı başarısızsa dış catch 500 döner.
-            contentIntelligence.enqueueHiddenOrDislikedItem(mediaKey);
+            // Önce olayın türetildiği allowlist metadata ipucunu koru.
+            // Yalnızca belge içinde eşleşen kayıt bulunamazsa key-only fallback kullan.
+            contentIntelligence.enqueueHiddenOrDislikedItem(
+              mediaKey,
+              hintItem as unknown as Record<string, unknown> | undefined
+            );
           } else {
             console.warn(
               `[Olay] ${ev.eventType} teslim edilemedi (${ev.eventId}):`,
@@ -2664,6 +2709,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     '/api/taste',
     personalReadGuard,
     createTasteRouter(resolvedDataDir, {
+      profileContext,
       tmdbApiKey: options.tmdbApiKey,
       eventBus,
       tasteAdapter,

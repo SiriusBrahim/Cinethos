@@ -74,6 +74,7 @@ export class BackgroundManager {
   private readonly logger?: BackgroundManagerOptions['logger'];
 
   private profileContext: IProfileContext | null;
+  private profileUnsub: { unsubscribe(): void } | null = null;
   private running = false;
   private pumpScheduled = false;
   private pumpPromise: Promise<void> | null = null;
@@ -89,7 +90,18 @@ export class BackgroundManager {
     this.now = options.now ?? (() => new Date().toISOString());
     this.logger = options.logger;
 
-    for (const handler of options.handlers ?? []) {
+    this.registerHandlers(options.handlers ?? []);
+  }
+
+  /**
+   * İşleyici kaydı. Uygulamada Taste telafi işleyicisi, adapter oluşturulduktan
+   * sonra (başlatmadan önce) bu yöntemle eklenir; mevcut kimlikler korunur.
+   */
+  registerHandlers(handlers: readonly BackgroundTaskHandler[]): void {
+    if (this.running) {
+      throw new Error('Background işleyicileri yönetici çalışırken kaydedilemez.');
+    }
+    for (const handler of handlers) {
       if (this.handlersById.has(handler.id)) {
         throw new Error(`Background handler kimliği tekrar ediyor: ${handler.id}`);
       }
@@ -114,6 +126,11 @@ export class BackgroundManager {
     if (this.running) return;
     this.repository.ensureInitialized();
     this.recoveredOnStart = this.repository.recoverInterrupted(this.now());
+    // R2-A4: profil değişiminde bekleyen (hedef profili artık aktif olan)
+    // görevler için pompa uyandırılır. Dinleyici yoksa (test stub) sessiz geçilir.
+    if (!this.profileUnsub && typeof this.profileContext?.onProfileChange === 'function') {
+      this.profileUnsub = this.profileContext.onProfileChange(() => this.notify());
+    }
     this.running = true;
     if (this.recoveredOnStart.requeued > 0 || this.recoveredOnStart.failed > 0) {
       this.logger?.warn?.('Yarım kalan görevler kurtarıldı.', this.recoveredOnStart);
@@ -125,6 +142,8 @@ export class BackgroundManager {
 
   async stop(): Promise<void> {
     this.running = false;
+    this.profileUnsub?.unsubscribe();
+    this.profileUnsub = null;
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
@@ -169,7 +188,15 @@ export class BackgroundManager {
     tasksCreated: number;
     deduplicated: boolean;
   }> {
-    const handlers = this.handlersByEvent.get(event.eventType) ?? [];
+    const allHandlers = this.handlersByEvent.get(event.eventType) ?? [];
+    // R2-A4: profil kapsamlı işleyiciler yalnızca HEDEF PROFİL AKTİF DEĞİLKEN
+    // görev üretir. Aktif profilin olayı canlı abonelikte zaten işlenir; ayrıca
+    // görev üretmek gereksiz çift iş olurdu. Aktif olmayan profilin olayı ise
+    // kalıcı kuyrukta bekler ve o profil aktif olunca telafi edilir.
+    const activeProfileId = this.profileContext?.getCurrent().profileId;
+    const handlers = allHandlers.filter(
+      (handler) => !handler.profileScoped || activeProfileId !== event.profileId
+    );
     const result = this.repository.acceptEvent(
       {
         eventId: event.eventId,
@@ -234,7 +261,10 @@ export class BackgroundManager {
   /** Test/teşhis için tek pompa turu; üretimde zamanlayıcı çağırır. */
   async pumpOnce(): Promise<void> {
     if (!this.running) return;
-    const task = this.repository.claimNextTask(this.leaseMs, this.now());
+    // R2-A4: yalnızca aktif profile ait görev kiralanır. Diğer profillerin
+    // görevleri pending kalır; profil değişiminde pompa yeniden çalışır.
+    const activeProfileId = this.profileContext?.getCurrent().profileId;
+    const task = this.repository.claimNextTask(this.leaseMs, this.now(), activeProfileId);
     if (!task) return;
     await this.executeTask(task);
   }
@@ -271,6 +301,14 @@ export class BackgroundManager {
     const profileContext = this.profileContext;
     if (!profileContext) {
       this.repository.markFailed(task.taskId, 'profile-context-missing', this.now());
+      return;
+    }
+
+    // R2-A4 savunma katmanı: kiralama ile işleyici başlangıcı arasında profil
+    // değişmişse hedef profile YAZILMAZ; görev deneme hakkı tüketmeden bekler ve
+    // hedef profil yeniden aktif olduğunda çalışır.
+    if (handler.profileScoped && profileContext.getCurrent().profileId !== task.profileId) {
+      this.repository.deferTask(task.taskId, 'profile-inactive', this.now());
       return;
     }
 

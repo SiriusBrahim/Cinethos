@@ -378,18 +378,26 @@ export class BackgroundTaskRepository {
    * yazılır. Yarım kalan `processing` görevleri `recoverInterrupted` ile geri
    * alınmadan yeniden kiralanmaz.
    */
-  claimNextTask(leaseMs = 60_000, nowIso = this.now()): BackgroundTaskRecord | null {
+  claimNextTask(
+    leaseMs = 60_000,
+    nowIso = this.now(),
+    profileId?: string
+  ): BackgroundTaskRecord | null {
     const db = this.requireDb();
     const leaseUntil = new Date(new Date(nowIso).getTime() + Math.max(1_000, leaseMs)).toISOString();
+    // R2-A4: profil filtresi verilirse yalnızca o profile ait hazır görev
+    // kiralanır; diğer profillerin görevleri beklemede kalır (kaybolmaz).
+    const profileFilter = profileId ? ' AND profile_id = ?' : '';
+    const profileParams = profileId ? [profileId] : [];
     const candidate = db
       .prepare(
         `SELECT task_id FROM background_tasks
-         WHERE status = 'pending'
-            OR (status = 'retry_wait' AND next_retry_at IS NOT NULL AND next_retry_at <= ?)
+         WHERE (status = 'pending'
+            OR (status = 'retry_wait' AND next_retry_at IS NOT NULL AND next_retry_at <= ?))${profileFilter}
          ORDER BY created_at ASC, task_id ASC
          LIMIT 1`
       )
-      .get(nowIso) as { task_id?: string } | undefined;
+      .get(nowIso, ...profileParams) as { task_id?: string } | undefined;
     if (!candidate?.task_id) return null;
 
     const updated = db
@@ -408,6 +416,26 @@ export class BackgroundTaskRepository {
 
     if ((updated.changes ?? 0) === 0) return null;
     return this.getTask(candidate.task_id);
+  }
+
+  /**
+   * R2-A4: hedef profil aktif değilken görevi `pending` durumuna geri alır ve
+   * tüketilen deneme hakkını iade eder. Böylece bekleyen iş ne kaybolur ne de
+   * profil aktif olmadan başarısız sayılır.
+   */
+  deferTask(taskId: string, reason: string, nowIso = this.now()): void {
+    this.requireDb()
+      .prepare(
+        `UPDATE background_tasks
+            SET status = 'pending',
+                attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+                lease_until = NULL,
+                next_retry_at = NULL,
+                last_error = ?,
+                updated_at = ?
+          WHERE task_id = ? AND status = 'processing'`
+      )
+      .run(reason, nowIso, taskId);
   }
 
   markCompleted(taskId: string, nowIso = this.now()): void {
