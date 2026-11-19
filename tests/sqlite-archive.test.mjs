@@ -143,12 +143,12 @@ test('SQLite arşivi: profil, stok, zevk haritası ve posterler tam gidiş-dön�
   assert.equal(profileA.items[1].media_type, 'tv');
   assert.equal(profileA.items[1].status, 'watching');
 
-  assert.equal(archive.dataDocument.activeProfileId, 'profile-a');
+  assert.equal(archive.dataDocument.activeProfileId, 'PROFILE-A');
   assert.equal(archive.dataDocument.revision, 7);
 
   // Zevk haritaları ve stok
-  assert.ok(archive.tasteMaps['profile-a']);
-  assert.deepEqual(archive.tasteMaps['profile-a'].lastRecommendedKeys, ['movie:2']);
+  assert.ok(archive.tasteMaps['PROFILE-A']);
+  assert.deepEqual(archive.tasteMaps['PROFILE-A'].lastRecommendedKeys, ['movie:2']);
   assert.equal(archive.stock.movies.length, 1);
   assert.equal(archive.stock.tv.length, 1);
   assert.deepEqual(archive.stock.cursors, { movie: 3, tv: 1 });
