@@ -51,19 +51,27 @@ async function countProfilePartitions(
   dataDir: string
 ): Promise<{ count: number; unreadable: boolean }> {
   const profilesRoot = path.join(dataDir, 'taste', 'profiles');
+  let directoryCount = 0;
   try {
     const entries = await fs.readdir(profilesRoot, { withFileTypes: true });
-    const dirs = entries.filter((entry) => entry.isDirectory());
-    if (dirs.length > 0) return { count: dirs.length, unreadable: false };
+    directoryCount = entries.filter((entry) => entry.isDirectory()).length;
   } catch {
     // profiles/ yok → henüz profil partition'ı yok.
   }
+
+  // Dizinlerin bulunması eşleme manifestini atlama gerekçesi değildir:
+  // bozuk manifest, partition dizinleri mevcutken de görünür kalmalıdır.
   try {
     const map = await readTasteProfileIdMap(dataDir);
-    if (map.status === 'missing') return { count: 0, unreadable: false };
-    return { count: Object.keys(map.data.entries).length, unreadable: false };
+    if (map.status === 'missing') {
+      return { count: directoryCount, unreadable: false };
+    }
+    return {
+      count: Math.max(directoryCount, Object.keys(map.data.entries).length),
+      unreadable: false,
+    };
   } catch {
-    return { count: 0, unreadable: true };
+    return { count: directoryCount, unreadable: true };
   }
 }
 
