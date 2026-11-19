@@ -1994,12 +1994,16 @@ export function getTasteRingLabel(ring?: TasteRing | null): string {
 }
 
 export function getTasteMapStorageKey(profileId: string): string {
-  return `cinetrack_taste_map_${profileId}`;
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) throw new Error('Geçersiz profil kimliği; zevk haritası anahtarı üretilemedi.');
+  return `cinetrack_taste_map_${canonicalProfileId}`;
 }
 
 export function createDefaultTasteMapData(profileId: string): PersistentTasteMapData {
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) throw new Error('Geçersiz profil kimliği; varsayılan zevk haritası oluşturulamadı.');
   return {
-    profileId,
+    profileId: canonicalProfileId,
     profileSignature: '',
     algorithmVersion: ALGORITHM_VERSION,
     engineVersion: ENGINE_VERSION,
