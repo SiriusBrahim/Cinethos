@@ -92,7 +92,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   } catch (error: any) {
     if (error?.name === 'AbortError') throw error;
     throw new ApiError(
-      'Yerel CineTrack sunucusuna ulaşılamadı. Sunucunun çalıştığını doğrulayın.',
+      'Yerel Cinethos sunucusuna ulaşılamadı. Sunucunun çalıştığını doğrulayın.',
       0
     );
   }

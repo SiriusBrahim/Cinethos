@@ -301,7 +301,7 @@ function normalizeTitleForDedupe(t: string | undefined | null): string {
 }
 
 /**
- * Downloads TVDB v4 content and merges into CineTrack stock without touching TMDB stock.
+ * Downloads TVDB v4 content and merges into Cinethos stock without touching TMDB stock.
  * Guarantees:
  * 1. Continues scanning across pages/categories until at least 20 NEW items are found.
  * 2. Strictly EXCLUDES any items that are already in the user's lists (watching, watchlist, completed) or disliked!
@@ -746,7 +746,7 @@ export async function exportTvdbStockToJson(): Promise<{
   const jsonString = JSON.stringify(payload, null, 2);
   const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
   const dateStr = new Date().toISOString().split('T')[0];
-  const fileName = `cinetrack-tvdb-stock-${dateStr}.json`;
+  const fileName = `cinethos-tvdb-stock-${dateStr}.json`;
 
   return {
     blob,

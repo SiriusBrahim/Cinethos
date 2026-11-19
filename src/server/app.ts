@@ -912,7 +912,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const snapshot = req.body as ArchiveSnapshot;
       const archiveDir = path.join(resolvedDataDir, 'archives');
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `cinetrack-archive-${stamp}.sqlite`;
+      const fileName = `cinethos-archive-${stamp}.sqlite`;
       const filePath = path.join(archiveDir, fileName);
       const result = await writeSqliteArchive(snapshot, filePath);
       res.setHeader('Content-Type', 'application/vnd.sqlite3');

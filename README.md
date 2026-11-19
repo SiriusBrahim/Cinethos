@@ -1,5 +1,7 @@
 # Cinethos (React 19 + TypeScript + Express + PWA)
 
+> Eski ad: CineTrack. Teknik tanımlayıcılar (ortam değişkenleri, HTTP başlıkları, veri dosyaları ve depolama anahtarları) geriye dönük uyumluluk için değiştirilmemiştir; ayrıntılar [`docs/mia/cinethos-marka-gecisi.md`](docs/mia/cinethos-marka-gecisi.md).
+
 TMDB metaverileriyle çalışan, tamamen deterministik (kural tabanlı) öneri ve ilişki keşif motoruna sahip, kişisel film/dizi takip uygulaması.
 
 ## Öne Çıkan Özellikler

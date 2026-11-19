@@ -79,7 +79,7 @@ export async function exportStockData(options: StockExportOptions = {}): Promise
   ];
 
   const dateStr = new Date().toISOString().split('T')[0];
-  const fileName = `cinetrack-stock-${source}-${dateStr}.${format}`;
+  const fileName = `cinethos-stock-${source}-${dateStr}.${format}`;
 
   if (format === 'csv') {
     const csvContent = convertItemsToCsv(allItems);
