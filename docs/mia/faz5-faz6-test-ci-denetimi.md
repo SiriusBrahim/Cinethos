@@ -169,3 +169,52 @@ Bunlar Faz 6'nın tüm kabul kriterleri tamamlandı denmesini engeller. Ajan 2 b
 - **Tam Faz 6 kabulü:** REQUEST_CHANGES / INCOMPLETE — discover state ve IRecommendationService açık işleri nedeniyle.
 - **Ek test önerisi:** hydrate + payload yardımcıları için önce/sonra fixture/parity testi; recommendation-specific browser E2E ise henüz yok.
 - Bu denetim uygulama kaynak kodunu değiştirmez. PR #43'teki A4/A5 regresyon testleri de Agent 2 dalına henüz alınmadığı için bu CI koşusu onları çalıştırmamıştır.
+
+
+## 8. PR #41 değişikliklerini ayırma ve A3 bağımsız CI denetimi (2026-11-19)
+
+### 8.1 Kabul kapsamı
+
+PR #41'in gerçek HEAD'i `5f87a42d19d6fc469f8702f9f8abe357e3fff9a3`, base'i `master` @ `49142ca8` olarak doğrulandı. Dokuz commit içeriyor: A3, A4/A5 uygulama değişiklikleri, Faz 6 ve Faz 7. Bu nedenle PR #41'in tamamı tek bir kabul birimi olarak merge edilmemelidir.
+
+- **R2-A3:** işlevsel kapsam bağımsız PR'a ayrıldı (#47); ancak A3 commit'inin kendi CI'si tam geçmediği için henüz merge kabulü yok.
+- **R2-A4/A5:** uygulama ve regresyon testleri birlikte değerlendirilmeli; #43 CI'sinde A4/A5 testlerinin üçü de yeşil değil. A4 retry testi ayrıca hatalı test düzeneği içeriyor.
+- **Faz 6:** manager'a taşıma ve test edilen skor paritesi PASS; discover-state ve IRecommendationService eksikleri nedeniyle INCOMPLETE.
+- **Faz 7:** PR #41 HEAD'inde mevcut; bağımsız CI #44404537286 ve Maintenance Analysis #44404537423 başarılı (524/524, Taste 436/436, build, smoke, Playwright 11/11). Faz 7 kabul edildi; Faz 6'dan bağımsız olarak master'a alınması için bağımlılık ayrıştırması gerekir.
+
+### 8.2 A3'ün izole CI sonucu
+
+A3 commit'i `33f26141cafd1e305e2ab768e279f41320335128`, master'ın doğrudan çocuğudur. Bu commit'i tek başına taşıyan Draft PR #47 oluşturuldu:
+https://github.com/SiriusBrahim/Cinethos/pull/47
+
+Aynı SHA için mevcut GitHub Actions kayıtları:
+- Cinethos CI #44196505461: **FAIL** — Lint/TypeScript PASS, Playwright PASS; Unit Tests 511 testten 507 PASS / 4 FAIL. Taste/build/smoke adımları unit test hatası nedeniyle atlandı.
+- Maintenance Analysis #44196505403: **FAIL**.
+
+Dört başarısız test:
+1. `tests/mia-phase1-contracts.test.mjs:419` — TasteServiceAdapter idempotent olay / eventWatermark beklentisi (beklenen 1, gerçekleşen 0).
+2. `tests/mia-phase1-contracts.test.mjs:546` — useItemActions + adapter + shell bridge testi; status_changed/rating_changed olayları beklenen 2, gerçekleşen 0.
+3. `tests/mia-phase1-contracts.test.mjs:682` — app/taste uçları entegrasyonunda beklenen 2 olay, gerçekleşen 0.
+4. `tests/mia-phase2-content-intelligence.test.mjs:634` — Content Intelligence HTTP uç testi 200 beklerken 404 alıyor.
+
+Bu nedenle A3'ün kendi başına CI kabulü **BLOCKED**. PR #41'in daha ileri HEAD'inde bu testlerin yeşil olması, A3'ün tek başına merge edilebilir olduğunu kanıtlamaz; sonraki commit'lerin sağladığı uyumluluk/değişiklikler ayrıca ayrıştırılmalıdır. PR #47 Draft tutulmalı, bu dört testin neden yalnızca A3 commit'inde kırıldığını çözmeden merge edilmemelidir.
+
+### 8.3 PR #43'ün rolü ve A4/A5 regresyonları
+
+PR #43, Agent 2 geliştirme tabanı `f4da5a24` üzerine bağımsız denetim testleri ve rapor taşır; master'a doğrudan merge hedefi değildir. PR #43 CI denetiminde:
+- `npm test`: 519/519 PASS.
+- `test:taste`: 439 testten 436 PASS / 3 FAIL.
+- Playwright: 11/11 PASS.
+- A4 profil değişimi sırasında atlanan olay telafisi testi başarısız; uygulama telafi görevini üretmiyor.
+- A4 retry testi `rebuildOnEvent: false` ile kurulduğu için gerçek rebuild hatasını sınamıyor; test düzeneği düzeltilmeli. Statik incelemede mevcut olay için erken dönüşün retry'de rebuild'i atlayabilme riski ayrıca incelenmeli.
+- A5 bozuk manifestin partition dizinleri varken görünür kalması testi başarısız.
+
+Sonuç: A4 telafi ve A5 manifest davranışı düzeltilmeli; A4 retry testi geçerli bir hata enjeksiyonu ile yeniden yazılmalı. PR #43 bu işler için tek denetim/kanıt PR'ı olarak Draft kalmalıdır.
+
+### 8.4 Merge kararı
+
+- A3 (#47): **MERGE ETME — CI BLOCKED**.
+- A4/A5 (#43): **REQUEST CHANGES**.
+- Faz 6: **REQUEST CHANGES / INCOMPLETE**.
+- Faz 7: **KABUL — CI PASS**, ancak master'a taşımadan önce Faz 6/A4-A5 bağımlılıklarından güvenli ayrıştırma gerekir.
+- Bu işlem sırasında master'a push veya merge yapılmadı.
