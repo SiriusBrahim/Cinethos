@@ -26,6 +26,7 @@ import {
   POOL_TARGET_CAPACITY,
 } from '../core/cinetrack-core.ts';
 import { migratePersistentTasteMapData } from '../core/keys.ts';
+import { normalizeProfileId } from '../core/profile-id.ts';
 import { registerCandidatePoolStorePort } from '../core/candidate-pool-store-port.ts';
 
 let discoveryHistoryIdbStore: UseStore | undefined;
@@ -282,31 +283,46 @@ export function sanitizeLoadedTasteMapObject(
 }
 
 export async function hydrateDiscoveryHistoryIdb(profileId: string): Promise<PersistentTasteMapData> {
-  const key = getTasteMapStorageKey(profileId);
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) return createDefaultTasteMapData(profileId);
+  const key = getTasteMapStorageKey(canonicalProfileId);
   const store = getDiscoveryHistoryIdbStore();
   if (store) {
     try {
-      const idbVal = await idbGet<PersistentTasteMapData>(key, store);
+      let sourceKey = key;
+      let idbVal = await idbGet<PersistentTasteMapData>(key, store);
+      if (!idbVal) {
+        const allKeys = await idbKeys(store);
+        const legacyKey = allKeys.find(
+          (candidate) =>
+            typeof candidate === 'string' &&
+            candidate.startsWith(TASTE_MAP_KEY_PREFIX) &&
+            normalizeProfileId(candidate.slice(TASTE_MAP_KEY_PREFIX.length)) === canonicalProfileId
+        );
+        if (typeof legacyKey === 'string') {
+          sourceKey = legacyKey;
+          idbVal = await idbGet<PersistentTasteMapData>(legacyKey, store);
+        }
+      }
       if (idbVal && typeof idbVal.entries === 'object') {
-        const sanitized = sanitizeLoadedTasteMapObject(profileId, idbVal);
+        const sanitized = sanitizeLoadedTasteMapObject(canonicalProfileId, idbVal);
         if (sanitized) {
           idbHydratedTasteMaps.set(key, sanitized.loadedData);
-          try {
-            if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
-          } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-          if (sanitized.needsMigrationWrite) {
-            savePersistentTasteMap(profileId, sanitized.loadedData);
+          if (sourceKey !== key || sanitized.needsMigrationWrite) {
+            savePersistentTasteMap(canonicalProfileId, sanitized.loadedData);
           }
           return sanitized.loadedData;
         }
       }
     } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
   }
-  return loadPersistentTasteMap(profileId);
+  return loadPersistentTasteMap(canonicalProfileId);
 }
 
 export function loadPersistentTasteMap(profileId: string): PersistentTasteMapData {
-  const key = getTasteMapStorageKey(profileId);
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) return createDefaultTasteMapData(profileId);
+  const key = getTasteMapStorageKey(canonicalProfileId);
   const store = getDiscoveryHistoryIdbStore();
   if (store && idbHydratedTasteMaps.has(key)) {
     return idbHydratedTasteMaps.get(key) as PersistentTasteMapData;
@@ -315,18 +331,33 @@ export function loadPersistentTasteMap(profileId: string): PersistentTasteMapDat
   try {
     if (typeof localStorage !== 'undefined') {
       const fallback = inMemoryTasteMapFallback.get(key);
+      let sourceKey = key;
       let raw = localStorage.getItem(key);
-      if (fallback && fallback.storageRef === localStorage) {
+      if (!raw) {
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const candidate = localStorage.key(index);
+          if (
+            candidate &&
+            candidate.startsWith(TASTE_MAP_KEY_PREFIX) &&
+            normalizeProfileId(candidate.slice(TASTE_MAP_KEY_PREFIX.length)) === canonicalProfileId
+          ) {
+            sourceKey = candidate;
+            raw = localStorage.getItem(candidate);
+            break;
+          }
+        }
+      }
+      if (fallback && fallback.storageRef === localStorage && sourceKey === key) {
         raw = fallback.raw;
       } else if (fallback && fallback.storageRef !== localStorage) {
         inMemoryTasteMapFallback.delete(key);
       }
       if (raw) {
         const rawParsed = JSON.parse(raw);
-        const sanitized = sanitizeLoadedTasteMapObject(profileId, rawParsed);
+        const sanitized = sanitizeLoadedTasteMapObject(canonicalProfileId, rawParsed);
         if (sanitized) {
-          if (store || sanitized.needsMigrationWrite) {
-            savePersistentTasteMap(profileId, sanitized.loadedData);
+          if (store || sanitized.needsMigrationWrite || sourceKey !== key) {
+            savePersistentTasteMap(canonicalProfileId, sanitized.loadedData);
           }
           return sanitized.loadedData;
         }
@@ -337,9 +368,12 @@ export function loadPersistentTasteMap(profileId: string): PersistentTasteMapDat
 }
 
 export function savePersistentTasteMap(profileId: string, data: PersistentTasteMapData): void {
-  const key = getTasteMapStorageKey(profileId);
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) throw new Error('Geçersiz profil kimliği; zevk haritası kaydedilemedi.');
+  const key = getTasteMapStorageKey(canonicalProfileId);
   const normalizedData: PersistentTasteMapData = {
     ...data,
+    profileId: canonicalProfileId,
     lastRecommendedKeys: canonicalizeMediaKeyList(data.lastRecommendedKeys || []),
     archivedEntries: pruneArchivedTasteEntries(data.archivedEntries || {}),
   };
