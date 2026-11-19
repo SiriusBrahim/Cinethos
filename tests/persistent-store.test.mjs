@@ -26,7 +26,7 @@ import {
 import {
   buildDerivedProfilePayloadFromTasteMap,
   hydrateTasteMapWithDerivedCache,
-} from '../src/core/recommendation-orchestrator.ts';
+} from '../src/modules/recommendations/index.ts';
 
 async function withTestApp(options, fn) {
   const { app, storage, persistentStore } = createCineTrackApp(options);
@@ -756,7 +756,8 @@ test('Sır İzolasyonu: İstemci kodu ve .env.example içinde hiçbir GitHub tok
     'src/services/api.ts',
     'src/App.tsx',
     'src/core/cinetrack-core.ts',
-    'src/core/recommendation-orchestrator.ts',
+    'src/modules/recommendations/index.ts',
+    'src/modules/recommendations/RecommendationEngine.ts',
     'src/core/derived-profile-cache.ts',
   ];
   for (const rel of clientFiles) {
