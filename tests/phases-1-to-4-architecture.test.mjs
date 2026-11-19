@@ -420,7 +420,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
       const isoProfRes = await fetch(`${baseUrl}/api/isolated/profile`);
       assert.equal(isoProfRes.status, 200);
       const isoProf = await isoProfRes.json();
-      const profEntry = isoProf.profiles.find((p) => p.profileId === 'profile-default');
+      const profEntry = isoProf.profiles.find((p) => p.profileId === 'PROFILE-DEFAULT');
       assert.equal(profEntry?.name, 'Sinema Sever');
       assert.equal(profEntry?.theme, 'dark-navy');
       assert.equal(Array.isArray(profEntry?.dna?.positiveGenres), true);
@@ -430,7 +430,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
       const isoListsRes = await fetch(`${baseUrl}/api/isolated/user-lists`);
       assert.equal(isoListsRes.status, 200);
       const isoLists = await isoListsRes.json();
-      const compactItems = isoLists.lists['profile-default'];
+      const compactItems = isoLists.lists['PROFILE-DEFAULT'];
       assert.equal(compactItems.length, 1);
       assert.equal(compactItems[0].id, 603);
       assert.equal(compactItems[0].status, 'completed');
