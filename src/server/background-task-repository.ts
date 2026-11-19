@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { normalizeProfileId } from '../core/profile-id.ts';
 import type {
   AcceptBackgroundEventResult,
   BackgroundEventInput,
@@ -349,7 +350,7 @@ export class BackgroundTaskRepository {
       if (!event) {
         throw new Error(`Background olayı bulunamadı: ${eventId}`);
       }
-      if (event.profile_id !== profileId) {
+      if (normalizeProfileId(event.profile_id) !== normalizeProfileId(profileId)) {
         throw new Error(`Background görev profili olayla uyuşmuyor: ${eventId}`);
       }
       const result = db
