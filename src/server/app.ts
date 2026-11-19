@@ -365,9 +365,8 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
 
   const snap = reqBody.profileSnapshot;
   const snapId =
-    typeof snap.id === 'string' && snap.id.trim()
-      ? snap.id.trim()
-      : storedDoc.activeProfileId;
+    normalizeProfileId(snap.id) ?? normalizeProfileId(storedDoc.activeProfileId) ?? '';
+  if (!snapId) return storedDoc;
 
   const snapItemsRaw = Array.isArray(snap.items) ? snap.items : [];
   const snapItems = dedupeItems(
@@ -377,7 +376,7 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   const snapFavActors = normalizeFavoriteActors(snap.favoriteActors || []);
   const snapDeletedKeys = normalizeDeletedKeys(snap.deleted_keys);
 
-  const existing = storedDoc.profiles.find((p) => p.id === snapId);
+  const existing = storedDoc.profiles.find((p) => normalizeProfileId(p.id) === snapId);
   if (!existing) {
     const serverHasData = storedDoc.profiles.some(
       (p) => (p.items?.length || 0) > 0 || (p.preferences?.disliked?.length || 0) > 0
