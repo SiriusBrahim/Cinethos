@@ -53,6 +53,7 @@ export class RecommendationService implements IRecommendationService {
     limit = this.defaultLimit
   ): Promise<readonly RecommendationView[]> {
     this.assertRef(ref);
+    this.assertCurrent(ref);
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
     const cacheKey = `${ref.profileId}:${ref.revision}:${safeLimit}`;
     const cached = this.cache.get(cacheKey);

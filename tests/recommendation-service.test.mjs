@@ -47,17 +47,22 @@ test('Faz 6 IRecommendationService: profile/revision-scoped önerileri üretir v
   assert.equal(loads, 2, 'revision değişince eski cache kullanılmamalı');
 });
 
-test('Faz 6 IRecommendationService: stale profile sonucu cache içine alınmaz', async () => {
+test('Faz 6 IRecommendationService: stale profile sonucu cache hit olsa bile döndürülmez', async () => {
+  let current = true;
   const service = createRecommendationService({
     loadSnapshot: async () => snapshot(),
-    isCurrent: () => false,
+    isCurrent: () => current,
   });
+  const ref = { profileId: 'profile-a', revision: 1 };
+  const cached = await service.getRecommendations(ref, 10);
+  assert.ok(cached.length > 0);
+
+  current = false;
   await assert.rejects(
-    service.getRecommendations({ profileId: 'profile-a', revision: 1 }),
-    /eski profile\/revision/
+    service.getRecommendations(ref, 10),
+    /eski profile\\/revision/
   );
 });
-
 test('Faz 6 IRecommendationService: refresh profile cache alanını yeniler', async () => {
   let loads = 0;
   const service = createRecommendationService({

@@ -149,7 +149,7 @@ test('R2-A5 çakışan veya doğrulanmamış sahiplik kanıtı S2 olarak sınıf
         { profileId: 'profile-b', recordKeys: ['same-record'], verified: true },
       ],
     });
-    assert.equal(overlap.scenario, 'S1');
+    assert.equal(overlap.scenario, 'S3', 'çakışan açık kanıt S3 olarak işaretlenmeli');
 
     const unverified = await describeTasteLegacyState(tmpDir, {
       ownershipEvidence: [

@@ -89,8 +89,9 @@ async function countProfilePartitions(
  *
  * Sınıflandırma:
  * - legacy yok → `present:false`, `scenario:null`
+ * - legacy var + doğrulanmış, çakışmayan çoklu sahiplik kanıtı → `S2`
  * - legacy var, profil partition'ı yok → `S1` (atanmamış legacy adayı)
- * - legacy var, profil partition'ı var → `S3` (çakışan/belirsiz; dışlanır)
+ * - legacy var, profil partition'ı var veya sahiplik çakışıyor → `S3`
  */
 export async function describeTasteLegacyState(
   dataDir: string,
@@ -109,26 +110,36 @@ export async function describeTasteLegacyState(
     const evidence = options.ownershipEvidence ?? [];
     const profileIds = evidence.map((entry) => entry.profileId);
     const recordOwners = new Map<string, string>();
+    let conflictingOwnership = false;
+    for (const entry of evidence) {
+      if (entry.verified !== true || !Array.isArray(entry.recordKeys)) continue;
+      for (const key of entry.recordKeys) {
+        if (typeof key !== 'string' || !key.trim()) continue;
+        const owner = recordOwners.get(key);
+        if (owner && owner !== entry.profileId) conflictingOwnership = true;
+        else recordOwners.set(key, entry.profileId);
+      }
+    }
     const hasVerifiedDisjointEvidence =
       evidence.length >= 2 &&
       evidence.every((entry) =>
         entry.verified === true &&
         typeof entry.profileId === 'string' &&
         entry.profileId.trim().length > 0 &&
-        entry.recordKeys.length > 0
+        Array.isArray(entry.recordKeys) &&
+        entry.recordKeys.length > 0 &&
+        entry.recordKeys.every((key) => typeof key === 'string' && key.trim().length > 0)
       ) &&
       new Set(profileIds).size === profileIds.length &&
-      evidence.every((entry) => entry.recordKeys.every((key) => {
-        if (typeof key !== 'string' || !key.trim()) return false;
-        const owner = recordOwners.get(key);
-        if (owner && owner !== entry.profileId) return false;
-        recordOwners.set(key, entry.profileId);
-        return true;
-      }));
+      !conflictingOwnership;
 
     // S2 is only emitted with explicit, verified, disjoint ownership evidence.
-    // The classifier never derives profile ownership from titles or filenames.
-    scenario = hasVerifiedDisjointEvidence ? 'S2' : count === 0 ? 'S1' : 'S3';
+    // Conflicting evidence is S3; missing/unverified evidence is never guessed.
+    scenario = hasVerifiedDisjointEvidence
+      ? 'S2'
+      : conflictingOwnership || count > 0
+        ? 'S3'
+        : 'S1';
   }
 
   return {
