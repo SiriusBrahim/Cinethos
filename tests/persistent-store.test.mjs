@@ -193,12 +193,12 @@ test('Faz A: Atomik JSON yazma başarısı, yazma ortası hata koruması, yarım
     // Katalog (tv.json) bozuk olsa bile bağımsız profil dosyası çalışmaya devam eder;
     // tersine profil dosyası bozuksa katalog etkilenmez!
     fs.unlinkSync(tvPath); // tv.json temizlendi
-    const badProfilePath = store.getProfileFilePath('corrupt-prof');
+    const badProfilePath = store.getProfileFilePath('PROFILE-CORRUPT-PROF');
     fs.writeFileSync(badProfilePath, '{bozuk_profil', 'utf8');
     assert.throws(
       () =>
         store.upsertDerivedProfile({
-          profileId: 'corrupt-prof',
+          profileId: 'PROFILE-CORRUPT-PROF',
           algorithmVersion: '3.0.0',
           profileFingerprint: 'fp-1',
           items: {},
