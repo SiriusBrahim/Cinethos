@@ -43,7 +43,7 @@ function makeEvent(overrides = {}) {
   });
 }
 
-async function makeRuntime(tmpDir) {
+async function makeRuntime(tmpDir, rebuildOnEvent = false) {
   let clock = Date.UTC(2026, 0, 1, 0, 0, 0);
   const now = () => new Date((clock += 1000)).toISOString();
   const profileContext = createProfileContext({
@@ -53,7 +53,7 @@ async function makeRuntime(tmpDir) {
   const adapter = createServerTasteServiceAdapter({
     dataDir: tmpDir,
     profileContext,
-    rebuildOnEvent: false,
+    rebuildOnEvent,
   });
   const repository = createBackgroundTaskRepository({ dataDir: tmpDir, now });
   const manager = createBackgroundManager({
@@ -196,7 +196,10 @@ test('R2-A4 yarış: persistEvent sırasında aktif profil değişirse atlanan o
     eventBus,
     adapter,
     undefined,
-    (event, outcome) => skipped.push({ eventId: event.eventId, code: outcome.code })
+    (event, outcome) => {
+      manager.ensureProfileScopedTasks(event);
+      skipped.push({ eventId: event.eventId, code: outcome.code });
+    }
   );
 
   try {
@@ -236,7 +239,7 @@ test('R2-A4 yarış: persistEvent sırasında aktif profil değişirse atlanan o
 
 test('R2-A4 retry: olay yazıldıktan sonra rebuild başarısızsa tekrar deneme profili yeniden oluşturmalı', async () => {
   const tmpDir = await makeTempDir();
-  const runtime = await makeRuntime(tmpDir);
+  const runtime = await makeRuntime(tmpDir, true);
   try {
     const paths = resolveTastePathsForProfile('profile-a', tmpDir).paths;
     // Olay deposu yazılabilir kalırken profil çıktı dosyasını yazılamaz hâle getir.
