@@ -118,7 +118,7 @@ export class AppEventBus implements IEventPublisher, IEventSubscriber {
 
     // Tüm aboneleri çalıştır; bir abonenin hatası diğerlerini durdurmasın.
     // Ancak kritik teslimat hataları publish() sonucunda çağırana dönmelidir.
-    const results = await Promise.allSettled([...set].map((handler) => handler(event)));
+    const results = await Promise.allSettled([...set].map((handler) => handler(canonicalEvent)));
     const failures = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason);
