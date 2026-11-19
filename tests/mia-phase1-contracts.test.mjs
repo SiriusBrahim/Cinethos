@@ -34,6 +34,7 @@ import {
   subscribeTasteAdapterToEventBus,
   translateAppEventToTasteEvent,
 } from '../src/server/taste-service-adapter.ts';
+import { triggerTasteProfileRebuild } from '../src/server/taste-rebuild-coordinator.ts';
 import { projectLearningSnapshot } from '../src/core/taste/taste-event-projector.ts';
 import {
   enqueueOfflineSyncForProfile,
@@ -608,6 +609,9 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
     assert.deepEqual(shellSaved, ['movie:550'], 'item:saved kabuk olayı tek kez yayınlanmalı');
 
     assert.equal(storedAfterSave.length, 2, 'status_changed + rating_changed yazılmalı');
+
+    // İlk EventBus yayınının fire-and-forget rebuild'inin geçici dizin temizliğiyle yarışmasını önle.
+    await triggerTasteProfileRebuild('profile-a', tmpDir);
 
     // Aynı olayı ikinci kez yayınlama -> TasteStore içinde çift kayıt üretmemeli
     const publishedHistory = bus.getRecentEvents();

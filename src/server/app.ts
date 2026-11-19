@@ -606,6 +606,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
             // R2-A4: atlanan olay kaybolmaz; kalıcı kuyrukta hedef profil için
             // bekler. Sayaç sağlık raporunda görünür (sessiz kayıp yok).
             tasteSkippedCount += 1;
+            backgroundManager.ensureProfileScopedTasks(ev);
             const reason = !outcome.ok ? outcome.error ?? '' : '';
             console.info(
               `[Taste] Aktif olmayan profile ait iç olay kuyruğa bırakıldı: ${ev.eventId} (${ev.profileId}). ${reason}`

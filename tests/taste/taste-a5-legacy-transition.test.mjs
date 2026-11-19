@@ -92,3 +92,32 @@ test('R2-A5 bozuk eşleme manifesti hata fırlatmaz, mappingUnreadable raporlar'
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('R2-A5 bozuk eşleme manifesti profil partition dizinleri varken de görünür olmalı', async () => {
+  const tmpDir = await makeTempDir();
+  try {
+    const paths = resolveTastePaths(tmpDir);
+    const mapPath = resolveTasteProfileIdMapPath(tmpDir);
+    const partitionDir = path.join(
+      tmpDir,
+      'taste',
+      'profiles',
+      'p1-b64url-cHJvZmlsZS1h'
+    );
+
+    await fs.mkdir(path.dirname(paths.profile), { recursive: true });
+    await fs.writeFile(paths.profile, '{"metrics":{}}', 'utf8');
+    await fs.mkdir(partitionDir, { recursive: true });
+    await fs.writeFile(mapPath, '{ not-json', 'utf8');
+
+    const status = await describeTasteLegacyState(tmpDir);
+    assert.equal(status.profilePartitions, 1);
+    assert.equal(
+      status.mappingUnreadable,
+      true,
+      'profil dizinleri bulunsa da bozuk mapping manifesti sessizce göz ardı edilmemeli'
+    );
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});

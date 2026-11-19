@@ -224,6 +224,32 @@ export class BackgroundManager {
     return result;
   }
 
+
+  /**
+   * A live subscriber can discover a profile switch after persistEvent already
+   * accepted the event. Add only the profile-scoped fallback tasks at that point.
+   */
+  ensureProfileScopedTasks(event: TypedAppEvent): number {
+    const handlers = (this.handlersByEvent.get(event.eventType) ?? []).filter(
+      (handler) => handler.profileScoped
+    );
+    let created = 0;
+    for (const handler of handlers) {
+      if (
+        this.repository.ensureTaskForEvent(
+          event.eventId,
+          handler.id,
+          event.profileId,
+          this.now()
+        )
+      ) {
+        created += 1;
+      }
+    }
+    if (created > 0) this.notify();
+    return created;
+  }
+
   /** Yeni görev bildirimi (pompa zamanlar). */
   notify(): void {
     this.schedulePump();

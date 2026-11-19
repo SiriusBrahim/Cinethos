@@ -160,6 +160,8 @@ export interface BackgroundTaskStore {
     input: BackgroundEventInput,
     nowIso?: string
   ): AcceptBackgroundEventResult;
+  /** Adds a missing handler task to an already-persisted event (late profile-scope compensation). */
+  ensureTaskForEvent(eventId: string, handlerId: string, profileId: string, nowIso?: string): boolean;
   getEvent(eventId: string): BackgroundEventRecord | null;
   getTask(taskId: string): BackgroundTaskRecord | null;
   listTasks(options?: BackgroundTaskListOptions): BackgroundTaskRecord[];
