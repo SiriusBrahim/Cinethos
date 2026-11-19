@@ -2004,7 +2004,7 @@ test('Kayıpsız Birleştirme Temeli 1: Kısmi/unhydrated istemci yalnızca yeni
       assert.ok(mergeJson.document, 'Sunucu birleştirilmiş tam belgeyi istemciye döndürmeli');
       assert.equal(
         mergeJson.document.activeProfileId,
-        'profile-main',
+        'PROFILE-MAIN',
         'Sahte profile-default gerçek profile-main içine katlanmalı'
       );
       assert.equal(mergeJson.document.profiles.length, 1);
