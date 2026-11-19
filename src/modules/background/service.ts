@@ -183,17 +183,25 @@ export class BackgroundManager {
    * `AppEventBus.persistEvent` kancası. Olay kalıcı yazılamazsa hata fırlatır;
    * `publish()` bu hatayı çağırana iletir (sessiz yutma yok).
    */
-  async acceptEvent(event: TypedAppEvent): Promise<{
+  async acceptEvent(
+    event: TypedAppEvent,
+    options: { handlerIds?: readonly string[]; includeProfileScopedForActive?: boolean } = {}
+  ): Promise<{
     eventInserted: boolean;
     tasksCreated: number;
     deduplicated: boolean;
   }> {
     const allHandlers = this.handlersByEvent.get(event.eventType) ?? [];
-    // R2-A4: profile-scoped handlers are durable outbox consumers. Enqueue
-    // every event, including one for the currently active profile: the profile
-    // may switch after this persistence hook returns but before live subscribers
-    // run. The handler and adapter are idempotent, so live and deferred paths
-    // cannot create duplicate Taste evidence.
+    // Normal akışta aktif profil olayı canlı Taste subscriber tarafından işlenir.
+    // Subscriber profil değişimi nedeniyle atladıysa onSkipped yalnızca Taste
+    // handler'ını zorunlu outbox görevi olarak ekler.
+    const activeProfileId = this.profileContext?.getCurrent().profileId;
+    const requestedHandlerIds = options.handlerIds ? new Set(options.handlerIds) : null;
+    const handlers = allHandlers.filter((handler) => {
+      if (requestedHandlerIds && !requestedHandlerIds.has(handler.id)) return false;
+      if (options.includeProfileScopedForActive) return true;
+      return !handler.profileScoped || activeProfileId !== event.profileId;
+    });
     const result = this.repository.acceptEvent(
       {
         eventId: event.eventId,
@@ -204,7 +212,7 @@ export class BackgroundManager {
         sourceRevision: event.sourceRevision,
         occurredAt: event.occurredAt,
         payload: sanitizeEventPayload(event.eventType, event.payload),
-        handlerIds: allHandlers.map((handler) => handler.id),
+        handlerIds: handlers.map((handler) => handler.id),
       },
       this.now()
     );

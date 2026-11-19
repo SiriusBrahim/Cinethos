@@ -152,14 +152,15 @@ test('R2-A4 geçmiş sourceRevision telafiyi engellemez (yalnızca profil kimli�
   }
 });
 
-test('R2-A4 aktif profilin olayı da yarış penceresine karşı kalıcı outbox görevi alır', async () => {
+test('R2-A4 aktif profilin olayı için canlı işlem başarılıysa gereksiz telafi görevi üretilmez', async () => {
   const tmpDir = await makeTempDir();
   const runtime = await makeRuntime(tmpDir);
   try {
     await runtime.manager.start();
     await runtime.manager.acceptEvent(makeEvent({ eventId: 'evt-a4-active' }));
     const tasks = runtime.manager.listTasks();
-    assert.ok(tasks.some((task) => task.handlerId === 'intelligence.taste-event-sync'), 'aktif profilin canlı işleme öncesinde profil değişebilir; kalıcı Taste outbox görevi bulunmalı');
+    assert.equal(tasks.length, 1, 'aktif profil olayı canlı işleneceğinden yalnızca audit görevi bulunmalı');
+    assert.equal(tasks.some((task) => task.handlerId === 'intelligence.taste-event-sync'), false);
   } finally {
     await runtime.manager.stop();
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -185,8 +186,16 @@ test('R2-A4 yarış: persistEvent sonrasında profil değişse de canlı atlanan
   });
   const skipped = [];
   const subscription = subscribeTasteAdapterToEventBus(
-    eventBus, adapter, undefined,
-    (event, outcome) => skipped.push({ eventId: event.eventId, code: outcome.code })
+    eventBus,
+    adapter,
+    undefined,
+    async (event, outcome) => {
+      skipped.push({ eventId: event.eventId, code: outcome.code });
+      await manager.acceptEvent(event, {
+        handlerIds: ['intelligence.taste-event-sync'],
+        includeProfileScopedForActive: true,
+      });
+    }
   );
 
   try {

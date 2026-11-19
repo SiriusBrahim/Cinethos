@@ -370,7 +370,7 @@ export function subscribeTasteAdapterToEventBus(
   subscriber: IEventSubscriber,
   adapter: IMemoryService,
   onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void,
-  onSkipped?: (event: TypedAppEvent, outcome: OperationOutcome) => void
+  onSkipped?: (event: TypedAppEvent, outcome: OperationOutcome) => Promise<void> | void
 ): EventSubscription {
   const subs: EventSubscription[] = TASTE_SUBSCRIBED_DOMAIN_EVENTS.map((eventType) =>
     subscriber.subscribe(eventType, async (event) => {
@@ -383,7 +383,7 @@ export function subscribeTasteAdapterToEventBus(
         // R2-A4: hata metni ayrıştırılmaz; yapısal kod tek otoritedir.
         const inactiveProfileEvent = !outcome.retryable && outcome.code === 'profile-not-active';
         if (inactiveProfileEvent) {
-          onSkipped?.(event, outcome);
+          await onSkipped?.(event, outcome);
           return;
         }
         onError?.(event, outcome);
