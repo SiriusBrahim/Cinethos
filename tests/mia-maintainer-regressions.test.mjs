@@ -483,7 +483,7 @@ test('2.3.8 ProfileContext senkronizasyonu: açılış ve PUT /api/data sonrası
     // --- Açılış senkronizasyonu: birincil depoya belge yaz → modüller başlat ---
     const doc = makeDoc([
       {
-        id: 'profile-startup',
+        id: 'PROFILE-STARTUP',
         name: 'Açılış Profili',
         createdAt: '2026-01-01T00:00:00.000Z',
         items: [],
@@ -497,25 +497,25 @@ test('2.3.8 ProfileContext senkronizasyonu: açılış ve PUT /api/data sonrası
     await runtime.startRuntimeModules();
 
     let current = runtime.profileContext.getCurrent();
-    assert.equal(current.profileId, 'profile-startup', 'açılışta profil bağlamı senkron olmalı');
+    assert.equal(current.profileId, 'PROFILE-STARTUP', 'açılışta profil bağlamı senkron olmalı');
     assert.equal(current.revision, seededRevision, 'açılışta revision senkron olmalı');
 
     // --- Ana veri kaydı senkronizasyonu: yeni aktif profil + yeni revision ---
     const doc2 = makeDoc([
       {
-        id: 'profile-startup',
+        id: 'PROFILE-STARTUP',
         name: 'Açılış Profili',
         createdAt: '2026-01-01T00:00:00.000Z',
         items: [],
       },
       {
-        id: 'profile-switched',
+        id: 'PROFILE-SWITCHED',
         name: 'Yeni Profil',
         createdAt: '2026-01-02T00:00:00.000Z',
         items: [makeSavedItem(550)],
       },
     ]);
-    doc2.activeProfileId = 'profile-switched';
+    doc2.activeProfileId = 'PROFILE-SWITCHED';
     doc2.revision = seededRevision + 1;
 
     const putRes = await fetch(`${baseUrl}/api/data`, {
@@ -523,7 +523,7 @@ test('2.3.8 ProfileContext senkronizasyonu: açılış ve PUT /api/data sonrası
       headers: {
         'Content-Type': 'application/json',
         'If-Match': `"rev-${seededRevision}"`,
-        'x-cinetrack-profile-id': 'profile-switched',
+        'x-cinetrack-profile-id': 'PROFILE-SWITCHED',
       },
       body: JSON.stringify(doc2),
     });
@@ -532,7 +532,7 @@ test('2.3.8 ProfileContext senkronizasyonu: açılış ve PUT /api/data sonrası
     const putBody = JSON.parse(putRaw);
 
     current = runtime.profileContext.getCurrent();
-    assert.equal(current.profileId, 'profile-switched', 'kayıt sonrası profil bağlamı güncel');
+    assert.equal(current.profileId, 'PROFILE-SWITCHED', 'kayıt sonrası profil bağlamı güncel');
     assert.equal(
       current.revision,
       putBody?.revision ?? doc2.revision,
