@@ -1,3 +1,4 @@
+import { normalizeProfileId } from './profile-id.ts';
 import {
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
@@ -444,13 +445,19 @@ export function reconcileUserDataDocumentsLossless(
   updatedItems: number;
   conflicts: UserDataConflictItem[];
 } {
+  const normalizeProfiles = (profiles: Profile[] | undefined): Profile[] =>
+    (Array.isArray(profiles) ? profiles : []).flatMap((profile) => {
+      const id = normalizeProfileId(profile?.id);
+      return id ? [{ ...profile, id }] : [];
+    });
+  const localProfilesList = normalizeProfiles(localDoc.profiles);
+  const remoteProfilesList = normalizeProfiles(remoteDoc.profiles);
   const remoteById = new Map<string, Profile>();
-  for (const p of remoteDoc.profiles || []) {
-    if (p && p.id) remoteById.set(p.id, p);
+  for (const profile of remoteProfilesList) {
+    remoteById.set(profile.id, profile);
   }
-
-  const localProfilesList = Array.isArray(localDoc.profiles) ? localDoc.profiles : [];
-  const remoteProfilesList = Array.isArray(remoteDoc.profiles) ? remoteDoc.profiles : [];
+  const localActiveProfileId = normalizeProfileId(localDoc.activeProfileId) ?? '';
+  const remoteActiveProfileId = normalizeProfileId(remoteDoc.activeProfileId) ?? '';
 
   // Unhydrated placeholder 'profile-default' tespiti:
   // Yerel oturum henüz uzak profilleri görmeden otomatik 'profile-default' ("Profilim") oluşturup
@@ -458,9 +465,9 @@ export function reconcileUserDataDocumentsLossless(
   // yeni eklenen içerikleri uzaktaki aktif profile katla; kullanıcıyı 1 içerikli sahte profilde bırakma.
   const onlyLocalDefault =
     localProfilesList.length === 1 &&
-    localProfilesList[0]?.id === 'profile-default' &&
+    localProfilesList[0]?.id === 'PROFILE-DEFAULT' &&
     (localProfilesList[0]?.name || 'Profilim') === 'Profilim' &&
-    !remoteById.has('profile-default') &&
+    !remoteById.has('PROFILE-DEFAULT') &&
     remoteProfilesList.length > 0;
 
   const autoHeuristicFold =
@@ -474,8 +481,8 @@ export function reconcileUserDataDocumentsLossless(
     onlyLocalDefault && (Boolean(options.foldUnhydratedDefaultProfile) || autoHeuristicFold);
 
   const foldedTargetId = shouldFoldDefault
-    ? remoteById.has(remoteDoc.activeProfileId)
-      ? remoteDoc.activeProfileId
+    ? remoteById.has(remoteActiveProfileId)
+      ? remoteActiveProfileId
       : remoteProfilesList[0].id
     : null;
 
@@ -483,7 +490,7 @@ export function reconcileUserDataDocumentsLossless(
   for (const p of localProfilesList) {
     if (!p || !p.id) continue;
     const effectiveId =
-      foldedTargetId && p.id === 'profile-default' ? foldedTargetId : p.id;
+      foldedTargetId && p.id === 'PROFILE-DEFAULT' ? foldedTargetId : p.id;
     localById.set(effectiveId, effectiveId === p.id ? p : { ...p, id: effectiveId });
   }
 
@@ -686,13 +693,13 @@ export function reconcileUserDataDocumentsLossless(
   }
 
   const effectiveLocalActiveId =
-    foldedTargetId && localDoc.activeProfileId === 'profile-default'
+    foldedTargetId && localActiveProfileId === 'PROFILE-DEFAULT'
       ? foldedTargetId
-      : localDoc.activeProfileId;
+      : localActiveProfileId;
 
   const preferredActive =
     options.preferActiveProfileFrom === 'remote' || Boolean(foldedTargetId)
-      ? mergedProfiles.find((p) => p.id === remoteDoc.activeProfileId)?.id ||
+      ? mergedProfiles.find((p) => p.id === remoteActiveProfileId)?.id ||
         mergedProfiles.find((p) => p.id === effectiveLocalActiveId)?.id ||
         mergedProfiles[0]?.id ||
         'profile-default'
