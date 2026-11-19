@@ -172,3 +172,35 @@ Faz 6, öneri orkestrasyonunu çekirdekten ayırıp bağımsız bir yöneticiye 
 2. **Çekirdek saf kalır.** `src/core/cinetrack-core.ts` puanlama matematiğinin tek sahibidir; yönetici onu yeniden uygulamaz.
 3. **Tek yol.** `src/core/recommendation-orchestrator.ts` kaldırıldı; `App.tsx` ve testler işlevleri `src/modules/recommendations/index.ts` üzerinden alır.
 4. **Eski sonuçlar korunur.** Taşınma öncesi alınan puan anlık görüntüsü, taşınma sonrası çıktıyla birebir eşleşir; sıralama, halka ve gerekçeler dahil.
+
+---
+
+## 8. MIA Faz 7 — Tek Veri Hattı ve Yönetici Bağlaması
+
+Faz 7, arayüzü yöneticilere bağlar: mobil ve masaüstü **aynı iş mantığını** kullanır ve
+kullanıcı kütüphanesine yazan bütün yollar **tek** hattan geçer.
+
+### 8.1 Katmanlar ve dosyalar
+
+| Katman | Dosya | Sorumluluk |
+|---|---|---|
+| İstemci kütüphane hattı | `src/modules/library/client-service.ts` | `ClientLibraryService`: `save`, `rate`, `set-status`, `remove`, `advance-episode`, `merge-duplicates`, `dislike`, `hide`. Kurallar `modules/library/operations.ts`'ten; olaylar mevcut `createAppEvent` sözleşmesinden; kalıcılık enjekte edilir. |
+| Uyumluluk adaptörü | `src/hooks/useItemActions.ts` | Mevcut `saveItem/rateItem/...` API'sini korur; `service` verilirse aynı hattı paylaşır, kural kopyası taşımaz. |
+| Mobil yerleşim | `src/presentation/layouts/MobileLayout.tsx` | `MOBILE_NAV_ITEMS` + `MobileBottomNav`; liste modül kayıt defterinden türetilir. |
+| Masaüstü gezinme | `src/components/Header.tsx` + `src/app/navigation.ts` | Üst sekmeler `HEADER_NAV_ITEMS` üzerinden; geçersiz `identity`/`universes` kimlikleri kaldırıldı. |
+| Yönetici (App) | `src/App.tsx` | Tek servis örneği kurar, `useItemActions`'a verir; kaldırma/ilerleme/birleştirme hattan çağrılır. Yan etkiler (toast, zevk haritası işareti, yedek) sunumda kalır. |
+
+### 8.2 Sınırlar
+
+1. **Tek yazma yolu.** Arayüz hiçbir yerde `buildLibraryItem`/`resolveItemActionTimestamps`
+   çağırmaz; komutlar servise düşer. Kaldırma ve birleştirme tombstone'u da hattan yazılır.
+2. **Sunum/veri ayrımı.** Servis React, IndexedDB veya sunucu bilmez; kalıcılık
+   `applySavedItem`/`applySavedItems`/`applyTombstone` kancalarıyla enjekte edilir.
+3. **Tek olay katmanı.** Yeni EventBus/kuyruk kurulmaz; `AppEventBus` sözleşmesi kullanılır.
+4. **Tek gezinme kaynağı.** Mobil alt gezinme ve masaüstü üst sekmeler `MODULES`
+   kayıt defterinden türetilir; yalnızca görünen etiket farkları yerel override'dır.
+5. **Davranış korunumu.** Kayıt biçimi (`ratedAt`, `completedAt`, `deleted_keys`,
+   `episodes_watched`) ve kullanıcı verisi değişmedi; kanıt
+   `tests/phase7-ui-service-pipeline.test.mjs`.
+
+Ayrıntılı uygulama kaydı: [Faz 7 — Arayüz ve tek veri hattı](docs/mia/faz7-ui-servis-hatti.md).

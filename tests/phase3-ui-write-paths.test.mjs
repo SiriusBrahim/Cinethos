@@ -40,16 +40,21 @@ function rel(file) {
 // ---------------------------------------------------------------------------
 // E1. useItemActions → operations.ts devri
 // ---------------------------------------------------------------------------
-test('F3-E1 useItemActions: buildLibraryItem’ı operations.ts’ten kullanır, yerel kopya bulundurmaz', () => {
+test('F3-E1 useItemActions: kütüphane kurallarını tek kaynaktan kullanır, yerel kopya bulundurmaz', () => {
   const source = read('src/hooks/useItemActions.ts');
 
+  // Faz 7: hook adaptördür; kayıt üretimi tek hatta taşındı.
   assert.ok(
-    source.includes("from '../modules/library/operations.ts'"),
-    'useItemActions kütüphane kurallarını modules/library/operations.ts’ten import etmeli'
+    source.includes("from '../modules/library/client-service.ts'"),
+    'useItemActions kütüphane hattını (modules/library/client-service.ts) kullanmalı'
   );
   assert.ok(
-    source.includes('buildLibraryItem'),
-    'kayıt üretimi buildLibraryItem üzerinden olmalı'
+    source.includes("from '../modules/library/operations.ts'"),
+    'useItemActions kuralları modules/library/operations.ts üzerinden dışa açmalı'
+  );
+  assert.ok(
+    read('src/modules/library/client-service.ts').includes('buildLibraryItem'),
+    'kayıt üretimi buildLibraryItem üzerinden olmalı (tek hat)'
   );
 
   // Yerel tanım kalıntısı yasak (ikinci kural seti):
