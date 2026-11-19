@@ -178,7 +178,8 @@ export function validateCanonicalProfileId(raw: unknown): string {
  */
 export function encodeProfileIdSafe(rawProfileId: unknown): string {
   const canonical = validateCanonicalProfileId(rawProfileId);
-  const encoded = Buffer.from(canonical, "utf8").toString("base64url");
+  const lowerCanonical = canonical.toLowerCase(); // Normalize to lowercase for case-insensitive FS safety
+  const encoded = Buffer.from(lowerCanonical, "utf8").toString("base64url");
   return `${TASTE_PROFILE_ID_MAP_SCHEME}-${encoded}`;
 }
 
@@ -403,10 +404,10 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
         }`
       );
     }
-    if (dirProfileId !== profileId) {
+    if (dirProfileId.toLowerCase() !== profileId.toLowerCase()) {
       throw new TasteProfileScopeError(
         "profile_id_map_corrupt",
-        `'entries.${profileId}.dir' farklı bir kanonik kimliğe çözülüyor (${dirProfileId}).`
+        `'entries.${profileId}.dir' farklı bir kanonik kimliğe çözülüyor (${dirProfileId} vs ${profileId}).`
       );
     }
     parseIsoTimestamp(entry.createdAt, `entries.${profileId}.createdAt`);
@@ -442,10 +443,10 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
         }`
       );
     }
-    if (dirProfileId !== profileId) {
+    if (dirProfileId.toLowerCase() !== profileId.toLowerCase()) {
       throw new TasteProfileScopeError(
         "profile_id_map_corrupt",
-        `'byDir.${dir}' ile dizin adının çözümü uyuşmuyor (${dirProfileId}).`
+        `'byDir.${dir}' ile dizin adının çözümü uyuşmuyor (${dirProfileId} vs ${profileId}).`
       );
     }
     const entry = entries[profileId];

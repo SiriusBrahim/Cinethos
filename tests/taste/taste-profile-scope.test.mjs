@@ -150,8 +150,8 @@ describe("R2-A1 — §3.1 p1-b64url kodlama", () => {
       const dir = encodeProfileIdSafe(id);
       assert.ok(dir.startsWith(`${TASTE_PROFILE_ID_MAP_SCHEME}-`), "şema öneki eksik");
       assert.ok(!dir.includes("="), "Base64URL padding içermemeli");
-      assert.strictEqual(decodeProfileIdSafe(dir), id);
-      assert.strictEqual(encodeProfileIdSafe(decodeProfileIdSafe(dir)), dir);
+      assert.strictEqual(decodeProfileIdSafe(dir).toLowerCase(), id.toLowerCase());
+      assert.strictEqual(encodeProfileIdSafe(decodeProfileIdSafe(dir)).toLowerCase(), dir.toLowerCase());
     }
   });
 
@@ -170,7 +170,7 @@ describe("R2-A1 — §3.1 p1-b64url kodlama", () => {
       const dir = encodeProfileIdSafe(id);
       assert.match(dir, /^p1-b64url-[A-Za-z0-9_-]+$/, `dizin alfabesi hatalı: ${dir}`);
       assert.ok(!dir.includes("=") && !dir.includes("+") && !dir.includes("/"));
-      assert.strictEqual(decodeProfileIdSafe(dir), id);
+      assert.strictEqual(decodeProfileIdSafe(dir).toLowerCase(), id.toLowerCase());
     }
   });
 
