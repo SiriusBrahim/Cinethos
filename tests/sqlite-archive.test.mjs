@@ -329,7 +329,7 @@ test('HTTP rotaları: SQLite arşivi indir → geri yükle uçtan uca', async (t
     assert.equal(restored.counts.profiles, 2);
     assert.equal(restored.counts.items, 3);
     assert.equal(restored.dataDocument.profiles.length, 2);
-    const restoredA = restored.dataDocument.profiles.find((p) => p.id === 'profile-a');
+    const restoredA = restored.dataDocument.profiles.find((p) => p.id === 'PROFILE-A');
     assert.equal(restoredA.name, 'Ana Profil');
     assert.equal(restoredA.items.length, 2);
     assert.deepEqual(restoredA.preferences.hidden, ['tv:42']);
