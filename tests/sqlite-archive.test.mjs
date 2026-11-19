@@ -129,7 +129,7 @@ test('SQLite arşivi: profil, stok, zevk haritası ve posterler tam gidiş-dön�
   assert.equal(archive.createdAt, AS_OF);
 
   // Profil tam kaydı korunuyor mu?
-  const profileA = archive.dataDocument.profiles.find((p) => p.id === 'profile-a');
+  const profileA = archive.dataDocument.profiles.find((p) => p.id === 'PROFILE-A');
   assert.ok(profileA);
   assert.equal(profileA.name, 'Ana Profil');
   assert.deepEqual(profileA.preferences.disliked, ['movie:99']);
