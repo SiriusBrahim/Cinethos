@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import { type DataDocument } from '../core/cinetrack-core.ts';
 import {
   normalizeCinemaKunyeDocument,
@@ -391,7 +392,7 @@ export async function pushServerDataDetailed(
     foldUnhydratedDefaultProfile?: boolean;
   } = {}
 ): Promise<PushServerDataResult> {
-  if (options.expectedProfileId && payload.activeProfileId !== options.expectedProfileId) {
+  if (options.expectedProfileId && normalizeProfileId(payload.activeProfileId) !== normalizeProfileId(options.expectedProfileId)) {
     return {
       ok: false,
       status: 409,

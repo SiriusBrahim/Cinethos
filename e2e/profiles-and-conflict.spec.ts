@@ -40,11 +40,42 @@ test.describe('Profil ve çakışma senaryoları', () => {
 
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('cinetrack.activeProfile.v1')))
-      .toBe(PROFILE_B);
+      .toBe(PROFILE_B.toUpperCase());
 
     await page.getByRole('tab', { name: 'Listem' }).click();
     await expect(page.getByText('E2E Beta Filmi').first()).toBeVisible();
     await expect(page.getByText('E2E Alfa Filmi')).toHaveCount(0);
+  });
+
+  test('eski Türkçe profil kimliği arayüz açılışında kanonik kimliğe normalize edilir', async ({ page }) => {
+    await seedProfiles(
+      page,
+      [
+        {
+          id: 'profil-ışık',
+          name: 'Işık',
+          items: [savedItem({ id: 9201, title: 'Türkçe Profil Filmi' })],
+        },
+      ],
+      'Profil-Işık'
+    );
+    await mockApi(page);
+
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Profil: Işık' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Listem' }).click();
+    await expect(page.getByText('Türkçe Profil Filmi').first()).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('cinetrack.activeProfile.v1')))
+      .toBe('PROFIL-ISIK');
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const profiles = JSON.parse(localStorage.getItem('cinetrack.profiles.v1') || '[]');
+          return profiles[0]?.id;
+        })
+      )
+      .toBe('PROFIL-ISIK');
   });
 
   test('sunucu revizyon çakışması uyarısı gösterir ve kayıpsız birleştirme ile toparlanır', async ({

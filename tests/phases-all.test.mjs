@@ -616,9 +616,9 @@ test('Faz 6: atmosphere ve contrast ilişki türleri deterministik kanıt üreti
   globalThis.localStorage = memStorage;
 
   try {
-    const initialTasteMap = loadPersistentTasteMap('isolated-prof');
-    savePersistentTasteMap('isolated-prof', initialTasteMap);
-    const beforeSnapshot = JSON.stringify(loadPersistentTasteMap('isolated-prof'));
+    const initialTasteMap = loadPersistentTasteMap('profile-isolated-prof');
+    savePersistentTasteMap('profile-isolated-prof', initialTasteMap);
+    const beforeSnapshot = JSON.stringify(loadPersistentTasteMap('profile-isolated-prof'));
 
     const candidates = [
       makeCandidate(1, 'movie', {
@@ -651,7 +651,7 @@ test('Faz 6: atmosphere ve contrast ilişki türleri deterministik kanıt üreti
 
     const atmosphereGraph = buildRelationshipGraph({
       mode: 'relationships',
-      profileId: 'isolated-prof',
+      profileId: 'profile-isolated-prof',
       candidates,
       savedItems: [],
       preferences: { disliked: [], hidden: [], providers: [], mood: '', reminders: false, notified: [] },
@@ -664,7 +664,7 @@ test('Faz 6: atmosphere ve contrast ilişki türleri deterministik kanıt üreti
 
     const contrastGraph = buildRelationshipGraph({
       mode: 'relationships',
-      profileId: 'isolated-prof',
+      profileId: 'profile-isolated-prof',
       candidates,
       savedItems: [],
       preferences: { disliked: [], hidden: [], providers: [], mood: '', reminders: false, notified: [] },
@@ -676,7 +676,7 @@ test('Faz 6: atmosphere ve contrast ilişki türleri deterministik kanıt üreti
     assert.ok(contrastGraph.links.some((l) => l.type === 'contrast'));
 
     // Zevk haritası (localStorage) hiçbir şekilde değişmemiş olmalı!
-    const afterTasteMap = loadPersistentTasteMap('isolated-prof');
+    const afterTasteMap = loadPersistentTasteMap('profile-isolated-prof');
     assert.equal(JSON.stringify(afterTasteMap), beforeSnapshot);
   } finally {
     globalThis.localStorage = prevStorage;
@@ -720,7 +720,7 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
   const tvPool = Array.from({ length: 24 }, (_, idx) =>
     makeCandidate(2000 + idx, 'tv', { genre_ids: [10765, (idx % 4) + 18] })
   );
-  const profileA = makeSampleProfile('prof-a', [
+  const profileA = makeSampleProfile('profile-a', [
     {
       id: 11,
       media_type: 'movie',
@@ -829,7 +829,7 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
   assert.ok(ics.includes('END:VCALENDAR'));
 
   // 5. İki profil izleme listesi kesişimi
-  const profileB = makeSampleProfile('prof-b', [
+  const profileB = makeSampleProfile('profile-b', [
     { ...profileA.items[1], status: 'watchlist' },
     { ...profileA.items[0], status: 'watchlist', personal_rating: '' },
   ]);
@@ -1355,7 +1355,7 @@ test('500 Film + 500 Dizi İndirilmiş Havuz İşleme & Filtreli 20 Öneri Garan
   globalThis.localStorage = memStorage;
 
   try {
-    const profileId = 'ibrahim-pool-test';
+    const profileId = 'profile-ibrahim-pool-test';
 
     // Çapraz tür eşleştirme doğrulaması (Fantastik/Bilim Kurgu 14/878 <-> TV 10765, Aksiyon/Macera 28/12 <-> TV 10759)
     assert.equal(matchesSelectedGenre({ media_type: 'movie', genre_ids: [14, 12] }, '14'), true);

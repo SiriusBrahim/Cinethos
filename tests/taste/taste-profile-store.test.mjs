@@ -193,9 +193,9 @@ test("profil eşleme manifesti profil kapsamlı ilk yazımda kayıt oluşturur",
     await appendTasteEventForProfile("profile-AAA", makeEvent("evt-a1"), dataDir);
     const mapResult = await readTasteProfileIdMap(dataDir);
     assert.equal(mapResult.status, "ok");
-    assert.ok(mapResult.data.entries["profile-AAA"]);
+    assert.ok(mapResult.data.entries["PROFILE-AAA"]);
     assert.equal(
-      mapResult.data.entries["profile-AAA"].dir,
+      mapResult.data.entries["PROFILE-AAA"].dir,
       resolveTastePathsForProfile("profile-AAA", dataDir).dir
     );
   });

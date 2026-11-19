@@ -178,7 +178,7 @@ test('P0-01 & P1-04: prepare veri değiştirmez, restore doğrular, rollback ger
 
     const written = await ctx.storage.readDataAsync();
     assert.equal(written.profiles.length, 2);
-    assert.equal(written.profiles.find((p) => p.id === 'profile-a').name, 'Ana Profil');
+    assert.equal(written.profiles.find((p) => p.id === 'PROFILE-A').name, 'Ana Profil');
 
     // Aynı restoreId ikinci kez kullanılamaz (tek kullanımlık hazırlık).
     const replay = await fetch(`${ctx.baseUrl}/api/archive/sqlite/restore`, {

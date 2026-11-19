@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { normalizeProfileId } from '../core/profile-id.ts';
 import {
   cleanupStaleTempFiles,
   CorruptJsonFileError,
@@ -466,8 +467,11 @@ export function mergeCatalogItem(existing: CatalogRecord | undefined, incoming: 
  * Sanitize profileId for safe file naming on disk.
  */
 export function sanitizeProfileId(profileId: string): string {
-  const cleaned = profileId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  return cleaned.slice(0, 80) || 'default';
+  const canonical = normalizeProfileId(profileId);
+  if (!canonical) throw new Error('Geçersiz profil kimliği; dosya adı oluşturulamadı.');
+  // Eski türetilmiş profil dosyaları küçük harfli adlandırma kullanıyordu.
+  // Kanonik kimlik tekilleştirilirken dosya yolu geriye dönük uyumlu kalır.
+  return canonical.toLowerCase();
 }
 
 function isPlainRecordObject(raw: any): boolean {
@@ -1851,7 +1855,9 @@ export class PersistentDataStore {
     },
     writeOptions: { beforeRenameHook?: (tempFilePath: string) => void } = {}
   ): { updated: boolean; count: number; contentHash: string } {
-    const { profileId, algorithmVersion, profileFingerprint, items } = input;
+    const profileId = normalizeProfileId(input.profileId);
+    if (!profileId) throw new Error('Geçersiz profil kimliği; türetilmiş profil yazılamadı.');
+    const { algorithmVersion, profileFingerprint, items } = input;
     const targetSchemaVersion = input.schemaVersion ?? DERIVED_PROFILE_SCHEMA_VERSION;
     const resolvedSourceCatalogHash =
       input.sourceCatalogHash !== undefined
@@ -2023,7 +2029,9 @@ export class PersistentDataStore {
   public async upsertDerivedProfileAsync(
     input: Parameters<PersistentDataStore['upsertDerivedProfile']>[0]
   ): Promise<{ updated: boolean; count: number; contentHash: string }> {
-    const { profileId, algorithmVersion, profileFingerprint, items } = input;
+    const profileId = normalizeProfileId(input.profileId);
+    if (!profileId) throw new Error('Geçersiz profil kimliği; türetilmiş profil yazılamadı.');
+    const { algorithmVersion, profileFingerprint, items } = input;
     const targetSchemaVersion = input.schemaVersion ?? DERIVED_PROFILE_SCHEMA_VERSION;
     const resolvedSourceCatalogHash =
       input.sourceCatalogHash !== undefined

@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../../core/profile-id.ts';
 /**
  * MIA Faz 6 — Profile-aware recommendation service adapter.
  *
@@ -52,15 +53,15 @@ export class RecommendationService implements IRecommendationService {
     ref: ProfileRef,
     limit = this.defaultLimit
   ): Promise<readonly RecommendationView[]> {
-    this.assertRef(ref);
-    this.assertCurrent(ref);
+    const canonicalRef = this.canonicalizeRef(ref);
+    this.assertCurrent(canonicalRef);
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
-    const cacheKey = `${ref.profileId}:${ref.revision}:${safeLimit}`;
+    const cacheKey = `${canonicalRef.profileId}:${canonicalRef.revision}:${safeLimit}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
-    const snapshot = await this.loadSnapshot(ref);
-    this.assertCurrent(ref);
+    const snapshot = await this.loadSnapshot(canonicalRef);
+    this.assertCurrent(canonicalRef);
     const enriched = enrichCatalogItemsWithTaste({
       items: [...snapshot.items],
       savedItems: [...snapshot.savedItems],
@@ -69,7 +70,7 @@ export class RecommendationService implements IRecommendationService {
       tasteMap: snapshot.tasteMap ?? null,
     });
 
-    this.assertCurrent(ref);
+    this.assertCurrent(canonicalRef);
     const result = enriched.slice(0, safeLimit).map((item: any): RecommendationView => {
       const mediaKey = makeMediaKey(item);
       const rawScore = item.priorityScore ?? item.matchScore ?? item.tasteScore ?? 0;
@@ -86,10 +87,10 @@ export class RecommendationService implements IRecommendationService {
 
   async refresh(ref: WriteProfileRef): Promise<OperationOutcome> {
     try {
-      this.assertRef(ref);
-      this.assertCurrent(ref);
-      this.invalidateProfile(ref.profileId);
-      await this.getRecommendations(ref, this.defaultLimit);
+      const canonicalRef = this.canonicalizeRef(ref);
+      this.assertCurrent(canonicalRef);
+      this.invalidateProfile(canonicalRef.profileId);
+      await this.getRecommendations(canonicalRef, this.defaultLimit);
       return { ok: true };
     } catch (error) {
       return {
@@ -101,19 +102,23 @@ export class RecommendationService implements IRecommendationService {
   }
 
   invalidateProfile(profileId: string): void {
-    const prefix = `${profileId}:`;
+    const canonicalId = normalizeProfileId(profileId);
+    if (!canonicalId) return;
+    const prefix = `${canonicalId}:`;
     for (const key of this.cache.keys()) {
       if (key.startsWith(prefix)) this.cache.delete(key);
     }
   }
 
-  private assertRef(ref: ProfileRef): void {
-    if (!ref || typeof ref.profileId !== 'string' || !ref.profileId.trim()) {
-      throw new Error('RecommendationService için profileId zorunludur.');
+  private canonicalizeRef<T extends ProfileRef>(ref: T): T {
+    const profileId = normalizeProfileId(ref?.profileId);
+    if (!profileId) {
+      throw new Error('RecommendationService için geçerli profileId zorunludur.');
     }
     if (typeof ref.revision !== 'number' || !Number.isSafeInteger(ref.revision) || ref.revision < 0) {
       throw new Error('RecommendationService için geçerli profile revision zorunludur.');
     }
+    return { ...ref, profileId } as T;
   }
 
   private assertCurrent(ref: ProfileRef): void {

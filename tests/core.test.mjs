@@ -523,7 +523,7 @@ describe("normalizeDataDocument", () => {
     });
     assert.equal(document.version, 3);
     assert.equal(document.profiles.length, 1);
-    assert.equal(document.activeProfileId, "profile-default");
+    assert.equal(document.activeProfileId, "PROFILE-DEFAULT");
     assert.equal(document.profiles[0].name, "Elif");
     assert.equal(document.profiles[0].items.length, 2);
   });
@@ -536,7 +536,7 @@ describe("normalizeDataDocument", () => {
       items: [baseItem()],
       preferences: { mood: "energetic" }
     });
-    assert.equal(document.activeProfileId, "profile-ayse");
+    assert.equal(document.activeProfileId, "PROFILE-AYSE");
     assert.equal(document.profiles[0].preferences.mood, "energetic");
   });
 
@@ -549,24 +549,24 @@ describe("normalizeDataDocument", () => {
         { id: "profile-b", name: "B", items: [] }
       ]
     });
-    assert.equal(document.activeProfileId, "profile-b");
+    assert.equal(document.activeProfileId, "PROFILE-B");
     assert.equal(document.profiles.length, 2);
     const fallback = normalizeDataDocument({ version: 3, activeProfileId: "profile-x", profiles: [{ id: "profile-a" }] });
-    assert.equal(fallback.activeProfileId, "profile-a");
+    assert.equal(fallback.activeProfileId, "PROFILE-A");
   });
 
-  it("tekrarlanan profil kimliklerinde ilkini korur ve profil sayısını sınırlar", () => {
+  it("kanonik kimlikte birleşen profilleri veri kaybetmeden birleştirir ve profil sayısını sınırlar", () => {
     const document = normalizeDataDocument({
       version: 3,
       profiles: [
         { id: "profile-a", name: "Bir", items: [baseItem({ id: 1 })] },
-        { id: "profile-a", name: "İki", items: [baseItem({ id: 2 })] },
+        { id: "PROFILE-A", name: "İki", items: [baseItem({ id: 2 })] },
         { id: "profile-b" }
       ]
     });
     assert.equal(document.profiles.length, 2);
     assert.equal(document.profiles[0].name, "Bir");
-    assert.equal(document.profiles[0].items.length, 1);
+    assert.equal(document.profiles[0].items.length, 2);
     const capped = normalizeDataDocument(
       { version: 3, profiles: Array.from({ length: 30 }, (_, index) => ({ id: `profile-p${index}` })) },
       { maxProfiles: 5 }
@@ -2373,9 +2373,9 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
       clear: () => memory.clear(),
     };
 
-    const profileId = "prof_taste_42";
+    const profileId = "profile-taste-42";
     const initialMap = loadPersistentTasteMap(profileId);
-    assert.equal(initialMap.profileId, profileId);
+    assert.equal(initialMap.profileId, profileId.toUpperCase());
     assert.deepEqual(initialMap.entries, {});
     assert.deepEqual(initialMap.lastRecommendedKeys, []);
 
@@ -2410,7 +2410,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
   });
 
   it("updateTasteMapWithBatch: ilk gösterimde puandan bağımsız olarak (shownCount: 1, skippedCount: 0, ring: ring1) kaydı oluşturur", () => {
-    const tasteMap = createDefaultTasteMapData("profile_test");
+    const tasteMap = createDefaultTasteMapData("profile-test");
     const candidates = [
       {
         candidate: { id: 501, media_type: "movie", title: "Film 501" },
@@ -2455,7 +2455,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
   });
 
   it("updateTasteMapWithBatch: pas geçilen (kaydedilmeyen) yapımlarda ilk atlamada doğrudan ring2'ye geçer ve ceza artar", () => {
-    let tasteMap = createDefaultTasteMapData("profile_demote_test");
+    let tasteMap = createDefaultTasteMapData("profile-demote-test");
     const itemA = {
       candidate: { id: 701, media_type: "movie", title: "Aday A" },
       score: 90,
@@ -2526,7 +2526,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
   });
 
   it("updateTasteMapWithBatch: kaydedilen (saved) yapımlarda atlandı sayacı ve ceza artırılmaz", () => {
-    let tasteMap = createDefaultTasteMapData("profile_save_test");
+    let tasteMap = createDefaultTasteMapData("profile-save-test");
     const itemA = {
       candidate: { id: 801, media_type: "movie", title: "Kaydedilecek Film" },
       score: 95,
@@ -2560,7 +2560,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
   });
 
   it("updateTasteMapWithBatch: ilgilenmiyorum veya gizle durumunda olan yapımlar 'disliked'/'hidden' olarak işaretlenir", () => {
-    let tasteMap = createDefaultTasteMapData("profile_dislike_test");
+    let tasteMap = createDefaultTasteMapData("profile-dislike-test");
     const itemA = {
       candidate: { id: 901, media_type: "movie", title: "Sevilmeyen Film" },
       score: 85,
@@ -2623,7 +2623,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
     };
 
     // Kalıcı zevk haritası oluştur: 1002 daha önce gösterilmiş ve 3 kez atlanmış (1 halka geriletmesi, 20 ceza puanı)
-    const tasteMap = createDefaultTasteMapData("profile_score_test");
+    const tasteMap = createDefaultTasteMapData("profile-score-test");
     tasteMap.entries["movie:1002"] = {
       mediaKey: "movie:1002",
       mediaType: "movie",
@@ -2673,7 +2673,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
       },
     ];
 
-    const tasteMap = createDefaultTasteMapData("profile_sync_test");
+    const tasteMap = createDefaultTasteMapData("profile-sync-test");
     tasteMap.entries["movie:2001"] = {
       mediaKey: "movie:2001",
       mediaType: "movie",
@@ -2776,7 +2776,7 @@ describe("Kullanıcıya Özel Zevk Haritası — 3 Sütun, Profil İmzası ve La
       coOccurredPairs: new Set(),
     };
 
-    const tasteMap = createDefaultTasteMapData("profile_sum_test");
+    const tasteMap = createDefaultTasteMapData("profile-sum-test");
     tasteMap.entries["movie:1"] = { mediaKey: "movie:1", ring: "core" };
     tasteMap.entries["movie:2"] = { mediaKey: "movie:2", ring: "inner" };
     tasteMap.entries["tv:1"] = { mediaKey: "tv:1", ring: "outer" };
@@ -2812,7 +2812,7 @@ describe("Halka Sistemi — Halka 0 (Yeni Eşleşme), Halka 1 (Yakın Zamanda G�
       coOccurredPairs: new Set(),
     };
 
-    const tasteMap = createDefaultTasteMapData("profile_ring_test");
+    const tasteMap = createDefaultTasteMapData("profile-ring-test");
     const freshCandidate = {
       id: 5001,
       media_type: "movie",
@@ -2843,7 +2843,7 @@ describe("Halka Sistemi — Halka 0 (Yeni Eşleşme), Halka 1 (Yakın Zamanda G�
       coOccurredPairs: new Set(),
     };
 
-    const tasteMap = createDefaultTasteMapData("profile_ring_test2");
+    const tasteMap = createDefaultTasteMapData("profile-ring-test2");
     tasteMap.lastRecommendedKeys = ["movie:6001"]; // Önceki grupta gösterildi
 
     const candidateShownRecently = {
@@ -2892,7 +2892,7 @@ describe("Halka Sistemi — Halka 0 (Yeni Eşleşme), Halka 1 (Yakın Zamanda G�
       coOccurredPairs: new Set(),
     };
 
-    const tasteMap = createDefaultTasteMapData("profile_ring_test3");
+    const tasteMap = createDefaultTasteMapData("profile-ring-test3");
     tasteMap.lastRecommendedKeys = ["movie:9999"]; // Başka bir yapım son grupta
     tasteMap.entries["movie:8001"] = {
       mediaKey: "movie:8001",
@@ -3103,7 +3103,7 @@ describe("Doğruluk ve Veri Kaybı Riskleri — Profil İmzası, Favori Oyuncu S
 
 describe("Zevk Haritası — Tam Aday Haritası, Gösterim Geçmişi Ayrımı, Filtre Değişikliği ve Derin Önbellek Doğrulaması", () => {
   it("Tam Aday Haritası: Havuzdaki tüm adayların (500 film + 500 dizi) son profil sürümüne ait puanını kaydeder", () => {
-    const tasteMap = createDefaultTasteMapData("profile_full_map_test");
+    const tasteMap = createDefaultTasteMapData("profile-full-map-test");
 
     // Simüle edilmiş 100 adaylık havuz (hem film hem dizi)
     const poolCandidates = [
@@ -3145,7 +3145,7 @@ describe("Zevk Haritası — Tam Aday Haritası, Gösterim Geçmişi Ayrımı, F
   });
 
   it("Gösterim Geçmişi Ayrımı: Yalnızca vitrine çıkan içerikler impressionHistory ve shownCount alır, havuz adayları gösterildi sayılmaz", () => {
-    const tasteMap = createDefaultTasteMapData("profile_impression_test");
+    const tasteMap = createDefaultTasteMapData("profile-impression-test");
 
     const candidateUnshown = {
       candidate: { id: 3001, media_type: "movie", title: "Gösterilmemiş Aday" },
@@ -3184,7 +3184,7 @@ describe("Zevk Haritası — Tam Aday Haritası, Gösterim Geçmişi Ayrımı, F
   });
 
   it("Filtre Değişikliği: Tür (all -> tv) veya mod değişikliğinde önceki vitrin adayları atlandı (skipped) sayılmaz", () => {
-    let tasteMap = createDefaultTasteMapData("profile_filter_test");
+    let tasteMap = createDefaultTasteMapData("profile-filter-test");
 
     // 1. Kullanıcı 'all' modundayken bir film ve bir dizi gösterildi
     const movieItem = { candidate: { id: 4001, media_type: "movie", title: "Film 4001" }, score: 90, rawScore: 90 };
@@ -3671,7 +3671,7 @@ describe("TMDB Veri Kaynağı Ayrımı (Data Source Signaling) — Canlı, Demo,
 
 describe("Zevk Haritası Arşivleme ve Aktif Havuz Ayrımı — Eski Kayıtların Temizlenmesi, Gösterim Geçmişinin Korunması ve Havuz Sayaçlarının İzolasyonu", () => {
   it("Havuz Rotasyonu ve Arşivleme: Aktif havuzdan çıkan adaylar entries'den archivedEntries'e taşınır", () => {
-    const tasteMap = createDefaultTasteMapData("profile_archive_test");
+    const tasteMap = createDefaultTasteMapData("profile-archive-test");
 
     // 1. Döngü: Havuzda 3 aday var (A, B, C)
     const poolBatch1 = [
@@ -3732,7 +3732,7 @@ describe("Zevk Haritası Arşivleme ve Aktif Havuz Ayrımı — Eski Kayıtları
   });
 
   it("Gösterim ve Ceza Geçmişinin Korunması: Arşive alınan adayın gösterim sayısı ve ceza puanları silinmez", () => {
-    let tasteMap = createDefaultTasteMapData("profile_history_preserve_test");
+    let tasteMap = createDefaultTasteMapData("profile-history-preserve-test");
 
     const candidateX = { candidate: { id: 999, media_type: "movie", title: "Aday X" }, score: 95, rawScore: 95 };
 
@@ -3782,7 +3782,7 @@ describe("Zevk Haritası Arşivleme ve Aktif Havuz Ayrımı — Eski Kayıtları
   });
 
   it("Havuza Geri Dönüş (Restoration): Arşivdeki aday yeni bir katalog yenilemesinde havuza geri girerse geçmişiyle terfi eder", () => {
-    let tasteMap = createDefaultTasteMapData("profile_restore_test");
+    let tasteMap = createDefaultTasteMapData("profile-restore-test");
 
     const itemZ = { candidate: { id: 777, media_type: "movie", title: "Aday Z" }, score: 88, rawScore: 88 };
 
@@ -3829,7 +3829,7 @@ describe("Zevk Haritası Arşivleme ve Aktif Havuz Ayrımı — Eski Kayıtları
   });
 
   it("Yardımcı Fonksiyonlar ve Sayaçlar: getTasteMapActiveAndArchivedCounts, archiveTasteMapEntry ve buildTasteProfileSummary doğru çalışır", () => {
-    let tasteMap = createDefaultTasteMapData("profile_helpers_test");
+    let tasteMap = createDefaultTasteMapData("profile-helpers-test");
 
     const pool = [
       { candidate: { id: 1, media_type: "movie", title: "Film 1" }, score: 85 },
@@ -3879,7 +3879,7 @@ describe("Zevk Haritası Arşivleme ve Aktif Havuz Ayrımı — Eski Kayıtları
 
 describe("Sınırlı Gösterim Geçmişi ve Depolama Optimizasyonu — Bounded Impression History (20–50 Sınırı) ve Özetleme", () => {
   it("Sabit ve Sınırlandırılmış Dizi: Gösterimler arttığında impressionHistory azami 30 kayıtla sınırlandırılır", () => {
-    let tasteMap = createDefaultTasteMapData("profile_bounded_history_test");
+    let tasteMap = createDefaultTasteMapData("profile-bounded-history-test");
     const candidate = { id: 501, media_type: "movie", title: "Popüler Film" };
 
     // 45 kez vitrine çıktığını simüle et
@@ -3980,7 +3980,7 @@ describe("Sınırlı Gösterim Geçmişi ve Depolama Optimizasyonu — Bounded I
 describe("Zevk Haritası Mimari İyileştirmeleri — Puan Ayrımı, Algoritma Sürümü, Kapsam İzolasyonu ve Puan Derinliği", () => {
   it("Zevk Uyumu vs Gösterim Önceliği: Atlanan adayın saf zevk uyumu (92) düşürülmez, yalnızca öncelik puanı (82) geriletilir", () => {
     const candidate = { id: 99, media_type: "movie", title: "Kritik Başyapıt" };
-    const tasteMap = createDefaultTasteMapData("user_test");
+    const tasteMap = createDefaultTasteMapData("profile-user-test");
 
     // 1. İlk vitrin gösterimi: 92 puanlı adayı öneriye çıkarıyoruz
     const batch1 = updateTasteMapWithBatch({
@@ -4056,7 +4056,7 @@ describe("Zevk Haritası Mimari İyileştirmeleri — Puan Ayrımı, Algoritma S
     assert.ok(sigV3.startsWith(`sig_${ALGORITHM_VERSION}_`), "İmza algoritma sürümüyle başlamalı");
 
     const candidate = { id: 10, media_type: "movie", title: "Test Film" };
-    const tasteMap = createDefaultTasteMapData("user_test");
+    const tasteMap = createDefaultTasteMapData("profile-user-test");
     const updatedMap = updateTasteMapWithBatch({
       tasteMap,
       newRecommendedItems: [{ candidate, score: 85 }],
@@ -4129,7 +4129,7 @@ describe("Zevk Haritası Mimari İyileştirmeleri — Puan Ayrımı, Algoritma S
 
     // Önbellek doğrulaması: Film haritası dizi eklense bile geçerli kalmalı
     const candidate = { id: 999, media_type: "movie", title: "Yeni Öneri Adayı" };
-    const tasteMap = createDefaultTasteMapData("user_test");
+    const tasteMap = createDefaultTasteMapData("profile-user-test");
     const movieMap = updateTasteMapWithBatch({
       tasteMap,
       newRecommendedItems: [{ candidate, score: 95 }],
@@ -4188,7 +4188,7 @@ describe("Zevk Haritası Mimari İyileştirmeleri — Puan Ayrımı, Algoritma S
     assert.equal(scoredEnriched.confidenceLevel, "high", "Kredili aday 'high' güven düzeyi almalı");
 
     // updateTasteMapWithBatch içine girdiğinde haritada saklanması
-    const tasteMap = createDefaultTasteMapData("user_test");
+    const tasteMap = createDefaultTasteMapData("profile-user-test");
     const updated = updateTasteMapWithBatch({
       tasteMap,
       newRecommendedItems: [scoredEnriched],
@@ -4208,7 +4208,7 @@ describe("Yaşam Döngüsü Halkaları (ring0 / ring1 / ring2) — Puan Bağıms
     const profile = buildTasteProfileV3([
       baseItem({ id: 1, media_type: "movie", genre_ids: [28], status: "completed", personal_rating: 9 }),
     ]);
-    const tasteMap = createDefaultTasteMapData("lifecycle_unseen_scores");
+    const tasteMap = createDefaultTasteMapData("profile-lifecycle-unseen-scores");
 
     // Farklı puan bantlarına düşen (yaklaşık ~55-65 ve ~70-80) daha önce hiç gösterilmemiş adaylar
     const candLow = {
@@ -4262,7 +4262,7 @@ describe("Yaşam Döngüsü Halkaları (ring0 / ring1 / ring2) — Puan Bağıms
     const profile = buildTasteProfileV3([
       baseItem({ id: 10, media_type: "movie", genre_ids: [28], status: "completed", personal_rating: 9 }),
     ]);
-    let tasteMap = createDefaultTasteMapData("lifecycle_batch_transition");
+    let tasteMap = createDefaultTasteMapData("profile-lifecycle-batch-transition");
 
     const pool = Array.from({ length: 12 }, (_, idx) => ({
       id: 1000 + idx,
@@ -4367,7 +4367,7 @@ describe("Yaşam Döngüsü Halkaları (ring0 / ring1 / ring2) — Puan Bağıms
       baseItem({ id: 50, media_type: "movie", genre_ids: [28], status: "completed", personal_rating: 9 }),
     ]);
 
-    const tasteMap = createDefaultTasteMapData("lifecycle_ring2_fallback_order");
+    const tasteMap = createDefaultTasteMapData("profile-lifecycle-ring2-fallback-order");
     tasteMap.lastRecommendedKeys = ["movie:400"]; // Dinlenen aday
 
     // İki ring2 adayı:
@@ -4463,7 +4463,7 @@ describe("Yaşam Döngüsü Halkaları (ring0 / ring1 / ring2) — Puan Bağıms
       clear: () => memory.clear(),
     };
 
-    const profileId = "prof_legacy_migration";
+    const profileId = "profile-legacy-migration";
     const storageKey = getTasteMapStorageKey(profileId);
 
     const legacyStoredPayload = {
@@ -4576,7 +4576,7 @@ describe("Yaşam Döngüsü Halkaları (ring0 / ring1 / ring2) — Puan Bağıms
     const profile = buildTasteProfileV3([
       baseItem({ id: 1, media_type: "movie", genre_ids: [28, 878], status: "completed", personal_rating: 10 }),
     ]);
-    let tasteMap = createDefaultTasteMapData("lifecycle_multi_refresh");
+    let tasteMap = createDefaultTasteMapData("profile-lifecycle-multi-refresh");
 
     // 25 filmlik havuz: puanları 55 ile 95 arasına yayılacak şekilde çeşitli tür ve oylara sahip
     const genresCycle = [[28], [878], [18], [35], [53]];

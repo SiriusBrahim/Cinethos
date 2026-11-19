@@ -264,3 +264,25 @@ Testler `package.json` içindeki `test:taste` komutuna eklendi.
 
 ---
 *Bu tasarım belgesi, belirtilen PR ve master kod envanteri girdilerine dayanır. Kapsam dışı kararlar varsayım yapılmadan açık bırakılmıştır.*
+
+
+---
+
+## 2026-11-19 uygulama eki — p2-hex ve kanonik kimlik
+
+Bu tasarımın ilk sürümündeki `p1-b64url` ve case-sensitive kimlik varsayımları
+tarihsel kayıt olarak korunur; üretim uygulamasında yeni sözleşme aşağıdaki
+şekilde güncellenmiştir:
+
+- Kimlik normalizasyonu `src/core/profile-id.ts` içinde merkezileştirilmiştir.
+  Büyük/küçük harf farkı kaldırılır; Türkçe ve Latin aksanları ASCII temel
+  harflerine dönüştürülür; desteklenmeyen alfabeler reddedilir.
+- Yeni dizin şeması `p2-hex-<lowercase-hex-UTF8>` ve yeni manifest
+  `version=2, scheme=p2-hex` biçimindedir.
+- `p1-b64url` manifestleri ve dizinleri geriye dönük okunur. Profil partition
+  geçişi kopyala/doğrula/atomik yayımla/manifest güncelle/kaynak sil sırasını
+  izler. İçerik çakışmasında otomatik birleştirme veya silme yapılmaz.
+- Global profile atanmamış legacy dosyaların A5/S1 kullanıcı onayı ilkesi
+  değişmemiştir.
+
+Güncel uygulama sözleşmesi ve testleri: `docs/mia/profile-id-p2-hex-migration.md`.

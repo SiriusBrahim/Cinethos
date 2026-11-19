@@ -24,6 +24,7 @@ import type {
   ProfileRef,
 } from '../../contracts/index.ts';
 import type { DataDocument } from '../../core/cinetrack-core.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 import { makeMediaKey, parseMediaKey } from '../../core/keys.ts';
 import {
   hasSufficientDetail,
@@ -258,7 +259,10 @@ export class ContentService implements IContentService {
     }
     try {
       const document = await this.readDocument();
-      const profile = document?.profiles?.find((entry) => String(entry.id) === ref.profileId);
+      const expectedProfileId = normalizeProfileId(ref?.profileId);
+      const profile = expectedProfileId
+        ? document?.profiles?.find((entry) => normalizeProfileId(entry.id) === expectedProfileId)
+        : undefined;
       if (!profile) {
         return {
           ok: false,

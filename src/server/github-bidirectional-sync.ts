@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -1419,7 +1420,7 @@ function inspectDerivedProfileRawContent(
   if (
     !isPlainObject(parsed) ||
     typeof parsed.profileId !== 'string' ||
-    !parsed.profileId.trim() ||
+    !normalizeProfileId(parsed.profileId) ||
     typeof parsed.algorithmVersion !== 'string' ||
     typeof parsed.profileFingerprint !== 'string' ||
     !isPlainObject(parsed.items)
@@ -3707,7 +3708,7 @@ export class GitHubBidirectionalSyncManager {
           if (!remoteProfDoc) continue;
 
           const matchingProfile = finalUserData?.profiles?.find(
-            (p) => p.id === remoteProfDoc.profileId
+            (p) => normalizeProfileId(p.id) === normalizeProfileId(remoteProfDoc.profileId)
           );
           const freshness = this.isDerivedDocFreshForContext(
             remoteProfDoc,
@@ -4599,12 +4600,13 @@ export class GitHubBidirectionalSyncManager {
 
           const localProf = localBefore.derivedProfiles[repoPath];
           const remoteProf = remoteBeforeInspect.bundle.derivedProfiles[repoPath];
-          const profileId =
+          const profileId = normalizeProfileId(
             localProf?.profileId ||
             remoteProf?.profileId ||
-            path.posix.basename(repoPath, '.json');
+            path.posix.basename(repoPath, '.json')
+          ) || '';
           const matchingUserProfile = reconciledUserData?.profiles?.find(
-            (p) => p.id === profileId
+            (p) => normalizeProfileId(p.id) === profileId
           );
 
           const localFresh = localProf

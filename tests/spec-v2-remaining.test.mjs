@@ -618,7 +618,7 @@ test('BUG-14: Open-only lazy credits (Depo 12, 7d TTL), stock topCastIds 0-netwo
 test('FEAT-02: ct:stock seeds Discover pool excluding ct:skip-log, and recycles expired ct:surfaced FIFO items when fresh upstream runs short', async () => {
   resetAllClientTestState();
 
-  const profileId = 'default';
+  const profileId = 'profile-default';
   const baseNow = 1_750_000_000_000;
 
   // Record skip-log (Depo 9) with cap & 7-day cooldown

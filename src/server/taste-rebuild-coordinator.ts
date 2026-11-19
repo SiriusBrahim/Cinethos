@@ -15,6 +15,7 @@
 // ===========================================================================
 
 import { randomUUID } from "node:crypto";
+import { normalizeProfileId } from "../core/profile-id.ts";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
@@ -28,6 +29,7 @@ import {
   writeTasteProfileForProfile,
   readTasteManifestForProfile,
   readTasteObjectionsForProfile,
+  ensureTasteProfileIdMapEntry,
 } from "./taste-store.ts";
 import {
   resolveTastePathsForProfile,
@@ -329,6 +331,7 @@ async function computeBootstrapSignature(
           path.join(dataDir, "stock.json"),
           path.join(dataDir, "taste", "cinetrack-taste-metadata-cache.json"),
         ];
+  await ensureTasteProfileIdMapEntry(profileId, dataDir);
   const profilePaths = resolveTastePathsForProfile(profileId, dataDir).paths;
   const files = [
     ...globalFiles,
@@ -687,14 +690,14 @@ export async function ensureInitialTasteBootstrap(
 
       // R2-A3 S2: bootstrap hedefi belgenin aktif profiliyle birebir eşleşmek zorundadır.
       // `profiles[0]` sessiz fallback'i YOKTUR; uyuşmazlıkta hiçbir şey yazılmaz.
-      if (doc.activeProfileId !== canonicalProfileId) {
+      if (normalizeProfileId(doc.activeProfileId) !== canonicalProfileId) {
         console.warn(
           `[taste-bootstrap] Hedef profil belgenin aktif profiliyle eşleşmiyor (hedef: ${canonicalProfileId}, belge: ${String(doc.activeProfileId)}); bootstrap atlandı.`
         );
         return;
       }
       const activeProfile = doc.profiles.find(
-        (p) => p && p.id === canonicalProfileId
+        (p) => p && normalizeProfileId(p.id) === canonicalProfileId
       );
       if (!activeProfile) {
         return;

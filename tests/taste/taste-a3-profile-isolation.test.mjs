@@ -115,27 +115,11 @@ describe("R2-A3 S1 — ProfileContext zorunluluğu", () => {
     });
   });
 
-  it("kanonik olmayan aktif kimlik ('default') 409 ile reddedilir ve global okuma yapılmaz", async () => {
-    await withTempDir(async (dataDir) => {
-      fs.writeFileSync(
-        path.join(dataDir, "cinetrack-data.json"),
-        JSON.stringify(makeUserDoc(), null, 2),
-        "utf8"
-      );
-      const context = createProfileContext({ initialProfileId: "default", initialRevision: 0 });
-      await withServer(dataDir, context, async (baseUrl) => {
-        const res = await fetch(`${baseUrl}/profile`);
-        assert.strictEqual(res.status, 409);
-        const body = await res.json();
-        assert.strictEqual(body.code, "invalid_profile_id");
-        const eventsRes = await fetch(`${baseUrl}/events`);
-        assert.strictEqual(eventsRes.status, 409);
-      });
-      assert.strictEqual(
-        fs.existsSync(path.join(dataDir, "taste", "cinetrack-taste-profile.json")),
-        false
-      );
-    });
+  it("kanonik olmayan başlangıç kimliği ('default') ProfileContext tarafından reddedilir", async () => {
+    assert.throws(
+      () => createProfileContext({ initialProfileId: "default", initialRevision: 0 }),
+      /Başlangıç profil kimliği/
+    );
   });
 });
 

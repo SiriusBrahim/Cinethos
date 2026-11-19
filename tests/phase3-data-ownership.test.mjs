@@ -71,8 +71,8 @@ async function makeRuntime(seedCatalog = true) {
   }
   const runtime = createCineTrackApp({ dataDir: tmpDir });
   const doc = makeDoc([
-    makeProfile('profile-a', 'Profil A'),
-    makeProfile('profile-b', 'Profil B'),
+    makeProfile('PROFILE-A', 'Profil A'),
+    makeProfile('PROFILE-B', 'Profil B'),
   ]);
   const seed = await runtime.primaryRepository.saveRaw(doc, { forceOverwrite: true });
   assert.equal(seed.ok, true);
@@ -107,7 +107,7 @@ test('F3-O1 pickContentFields: kişisel alanlar ve bilinmeyen alanlar metadata�
     personal_rating: 3,
     personal_rating_cleared: true,
     notes: 'gizli not',
-    profileId: 'profile-b',
+    profileId: 'PROFILE-B',
     episodes_watched: 42,
     current_season: 3,
     season_progress: { 1: 42 },
@@ -167,7 +167,7 @@ test('F3-O3 kullanıcı puanı/notu/durumu/ilerlemesi ortak katalog dosyasına y
     const before = await fs.readFile(catalogPath, 'utf8');
 
     const added = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watched',
@@ -181,7 +181,7 @@ test('F3-O3 kullanıcı puanı/notu/durumu/ilerlemesi ortak katalog dosyasına y
     assert.equal(added.ok, true);
 
     const updated = await runtime.libraryService.updateItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       rating: 6,
       progress: { episodesWatched: 12, currentSeason: 1, seasonProgress: { 1: 12 } },
@@ -194,7 +194,7 @@ test('F3-O3 kullanıcı puanı/notu/durumu/ilerlemesi ortak katalog dosyasına y
 
     // Kullanıcı verisi yalnızca kendi belgesinde:
     const raw = await runtime.primaryRepository.readRaw();
-    const item = raw.document.profiles.find((p) => p.id === 'profile-a').items[0];
+    const item = raw.document.profiles.find((p) => p.id === 'PROFILE-A').items[0];
     assert.equal(item.personal_rating, 6);
     assert.equal(item.episodes_watched, 12);
     assert.equal(item.notes, undefined, 'not metadata kanalından yazılamaz');
@@ -212,7 +212,7 @@ test('F3-O4 kütüphaneden silme ortak katalog kaydını silmez; tombstone yaln�
     const catalogPath = path.join(tmpDir, 'catalog', 'movies.json');
 
     const added = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watched',
@@ -221,7 +221,7 @@ test('F3-O4 kütüphaneden silme ortak katalog kaydını silmez; tombstone yaln�
     assert.equal(added.ok, true);
 
     const removed = await runtime.libraryService.removeItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
     });
     assert.equal(removed.ok, true);
@@ -235,13 +235,13 @@ test('F3-O4 kütüphaneden silme ortak katalog kaydını silmez; tombstone yaln�
     assert.equal(catalog['movie:157336'].title, 'Interstellar');
 
     const raw = await runtime.primaryRepository.readRaw();
-    const profile = raw.document.profiles.find((p) => p.id === 'profile-a');
+    const profile = raw.document.profiles.find((p) => p.id === 'PROFILE-A');
     assert.equal(profile.items.length, 0);
     assert.ok(profile.deleted_keys?.['movie:157336'], 'tombstone kullanıcı belgesinde');
 
     // İkinci profil aynı içeriği ekleyebilir (ortak metadata yaşıyor).
     const addB = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-b'),
+      ref: ref(runtime, 'PROFILE-B'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watchlist',
@@ -263,7 +263,7 @@ test('F3-O5 ortak içerik kaydı kullanıcı işlemlerinden kişisel veri taşı
   const { tmpDir, runtime } = await makeRuntime();
   try {
     const added = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watched',
@@ -280,7 +280,7 @@ test('F3-O5 ortak içerik kaydı kullanıcı işlemlerinden kişisel veri taşı
     assert.equal(added.ok, true);
 
     const removed = await runtime.libraryService.removeItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
     });
     assert.equal(removed.ok, true);
@@ -317,10 +317,10 @@ test('F3-O6 profil A yazımı profil B’nin belge dilimini bayt bayt değiştir
   const { tmpDir, runtime } = await makeRuntime();
   try {
     const rawBefore = await runtime.primaryRepository.readRaw();
-    const sliceB = JSON.stringify(rawBefore.document.profiles.find((p) => p.id === 'profile-b'));
+    const sliceB = JSON.stringify(rawBefore.document.profiles.find((p) => p.id === 'PROFILE-B'));
 
     const added = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watched',
@@ -330,19 +330,19 @@ test('F3-O6 profil A yazımı profil B’nin belge dilimini bayt bayt değiştir
     assert.equal(added.ok, true);
 
     const updated = await runtime.libraryService.updateItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       rating: 4,
     });
     assert.equal(updated.ok, true);
 
     const rawAfter = await runtime.primaryRepository.readRaw();
-    const sliceBAfter = JSON.stringify(rawAfter.document.profiles.find((p) => p.id === 'profile-b'));
+    const sliceBAfter = JSON.stringify(rawAfter.document.profiles.find((p) => p.id === 'PROFILE-B'));
     assert.equal(sliceBAfter, sliceB, 'B profil dilimi A yazımlarından etkilenmemeli');
 
     // A'nın verisi B'nin sorgularında görünmez.
     assert.equal(
-      await runtime.libraryService.getItem({ profileId: 'profile-b' }, 'movie:157336'),
+      await runtime.libraryService.getItem({ profileId: 'PROFILE-B' }, 'movie:157336'),
       null
     );
   } finally {
@@ -357,7 +357,7 @@ test('F3-O7 getItem: TMDB puanı hiçbir koşulda kişisel puan olarak dönmez',
   const { tmpDir, runtime } = await makeRuntime();
   try {
     const added = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watchlist',
@@ -366,13 +366,13 @@ test('F3-O7 getItem: TMDB puanı hiçbir koşulda kişisel puan olarak dönmez',
     assert.equal(added.ok, true);
 
     const got = await runtime.libraryService.getItem(
-      { profileId: 'profile-a' },
+      { profileId: 'PROFILE-A' },
       'movie:157336'
     );
     assert.deepEqual(got, { list: 'watchlist', rating: null });
 
     const raw = await runtime.primaryRepository.readRaw();
-    const item = raw.document.profiles.find((p) => p.id === 'profile-a').items[0];
+    const item = raw.document.profiles.find((p) => p.id === 'PROFILE-A').items[0];
     assert.equal(item.personal_rating, '', 'kişisel puan boş kalmalı');
     assert.equal(item.vote_average, 8.4, 'TMDB puanı ayrı içerik alanı');
   } finally {

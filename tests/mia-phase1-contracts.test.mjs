@@ -49,7 +49,7 @@ function makeTempDir(prefix) {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
-function makeDoc(profileId = 'profile-a', revision = 1) {
+function makeDoc(profileId = 'PROFILE-A', revision = 1) {
   return {
     version: 3,
     schemaVersion: 3,
@@ -185,7 +185,7 @@ test('MIA Adım 2 & 4: ContentIntelligenceService ağa çıkmadan analiz, mood a
 // Adım 3 & 8: AppEventBus, zorunlu mediaKey/sourceRevision ve shell köprüsü
 // ---------------------------------------------------------------------------
 test('MIA Adım 3 & 8: AppEventBus medya anahtarını zorunlu kılar, kalıcılık hatasını yutmaz ve shell kanalına köprüler', async () => {
-  const ref = Object.freeze({ profileId: 'profile-a', revision: 4 });
+  const ref = Object.freeze({ profileId: 'PROFILE-A', revision: 4 });
   const added = createAppEvent({
     eventType: 'LibraryItemAdded',
     ref,
@@ -288,7 +288,7 @@ test('MIA Adım 5: ModuleRegistry tek seferlik initialize, başlatma geri alım�
   registry.register(modB);
 
   const bus = createAppEventBus();
-  const profileCtx = createProfileContext({ initialProfileId: 'profile-a', initialRevision: 1 });
+  const profileCtx = createProfileContext({ initialProfileId: 'PROFILE-A', initialRevision: 1 });
   const ctx = {
     profile: profileCtx,
     events: bus,
@@ -331,7 +331,7 @@ test('MIA Adım 6: ProfileContext profil değişiminde eski asenkron yazımları
 
   let invalidated = 0;
   const profileCtx = createProfileContext({
-    initialProfileId: 'profile-a',
+    initialProfileId: 'PROFILE-A',
     initialRevision: 3,
     eventPublisher: bus,
     onInvalidateInFlight: () => {
@@ -340,13 +340,13 @@ test('MIA Adım 6: ProfileContext profil değişiminde eski asenkron yazımları
   });
 
   const capturedRef = profileCtx.getCurrent();
-  assert.equal(capturedRef.profileId, 'profile-a');
+  assert.equal(capturedRef.profileId, 'PROFILE-A');
   assert.equal(capturedRef.revision, 3);
   profileCtx.assertWritable(capturedRef);
 
-  await profileCtx.switchProfile('profile-b', 5);
+  await profileCtx.switchProfile('PROFILE-B', 5);
   assert.equal(invalidated, 1);
-  assert.deepEqual(switchedEvents, [{ fromProfileId: 'profile-a', toProfileId: 'profile-b' }]);
+  assert.deepEqual(switchedEvents, [{ fromProfileId: 'PROFILE-A', toProfileId: 'PROFILE-B' }]);
 
   assert.throws(
     () => profileCtx.assertWritable(capturedRef),
@@ -354,7 +354,7 @@ test('MIA Adım 6: ProfileContext profil değişiminde eski asenkron yazımları
   );
 
   const refB = profileCtx.getCurrent();
-  profileCtx.commitRevision(6, 'profile-b');
+  profileCtx.commitRevision(6, 'PROFILE-B');
   assert.throws(
     () => profileCtx.assertWritable(refB),
     (err) => err instanceof ProfileConflictError && err.reason === 'stale-revision'
@@ -373,14 +373,14 @@ test('MIA Adım 7: ServerPrimaryDataRepository iyimser kilitleme ve dürüst sü
     const initial = await repo.read();
     assert.equal(initial.health.driver, 'json');
 
-    const saved = await repo.save(makeDoc('profile-a', 0), {
+    const saved = await repo.save(makeDoc('PROFILE-A', 0), {
       expectedRevision: 0,
       requirePrecondition: true,
     });
     assert.equal(saved.ok, true);
     assert.equal(saved.revision, 1);
 
-    const conflict = await repo.save(makeDoc('profile-a', 0), {
+    const conflict = await repo.save(makeDoc('PROFILE-A', 0), {
       expectedRevision: 0,
       requirePrecondition: true,
     });
@@ -389,7 +389,7 @@ test('MIA Adım 7: ServerPrimaryDataRepository iyimser kilitleme ve dürüst sü
     assert.equal(conflict.revision, 1);
 
     await assert.rejects(
-      () => repo.saveForProfileOrThrow(makeDoc('profile-a', 0), { profileId: 'profile-a', revision: 0 }),
+      () => repo.saveForProfileOrThrow(makeDoc('PROFILE-A', 0), { profileId: 'PROFILE-A', revision: 0 }),
       (err) => err instanceof StaleRevisionError
     );
 
@@ -422,7 +422,7 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
   const tmpDir = await makeTempDir('cinetrack-taste-');
   try {
     const profileCtx = createProfileContext({
-      initialProfileId: 'profile-a',
+      initialProfileId: 'PROFILE-A',
       initialRevision: 2,
     });
     const adapter = createServerTasteServiceAdapter({
@@ -450,11 +450,11 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
     const duplicate = await adapter.processEvent(appEvent);
     assert.equal(duplicate.ok, true);
 
-    const storedEvents = await readTasteEventsForProfile('profile-a', tmpDir);
+    const storedEvents = await readTasteEventsForProfile('PROFILE-A', tmpDir);
     assert.equal(storedEvents.length, 1);
     assert.equal(storedEvents[0].eventId, 'evt-unique-1');
 
-    const manifest = await readTasteManifestForProfile('profile-a', tmpDir);
+    const manifest = await readTasteManifestForProfile('PROFILE-A', tmpDir);
     assert.ok(manifest, 'manifest oluşturulmuş olmalı');
     assert.equal(manifest.eventWatermark, 'evt-unique-1');
 
@@ -465,13 +465,13 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
     });
     assert.ok(translated);
     const [r1, r2] = await Promise.all([
-      appendTasteEventIdempotentForProfile('profile-a', translated, tmpDir),
-      appendTasteEventIdempotentForProfile('profile-a', translated, tmpDir),
+      appendTasteEventIdempotentForProfile('PROFILE-A', translated, tmpDir),
+      appendTasteEventIdempotentForProfile('PROFILE-A', translated, tmpDir),
     ]);
     assert.equal(Number(r1.added) + Number(r2.added), 1);
 
     // Saf projektör sınır doğrulaması
-    const projection = projectLearningSnapshot(await readTasteEventsForProfile('profile-a', tmpDir));
+    const projection = projectLearningSnapshot(await readTasteEventsForProfile('PROFILE-A', tmpDir));
     assert.equal(projection.eventCount, 2);
     assert.equal(projection.eventWatermark, 'evt-concurrent-2');
 
@@ -501,16 +501,16 @@ test('MIA Adım 11: OfflineQueue profil çakışmasında yazımı durdurur, eşl
   resetOfflineQueueForTests();
 
   const profileCtx = createProfileContext({
-    initialProfileId: 'profile-a',
+    initialProfileId: 'PROFILE-A',
     initialRevision: 4,
   });
 
-  await enqueueOfflineSyncForProfile(makeDoc('profile-a', 4), profileCtx.getCurrent());
-  assert.equal(loadOfflineSyncSnapshot()?.profileRef?.profileId, 'profile-a');
+  await enqueueOfflineSyncForProfile(makeDoc('PROFILE-A', 4), profileCtx.getCurrent());
+  assert.equal(loadOfflineSyncSnapshot()?.profileRef?.profileId, 'PROFILE-A');
   assert.equal(loadOfflineSyncSnapshot()?.profileRef?.revision, 4);
 
   // Profil B'ye geçilirse eski profilin bekleyen çevrimdışı yazımı üzerine yazılmaz
-  await profileCtx.switchProfile('profile-b', 4);
+  await profileCtx.switchProfile('PROFILE-B', 4);
   let saveCalled = 0;
   const mockRepo = {
     async read() {
@@ -534,7 +534,7 @@ test('MIA Adım 11: OfflineQueue profil çakışmasında yazımı durdurur, eşl
   assert.ok(loadOfflineSyncSnapshot(), 'profil çakışmasında kuyruk korunmalı');
 
   // Tekrar profil A'ya dönünce başarıyla senkronlanır ve temizlenir
-  await profileCtx.switchProfile('profile-a', 4);
+  await profileCtx.switchProfile('PROFILE-A', 4);
   const synced = await flushOfflineQueueWithRepository(mockRepo, { profileContext: profileCtx });
   assert.equal(synced.status, 'synced');
   assert.equal(synced.revision, 5);
@@ -551,7 +551,7 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
   try {
     const bus = createAppEventBus();
     const profileCtx = createProfileContext({
-      initialProfileId: 'profile-a',
+      initialProfileId: 'PROFILE-A',
       initialRevision: 3,
       eventPublisher: bus,
     });
@@ -599,10 +599,10 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
 
     // Async subscriber handler'ların tamamlanmasını deterministik bekle
     const deadline = Date.now() + 2000;
-    let storedAfterSave = await readTasteEventsForProfile('profile-a', tmpDir);
+    let storedAfterSave = await readTasteEventsForProfile('PROFILE-A', tmpDir);
     while (storedAfterSave.length < 2 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      storedAfterSave = await readTasteEventsForProfile('profile-a', tmpDir);
+      storedAfterSave = await readTasteEventsForProfile('PROFILE-A', tmpDir);
     }
 
     assert.equal(persistErrors.length, 0);
@@ -611,7 +611,7 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
     assert.equal(storedAfterSave.length, 2, 'status_changed + rating_changed yazılmalı');
 
     // İlk EventBus yayınının fire-and-forget rebuild'inin geçici dizin temizliğiyle yarışmasını önle.
-    await triggerTasteProfileRebuild('profile-a', tmpDir);
+    await triggerTasteProfileRebuild('PROFILE-A', tmpDir);
 
     // Aynı olayı ikinci kez yayınlama -> TasteStore içinde çift kayıt üretmemeli
     const publishedHistory = bus.getRecentEvents();
@@ -619,7 +619,7 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
     assert.ok(addedEvent);
     await bus.publish(addedEvent);
 
-    const storedAfterReplay = await readTasteEventsForProfile('profile-a', tmpDir);
+    const storedAfterReplay = await readTasteEventsForProfile('PROFILE-A', tmpDir);
     assert.equal(
       storedAfterReplay.length,
       storedAfterSave.length,
@@ -627,8 +627,8 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
     );
 
     // Profil değişimi yalnızca 1 kez profile:changed kabuk olayı üretir
-    await profileCtx.switchProfile('profile-b', 3);
-    assert.deepEqual(shellProfileChanged, ['profile-b']);
+    await profileCtx.switchProfile('PROFILE-B', 3);
+    assert.deepEqual(shellProfileChanged, ['PROFILE-B']);
 
     // Kalıcılık hatası client sink'te sessizce yutulmaz
     const syncErrors = [];
@@ -689,7 +689,7 @@ test('R2-A3: inactive-profile iç EventBus olayı diğer aboneleri engellemez', 
   const tmpDir = await makeTempDir('cinetrack-inactive-profile-event-');
   const bus = createAppEventBus();
   const profileCtx = createProfileContext({
-    initialProfileId: 'profile-a',
+    initialProfileId: 'PROFILE-A',
     initialRevision: 1,
     eventPublisher: bus,
   });
@@ -708,14 +708,14 @@ test('R2-A3: inactive-profile iç EventBus olayı diğer aboneleri engellemez', 
     const foreignEvent = createAppEvent({
       eventId: 'inactive-profile-event-1',
       eventType: 'LibraryItemAdded',
-      ref: { profileId: 'profile-b', revision: 1 },
+      ref: { profileId: 'PROFILE-B', revision: 1 },
       entityId: 'movie:550',
       payload: { mediaKey: 'movie:550', mediaType: 'movie', list: 'watched' },
     });
     await assert.doesNotReject(() => bus.publish(foreignEvent));
     assert.equal(otherSubscriberCalls, 1);
-    assert.deepEqual(await readTasteEventsForProfile('profile-b', tmpDir), []);
-    assert.deepEqual(await readTasteEventsForProfile('profile-a', tmpDir), []);
+    assert.deepEqual(await readTasteEventsForProfile('PROFILE-B', tmpDir), []);
+    assert.deepEqual(await readTasteEventsForProfile('PROFILE-A', tmpDir), []);
   } finally {
     tasteSub.unsubscribe();
     otherSub.unsubscribe();
@@ -761,9 +761,9 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
       headers: {
         'Content-Type': 'application/json',
         'If-Match': '"rev-0"',
-        'X-CineTrack-Profile-Id': 'profile-a',
+        'X-CineTrack-Profile-Id': 'PROFILE-A',
       },
-      body: JSON.stringify(makeDoc('profile-a', 0)),
+      body: JSON.stringify(makeDoc('PROFILE-A', 0)),
     });
     assert.equal(putOkRes.status, 200);
     const putOkJson = await putOkRes.json();
@@ -775,7 +775,7 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
         'Content-Type': 'application/json',
         'If-Match': '"rev-0"',
       },
-      body: JSON.stringify(makeDoc('profile-a', 0)),
+      body: JSON.stringify(makeDoc('PROFILE-A', 0)),
     });
     assert.equal(stalePutRes.status, 409);
     const stalePutJson = await stalePutRes.json();
@@ -788,7 +788,7 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
         'If-Match': '"rev-1"',
         'X-CineTrack-Profile-Id': 'profile-wrong',
       },
-      body: JSON.stringify(makeDoc('profile-a', 1)),
+      body: JSON.stringify(makeDoc('PROFILE-A', 1)),
     });
     assert.equal(profileMismatchRes.status, 409);
     const profileMismatchJson = await profileMismatchRes.json();
@@ -798,7 +798,7 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
     const domEv = createAppEvent({
       eventId: 'http-domain-evt-1',
       eventType: 'LibraryItemAdded',
-      ref: { profileId: 'profile-a', revision: 1 },
+      ref: { profileId: 'PROFILE-A', revision: 1 },
       entityId: 'movie:550',
       payload: { mediaKey: 'movie:550', mediaType: 'movie', list: 'watched' },
     });
@@ -819,10 +819,10 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
     // yayımlar (movie:550) ve taste motoru bunu işler; ardından domain-event
     // gönderimi ikinci TasteEvent üretir. Aynı eventId'li ikinci POST
     // tekilleştirilir → toplam 2 kayıt.
-    assert.equal((await readTasteEventsForProfile('profile-a', tmpDir)).length, 2);
+    assert.equal((await readTasteEventsForProfile('PROFILE-A', tmpDir)).length, 2);
 
     // 4. Kurtarılamaz bozuk Taste events dosyasında HTTP 500 corrupt_json_file döner (sessiz []) yok
-    const eventsPath = resolveTastePathsForProfile('profile-a', tmpDir).paths.events;
+    const eventsPath = resolveTastePathsForProfile('PROFILE-A', tmpDir).paths.events;
     await fs.rm(`${eventsPath}.bak`, { force: true });
     await fs.writeFile(eventsPath, '{ bozuk taste events', 'utf8');
 
@@ -854,19 +854,19 @@ test('Son Kabul P2: OfflineQueue profilsiz yazımı reddeder, IDB reload sonras�
 
   try {
     // 1. Profilsiz / geçersiz revision'lı eski yazım reddedilir
-    const docWithoutProfile = { ...makeDoc('profile-a', 1), activeProfileId: '' };
+    const docWithoutProfile = { ...makeDoc('PROFILE-A', 1), activeProfileId: '' };
     await assert.rejects(
       () => enqueueOfflineSyncSnapshotDurable(docWithoutProfile, 1),
       /WriteProfileRef/
     );
     await assert.rejects(
-      () => enqueueOfflineSyncSnapshotDurable(makeDoc('profile-a', 1), null),
+      () => enqueueOfflineSyncSnapshotDurable(makeDoc('PROFILE-A', 1), null),
       /WriteProfileRef/
     );
     await assert.rejects(
       () =>
-        enqueueOfflineSyncForProfile(makeDoc('profile-a', 2), {
-          profileId: 'profile-b',
+        enqueueOfflineSyncForProfile(makeDoc('PROFILE-A', 2), {
+          profileId: 'PROFILE-B',
           revision: 2,
         }),
       (err) => err instanceof ProfileConflictError && err.reason === 'profile-switched'
@@ -874,11 +874,11 @@ test('Son Kabul P2: OfflineQueue profilsiz yazımı reddeder, IDB reload sonras�
 
     // 2. IDB yazımı + sayfa yenileme simülasyonu + HttpPrimaryDataRepository flush
     const profileCtx = createProfileContext({
-      initialProfileId: 'profile-a',
+      initialProfileId: 'PROFILE-A',
       initialRevision: 3,
     });
     const enq = await enqueueOfflineSyncForProfile(
-      makeDoc('profile-a', 3),
+      makeDoc('PROFILE-A', 3),
       profileCtx.getCurrent()
     );
     assert.equal(enq.storage, 'indexeddb');
@@ -886,11 +886,11 @@ test('Son Kabul P2: OfflineQueue profilsiz yazımı reddeder, IDB reload sonras�
 
     resetOfflineQueueForTests(); // bellek sıfırlandı
     const reloaded = await loadOfflineSyncSnapshotAsync();
-    assert.equal(reloaded?.profileRef?.profileId, 'profile-a');
+    assert.equal(reloaded?.profileRef?.profileId, 'PROFILE-A');
     assert.equal(reloaded?.profileRef?.revision, 3);
 
     // Farklı profil aktifken boşaltma reddedilir, kuyruk korunur
-    await profileCtx.switchProfile('profile-b', 3);
+    await profileCtx.switchProfile('PROFILE-B', 3);
     const httpRepo = createHttpPrimaryDataRepository();
     const blocked = await flushOfflineQueueWithRepository(httpRepo, {
       profileContext: profileCtx,
@@ -899,7 +899,7 @@ test('Son Kabul P2: OfflineQueue profilsiz yazımı reddeder, IDB reload sonras�
     assert.ok(await loadOfflineSyncSnapshotAsync(), 'kuyruk silinmemeli');
 
     // Aynı profile dönünce HttpPrimaryDataRepository gerçek HTTP yazımıyla boşaltır ve revision ilerletir
-    await profileCtx.switchProfile('profile-a', 3);
+    await profileCtx.switchProfile('PROFILE-A', 3);
     const seenHeaders = [];
     globalThis.fetch = async (_url, init) => {
       seenHeaders.push(init?.headers || {});
@@ -925,7 +925,7 @@ test('Son Kabul P2: OfflineQueue profilsiz yazımı reddeder, IDB reload sonras�
     assert.equal(flushed.revision, 4);
     assert.equal(profileCtx.getCurrent().revision, 4);
     assert.equal(await loadOfflineSyncSnapshotAsync(), null);
-    assert.equal(seenHeaders[0]['X-CineTrack-Profile-Id'], 'profile-a');
+    assert.equal(seenHeaders[0]['X-CineTrack-Profile-Id'], 'PROFILE-A');
     assert.equal(seenHeaders[0]['If-Match'], '"rev-3"');
   } finally {
     globalThis.fetch = prevFetch;

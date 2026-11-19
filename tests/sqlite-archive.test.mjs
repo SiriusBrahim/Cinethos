@@ -129,13 +129,13 @@ test('SQLite arşivi: profil, stok, zevk haritası ve posterler tam gidiş-dön�
   assert.equal(archive.createdAt, AS_OF);
 
   // Profil tam kaydı korunuyor mu?
-  const profileA = archive.dataDocument.profiles.find((p) => p.id === 'profile-a');
+  const profileA = archive.dataDocument.profiles.find((p) => p.id === 'PROFILE-A');
   assert.ok(profileA);
   assert.equal(profileA.name, 'Ana Profil');
   assert.deepEqual(profileA.preferences.disliked, ['movie:99']);
   assert.deepEqual(profileA.preferences.hidden, ['tv:42']);
   assert.equal(profileA.preferences.mood, 'dark');
-  assert.deepEqual(profileA.favoriteActors, [{ id: 525, name: 'Nolan' }]);
+  assert.deepEqual(profileA.favoriteActors, [{ id: 525, name: 'Nolan', profile_path: null }]);
   assert.deepEqual(profileA.deleted_keys, { 'movie:900': AS_OF });
   assert.equal(profileA.items.length, 2);
   assert.equal(profileA.items[0].personal_rating, 8);
@@ -143,12 +143,12 @@ test('SQLite arşivi: profil, stok, zevk haritası ve posterler tam gidiş-dön�
   assert.equal(profileA.items[1].media_type, 'tv');
   assert.equal(profileA.items[1].status, 'watching');
 
-  assert.equal(archive.dataDocument.activeProfileId, 'profile-a');
+  assert.equal(archive.dataDocument.activeProfileId, 'PROFILE-A');
   assert.equal(archive.dataDocument.revision, 7);
 
   // Zevk haritaları ve stok
-  assert.ok(archive.tasteMaps['profile-a']);
-  assert.deepEqual(archive.tasteMaps['profile-a'].lastRecommendedKeys, ['movie:2']);
+  assert.ok(archive.tasteMaps['PROFILE-A']);
+  assert.deepEqual(archive.tasteMaps['PROFILE-A'].lastRecommendedKeys, ['movie:2']);
   assert.equal(archive.stock.movies.length, 1);
   assert.equal(archive.stock.tv.length, 1);
   assert.deepEqual(archive.stock.cursors, { movie: 3, tv: 1 });
@@ -329,7 +329,7 @@ test('HTTP rotaları: SQLite arşivi indir → geri yükle uçtan uca', async (t
     assert.equal(restored.counts.profiles, 2);
     assert.equal(restored.counts.items, 3);
     assert.equal(restored.dataDocument.profiles.length, 2);
-    const restoredA = restored.dataDocument.profiles.find((p) => p.id === 'profile-a');
+    const restoredA = restored.dataDocument.profiles.find((p) => p.id === 'PROFILE-A');
     assert.equal(restoredA.name, 'Ana Profil');
     assert.equal(restoredA.items.length, 2);
     assert.deepEqual(restoredA.preferences.hidden, ['tv:42']);

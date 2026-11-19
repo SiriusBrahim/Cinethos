@@ -42,6 +42,7 @@ import {
   type SavedItem,
 } from '../../core/cinetrack-core.ts';
 import { makeMediaKey, parseMediaKey } from '../../core/keys.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 import type { ProfileContext } from '../../app/ProfileContext.ts';
 import { diffLibraryEvents } from '../../server/library-event-diff.ts';
 import type { ServerPrimaryDataRepository } from '../../server/primary-data-repository.ts';
@@ -230,7 +231,10 @@ export class LibraryService implements ILibraryService {
     const parsed = parseMediaKey(mediaKey);
     if (!parsed) return null;
     const document = await this.loadDocument();
-    const profile = document.profiles.find((entry) => String(entry.id) === ref.profileId);
+    const expectedProfileId = normalizeProfileId(ref?.profileId);
+    const profile = expectedProfileId
+      ? document.profiles.find((entry) => normalizeProfileId(entry.id) === expectedProfileId)
+      : undefined;
     if (!profile) return null;
     const item = findSavedItem(profile.items, { id: parsed.id, media_type: parsed.type });
     if (!item) return null;
@@ -256,7 +260,10 @@ export class LibraryService implements ILibraryService {
   }
 
   private requireProfile(document: DataDocument, profileId: string): Profile {
-    const profile = document.profiles.find((entry) => String(entry.id) === profileId);
+    const expectedProfileId = normalizeProfileId(profileId);
+    const profile = expectedProfileId
+      ? document.profiles.find((entry) => normalizeProfileId(entry.id) === expectedProfileId)
+      : undefined;
     if (!profile) {
       throw new ProfileConflictError('profile-not-found', {
         message: `Profil bulunamadı: ${profileId}`,

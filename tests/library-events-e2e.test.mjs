@@ -68,10 +68,10 @@ test('Dilim F: PUT /api/data gerçek liste olayları EventBus → Outbox → Que
       version: 3,
       schemaVersion: 3,
       engineVersion: 'test',
-      activeProfileId: 'profile-a',
+      activeProfileId: 'PROFILE-A',
       profiles: [
         {
-          id: 'profile-a',
+          id: 'PROFILE-A',
           name: 'Kullanıcı A',
           createdAt: '2026-01-01T00:00:00.000Z',
           items: [makeMovie()],
@@ -85,7 +85,7 @@ test('Dilim F: PUT /api/data gerçek liste olayları EventBus → Outbox → Que
       headers: {
         'Content-Type': 'application/json',
         'If-Match': '"rev-0"',
-        'X-CineTrack-Profile-Id': 'profile-a',
+        'X-CineTrack-Profile-Id': 'PROFILE-A',
       },
       body: JSON.stringify(docV1),
     });
@@ -121,7 +121,7 @@ test('Dilim F: PUT /api/data gerçek liste olayları EventBus → Outbox → Que
       headers: {
         'Content-Type': 'application/json',
         'If-Match': `"rev-${(await putRes.json()).revision}"`,
-        'X-CineTrack-Profile-Id': 'profile-a',
+        'X-CineTrack-Profile-Id': 'PROFILE-A',
       },
       body: JSON.stringify(docV2),
     });
@@ -149,7 +149,7 @@ test('Dilim F: PUT /api/data gerçek liste olayları EventBus → Outbox → Que
       headers: {
         'Content-Type': 'application/json',
         'If-Match': `"rev-${(await putRes2.json()).revision}"`,
-        'X-CineTrack-Profile-Id': 'profile-a',
+        'X-CineTrack-Profile-Id': 'PROFILE-A',
       },
       body: JSON.stringify(docV3),
     });

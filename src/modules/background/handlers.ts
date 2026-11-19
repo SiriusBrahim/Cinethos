@@ -19,6 +19,7 @@ import {
   type TypedAppEvent,
 } from '../../contracts/index.ts';
 import { parseMediaKey } from '../../core/keys.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 import { PermanentBackgroundError } from './errors.ts';
 
 interface ItemAddedPayload {
@@ -36,7 +37,7 @@ interface RatingChangedPayload {
 /** Görevin profili aktif değilse yazma yapılmadan hata fırlatılır. */
 function assertActiveProfile(event: TypedAppEvent, context: BackgroundTaskHandlerContext): void {
   const current = context.profileContext.getCurrent();
-  if (current.profileId !== event.profileId) {
+  if (normalizeProfileId(current.profileId) !== normalizeProfileId(event.profileId)) {
     throw new ProfileConflictError('profile-switched', {
       expectedRevision: event.sourceRevision,
       actualRevision: current.revision,

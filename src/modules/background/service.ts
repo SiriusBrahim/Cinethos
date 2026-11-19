@@ -33,6 +33,7 @@ import {
   type ModuleHealth,
   type TypedAppEvent,
 } from '../../contracts/index.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 import { sanitizeEventPayload } from './event-payload.ts';
 import { isRetryableBackgroundError, resolveRetryDelayMs } from './errors.ts';
 
@@ -188,20 +189,22 @@ export class BackgroundManager {
     tasksCreated: number;
     deduplicated: boolean;
   }> {
+    const profileId = normalizeProfileId(event.profileId);
+    if (!profileId) throw new Error('Background event için geçerli profileId zorunludur.');
     const allHandlers = this.handlersByEvent.get(event.eventType) ?? [];
     // R2-A4: profil kapsamlı işleyiciler yalnızca HEDEF PROFİL AKTİF DEĞİLKEN
     // görev üretir. Aktif profilin olayı canlı abonelikte zaten işlenir; ayrıca
     // görev üretmek gereksiz çift iş olurdu. Aktif olmayan profilin olayı ise
     // kalıcı kuyrukta bekler ve o profil aktif olunca telafi edilir.
-    const activeProfileId = this.profileContext?.getCurrent().profileId;
+    const activeProfileId = normalizeProfileId(this.profileContext?.getCurrent().profileId);
     const handlers = allHandlers.filter(
-      (handler) => !handler.profileScoped || activeProfileId !== event.profileId
+      (handler) => !handler.profileScoped || activeProfileId !== profileId
     );
     const result = this.repository.acceptEvent(
       {
         eventId: event.eventId,
         eventType: event.eventType,
-        profileId: event.profileId,
+        profileId,
         entityId: event.entityId ?? null,
         schemaVersion: event.schemaVersion,
         sourceRevision: event.sourceRevision,
@@ -230,6 +233,8 @@ export class BackgroundManager {
    * accepted the event. Add only the profile-scoped fallback tasks at that point.
    */
   ensureProfileScopedTasks(event: TypedAppEvent): number {
+    const profileId = normalizeProfileId(event.profileId);
+    if (!profileId) throw new Error('Background event için geçerli profileId zorunludur.');
     const handlers = (this.handlersByEvent.get(event.eventType) ?? []).filter(
       (handler) => handler.profileScoped
     );
@@ -239,7 +244,7 @@ export class BackgroundManager {
         this.repository.ensureTaskForEvent(
           event.eventId,
           handler.id,
-          event.profileId,
+          profileId,
           this.now()
         )
       ) {
@@ -333,7 +338,7 @@ export class BackgroundManager {
     // R2-A4 savunma katmanı: kiralama ile işleyici başlangıcı arasında profil
     // değişmişse hedef profile YAZILMAZ; görev deneme hakkı tüketmeden bekler ve
     // hedef profil yeniden aktif olduğunda çalışır.
-    if (handler.profileScoped && profileContext.getCurrent().profileId !== task.profileId) {
+    if (handler.profileScoped && normalizeProfileId(profileContext.getCurrent().profileId) !== normalizeProfileId(task.profileId)) {
       this.repository.deferTask(task.taskId, 'profile-inactive', this.now());
       return;
     }
@@ -389,16 +394,18 @@ export class BackgroundManager {
 
   private toTypedEvent(record: BackgroundEventRecord): TypedAppEvent {
     const eventType = record.eventType as keyof AppEventMap;
+    const profileId = normalizeProfileId(record.profileId);
+    if (!profileId) throw new Error('Kalıcı background event geçersiz profileId içeriyor.');
     return {
       eventId: record.eventId,
       eventType,
-      profileId: record.profileId,
+      profileId,
       ...(record.entityId ? { entityId: record.entityId } : {}),
       occurredAt: record.occurredAt,
       schemaVersion: record.schemaVersion,
       payload: record.payload as AppEventMap[keyof AppEventMap],
       sourceRevision: record.sourceRevision,
-      ref: { profileId: record.profileId, revision: record.sourceRevision },
+      ref: { profileId, revision: record.sourceRevision },
     };
   }
 }

@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import crypto from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
@@ -364,9 +365,8 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
 
   const snap = reqBody.profileSnapshot;
   const snapId =
-    typeof snap.id === 'string' && snap.id.trim()
-      ? snap.id.trim()
-      : storedDoc.activeProfileId;
+    normalizeProfileId(snap.id) ?? normalizeProfileId(storedDoc.activeProfileId) ?? '';
+  if (!snapId) return storedDoc;
 
   const snapItemsRaw = Array.isArray(snap.items) ? snap.items : [];
   const snapItems = dedupeItems(
@@ -376,7 +376,7 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   const snapFavActors = normalizeFavoriteActors(snap.favoriteActors || []);
   const snapDeletedKeys = normalizeDeletedKeys(snap.deleted_keys);
 
-  const existing = storedDoc.profiles.find((p) => p.id === snapId);
+  const existing = storedDoc.profiles.find((p) => normalizeProfileId(p.id) === snapId);
   if (!existing) {
     const serverHasData = storedDoc.profiles.some(
       (p) => (p.items?.length || 0) > 0 || (p.preferences?.disliked?.length || 0) > 0
@@ -451,7 +451,7 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   return {
     ...storedDoc,
     activeProfileId: snapId,
-    profiles: storedDoc.profiles.map((p) => (p.id === snapId ? mergedProfile : p)),
+    profiles: storedDoc.profiles.map((p) => (normalizeProfileId(p.id) === snapId ? mergedProfile : p)),
   };
 }
 
@@ -507,7 +507,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   });
   const profileContext = createProfileContext({
     // R2-A3 §12.3 mekanizma (a): açılış kimliği belge normalizasyonuyla hizalı
-    // (`PROFILE_ID_PATTERN` 'profile-default' kabul eder, 'default' kabul etmez).
+    // (kanonik profil kimliği `PROFILE-DEFAULT` olur; `default` geçersizdir).
     initialProfileId: 'profile-default',
     initialRevision: 0,
     eventPublisher: eventBus,
@@ -1716,8 +1716,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const rawProfileHeader = req.headers['x-cinetrack-profile-id'];
       const expectedProfileId =
         typeof rawProfileHeader === 'string' && rawProfileHeader.trim()
-          ? rawProfileHeader.trim()
+          ? normalizeProfileId(rawProfileHeader)
           : undefined;
+      if (typeof rawProfileHeader === 'string' && rawProfileHeader.trim() && !expectedProfileId) {
+        res.status(400).json({ ok: false, code: 'invalid_profile_id', message: 'Geçersiz profileId başlığı.' });
+        return;
+      }
       const strictProfileMatch =
         req.headers['x-cinetrack-strict-profile'] === '1' ||
         req.headers['x-cinetrack-strict-profile'] === 'true';
@@ -2349,7 +2353,11 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.get('/api/profiles/derived/:profileId', personalReadGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const profileId = String(req.params.profileId || '');
+      const profileId = normalizeProfileId(req.params.profileId);
+      if (!profileId) {
+        res.status(400).json({ ok: false, status_message: 'Geçersiz profil kimliği.' });
+        return;
+      }
       const expectedFp =
         typeof req.query.profileFingerprint === 'string' ? req.query.profileFingerprint : undefined;
       const expectedAlg =
@@ -2396,12 +2404,13 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     try {
       const { profileId, algorithmVersion, profileFingerprint, sourceCatalogHash, schemaVersion, items } =
         req.body || {};
-      if (!profileId || typeof profileId !== 'string') {
-        res.status(400).json({ ok: false, message: 'profileId zorunludur.' });
+      const canonicalProfileId = normalizeProfileId(profileId);
+      if (!canonicalProfileId) {
+        res.status(400).json({ ok: false, message: 'Geçerli profileId zorunludur.' });
         return;
       }
       const result = await persistentStore.upsertDerivedProfileSerialized({
-        profileId,
+        profileId: canonicalProfileId,
         algorithmVersion: algorithmVersion || '3.0.0',
         profileFingerprint: profileFingerprint || 'default',
         ...(sourceCatalogHash !== undefined ? { sourceCatalogHash: String(sourceCatalogHash) } : {}),
@@ -2512,9 +2521,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const exportDoc = resolveExportDocument(storedDoc, req.body);
 
       const profileId =
-        typeof req.body?.profileId === 'string' && req.body.profileId.trim()
-          ? req.body.profileId.trim()
-          : exportDoc.activeProfileId;
+        normalizeProfileId(req.body?.profileId) ?? normalizeProfileId(exportDoc.activeProfileId) ?? '';
       const includeJson = typeof req.body?.includeJson === 'boolean' ? req.body.includeJson : true;
       const includeXlsx = typeof req.body?.includeXlsx === 'boolean' ? req.body.includeXlsx : true;
       const uploadToGithub = Boolean(req.body?.uploadToGithub);
@@ -2569,9 +2576,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
       const profileId =
-        typeof req.body?.profileId === 'string' && req.body.profileId.trim()
-          ? req.body.profileId.trim()
-          : exportDoc.activeProfileId;
+        normalizeProfileId(req.body?.profileId) ?? normalizeProfileId(exportDoc.activeProfileId) ?? '';
       const dislikedItemsHint = Array.isArray(req.body?.dislikedItemsHint)
         ? req.body.dislikedItemsHint
         : undefined;
@@ -2645,10 +2650,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
       const profileId =
-        typeof req.body?.profileId === 'string' && req.body.profileId.trim()
-          ? req.body.profileId.trim()
-          : exportDoc.activeProfileId;
-      const profile = exportDoc.profiles.find((p) => p.id === profileId) || exportDoc.profiles[0];
+        normalizeProfileId(req.body?.profileId) ?? normalizeProfileId(exportDoc.activeProfileId) ?? '';
+      const profile = exportDoc.profiles.find((p) => normalizeProfileId(p.id) === profileId) || exportDoc.profiles[0];
       if (!profile) {
         res.status(404).json({ ok: false, status_message: 'Profil bulunamadı.' });
         return;
