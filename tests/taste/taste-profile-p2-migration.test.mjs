@@ -159,3 +159,57 @@ test("başka profilin p1 verisi yeni profile sızmaz", async () => {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("yarıda kalmış p1 → p2 kopyası sonraki erişimde güvenle tamamlanır", async () => {
+  const dataDir = await tempDir();
+  try {
+    const rawId = "profile-interrupted";
+    const oldDir = await writeV1Manifest(dataDir, rawId);
+    const profilesRoot = resolveTasteProfilesRoot(dataDir);
+    const oldRoot = path.join(profilesRoot, oldDir);
+    const newRoot = path.join(profilesRoot, encodeProfileIdSafe(rawId));
+    const payload = JSON.stringify([{
+      eventId: "interrupted-event",
+      contentId: "movie:551",
+      eventType: "rating_changed",
+    }]);
+    await fs.mkdir(oldRoot, { recursive: true });
+    await fs.writeFile(path.join(oldRoot, "cinetrack-taste-events.json"), payload);
+    // Süreç, hedefe rename yaptıktan fakat manifesti güncellemeden kapandı.
+    await fs.mkdir(newRoot, { recursive: true });
+    await fs.writeFile(path.join(newRoot, "cinetrack-taste-events.json"), payload);
+
+    const events = await readTasteEventsForProfile("PROFILE-INTERRUPTED", dataDir);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].eventId, "interrupted-event");
+    const manifest = JSON.parse(await fs.readFile(resolveTasteProfileIdMapPath(dataDir), "utf8"));
+    assert.equal(manifest.version, 2);
+    assert.equal(manifest.entries["PROFILE-INTERRUPTED"].dir, encodeProfileIdSafe(rawId));
+    await assert.rejects(fs.access(oldRoot));
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("aynı kanonik kimliğe çözülen birden fazla p1 dizini otomatik birleştirilmez", async () => {
+  const dataDir = await tempDir();
+  try {
+    const profilesRoot = resolveTasteProfilesRoot(dataDir);
+    const lowerDir = p1Dir("profile-duplicate");
+    const upperDir = p1Dir("PROFILE-DUPLICATE");
+    for (const [dir, marker] of [[lowerDir, "lower"], [upperDir, "upper"]]) {
+      const root = path.join(profilesRoot, dir);
+      await fs.mkdir(root, { recursive: true });
+      await fs.writeFile(path.join(root, "marker.json"), JSON.stringify({ marker }));
+    }
+    await assert.rejects(
+      () => ensureTasteProfileIdMapEntry("profile-duplicate", dataDir),
+      (error) => error.code === "profile_id_map_conflict"
+    );
+    await assert.rejects(fs.access(path.join(profilesRoot, encodeProfileIdSafe("profile-duplicate"))));
+    assert.equal(JSON.parse(await fs.readFile(path.join(profilesRoot, lowerDir, "marker.json"), "utf8")).marker, "lower");
+    assert.equal(JSON.parse(await fs.readFile(path.join(profilesRoot, upperDir, "marker.json"), "utf8")).marker, "upper");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
