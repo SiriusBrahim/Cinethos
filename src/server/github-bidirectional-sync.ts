@@ -4600,12 +4600,13 @@ export class GitHubBidirectionalSyncManager {
 
           const localProf = localBefore.derivedProfiles[repoPath];
           const remoteProf = remoteBeforeInspect.bundle.derivedProfiles[repoPath];
-          const profileId =
+          const profileId = normalizeProfileId(
             localProf?.profileId ||
             remoteProf?.profileId ||
-            path.posix.basename(repoPath, '.json');
+            path.posix.basename(repoPath, '.json')
+          ) || '';
           const matchingUserProfile = reconciledUserData?.profiles?.find(
-            (p) => p.id === profileId
+            (p) => normalizeProfileId(p.id) === profileId
           );
 
           const localFresh = localProf
