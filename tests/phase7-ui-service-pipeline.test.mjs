@@ -264,12 +264,12 @@ test('F7-6 sinema kimliği panelleri ve korumalı runtime tanılama hattı bağl
   assert.match(dashboard, /Yeniden Dene/);
 
   const server = read('src/server/app.ts');
-  assert.match(server, /app\\.get\\('\\/api\\/diagnostics\\/runtime',\\s*personalReadGuard/);
+  assert.ok(server.includes("app.get('/api/diagnostics/runtime', personalReadGuard"));
   const routeStart = server.indexOf("  // Teknik tanılama:");
   const routeEnd = server.indexOf("  app.get('/api/health'", routeStart);
   assert.ok(routeStart >= 0 && routeEnd > routeStart, 'tanılama rotası health rotasından önce tanımlanmalı');
   const route = server.slice(routeStart, routeEnd);
-  assert.match(route, /Cache-Control', 'no-store'/);
-  assert.match(route, /contentIntelligence\\.healthCheck\\(\\)/);
-  assert.match(route, /backgroundManager\\.healthCheck\\(\\)/);
+  assert.ok(route.includes("Cache-Control', 'no-store'"));
+  assert.ok(route.includes('contentIntelligence.healthCheck()'));
+  assert.ok(route.includes('backgroundManager.healthCheck()'));
 });
