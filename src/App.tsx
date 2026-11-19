@@ -45,7 +45,6 @@ import {
   normalizeDataDocument,
   resolveAirDate,
   reminderDaysUntil,
-  createRequestGate,
   parseBackupText,
   buildTasteProfileV3,
   scoreCandidatesV3,
@@ -120,6 +119,9 @@ import {
   hydrateTasteMapWithDerivedCache,
   mapRecommendationBatchToDisplayItems,
 } from './modules/recommendations/index.ts';
+import { createClientLibraryService } from './modules/library/client-service.ts';
+import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
+import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
@@ -163,8 +165,6 @@ import {
 import { getItemEncodingSync, maintainEncodingsDepot } from './services/encoding-service.ts';
 import { runIdbSchemaMigrationsOnce } from './services/idb-schema-version.ts';
 import { computeProfileCentroid, cosineSimilarity } from './core/encoding.ts';
-import { advanceTvEpisodeProgress } from './core/tv-progress.ts';
-import { mergeDuplicateSavedPair } from './core/duplicate-detector.ts';
 import {
   checkWeeklyAutoBackup,
   recordProfileChangeAndMaybeBackup,
@@ -328,34 +328,39 @@ export function App() {
   const [tab, setTab] = useState<'discover' | 'list' | 'taste-map' | 'relationships'>('discover');
   const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'graph' | 'identity'>('identity');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
-  const [category, setCategory] = useState<string>('trending');
-  const [forYouSubTab, setForYouSubTab] = useState<'recommendations' | 'series'>('recommendations');
+  const discoverState = useDiscoverState({
+    initialHideListedItems: () => {
+      try {
+        return localStorage.getItem(HIDE_LISTED_STORAGE_KEY) === '1';
+      } catch {
+        return false;
+      }
+    },
+  });
+  const {
+    category, setCategory,
+    forYouSubTab, setForYouSubTab,
+    selectedGenre, setSelectedGenre,
+    selectedType, setSelectedType,
+    selectedSort, setSelectedSort,
+    selectedProvider, setSelectedProvider,
+    hideListedItems, setHideListedItems,
+    genresMap, setGenresMap,
+    catalogItems, setCatalogItems,
+    trendingTop, setTrendingTop,
+    catalogPage, setCatalogPage,
+    catalogTotalPages, setCatalogTotalPages,
+    isLoading, setIsLoading,
+    loadingMore, setLoadingMore,
+    forYouItems, setForYouItems,
+    forYouReasons, setForYouReasons,
+    forYouExplanation, setForYouExplanation,
+    forYouProgressStep, setForYouProgressStep,
+    requestGateRef,
+  } = discoverState;
   const [seriesIndexVersion, setSeriesIndexVersion] = useState<number>(0);
   const [listStatus, setListStatus] = useState<string>('all');
   const [query, setQuery] = useState<string>('');
-  const [selectedGenre, setSelectedGenre] = useState<string>('');
-  const [selectedType, setSelectedType] = useState<string>('all');
-  const [selectedSort, setSelectedSort] = useState<string>('popular');
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
-  const [hideListedItems, setHideListedItems] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(HIDE_LISTED_STORAGE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [genresMap, setGenresMap] = useState<Record<number, string>>({});
-
-  const [catalogItems, setCatalogItems] = useState<any[]>([]);
-  const [trendingTop, setTrendingTop] = useState<any | null>(null);
-  const [catalogPage, setCatalogPage] = useState<number>(1);
-  const [catalogTotalPages, setCatalogTotalPages] = useState<number>(1);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const [forYouItems, setForYouItems] = useState<any[]>([]);
-  const [forYouReasons, setForYouReasons] = useState<Map<string, string>>(new Map());
-  const [forYouExplanation, setForYouExplanation] = useState<string>('');
-  const [forYouProgressStep, setForYouProgressStep] = useState<string>('');
   const [serverConflict, setServerConflict] = useState<ServerConflictDetail | null>(null);
   const [serverSyncReady, setServerSyncReady] = useState(false);
   const [tmdbSourceMeta, setTmdbSourceMeta] = useState<TmdbSourceMeta>({
@@ -375,7 +380,6 @@ export function App() {
   const [pendingBackup, setPendingBackup] = useState<any | null>(null);
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
-  const requestGateRef = useRef(createRequestGate());
   const toastTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const lastForYouQueryKeyRef = useRef<string>('');
   const confirmNextBulkSyncRef = useRef<boolean>(false);
@@ -500,7 +504,7 @@ export function App() {
       );
       return filtered.length === prev.length ? prev : filtered;
     });
-  }, [savedItems, preferences, tab, category]);
+  }, [savedItems, preferences, tab, category, setCatalogItems]);
 
   // IMP-17 (IDB Schema Migration) + IMP-16 (Weekly Auto-Backup Check) + IMP-11 (Idle Stock Enrichment)
   useEffect(() => {
@@ -549,7 +553,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [activeProfileId]);
+  }, [activeProfileId, setForYouSubTab, setHideListedItems, setSelectedGenre, setSelectedSort, setSelectedType]);
 
   useEffect(() => {
     if (uiPrefsHydratedProfileRef.current !== activeProfileId) return;
@@ -1244,7 +1248,7 @@ export function App() {
     return () => {
       unsubSource();
     };
-  }, [mergeRemoteDocumentIntoState, resolveQueuedConflict]);
+  }, [mergeRemoteDocumentIntoState, resolveQueuedConflict, setGenresMap]);
 
   // Release Reminders check (ref-backed with single batched state update — BUG-13.3)
   const checkReleaseReminders = useCallback(() => {
@@ -2531,7 +2535,7 @@ export function App() {
         }
       }
     },
-    [query, selectedProvider, showToast]
+    [query, selectedProvider, showToast, requestGateRef, setCatalogItems, setCatalogPage, setCatalogTotalPages, setForYouExplanation, setForYouItems, setForYouProgressStep, setForYouReasons, setIsLoading, setLoadingMore, setTrendingTop]
   );
 
   const handleRefreshForYou = useCallback(() => {
@@ -2579,12 +2583,12 @@ export function App() {
   const handleSelectType = useCallback((newType: string) => {
     setSelectedType(newType);
     selectedTypeRef.current = newType;
-  }, []);
+  }, [setSelectedType]);
 
   const handleSelectGenre = useCallback((newGenre: string) => {
     setSelectedGenre(newGenre);
     selectedGenreRef.current = newGenre;
-  }, []);
+  }, [setSelectedGenre]);
 
   useEffect(() => {
     if (tab === 'taste-map') {
@@ -2798,9 +2802,30 @@ export function App() {
     }
   };
 
+  // MIA Faz 7 — TEK veri hattı: bütün kütüphane yazımları bu servis örneğinden
+  // geçer. Mobil alt gezinme, masaüstü sekmeleri, kartlar, modallar ve
+  // çekmece aynı örneği kullanır; ikinci bir yazma yolu yoktur.
+  const libraryService = createClientLibraryService({
+    getSavedItems: () => savedItemsRef.current,
+    applySavedItem: commitSavedItem,
+    applySavedItems: (next) => {
+      savedItemsRef.current = next;
+      setSavedItems(next);
+    },
+    applyTombstone: (mediaKey, deletedAtIso) => {
+      const nextDeleted = normalizeDeletedKeys({
+        ...deletedKeysRef.current,
+        [mediaKey]: deletedAtIso,
+      });
+      deletedKeysRef.current = nextDeleted;
+      setDeletedKeys(nextDeleted);
+    },
+  });
+
   const { saveItem, setItemStatus, markCompleted, dislikeItem, hideItem } = useItemActions({
     getSavedItems: () => savedItemsRef.current,
     onCommitSavedItem: commitSavedItem,
+    service: libraryService,
   });
 
   const handleSaveItem = (
@@ -2860,23 +2885,12 @@ export function App() {
   };
 
   const handleIncrementTvEpisode = (targetItem: SavedItem) => {
-    const nowIso = new Date().toISOString();
-    const progressedItem = advanceTvEpisodeProgress(targetItem, nowIso);
-    const transitionedToCompleted =
-      targetItem.status !== 'completed' && progressedItem.status === 'completed';
-    const updatedItem: SavedItem = transitionedToCompleted
-      ? { ...progressedItem, completedAt: nowIso }
-      : progressedItem;
-    setSavedItems((prev) => {
-      const next = prev.map((entry) =>
-        makeMediaKey(entry) === makeMediaKey(targetItem) ? updatedItem : entry
-      );
-      savedItemsRef.current = next;
-      return next;
-    });
+    const result = libraryService.advanceEpisode(targetItem);
+    if (!result) return;
+    const updatedItem = result.item;
     void recordProfileChangeAndMaybeBackup();
     const seriesTitle = displayTitle(updatedItem);
-    if (transitionedToCompleted) {
+    if (result.transitionedToCompleted) {
       showToast(`✓ "${seriesTitle}" tüm bölümler izlendi olarak tamamlandı!`);
     } else {
       showToast(
@@ -2892,54 +2906,16 @@ export function App() {
     dropId: SavedItem['id'],
     mediaType: 'movie' | 'tv'
   ) => {
-    const { mergedItems, mergedItem, removedKey } = mergeDuplicateSavedPair(
-      savedItemsRef.current,
-      keepId,
-      dropId,
-      mediaType
-    );
-    if (!mergedItem) return;
-
-    const dropKey = removedKey || makeMediaKey(mediaType, dropId);
-
-    setDeletedKeys((prev) => {
-      const nextDeleted = normalizeDeletedKeys({ ...prev, [dropKey]: new Date().toISOString() });
-      deletedKeysRef.current = nextDeleted;
-      return nextDeleted;
-    });
-
-    setSavedItems(() => {
-      savedItemsRef.current = mergedItems;
-      return mergedItems;
-    });
+    const result = libraryService.mergeDuplicates(keepId, dropId, mediaType);
+    if (!result) return;
 
     void recordProfileChangeAndMaybeBackup();
-    showToast(`✓ "${displayTitle(mergedItem)}" çift kaydı başarıyla birleştirildi.`);
+    showToast(`✓ "${displayTitle(result.mergedItem)}" çift kaydı başarıyla birleştirildi.`);
   };
 
   const handleRemoveItem = (item: any) => {
     const itemKey = makeMediaKey(item);
-    const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
-    const targetTitle = (item.title || item.name || '').trim().toLowerCase();
-    if (itemKey.startsWith('movie:') || itemKey.startsWith('tv:')) {
-      const deletedAtIso = new Date().toISOString();
-      setDeletedKeys((prev) => {
-        const nextDeleted = normalizeDeletedKeys({ ...prev, [itemKey]: deletedAtIso });
-        deletedKeysRef.current = nextDeleted;
-        return nextDeleted;
-      });
-    }
-    setSavedItems((prev) => {
-      const next = prev.filter(
-        (entry) =>
-          makeMediaKey(entry) !== itemKey &&
-          (!targetTitle ||
-            entry.media_type !== mediaType ||
-            (entry.title || '').trim().toLowerCase() !== targetTitle)
-      );
-      savedItemsRef.current = next;
-      return next;
-    });
+    libraryService.removeItem(item);
 
     try {
       const currentTasteMap = loadPersistentTasteMap(activeProfileIdRef.current);
@@ -4034,53 +4010,8 @@ export function App() {
         </div>
       </footer>
 
-      {/* Mobil 56px sticky alt tab bar (v6 spec Section 2.2 / 5) */}
-      <nav className="mobile-tab-bar" aria-label="Mobil Gezinme">
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'discover' ? 'active' : ''}`}
-          onClick={() => setTab('discover')}
-          aria-label="Keşfet"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-film" /></svg>
-          <span className="mobile-tab-label">Keşfet</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'list' ? 'active' : ''}`}
-          onClick={() => setTab('list')}
-          aria-label="Listem"
-        >
-          <span className="mobile-tab-icon-wrap">
-            <svg className="icon" aria-hidden="true"><use href="#icon-bookmark" /></svg>
-            {allListCount > 0 && (
-              <span className="mobile-tab-badge">{allListCount > 99 ? '99+' : allListCount}</span>
-            )}
-          </span>
-          <span className="mobile-tab-label">Listem</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'taste-map' ? 'active' : ''}`}
-          onClick={() => setTab('taste-map')}
-          aria-label="Zevkim"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-dna" /></svg>
-          <span className="mobile-tab-label">Zevkim</span>
-        </button>
-
-        <button
-          type="button"
-          className={`mobile-tab-btn ${tab === 'relationships' ? 'active' : ''}`}
-          onClick={() => setTab('relationships')}
-          aria-label="İlişkiler"
-        >
-          <svg className="icon" aria-hidden="true"><use href="#icon-network" /></svg>
-          <span className="mobile-tab-label">İlişkiler</span>
-        </button>
-      </nav>
+      {/* Mobil 56px sticky alt tab bar — kayıt defterinden türetilir (Faz 7) */}
+      <MobileBottomNav tab={tab} myListCount={allListCount} onSelectTab={setTab} />
 
       {/* Modals & Drawers */}
       <DetailModal

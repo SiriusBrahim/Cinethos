@@ -283,7 +283,7 @@ function computeVoteAverageBaseline(
 function computeCurrentMethodBaseline(
   _testEvents: TasteEvent[]
 ): number | null {
-  // V1'de placeholder: mevcut recommendation-orchestrator çağrılır
+  // V1'de placeholder: mevcut recommendations yöneticisi çağrılır
   return null;
 }
 

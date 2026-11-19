@@ -11,6 +11,8 @@
  * - `RankingManager`           — oyuncu kaynaklı öneri sıralaması
  */
 
+export { createRecommendationService, RecommendationService, type RecommendationServiceOptions, type RecommendationSnapshot } from './RecommendationService.ts';
+
 export {
   buildDerivedProfilePayloadFromTasteMap,
   createRecommendationEngine,
@@ -52,10 +54,15 @@ import { createCandidatePoolManager } from './CandidatePoolManager.ts';
 import { createExplanationManager } from './ExplanationManager.ts';
 import { createEvaluationManager } from './EvaluationManager.ts';
 import { createRankingManager } from './RankingManager.ts';
+import type { IRecommendationService } from '../../contracts/services.ts';
 
 /** Yönetici kimliği — modül sağlık raporlarında kullanılır. */
 export const RECOMMENDATION_MANAGER_ID = 'recommendations';
 export const RECOMMENDATION_MANAGER_VERSION = '1.0.0';
+
+export interface RecommendationManagerOptions {
+  readonly service?: IRecommendationService;
+}
 
 export interface RecommendationManager {
   readonly id: typeof RECOMMENDATION_MANAGER_ID;
@@ -65,13 +72,14 @@ export interface RecommendationManager {
   readonly explanations: ReturnType<typeof createExplanationManager>;
   readonly evaluation: ReturnType<typeof createEvaluationManager>;
   readonly ranking: ReturnType<typeof createRankingManager>;
+  readonly service?: IRecommendationService;
 }
 
 /**
  * Bağımsız Öneri Yöneticisi. Saf işlevlerden oluşur; kullanıcı hafızasına
  * yazmaz, profil verisini değiştirmez.
  */
-export function createRecommendationManager(): RecommendationManager {
+export function createRecommendationManager(options: RecommendationManagerOptions = {}): RecommendationManager {
   return {
     id: RECOMMENDATION_MANAGER_ID,
     version: RECOMMENDATION_MANAGER_VERSION,
@@ -80,5 +88,6 @@ export function createRecommendationManager(): RecommendationManager {
     explanations: createExplanationManager(),
     evaluation: createEvaluationManager(),
     ranking: createRankingManager(),
+    ...(options.service ? { service: options.service } : {}),
   };
 }
