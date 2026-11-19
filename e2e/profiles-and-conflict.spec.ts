@@ -40,7 +40,7 @@ test.describe('Profil ve çakışma senaryoları', () => {
 
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('cinetrack.activeProfile.v1')))
-      .toBe(PROFILE_B);
+      .toBe(PROFILE_B.toUpperCase());
 
     await page.getByRole('tab', { name: 'Listem' }).click();
     await expect(page.getByText('E2E Beta Filmi').first()).toBeVisible();
