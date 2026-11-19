@@ -187,6 +187,21 @@ export async function mockApi(page: Page, options: ApiMockOptions = {}): Promise
       return json(route, { version: 1, revision: 0, entries: [] });
     }
 
+    if (path === '/api/taste/overview') {
+      return json(route, {
+        unified: { metrics: {} },
+        movie: { metrics: {} },
+        series: { metrics: {} },
+        analyzedContentCount: 0,
+        movieAnalyzedCount: 0,
+        seriesAnalyzedCount: 0,
+        eventsCount: 0,
+        confidenceLevel: 'low',
+        monthlySnapshots: [],
+        drifts: [],
+      });
+    }
+
     if (path === '/api/data/backups') {
       return json(route, { backups: [] });
     }

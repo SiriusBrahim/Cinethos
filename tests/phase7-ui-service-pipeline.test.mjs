@@ -253,3 +253,27 @@ test('F7-5 useItemActions kendi kural/olay kopyasını taşımaz', () => {
     'hat paralel EventBus/SQLite kurmamalı'
   );
 });
+
+test('F7-6 sinema kimliği panelleri ve korumalı runtime tanılama hattı bağlanır', () => {
+  const dashboard = read('src/components/taste/TasteProfileDashboard.tsx');
+  assert.match(dashboard, /fetchTasteOverview/);
+  assert.match(dashboard, /<TasteComparePanel/);
+  assert.match(dashboard, /<TasteEvolutionPanel/);
+  assert.match(dashboard, /overviewStatus === "error"/);
+  assert.match(dashboard, /Yeniden Dene/);
+  const evolution = read('src/components/taste/TasteEvolutionPanel.tsx');
+  assert.ok(evolution.includes('snapshots = []'));
+  assert.ok(evolution.includes('drifts = []'));
+  const e2eFixtures = read('e2e/fixtures.ts');
+  assert.ok(e2eFixtures.includes("path === '/api/taste/overview'"));
+
+  const server = read('src/server/app.ts');
+  assert.ok(server.includes("app.get('/api/diagnostics/runtime', personalReadGuard"));
+  const routeStart = server.indexOf("  // Teknik tanılama:");
+  const routeEnd = server.indexOf("  app.get('/api/health'", routeStart);
+  assert.ok(routeStart >= 0 && routeEnd > routeStart, 'tanılama rotası health rotasından önce tanımlanmalı');
+  const route = server.slice(routeStart, routeEnd);
+  assert.ok(route.includes("Cache-Control', 'no-store'"));
+  assert.ok(route.includes('contentIntelligence.healthCheck()'));
+  assert.ok(route.includes('backgroundManager.healthCheck()'));
+});

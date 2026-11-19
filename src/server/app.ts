@@ -872,6 +872,32 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     next(err);
   });
 
+  // Teknik tanılama: kullanıcı arayüzüne açılmayan, token korumalı çalışma zamanı durumu.
+  app.get('/api/diagnostics/runtime', personalReadGuard, async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const [contentHealth, backgroundHealth] = await Promise.all([
+        contentIntelligence.healthCheck(),
+        backgroundManager.healthCheck(),
+      ]);
+      res.json({
+        ok: true,
+        checkedAt: new Date().toISOString(),
+        contentIntelligence: contentIntelligence.getStatus(),
+        backgroundManager: backgroundManager.getStatus(),
+        health: {
+          contentIntelligence: contentHealth,
+          backgroundManager: backgroundHealth,
+        },
+      });
+    } catch (err) {
+      res.status(503).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Runtime tanılama durumu okunamadı.',
+      });
+    }
+  });
+
   app.get('/api/health', async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     const [posterCache, repoHealth, moduleHealth] = await Promise.all([
