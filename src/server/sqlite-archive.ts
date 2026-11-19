@@ -14,7 +14,8 @@ import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { DataDocument, Profile } from '../core/cinetrack-core.ts';
+import { normalizeDataDocument, type DataDocument, type Profile } from '../core/cinetrack-core.ts';
+import { normalizeProfileId } from '../core/profile-id.ts';
 
 export const SQLITE_ARCHIVE_SCHEMA_VERSION = 1;
 export const SQLITE_ARCHIVE_EXTENSION = 'sqlite';
@@ -316,6 +317,33 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   }
 }
 
+function normalizeArchiveTasteMaps(
+  rawMaps: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  for (const [rawId, rawPayload] of Object.entries(rawMaps || {})) {
+    const profileId = normalizeProfileId(rawId);
+    if (!profileId) {
+      throw new SqliteArchiveValidationError('Zevk haritasında geçersiz profil kimliği var');
+    }
+    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+      throw new SqliteArchiveValidationError(`Zevk haritası verisi geçersiz: ${profileId}`);
+    }
+    const payload = rawPayload as Record<string, unknown>;
+    const payloadProfileId = payload.profileId === undefined
+      ? profileId
+      : normalizeProfileId(payload.profileId);
+    if (!payloadProfileId || payloadProfileId !== profileId) {
+      throw new SqliteArchiveValidationError(`Zevk haritası profil kimliği uyuşmuyor: ${profileId}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(normalized, profileId)) {
+      throw new SqliteArchiveValidationError(`Aynı kanonik profile ait birden fazla zevk haritası var: ${profileId}`);
+    }
+    normalized[profileId] = { ...payload, profileId };
+  }
+  return normalized;
+}
+
 /**
  * Anlık görüntüyü atomik olarak `.sqlite` dosyasına yazar (tmp + fsync + rename).
  */
@@ -329,6 +357,11 @@ export async function writeSqliteArchive(
   } = {}
 ): Promise<SqliteArchiveWriteResult> {
   assertSnapshot(snapshot);
+  const normalizedDocument = normalizeDataDocument(snapshot.dataDocument);
+  if (!normalizedDocument) {
+    throw new SqliteArchiveValidationError('Arşiv profil belgesi normalize edilemedi');
+  }
+  const normalizedTasteMaps = normalizeArchiveTasteMaps(snapshot.tasteMaps);
   const sqlite = await loadSqlite();
 
   const createdAt = snapshot.createdAt || new Date().toISOString();
@@ -381,14 +414,14 @@ export async function writeSqliteArchive(
       insertMeta.run('schema_version', String(SQLITE_ARCHIVE_SCHEMA_VERSION));
       insertMeta.run('created_at', createdAt);
       insertMeta.run('app_version', snapshot.appVersion || '');
-      insertMeta.run('document_version', String(snapshot.dataDocument.version ?? ''));
-      insertMeta.run('document_schema_version', String(snapshot.dataDocument.schemaVersion ?? ''));
-      insertMeta.run('document_engine_version', String(snapshot.dataDocument.engineVersion ?? ''));
-      insertMeta.run('document_revision', String(snapshot.dataDocument.revision ?? 0));
-      insertMeta.run('document_updated_at', String(snapshot.dataDocument.updatedAt ?? ''));
-      insertMeta.run('active_profile_id', String(snapshot.dataDocument.activeProfileId ?? ''));
+      insertMeta.run('document_version', String(normalizedDocument.version ?? ''));
+      insertMeta.run('document_schema_version', String(normalizedDocument.schemaVersion ?? ''));
+      insertMeta.run('document_engine_version', String(normalizedDocument.engineVersion ?? ''));
+      insertMeta.run('document_revision', String(normalizedDocument.revision ?? 0));
+      insertMeta.run('document_updated_at', String(normalizedDocument.updatedAt ?? ''));
+      insertMeta.run('active_profile_id', String(normalizedDocument.activeProfileId ?? ''));
 
-      snapshot.dataDocument.profiles.forEach((profile: Profile, profileIndex: number) => {
+      normalizedDocument.profiles.forEach((profile: Profile, profileIndex: number) => {
         insertProfile.run(
           profile.id,
           profile.name,
@@ -416,7 +449,7 @@ export async function writeSqliteArchive(
         });
       });
 
-      for (const [profileId, payload] of Object.entries(snapshot.tasteMaps || {})) {
+      for (const [profileId, payload] of Object.entries(normalizedTasteMaps)) {
         if (!profileId) continue;
         insertTasteMap.run(profileId, serialize(payload));
         tasteMaps++;
@@ -446,7 +479,7 @@ export async function writeSqliteArchive(
         );
       }
 
-      insertMeta.run('profile_count', String(snapshot.dataDocument.profiles.length));
+      insertMeta.run('profile_count', String(normalizedDocument.profiles.length));
       insertMeta.run('item_count', String(items));
       insertMeta.run('poster_count', String(posters.length));
       db.exec('COMMIT');
@@ -471,7 +504,7 @@ export async function writeSqliteArchive(
   return {
     filePath,
     byteLength: stat.size,
-    profiles: snapshot.dataDocument.profiles.length,
+    profiles: normalizedDocument.profiles.length,
     items,
     tasteMaps,
     stockMovies,
@@ -537,16 +570,17 @@ export async function readSqliteArchive(filePath: string): Promise<SqliteArchive
       .all();
     const itemsByProfile = new Map<string, unknown[]>();
     for (const row of itemRows) {
-      const profileId = String(row.profile_id);
+      const profileId = normalizeProfileId(String(row.profile_id));
       const payload = parseJson<Record<string, unknown> | null>(row.payload_json, null);
-      if (!payload) continue;
+      if (!profileId || !payload) continue;
       const bucket = itemsByProfile.get(profileId) || [];
       bucket.push(payload);
       itemsByProfile.set(profileId, bucket);
     }
 
     const profiles: Profile[] = profileRows.map((row) => {
-      const id = String(row.id);
+      const id = normalizeProfileId(String(row.id));
+      if (!id) throw new SqliteArchiveValidationError('Arşivde geçersiz profil kimliği bulundu');
       const deletedKeys = parseJson<Record<string, string>>(row.deleted_keys_json, {});
       return {
         id,
@@ -560,7 +594,7 @@ export async function readSqliteArchive(filePath: string): Promise<SqliteArchive
       } as unknown as Profile;
     });
 
-    const activeProfileId = meta.get('active_profile_id') || profiles[0].id;
+    const activeProfileId = normalizeProfileId(meta.get('active_profile_id')) || profiles[0].id;
     const dataDocument: DataDocument = {
       version: Number(meta.get('document_version') || 3),
       schemaVersion: Number(meta.get('document_schema_version') || 3),
@@ -573,8 +607,19 @@ export async function readSqliteArchive(filePath: string): Promise<SqliteArchive
 
     const tasteMaps: Record<string, unknown> = {};
     for (const row of db.prepare('SELECT profile_id, payload_json FROM taste_maps').all()) {
-      const parsed = parseJson<unknown>(row.payload_json, null);
-      if (parsed) tasteMaps[String(row.profile_id)] = parsed;
+      const profileId = normalizeProfileId(String(row.profile_id));
+      const parsed = parseJson<Record<string, unknown> | null>(row.payload_json, null);
+      if (!profileId || !parsed) continue;
+      const payloadProfileId = parsed.profileId === undefined
+        ? profileId
+        : normalizeProfileId(parsed.profileId);
+      if (!payloadProfileId || payloadProfileId !== profileId) {
+        throw new SqliteArchiveValidationError(`Arşiv zevk haritası profil kimliği uyuşmuyor: ${profileId}`);
+      }
+      if (Object.prototype.hasOwnProperty.call(tasteMaps, profileId)) {
+        throw new SqliteArchiveValidationError(`Arşivde yinelenen kanonik zevk haritası var: ${profileId}`);
+      }
+      tasteMaps[profileId] = { ...parsed, profileId };
     }
 
     const stock: ArchiveStockSnapshot = { movies: [], tv: [] };
@@ -688,11 +733,8 @@ function assertSnapshot(snapshot: ArchiveSnapshot): void {
     throw new SqliteArchiveValidationError('Arşiv için en az bir profil gerekir');
   }
   for (const profile of doc.profiles) {
-    if (!profile || typeof profile.id !== 'string' || !profile.id) {
-      throw new SqliteArchiveValidationError('Profil kimliği eksik');
-    }
-    if (profile.id.includes('/') || profile.id.includes('..')) {
-      throw new SqliteArchiveValidationError('Geçersiz profil kimliği');
+    if (!profile || !normalizeProfileId(profile.id)) {
+      throw new SqliteArchiveValidationError('Geçersiz veya eksik profil kimliği');
     }
   }
 }
