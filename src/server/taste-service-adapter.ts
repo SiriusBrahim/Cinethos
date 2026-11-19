@@ -41,6 +41,8 @@ export interface TasteServiceAdapterOptions {
   profileContext?: IProfileContext;
   /** İsteğe bağlı olay sonrası rebuild tetiklemesi (varsayılan true). */
   rebuildOnEvent?: boolean;
+  /** Rebuild portu; varsayılan üretim coordinator'ı, testlerde kontrollü hata enjeksiyonu için. */
+  rebuildProfile?: (profileId: string, dataDir: string) => Promise<unknown>;
 }
 
 function mapListToTasteStatus(list: LibraryListId | null): string {
@@ -159,12 +161,14 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
   private readonly dataDir: string;
   private readonly profileContext?: IProfileContext;
   private readonly rebuildOnEvent: boolean;
+  private readonly rebuildProfile: (profileId: string, dataDir: string) => Promise<unknown>;
   private readonly processedEventIds = new Set<string>();
 
   constructor(options: TasteServiceAdapterOptions = {}) {
     this.dataDir = options.dataDir ?? 'data';
     this.profileContext = options.profileContext;
     this.rebuildOnEvent = options.rebuildOnEvent ?? true;
+    this.rebuildProfile = options.rebuildProfile ?? triggerTasteProfileRebuild;
   }
 
   async getProfile(ref: ProfileRef): Promise<TasteProfileSummaryView | null> {
@@ -201,7 +205,7 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
       }
 
       const profileId = validateCanonicalProfileId(ref.profileId);
-      await triggerTasteProfileRebuild(profileId, this.dataDir);
+      await this.rebuildProfile(profileId, this.dataDir);
 
       // Uzun süren worker hesabından sonra profil değişmişse uyarı sinyali üret.
       if (this.profileContext) {
@@ -269,7 +273,7 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
       this.processedEventIds.add(memoryKey);
 
       if (added && this.rebuildOnEvent) {
-        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
+        await this.rebuildProfile(targetProfileId, this.dataDir);
       }
 
       return { ok: true };
@@ -317,7 +321,7 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
       // Telafi görevinin varlık nedeni eksik/başarısız türetilmiş profildir;
       // event zaten kayıtlı olsa bile rebuild her retry'de yeniden denenir.
       if (this.rebuildOnEvent) {
-        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
+        await this.rebuildProfile(targetProfileId, this.dataDir);
       }
 
       return { ok: true };
