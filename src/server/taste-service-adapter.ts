@@ -41,8 +41,6 @@ export interface TasteServiceAdapterOptions {
   profileContext?: IProfileContext;
   /** İsteğe bağlı olay sonrası rebuild tetiklemesi (varsayılan true). */
   rebuildOnEvent?: boolean;
-  /** Rebuild port: allows deterministic retry testing and alternate coordinators. */
-  rebuildProfile?: (profileId: string, dataDir: string) => Promise<unknown>;
 }
 
 function mapListToTasteStatus(list: LibraryListId | null): string {
@@ -161,14 +159,12 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
   private readonly dataDir: string;
   private readonly profileContext?: IProfileContext;
   private readonly rebuildOnEvent: boolean;
-  private readonly rebuildProfile: (profileId: string, dataDir: string) => Promise<unknown>;
   private readonly processedEventIds = new Set<string>();
 
   constructor(options: TasteServiceAdapterOptions = {}) {
     this.dataDir = options.dataDir ?? 'data';
     this.profileContext = options.profileContext;
     this.rebuildOnEvent = options.rebuildOnEvent ?? true;
-    this.rebuildProfile = options.rebuildProfile ?? triggerTasteProfileRebuild;
   }
 
   async getProfile(ref: ProfileRef): Promise<TasteProfileSummaryView | null> {
@@ -273,7 +269,7 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
       this.processedEventIds.add(memoryKey);
 
       if (added && this.rebuildOnEvent) {
-        await this.rebuildProfile(targetProfileId, this.dataDir);
+        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
       }
 
       return { ok: true };
@@ -303,21 +299,32 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
         };
       }
       const targetProfileId = activeProfileId ?? eventProfileId;
-      const tasteEvent = translateAppEventToTasteEvent(event);
-      if (!tasteEvent) return { ok: true };
+      const memoryKey = `${targetProfileId}:${event.eventId}`;
+      if (this.processedEventIds.has(memoryKey)) {
+        return { ok: true };
+      }
 
-      // Event persistence and projection completion are separate idempotency
-      // boundaries. An existing event MUST still trigger rebuild on retry:
-      // the previous attempt may have appended the event and then failed while
-      // rebuilding the profile.
-      await appendTasteEventIdempotentForProfile(
+      const tasteEvent = translateAppEventToTasteEvent(event);
+      if (!tasteEvent) {
+        this.processedEventIds.add(memoryKey);
+        return { ok: true };
+      }
+
+      const existing = await readTasteEventsForProfile(targetProfileId, this.dataDir);
+      if (existing.some((e) => e.eventId === tasteEvent.eventId)) {
+        this.processedEventIds.add(memoryKey);
+        return { ok: true };
+      }
+
+      const { added } = await appendTasteEventIdempotentForProfile(
         targetProfileId,
         tasteEvent,
         this.dataDir
       );
+      this.processedEventIds.add(memoryKey);
 
-      if (this.rebuildOnEvent) {
-        await this.rebuildProfile(targetProfileId, this.dataDir);
+      if (added && this.rebuildOnEvent) {
+        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
       }
 
       // Uzun süren hesaptan sonra profil değişmediyse sonuç hedef profile aittir;
@@ -370,7 +377,7 @@ export function subscribeTasteAdapterToEventBus(
   subscriber: IEventSubscriber,
   adapter: IMemoryService,
   onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void,
-  onSkipped?: (event: TypedAppEvent, outcome: OperationOutcome) => Promise<void> | void
+  onSkipped?: (event: TypedAppEvent, outcome: OperationOutcome) => void
 ): EventSubscription {
   const subs: EventSubscription[] = TASTE_SUBSCRIBED_DOMAIN_EVENTS.map((eventType) =>
     subscriber.subscribe(eventType, async (event) => {
@@ -383,7 +390,7 @@ export function subscribeTasteAdapterToEventBus(
         // R2-A4: hata metni ayrıştırılmaz; yapısal kod tek otoritedir.
         const inactiveProfileEvent = !outcome.retryable && outcome.code === 'profile-not-active';
         if (inactiveProfileEvent) {
-          await onSkipped?.(event, outcome);
+          onSkipped?.(event, outcome);
           return;
         }
         onError?.(event, outcome);

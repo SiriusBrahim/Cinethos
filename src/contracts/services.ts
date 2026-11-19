@@ -261,6 +261,17 @@ export interface IMemoryService {
    * oluşmaz (kullanıcı planı §3 güvenlik kuralları).
    */
   processEvent(event: TypedAppEvent): Promise<OperationOutcome>;
+
+  /**
+   * KAÇIRILMIŞ (ertelenmiş) olayın telafisi — MIA Faz 5 R2-A4.
+   *
+   * Canlı abonelik sırasında aktif olmayan profile ait olduğu için
+   * yazılmamış olay, kalıcı arka plan kuyruğundan hedef profil aktif olduğunda
+   * bu yöntemle işlenir. `processEvent`'ten farkı: olayın `sourceRevision`
+   * değeri geçmişte kalmış olabilir; bu yüzden yalnızca PROFİL KİMLİĞİ
+   * doğrulanır, revision eşitliği aranmaz. Yazma idempotenttir (eventId).
+   */
+  processDeferredEvent?(event: TypedAppEvent): Promise<OperationOutcome>;
 }
 
 /* ------------------------------------------------------------------ */

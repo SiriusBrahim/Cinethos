@@ -135,7 +135,7 @@ Faz 4, domain olaylarını kalıcı hale getirir ve yalnızca kayıtlı işleyic
 3. `background_events.event_id` PK'dır; `background_tasks` üzerinde `UNIQUE(event_id, handler_id)` vardır → aynı olay/işleyici ikinci kez işlenmez.
 4. Görev `claimNextTask` ile kiralanır (`processing`, `attempts+1`, `lease_until`); hata diğer görevleri durdurmaz.
 5. Geçici hata → `retry_wait` + `next_retry_at` + `last_error`; kalıcı hata veya deneme tükenmesi → `failed`; manuel iptal → `cancelled`.
-6. Profil izolasyonu: görev `profile_id` taşır; işleyici aktif profili doğrular. Profil değiştiyse hiçbir yazma yapılmaz, görev yeniden planlanır veya deneme tükenince `failed` olur.
+6. Profil izolasyonu: görev `profile_id` taşır; pompa yalnızca **aktif profile** ait görevleri kiralar, diğerleri `pending` bekler (deneme tüketilmez) ve profil değişiminde uyanır. İşleyici yine aktif profili doğrular; yazma hiçbir zaman başka profile yapılmaz. Aktif olmayan profile ait taste olayları `intelligence.taste-event-sync` ile hedef profil aktif olduğunda telafi edilir.
 7. Çökme kurtarması: açılışta lease'i dolmuş `processing` görevleri `pending` (deneme tükendiyse `failed`) durumuna alınır; `pending`/zamanı gelmiş `retry_wait` görevleri devam eder.
 
 ### 6.3 Veri sınırları

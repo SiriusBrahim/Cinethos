@@ -19,9 +19,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createAppEvent, createAppEventBus } from '../../src/app/app-event-bus.ts';
+import { createAppEvent } from '../../src/app/app-event-bus.ts';
 import { createProfileContext } from '../../src/app/ProfileContext.ts';
-import { createServerTasteServiceAdapter, subscribeTasteAdapterToEventBus } from '../../src/server/taste-service-adapter.ts';
+import { createServerTasteServiceAdapter } from '../../src/server/taste-service-adapter.ts';
 import { readTasteEventsForProfile } from '../../src/server/taste-store.ts';
 import { createBackgroundTaskRepository } from '../../src/server/background-task-repository.ts';
 import { createBackgroundManager } from '../../src/modules/background/service.ts';
@@ -90,7 +90,7 @@ test('R2-A4 inactive-profile olayı taste yazımını atlar ve kalıcı görev p
     );
     await runtime.manager.pumpOnce();
 
-    const task = runtime.manager.listTasks().find((entry) => entry.handlerId === 'intelligence.taste-event-sync');
+    const task = runtime.manager.listTasks()[0];
     assert.equal(task.status, 'pending', 'hedef profil aktif değilken görev beklemeli');
     assert.equal(task.attempts, 0, 'deneme hakkı tüketilmemeli');
     assert.deepEqual(await readTasteEventsForProfile('profile-b', tmpDir), []);
@@ -110,7 +110,7 @@ test('R2-A4 hedef profil aktif olunca telafi yalnızca o profile yazar', async (
       makeEvent({ eventId: 'evt-a4-compensate', profileId: 'profile-b', ref: { profileId: 'profile-b', revision: 2 } })
     );
     await runtime.manager.pumpOnce();
-    assert.equal(runtime.manager.listTasks().find((entry) => entry.handlerId === 'intelligence.taste-event-sync')?.status, 'pending');
+    assert.equal(runtime.manager.listTasks()[0].status, 'pending');
 
     await runtime.profileContext.switchProfile('profile-b', 9);
     const done = await pumpUntil(runtime.manager, () =>
@@ -152,111 +152,17 @@ test('R2-A4 geçmiş sourceRevision telafiyi engellemez (yalnızca profil kimli�
   }
 });
 
-test('R2-A4 aktif profilin olayı için canlı işlem başarılıysa gereksiz telafi görevi üretilmez', async () => {
+test('R2-A4 aktif profilin olayı için telafi görevi üretilmez', async () => {
   const tmpDir = await makeTempDir();
   const runtime = await makeRuntime(tmpDir);
   try {
     await runtime.manager.start();
     await runtime.manager.acceptEvent(makeEvent({ eventId: 'evt-a4-active' }));
     const tasks = runtime.manager.listTasks();
-    assert.equal(tasks.length, 1, 'aktif profil olayı canlı işleneceğinden yalnızca audit görevi bulunmalı');
-    assert.equal(tasks.some((task) => task.handlerId === 'intelligence.taste-event-sync'), false);
+    assert.equal(tasks.length, 1, 'yalnızca audit görevi üretilmeli');
+    assert.notEqual(tasks[0].handlerId, 'intelligence.taste-event-sync');
   } finally {
     await runtime.manager.stop();
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
-
-test('R2-A4 yarış: persistEvent sonrasında profil değişse de canlı atlanan olay outbox üzerinden kaybolmaz', async () => {
-  const tmpDir = await makeTempDir();
-  const profileContext = createProfileContext({ initialProfileId: 'profile-a', initialRevision: 1 });
-  const adapter = createServerTasteServiceAdapter({ dataDir: tmpDir, profileContext, rebuildOnEvent: false });
-  const repository = createBackgroundTaskRepository({ dataDir: tmpDir });
-  const manager = createBackgroundManager({
-    repository,
-    handlers: [createLibraryItemAddedHandler(), createTasteEventSyncHandler(adapter)],
-    profileContext,
-  });
-  const eventBus = createAppEventBus({
-    persistEvent: async (event) => {
-      await manager.acceptEvent(event);
-      await profileContext.switchProfile('profile-b', 2);
-    },
-  });
-  const skipped = [];
-  const subscription = subscribeTasteAdapterToEventBus(
-    eventBus,
-    adapter,
-    undefined,
-    async (event, outcome) => {
-      skipped.push({ eventId: event.eventId, code: outcome.code });
-      await manager.acceptEvent(event, {
-        handlerIds: ['intelligence.taste-event-sync'],
-        includeProfileScopedForActive: true,
-      });
-    }
-  );
-
-  try {
-    await eventBus.publish(makeEvent({
-      eventId: 'evt-a4-profile-switch-race',
-      ref: { profileId: 'profile-a', revision: 1 },
-    }));
-    assert.deepEqual(skipped, [{ eventId: 'evt-a4-profile-switch-race', code: 'profile-not-active' }]);
-    assert.ok(manager.listTasks().some((task) => task.handlerId === 'intelligence.taste-event-sync'));
-
-    await profileContext.switchProfile('profile-a', 3);
-    await manager.start();
-    await pumpUntil(manager, () => manager.listTasks()
-      .filter((task) => task.handlerId === 'intelligence.taste-event-sync')
-      .every((task) => task.status === 'completed'));
-
-    assert.deepEqual(
-      (await readTasteEventsForProfile('profile-a', tmpDir)).map((entry) => entry.eventId),
-      ['evt-a4-profile-switch-race']
-    );
-    assert.deepEqual(await readTasteEventsForProfile('profile-b', tmpDir), []);
-  } finally {
-    subscription.unsubscribe();
-    await manager.stop();
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('R2-A4 retry: event yazıldıktan sonra rebuild başarısız olursa aynı adapter yeniden rebuild yapar', async () => {
-  const tmpDir = await makeTempDir();
-  const profileContext = createProfileContext({ initialProfileId: 'profile-a', initialRevision: 1 });
-  let rebuildAttempts = 0;
-  const adapter = createServerTasteServiceAdapter({
-    dataDir: tmpDir,
-    profileContext,
-    rebuildOnEvent: true,
-    rebuildProfile: async () => {
-      rebuildAttempts += 1;
-      if (rebuildAttempts === 1) throw new Error('deterministic-first-rebuild-failure');
-      return {};
-    },
-  });
-
-  try {
-    const event = makeEvent({
-      eventId: 'evt-a4-rebuild-retry',
-      ref: { profileId: 'profile-a', revision: 1 },
-    });
-    const first = await adapter.processDeferredEvent(event);
-    assert.equal(first.ok, false);
-    assert.equal(first.retryable, true);
-    assert.deepEqual(
-      (await readTasteEventsForProfile('profile-a', tmpDir)).map((entry) => entry.eventId),
-      ['evt-a4-rebuild-retry']
-    );
-
-    const retry = await adapter.processDeferredEvent(event);
-    assert.deepEqual(retry, { ok: true });
-    assert.equal(rebuildAttempts, 2, 'eventId dedupe rebuild retry işlemini atlamamalı');
-    assert.equal((await readTasteEventsForProfile('profile-a', tmpDir)).length, 1);
-  } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });

@@ -602,7 +602,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
             lastTasteError =
               (!outcome.ok && outcome.error) || `Olay işlenemedi (${ev.eventType})`;
           },
-          async (ev, outcome) => {
+          (ev, outcome) => {
             // R2-A4: atlanan olay kaybolmaz; kalıcı kuyrukta hedef profil için
             // bekler. Sayaç sağlık raporunda görünür (sessiz kayıp yok).
             tasteSkippedCount += 1;

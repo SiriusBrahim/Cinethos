@@ -183,25 +183,20 @@ export class BackgroundManager {
    * `AppEventBus.persistEvent` kancası. Olay kalıcı yazılamazsa hata fırlatır;
    * `publish()` bu hatayı çağırana iletir (sessiz yutma yok).
    */
-  async acceptEvent(
-    event: TypedAppEvent,
-    options: { handlerIds?: readonly string[]; includeProfileScopedForActive?: boolean } = {}
-  ): Promise<{
+  async acceptEvent(event: TypedAppEvent): Promise<{
     eventInserted: boolean;
     tasksCreated: number;
     deduplicated: boolean;
   }> {
     const allHandlers = this.handlersByEvent.get(event.eventType) ?? [];
-    // Normal akışta aktif profil olayı canlı Taste subscriber tarafından işlenir.
-    // Subscriber profil değişimi nedeniyle atladıysa onSkipped yalnızca Taste
-    // handler'ını zorunlu outbox görevi olarak ekler.
+    // R2-A4: profil kapsamlı işleyiciler yalnızca HEDEF PROFİL AKTİF DEĞİLKEN
+    // görev üretir. Aktif profilin olayı canlı abonelikte zaten işlenir; ayrıca
+    // görev üretmek gereksiz çift iş olurdu. Aktif olmayan profilin olayı ise
+    // kalıcı kuyrukta bekler ve o profil aktif olunca telafi edilir.
     const activeProfileId = this.profileContext?.getCurrent().profileId;
-    const requestedHandlerIds = options.handlerIds ? new Set(options.handlerIds) : null;
-    const handlers = allHandlers.filter((handler) => {
-      if (requestedHandlerIds && !requestedHandlerIds.has(handler.id)) return false;
-      if (options.includeProfileScopedForActive) return true;
-      return !handler.profileScoped || activeProfileId !== event.profileId;
-    });
+    const handlers = allHandlers.filter(
+      (handler) => !handler.profileScoped || activeProfileId !== event.profileId
+    );
     const result = this.repository.acceptEvent(
       {
         eventId: event.eventId,
