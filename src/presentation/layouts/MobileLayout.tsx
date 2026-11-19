@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MODULES, type ModuleId } from '../../app/module-registry.ts';
+import { DOCK_NAV_ITEMS, MOBILE_OVERFLOW_ITEMS } from '../../app/navigation.ts';
 
 /**
  * MIA Faz 7 — Mobil yerleşim (Yönetici 2 · `src/presentation/`).
  *
  * Mobil alt gezinme listesi ARTIK BURADA TUTULMAZ: tek doğruluk kaynağı
  * uygulama yöneticisinin modül kayıt defteridir (`src/app/module-registry.ts`).
- * Böylece yeni bir modül eklendiğinde masaüstü ve mobil gezinme birlikte
- * güncellenir; mobil kabuk ayrı bir kopya taşımaz.
+ *
+ * Dar ekranda dört birincil sekme dock'ta kalır; kalan modüller (Seriler,
+ * İlişki Keşfi, İşlem Merkezi) ve profil/ayarlar "Daha fazla" sayfasında
+ * listelenir. Alt gezinme içerik alanını kapatmaz: sayfa alt boşluğu
+ * `workspace.css` içinde dock yüksekliği kadar ayrılır.
  *
  * Veri işlemleri bu bileşenden YAPILMAZ; kartlar ve bölümler eylemlerini
  * uygulama yöneticisinin tek kütüphane hattından (`ClientLibraryService`)
@@ -21,67 +25,185 @@ export interface MobileNavItem {
   readonly counter?: 'myList';
 }
 
-/**
- * Yalnızca görünen etiket farkı taşıyan mobil başlıklar. Kimlik, ikon ve
- * sayaç bilgisi kayıt defterinden gelir.
- */
-const MOBILE_LABEL_OVERRIDES: Readonly<Partial<Record<ModuleId, string>>> = {
-  relationships: 'İlişkiler',
-};
-
-export const MOBILE_NAV_ITEMS: readonly MobileNavItem[] = MODULES.map((module) => ({
-  id: module.id,
-  label: MOBILE_LABEL_OVERRIDES[module.id] ?? module.label,
-  iconRef: module.iconRef,
-  ...(module.counter ? { counter: module.counter } : {}),
-}));
+/** Dock'ta gösterilen modüller — kayıt defterinden türetilir. */
+export const MOBILE_NAV_ITEMS: readonly MobileNavItem[] = DOCK_NAV_ITEMS.flatMap((item) => {
+  const module = MODULES.find((entry) => entry.id === item.id);
+  if (!module) return [];
+  return [
+    {
+      id: module.id,
+      label: item.label,
+      iconRef: module.iconRef,
+      ...(item.counter ? { counter: item.counter } : {}),
+    },
+  ];
+});
 
 export interface MobileBottomNavProps {
   readonly tab: ModuleId;
   readonly myListCount: number;
   readonly onSelectTab: (tab: ModuleId) => void;
+  /** Profil ve Ayarlar penceresini açar; verilmezse satır gizlenir. */
+  readonly onOpenProfile?: () => void;
 }
 
-/** 56px yapışkan alt gezinme — modül kayıt defterinden türetilir. */
+/** 56px yapışkan alt gezinme — dört dock sekmesi + taşma sayfası. */
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   tab,
   myListCount,
   onSelectTab,
+  onOpenProfile,
 }) => {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Escape ile kapanma + açıkken arka plan kaydırmasını kilitleme.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setMoreOpen(false);
+        moreButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKey, true);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const firstItem = sheetRef.current?.querySelector<HTMLButtonElement>('button');
+    firstItem?.focus();
+    return () => {
+      document.removeEventListener('keydown', handleKey, true);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [moreOpen]);
+
+  const selectFromSheet = (id: ModuleId) => {
+    onSelectTab(id);
+    setMoreOpen(false);
+    moreButtonRef.current?.focus();
+  };
+
   return (
-    <nav className="mobile-tab-bar" aria-label="Mobil Gezinme">
-      {MOBILE_NAV_ITEMS.map((item) => {
-        const isActive = tab === item.id;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            className={`mobile-tab-btn ${isActive ? 'active' : ''}`}
-            onClick={() => onSelectTab(item.id)}
-            aria-label={item.label}
-            aria-current={isActive ? 'page' : undefined}
-          >
-            {item.counter === 'myList' ? (
-              <span className="mobile-tab-icon-wrap">
+    <>
+      <nav className="mobile-tab-bar" aria-label="Mobil Gezinme">
+        {MOBILE_NAV_ITEMS.map((item) => {
+          const isActive = tab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`mobile-tab-btn ${isActive ? 'active' : ''}`}
+              onClick={() => onSelectTab(item.id)}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              {item.counter === 'myList' ? (
+                <span className="mobile-tab-icon-wrap">
+                  <svg className="icon" aria-hidden="true">
+                    <use href={item.iconRef} />
+                  </svg>
+                  {myListCount > 0 && (
+                    <span className="mobile-tab-badge tabular-nums">
+                      {myListCount > 99 ? '99+' : myListCount}
+                    </span>
+                  )}
+                </span>
+              ) : (
                 <svg className="icon" aria-hidden="true">
                   <use href={item.iconRef} />
                 </svg>
-                {myListCount > 0 && (
-                  <span className="mobile-tab-badge tabular-nums">
-                    {myListCount > 99 ? '99+' : myListCount}
-                  </span>
-                )}
-              </span>
-            ) : (
-              <svg className="icon" aria-hidden="true">
-                <use href={item.iconRef} />
-              </svg>
-            )}
-            <span className="mobile-tab-label">{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
+              )}
+              <span className="mobile-tab-label">{item.label}</span>
+            </button>
+          );
+        })}
+
+        <button
+          ref={moreButtonRef}
+          type="button"
+          className={`mobile-tab-btn ${moreOpen ? 'active' : ''}`}
+          onClick={() => setMoreOpen((open) => !open)}
+          aria-label="Daha fazla bölüm"
+          aria-expanded={moreOpen}
+          aria-haspopup="dialog"
+          aria-controls="mobile-more-sheet"
+        >
+          <svg className="icon" aria-hidden="true">
+            <use href="#icon-layers" />
+          </svg>
+          <span className="mobile-tab-label">Daha fazla</span>
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div
+          className="mobile-more-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setMoreOpen(false);
+          }}
+        >
+          <div
+            className="mobile-more-sheet"
+            id="mobile-more-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tüm bölümler"
+            ref={sheetRef}
+          >
+            <div className="mobile-more-head">
+              <span>Tüm bölümler</span>
+              <button
+                type="button"
+                className="mobile-more-close"
+                onClick={() => setMoreOpen(false)}
+                aria-label="Menüyü kapat"
+              >
+                <svg className="icon" aria-hidden="true">
+                  <use href="#icon-close" />
+                </svg>
+              </button>
+            </div>
+
+            <ul className="mobile-more-list">
+              {MOBILE_OVERFLOW_ITEMS.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className={`mobile-more-item ${tab === item.id ? 'is-active' : ''}`}
+                    onClick={() => selectFromSheet(item.id)}
+                    aria-current={tab === item.id ? 'page' : undefined}
+                  >
+                    <svg className="icon" aria-hidden="true">
+                      <use href={item.iconRef} />
+                    </svg>
+                    <span>{item.label}</span>
+                  </button>
+                </li>
+              ))}
+              {onOpenProfile && (
+                <li>
+                  <button
+                    type="button"
+                    className="mobile-more-item"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      onOpenProfile();
+                    }}
+                  >
+                    <svg className="icon" aria-hidden="true">
+                      <use href="#icon-user" />
+                    </svg>
+                    <span>Profil ve Ayarlar</span>
+                  </button>
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

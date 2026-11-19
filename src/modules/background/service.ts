@@ -280,6 +280,18 @@ export class BackgroundManager {
     return this.repository.cancelTask(taskId, reason, this.now());
   }
 
+  /**
+   * Operatör yeniden denemesi. Terminal hatalı bir görev `pending` durumuna
+   * döner, deneme sayacı sıfırlanır ve pompa uyandırılır. Depo bu işlemi
+   * desteklemiyorsa `false` döner (sessiz yutma yok).
+   */
+  retryTask(taskId: string): boolean {
+    if (typeof this.repository.requeueTask !== 'function') return false;
+    const requeued = this.repository.requeueTask(taskId, this.now());
+    if (requeued) this.notify();
+    return requeued;
+  }
+
   getStatus(): BackgroundManagerStatus {
     return {
       started: this.running,

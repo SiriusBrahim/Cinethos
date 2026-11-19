@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { DISCOVER_PROVIDER_CHIPS } from '../utils/helpers.ts';
+import type { ModuleId } from '../app/module-ids.ts';
 import { StockHealthPanel } from './StockHealthPanel.tsx';
 
 interface ControlsProps {
-  tab: 'discover' | 'list' | 'taste-map' | 'relationships';
-  onTabChange: (tab: 'discover' | 'list' | 'taste-map' | 'relationships') => void;
+  tab: ModuleId;
+  onTabChange: (tab: ModuleId) => void;
   myListCount: number;
   upcomingCount: number;
   dislikedCount?: number;

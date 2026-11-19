@@ -176,6 +176,11 @@ export interface BackgroundTaskStore {
   scheduleRetry(taskId: string, nextRetryAt: string, error: string, nowIso?: string): void;
   markFailed(taskId: string, error: string, nowIso?: string): void;
   cancelTask(taskId: string, reason: string, nowIso?: string): boolean;
+  /**
+   * Operatör yeniden denemesi: sonuçlanmış görevi `pending` durumuna döndürür.
+   * Alternatif depolar için isteğe bağlıdır; yoksa yönetici `false` döner.
+   */
+  requeueTask?(taskId: string, nowIso?: string): boolean;
   recoverInterrupted(nowIso?: string): { requeued: number; failed: number };
   getStats(nowIso?: string): BackgroundTaskStats;
 }

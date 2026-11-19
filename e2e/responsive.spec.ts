@@ -49,9 +49,9 @@ for (const viewport of VIEWPORTS) {
 
     // Gorunur gezinme ogesi uzerinden Listem'e gec (mobil tab barinda etiket 'Listem').
     if (viewport.width <= 768) {
-      await page.locator('.mobile-tab-btn', { hasText: 'Listem' }).click();
+      await page.locator('.mobile-tab-btn', { hasText: 'Kütüphanem' }).click();
     } else {
-      await page.locator('[role="tab"]:visible', { hasText: 'Listem' }).first().click();
+      await page.locator('[role="tab"]:visible', { hasText: 'Kütüphanem' }).first().click();
     }
     await expect(page.getByText('E2E Alfa Filmi').first()).toBeVisible();
 

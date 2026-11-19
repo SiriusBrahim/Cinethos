@@ -63,6 +63,11 @@ import { createBackgroundTaskRepository } from './background-task-repository.ts'
 import { createBackgroundManager } from '../modules/background/service.ts';
 import { createDefaultBackgroundHandlers } from '../modules/background/handlers.ts';
 import { createTasteEventSyncHandler } from '../modules/background/taste-handlers.ts';
+import {
+  BACKGROUND_TASK_STATUSES,
+  type BackgroundTaskRecord,
+  type BackgroundTaskStatus,
+} from '../contracts/background.ts';
 import { describeTasteLegacyState } from './taste-legacy-status.ts';
 import { diffLibraryEvents, findSavedItemByMediaKey } from './library-event-diff.ts';
 import type {
@@ -897,6 +902,122 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       });
     }
   });
+
+  /**
+   * İşlem Merkezi — kalıcı background görev kuyruğu.
+   *
+   * Güvenlik: yalnızca AKTİF profile ait görevler döner; istemci `profileId`
+   * parametresiyle başka profilin kuyruğunu okuyamaz. Dosya yolları, olay
+   * payload'ı ve ham hata metinleri istemciye taşınmaz; `lastError` sırlardan
+   * arındırılıp kısaltılır.
+   */
+  const sanitizeBackgroundTask = (task: BackgroundTaskRecord) => ({
+    taskId: task.taskId,
+    eventId: task.eventId,
+    handlerId: task.handlerId,
+    profileId: task.profileId,
+    status: task.status,
+    attempts: task.attempts,
+    maxAttempts: task.maxAttempts,
+    nextRetryAt: task.nextRetryAt,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    completedAt: task.completedAt,
+    lastError: task.lastError
+      ? redactSecrets(task.lastError, persistentStore.getKnownSecretsForRedaction()).slice(0, 400)
+      : null,
+  });
+
+  app.get('/api/background/tasks', personalReadGuard, async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const activeProfileId = profileContext.getCurrent().profileId;
+      const rawStatus = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+      if (rawStatus && !BACKGROUND_TASK_STATUSES.includes(rawStatus as BackgroundTaskStatus)) {
+        res.status(400).json({ ok: false, code: 'invalid_status', error: 'Geçersiz görev durumu.' });
+        return;
+      }
+      const rawLimit = Number.parseInt(String(req.query.limit ?? '100'), 10);
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 100;
+      const tasks = backgroundManager
+        .listTasks({
+          profileId: activeProfileId,
+          ...(rawStatus ? { status: rawStatus as BackgroundTaskStatus } : {}),
+          limit,
+        })
+        .map(sanitizeBackgroundTask);
+      res.json({
+        ok: true,
+        checkedAt: new Date().toISOString(),
+        activeProfileId,
+        stats: backgroundManager.getStats(),
+        store: { available: backgroundTaskRepository.getStatus().available },
+        tasks,
+      });
+    } catch (err) {
+      res.status(503).json({
+        ok: false,
+        code: 'background_unavailable',
+        error: err instanceof Error ? err.message : 'Görev kuyruğu okunamadı.',
+      });
+    }
+  });
+
+  app.post(
+    '/api/background/tasks/:taskId/retry',
+    originGuard,
+    tokenGuard,
+    async (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const task = backgroundManager.getTask(String(req.params.taskId || ''));
+      if (!task) {
+        res.status(404).json({ ok: false, code: 'task_not_found', error: 'Görev bulunamadı.' });
+        return;
+      }
+      if (task.profileId !== profileContext.getCurrent().profileId) {
+        res.status(403).json({ ok: false, code: 'profile_mismatch', error: 'Görev aktif profile ait değil.' });
+        return;
+      }
+      if (!backgroundManager.retryTask(task.taskId)) {
+        res.status(409).json({
+          ok: false,
+          code: 'task_not_retryable',
+          error: 'Bu görev yeniden denenebilir durumda değil.',
+        });
+        return;
+      }
+      const updated = backgroundManager.getTask(task.taskId);
+      res.json({ ok: true, task: updated ? sanitizeBackgroundTask(updated) : null });
+    }
+  );
+
+  app.post(
+    '/api/background/tasks/:taskId/cancel',
+    originGuard,
+    tokenGuard,
+    async (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const task = backgroundManager.getTask(String(req.params.taskId || ''));
+      if (!task) {
+        res.status(404).json({ ok: false, code: 'task_not_found', error: 'Görev bulunamadı.' });
+        return;
+      }
+      if (task.profileId !== profileContext.getCurrent().profileId) {
+        res.status(403).json({ ok: false, code: 'profile_mismatch', error: 'Görev aktif profile ait değil.' });
+        return;
+      }
+      if (!backgroundManager.cancelTask(task.taskId, 'cancelled-by-user')) {
+        res.status(409).json({
+          ok: false,
+          code: 'task_not_cancellable',
+          error: 'Bu görev iptal edilebilir durumda değil.',
+        });
+        return;
+      }
+      const updated = backgroundManager.getTask(task.taskId);
+      res.json({ ok: true, task: updated ? sanitizeBackgroundTask(updated) : null });
+    }
+  );
 
   app.get('/api/health', async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');

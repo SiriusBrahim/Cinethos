@@ -204,3 +204,68 @@ kullanıcı kütüphanesine yazan bütün yollar **tek** hattan geçer.
    `tests/phase7-ui-service-pipeline.test.mjs`.
 
 Ayrıntılı uygulama kaydı: [Faz 7 — Arayüz ve tek veri hattı](docs/mia/faz7-ui-servis-hatti.md).
+
+---
+
+## 9. Çalışma Alanı Mimarisi — Yedi Modül ve İşlem Merkezi
+
+Bu bölüm, arayüzün modül kayıt defteri üzerinden yönetilen yedi birincil çalışma
+alanına ayrılmasını ve kalıcı arka plan kuyruğunun kullanıcı arayüzüne açılan
+güvenli yüzünü açıklar.
+
+### 9.1 Tek kaynak: modül kayıt defteri ve navigasyon
+
+| Katman | Dosya | Sorumluluk |
+|---|---|---|
+| Kimlik tipi | `src/app/module-ids.ts` | `ModuleId` birleşimi; çalışma zamanı importu yok. Görünüm katmanı yalnızca bu tipi kullanır, bu yüzden registry ↔ MediaCard döngüsü oluşmaz. |
+| Kayıt defteri | `src/app/module-registry.ts` | Sıra, etiket, ikon, kısayol (`1-7`), hash rotası, komut paleti anahtar kelimeleri. |
+| Türetim | `src/app/navigation.ts` | `SIDEBAR_NAV_GROUPS`, `HEADER_NAV_ITEMS`, `DOCK_NAV_ITEMS` (4 birincil), `MOBILE_OVERFLOW_ITEMS` (kalanlar), `SHORTCUT_TAB_MAP`, `SETTINGS_SHORTCUT = '0'`. |
+| Derin bağlantı | `src/app/useHashNavigation.ts` | `#/home`, `#/discover`, `#/series`, `#/operations` ↔ sekme çift yönlü eşleme. |
+| Mobil kabuk | `src/presentation/layouts/MobileLayout.tsx` | Dört dock sekmesi + erişilebilir "Daha fazla" dialogu (Escape, odak, arka plan kaydırma kilidi). |
+
+Bilgi mimarisi: **Ana Sayfa → Keşfet → Kütüphanem → Zevkim → İlişki Keşfi →
+Seriler ve Evrenler → İşlem Merkezi**. Profil ve Ayarlar bir modül değildir; mevcut
+profil/ayarlar penceresini açan sistem eylemidir (kenar çubuğu ve mobil taşma
+sayfasında `0` kısayoluyla).
+
+### 9.2 Çalışma alanı modülleri
+
+| Modül | Dosya | Veri kaynağı |
+|---|---|---|
+| Ana Sayfa | `src/modules/home/dashboard.ts` (saf) + `HomeSection.tsx` | Kütüphane kayıtları ve `forYouItems`; devam edenler, son aktivite, tür eğilimi, seçkiler. |
+| Seriler ve Evrenler | `src/modules/series/SeriesSection.tsx` | `computeUserSeriesUniverses` + mevcut `UniversesView` (ikinci kopya yok). |
+| İşlem Merkezi | `src/modules/operations/OperationsSection.tsx` | `/api/background/tasks` + `/api/health`; görünür sekmede 12 sn yoklama, arka planda durur. |
+
+`dashboard.ts` DOM'suz ve deterministiktir; aynı kurallar mobil/masaüstünde
+tekrar yazılmaz ve birim testleriyle doğrulanır.
+
+### 9.3 İşlem Merkezi API sözleşmesi
+
+| Uç | Koruma | Davranış |
+|---|---|---|
+| `GET /api/background/tasks?status=&limit=` | `personalReadGuard` | Yalnızca **aktif profile** ait görevler (`profileId` istemciden alınmaz). `status` `BACKGROUND_TASK_STATUSES` ile doğrulanır (aksi `400`), `limit` 1-200 aralığına kısılır. |
+| `POST /api/background/tasks/:taskId/retry` | `originGuard` + `tokenGuard` | Görev yoksa `404`; aktif profile ait değilse `403 profile_mismatch`; durum uygun değilse `409 task_not_retryable`. Başarıda `requeueTask` deneme sayacını sıfırlar ve pompa uyanır. |
+| `POST /api/background/tasks/:taskId/cancel` | `originGuard` + `tokenGuard` | `404` / `403` / `409 task_not_cancellable`; başarıda `cancelled`. |
+
+**Gizlilik:** Yanıtlar `taskId, eventId, handlerId, profileId, status, attempts,
+maxAttempts, nextRetryAt, createdAt, updatedAt, completedAt, lastError` ile
+sınırlıdır. Dosya yolları, olay payload'ı ve ham hata metni taşınmaz;
+`lastError` `redactSecrets` ile temizlenip 400 karaktere kısaltılır.
+`GET /api/health` yanıtı istemcide `normalizePipelineHealth` ile yalnızca modül
+kimliği + durum ve kuyruk sayaçlarına indirgenir.
+
+### 9.4 Veri bütünlüğü
+
+Yeni uçlar kullanıcı verisine yazmaz; yalnızca `background_tasks` tablosundaki
+yaşam döngüsü alanlarını değiştirir. Profil izolasyonu iki katmanda korunur:
+okuma aktif profil filtresiyle, yazma ise görev sahibi ile aktif profil
+karşılaştırmasıyla. Kuyruk dosyası (`data/cinetrack.db`) GitHub senkronizasyon
+envanterinde değildir; bu nedenle yeni API senkronizasyon kapsamını genişletmez.
+
+### 9.5 Kaldırılan tekrarlar
+
+`src/app/AppSidebar.tsx`, `AppFooter.tsx`, `AppModals.tsx`, `MobileTabBar.tsx`,
+`src/app/mobile/MobileDashboard.tsx` ve `src/components/FloatingGlassDock.tsx`
+render edilmiyordu ve kendi gezinme/sekme listelerini tutuyordu. Tek doğruluk
+kaynağı ilkesi gereği kaldırıldı; geriye kalan `Header` (masaüstü) ve
+`MobileBottomNav` (mobil) listelerini kayıt defterinden türetir.

@@ -19,9 +19,9 @@ test.describe('Cinethos smoke', () => {
 
     // Marka basligi hem AppSidebar'da hem Header'da DOM'da bulunur; ayni anda yalnizca biri gorunurdur.
     await expect(page.locator('.brand-title:visible')).toHaveText('Cinethos');
-    await expect(page.getByRole('tab', { name: 'Listem' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Kütüphanem' })).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Listem' }).click();
+    await page.getByRole('tab', { name: 'Kütüphanem' }).click();
     await expect(page.getByText('E2E Alfa Filmi').first()).toBeVisible();
 
     expect(pageErrors).toEqual([]);
@@ -33,9 +33,17 @@ test.describe('Cinethos smoke', () => {
 
     await page.goto('/');
 
-    // Guncel kabuk: Header sekmeleri Kesfet / Listem / Kimligim / Evrenler
-    // (Zevkim artik mobil tab barinda; masaustu header'inda Kimligim ve Evrenler var).
-    for (const tab of ['Keşfet', 'Listem', 'Kimliğim', 'Evrenler']) {
+    // Guncel bilgi mimarisi: Ana Sayfa / Keşfet / Kütüphanem / Zevkim /
+    // İlişkiler / Seriler / İşlemler — hepsi tek modül kayıt defterinden gelir.
+    for (const tab of [
+      'Ana Sayfa',
+      'Keşfet',
+      'Kütüphanem',
+      'Zevkim',
+      'İlişkiler',
+      'Seriler',
+      'İşlemler',
+    ]) {
       await expect(page.getByRole('tab', { name: tab })).toBeVisible();
     }
     await expect(page.getByRole('button', { name: /Profil: E2E Kullanıcı/ })).toBeVisible();

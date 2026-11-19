@@ -1,4 +1,43 @@
-## Unreleased — 2026-11-19
+## Unreleased — 2026-11-19 (çalışma alanı sürümü)
+
+### Arayüz — yeni bilgi mimarisi
+- Modül kayıt defteri yedi birincil çalışma alanına genişletildi: **Ana Sayfa, Keşfet,
+  Kütüphanem, Zevkim, İlişki Keşfi, Seriler ve Evrenler, İşlem Merkezi**. Sıra, kısayol,
+  hash rotası ve etiketler tek kaynaktan (`src/app/module-registry.ts`) türetilir.
+- Kenar çubuğu yerine gruplandırılmış üst sekmeler + mobil dock: dar ekranda dört
+  birincil sekme ve erişilebilir bir "Daha fazla" sayfası; kalan modüller ve Profil/Ayarlar
+  buradan açılır. Klavye kısayolları `1-7` modüller, `0` ayarlar.
+- Yeni `src/modules/home`, `src/modules/series`, `src/modules/operations` çalışma alanları;
+  ortak `src/components/ui/primitives.tsx` ilkelleri ve token tabanlı
+  `src/styles/workspace.css` (mobil kart tablosu, yatay ray, güvenli alt boşluk).
+- Hash yönlendirmesi (`#/home`, `#/series`, `#/operations`, …) artık uygulamaya bağlı.
+
+### Mimari
+- `ModuleId` tipi `src/app/module-ids.ts` dosyasına ayrıldı; `module-registry →
+  DiscoverSection → MediaGrid → MediaCard → module-registry` döngüsel importu kırıldı
+  (mimari testi: 0 döngü).
+- Kullanılmayan ve birbirini tekrar eden kabuk bileşenleri kaldırıldı: `AppSidebar`,
+  `AppFooter`, `AppModals`, `MobileTabBar`, `app/mobile/MobileDashboard`,
+  `components/FloatingGlassDock` (~1.400 satır ölü arayüz kodu). Gezinme tek kaynaktan.
+- Klavye kısayolları elle yazılmış `1-4` tablosu yerine `SHORTCUT_TAB_MAP` üzerinden çalışır.
+
+### İşlem Merkezi API
+- `GET /api/background/tasks` — yalnızca **aktif profile** ait görevler; dosya yolları ve
+  olay payload'ı taşınmaz, `lastError` sırlardan arındırılıp kısaltılır.
+- `POST /api/background/tasks/:taskId/retry` ve `.../cancel` — origin+token korumalı;
+  başka profilin görevi `403 profile_mismatch`, uygun olmayan durum `409`, bilinmeyen
+  görev `404`. Yeniden deneme deneme sayacını sıfırlar ve pompayı uyandırır
+  (`BackgroundTaskStore.requeueTask`).
+- İçerik işleme kuyruğu ilerlemesi ve modül sağlığı için `/api/health` yanıtı istemcide
+  sanitize edilerek kullanılır (yol/detay alanları atılır).
+
+### Testler
+- `tests/workspace-dashboard.test.mjs`: Ana Sayfa türetimi ve İşlem Merkezi yanıt
+  doğrulaması/sır arındırma.
+- `tests/background-task-api.test.mjs`: gerçek Express + SQLite ile profil izolasyonu,
+  iptal/yeniden deneme geçişleri ve 400/401/403/404 sözleşmeleri.
+- `e2e/workspace.spec.ts`: Ana Sayfa, İşlem Merkezi ve mobil "Daha fazla" akışı.
+- Navigasyon testleri yeni bilgi mimarisine göre güncellendi.
 
 - Profil kimlikleri merkezi Türkçe/Latin normalizasyonuyla büyük harfli ASCII biçimine sabitlendi.
 - Yeni profil partition dizinleri `p2-hex` oldu; eski `p1-b64url` manifestleri ve verileri doğrulamalı, atomik geçişle destekleniyor.

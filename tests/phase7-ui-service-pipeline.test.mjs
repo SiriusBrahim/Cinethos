@@ -31,7 +31,7 @@ import {
 } from '../src/modules/library/client-service.ts';
 import { useItemActions } from '../src/hooks/useItemActions.ts';
 import { MOBILE_NAV_ITEMS } from '../src/presentation/layouts/MobileLayout.tsx';
-import { HEADER_NAV_ITEMS } from '../src/app/navigation.ts';
+import { HEADER_NAV_ITEMS, MOBILE_OVERFLOW_ITEMS } from '../src/app/navigation.ts';
 import { MODULES } from '../src/app/module-registry.ts';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
@@ -209,10 +209,12 @@ test('F7-4 App tek kütüphane hattı kurar, mobil ve masaüstü gezinme kayıtt
   );
 
   const registryIds = MODULES.map((module) => module.id);
+  // Mobil dock dört birincil sekmeyi taşır; kalan modüller taşma sayfasındadır.
+  // Birlikte tam kayıt defterini kapsamalı (hiçbir modül erişilemez kalmaz).
   assert.deepEqual(
-    MOBILE_NAV_ITEMS.map((item) => item.id),
+    [...MOBILE_NAV_ITEMS.map((item) => item.id), ...MOBILE_OVERFLOW_ITEMS.map((item) => item.id)],
     registryIds,
-    'mobil gezinme modül kayıt defterinden türetilmeli'
+    'mobil gezinme (dock + taşma) modül kayıt defterinden türetilmeli'
   );
   assert.deepEqual(
     HEADER_NAV_ITEMS.map((item) => item.id),

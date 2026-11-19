@@ -136,6 +136,60 @@ function json(route: Route, body: unknown, status = 200, headers: Record<string,
  * Serves deterministic API responses so E2E runs never touch data/ on disk.
  * /api/data GET is backed by a fixture document; PUT is counted and answered locally.
  */
+/** İşlem Merkezi için deterministik kuyruk yanıtı (tek başarısız + tek bekleyen görev). */
+function backgroundTasksSnapshot(options: ApiMockOptions) {
+  const tasks = [
+    {
+      taskId: 'task-e2e-failed',
+      eventId: 'evt-e2e-failed',
+      handlerId: 'intelligence.taste-event-sync',
+      profileId: PROFILE_A,
+      status: 'failed',
+      attempts: 3,
+      maxAttempts: 3,
+      nextRetryAt: null,
+      createdAt: '2026-05-01T09:00:00.000Z',
+      updatedAt: '2026-05-01T09:01:00.000Z',
+      completedAt: null,
+      lastError: 'geçici ağ hatası',
+    },
+    {
+      taskId: 'task-e2e-pending',
+      eventId: 'evt-e2e-pending',
+      handlerId: 'library-item-added-audit',
+      profileId: PROFILE_A,
+      status: 'pending',
+      attempts: 0,
+      maxAttempts: 3,
+      nextRetryAt: null,
+      createdAt: '2026-05-01T09:02:00.000Z',
+      updatedAt: '2026-05-01T09:02:00.000Z',
+      completedAt: null,
+      lastError: null,
+    },
+  ];
+  return {
+    ok: true,
+    checkedAt: '2026-05-01T10:00:00.000Z',
+    activeProfileId: options.doc ? (options.doc.activeProfileId as string) : PROFILE_A,
+    stats: {
+      events: 2,
+      tasks: 2,
+      byStatus: {
+        pending: 1,
+        processing: 0,
+        completed: 0,
+        retry_wait: 0,
+        failed: 1,
+        cancelled: 0,
+      },
+      dueRetries: 0,
+    },
+    store: { available: true },
+    tasks,
+  };
+}
+
 export async function mockApi(page: Page, options: ApiMockOptions = {}): Promise<ApiMockControls> {
   let pushCount = 0;
   let putResponder = options.putResponder;
@@ -204,6 +258,39 @@ export async function mockApi(page: Page, options: ApiMockOptions = {}): Promise
 
     if (path === '/api/data/backups') {
       return json(route, { backups: [] });
+    }
+
+    if (path === '/api/background/tasks' && request.method() === 'GET') {
+      return json(route, backgroundTasksSnapshot(options));
+    }
+
+    if (/^\/api\/background\/tasks\/[^/]+\/(retry|cancel)$/.test(path) && request.method() === 'POST') {
+      const taskId = path.split('/')[4];
+      const action = path.split('/')[5];
+      return json(route, {
+        ok: true,
+        task: {
+          ...backgroundTasksSnapshot(options).tasks[0],
+          taskId,
+          status: action === 'cancel' ? 'cancelled' : 'pending',
+          attempts: action === 'retry' ? 0 : 1,
+        },
+      });
+    }
+
+    if (path === '/api/health') {
+      return json(route, {
+        ok: true,
+        modules: [
+          { moduleId: 'library', status: 'healthy' },
+          { moduleId: 'content', status: 'degraded' },
+        ],
+        contentIntelligence: {
+          initialIndex: { status: 'completed' },
+          queue: { pending: 1, processing: 0, completed: 8, failed: 1 },
+        },
+        storage: { filePath: '/tmp/never-exposed', driver: 'sqlite' },
+      });
     }
 
     // Taste events, sync status and optional maintenance endpoints tolerate a neutral 200.
