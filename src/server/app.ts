@@ -451,7 +451,7 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   return {
     ...storedDoc,
     activeProfileId: snapId,
-    profiles: storedDoc.profiles.map((p) => (p.id === snapId ? mergedProfile : p)),
+    profiles: storedDoc.profiles.map((p) => (normalizeProfileId(p.id) === snapId ? mergedProfile : p)),
   };
 }
 
