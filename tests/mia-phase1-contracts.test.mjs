@@ -24,9 +24,10 @@ import { createHttpPrimaryDataRepository } from '../src/services/client-primary-
 import { subscribeClientTasteSyncToEventBus } from '../src/services/taste-api.ts';
 import { useItemActions } from '../src/hooks/useItemActions.ts';
 import {
-  appendTasteEventIdempotent,
-  readTasteEvents,
-  readTasteManifest,
+  appendTasteEventIdempotentForProfile,
+  readTasteEventsForProfile,
+  readTasteManifestForProfile,
+  resolveTastePathsForProfile,
 } from '../src/server/taste-store.ts';
 import {
   createServerTasteServiceAdapter,
@@ -448,11 +449,11 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
     const duplicate = await adapter.processEvent(appEvent);
     assert.equal(duplicate.ok, true);
 
-    const storedEvents = await readTasteEvents(tmpDir);
+    const storedEvents = await readTasteEventsForProfile('profile-a', tmpDir);
     assert.equal(storedEvents.length, 1);
     assert.equal(storedEvents[0].eventId, 'evt-unique-1');
 
-    const manifest = await readTasteManifest(tmpDir);
+    const manifest = await readTasteManifestForProfile('profile-a', tmpDir);
     assert.ok(manifest, 'manifest oluşturulmuş olmalı');
     assert.equal(manifest.eventWatermark, 'evt-unique-1');
 
@@ -463,13 +464,13 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
     });
     assert.ok(translated);
     const [r1, r2] = await Promise.all([
-      appendTasteEventIdempotent(translated, tmpDir),
-      appendTasteEventIdempotent(translated, tmpDir),
+      appendTasteEventIdempotentForProfile('profile-a', translated, tmpDir),
+      appendTasteEventIdempotentForProfile('profile-a', translated, tmpDir),
     ]);
     assert.equal(Number(r1.added) + Number(r2.added), 1);
 
     // Saf projektör sınır doğrulaması
-    const projection = projectLearningSnapshot(await readTasteEvents(tmpDir));
+    const projection = projectLearningSnapshot(await readTasteEventsForProfile('profile-a', tmpDir));
     assert.equal(projection.eventCount, 2);
     assert.equal(projection.eventWatermark, 'evt-concurrent-2');
 
@@ -485,7 +486,7 @@ test('MIA Adım 9 & 10: TasteServiceAdapter idempotent olay işler ve eventWater
     });
     const rejected = await adapter.processEvent(foreignEvent);
     assert.equal(rejected.ok, false);
-    assert.match(String(rejected.error), /Profil değişti/);
+    assert.match(String(rejected.error), /Profil uyuşmazlığı|Profil değişti/);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
@@ -597,10 +598,10 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
 
     // Async subscriber handler'ların tamamlanmasını deterministik bekle
     const deadline = Date.now() + 2000;
-    let storedAfterSave = await readTasteEvents(tmpDir);
+    let storedAfterSave = await readTasteEventsForProfile('profile-a', tmpDir);
     while (storedAfterSave.length < 2 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      storedAfterSave = await readTasteEvents(tmpDir);
+      storedAfterSave = await readTasteEventsForProfile('profile-a', tmpDir);
     }
 
     assert.equal(persistErrors.length, 0);
@@ -614,7 +615,7 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
     assert.ok(addedEvent);
     await bus.publish(addedEvent);
 
-    const storedAfterReplay = await readTasteEvents(tmpDir);
+    const storedAfterReplay = await readTasteEventsForProfile('profile-a', tmpDir);
     assert.equal(
       storedAfterReplay.length,
       storedAfterSave.length,
@@ -672,6 +673,48 @@ test('Son Kabul P1: useItemActions, TasteServiceAdapter ve bridgeAppEventsToShel
     offProf();
   } finally {
     resetShellEventsForTests();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// R2-A3 regresyonu: aktif olmayan profile ait iç EventBus olayı Taste yazımını
+// atlar; diğer aboneler çalışır ve publish AggregateError üretmez.
+// ---------------------------------------------------------------------------
+test('R2-A3: inactive-profile iç EventBus olayı diğer aboneleri engellemez', async () => {
+  const tmpDir = await makeTempDir('cinetrack-inactive-profile-event-');
+  const bus = createAppEventBus();
+  const profileCtx = createProfileContext({
+    initialProfileId: 'profile-a',
+    initialRevision: 1,
+    eventPublisher: bus,
+  });
+  const adapter = createServerTasteServiceAdapter({
+    dataDir: tmpDir,
+    profileContext: profileCtx,
+    rebuildOnEvent: false,
+  });
+  const tasteSub = subscribeTasteAdapterToEventBus(bus, adapter);
+  let otherSubscriberCalls = 0;
+  const otherSub = bus.subscribe('LibraryItemAdded', () => {
+    otherSubscriberCalls += 1;
+  });
+
+  try {
+    const foreignEvent = createAppEvent({
+      eventId: 'inactive-profile-event-1',
+      eventType: 'LibraryItemAdded',
+      ref: { profileId: 'profile-b', revision: 1 },
+      entityId: 'movie:550',
+      payload: { mediaKey: 'movie:550', mediaType: 'movie', list: 'watched' },
+    });
+    await assert.doesNotReject(() => bus.publish(foreignEvent));
+    assert.equal(otherSubscriberCalls, 1);
+    assert.deepEqual(await readTasteEventsForProfile('profile-b', tmpDir), []);
+    assert.deepEqual(await readTasteEventsForProfile('profile-a', tmpDir), []);
+  } finally {
+    tasteSub.unsubscribe();
+    otherSub.unsubscribe();
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
@@ -772,10 +815,10 @@ test('Son Kabul P1 & P2: createCineTrackApp PrimaryDataRepository, ModuleRegistr
     // yayımlar (movie:550) ve taste motoru bunu işler; ardından domain-event
     // gönderimi ikinci TasteEvent üretir. Aynı eventId'li ikinci POST
     // tekilleştirilir → toplam 2 kayıt.
-    assert.equal((await readTasteEvents(tmpDir)).length, 2);
+    assert.equal((await readTasteEventsForProfile('profile-a', tmpDir)).length, 2);
 
     // 4. Kurtarılamaz bozuk Taste events dosyasında HTTP 500 corrupt_json_file döner (sessiz []) yok
-    const eventsPath = path.join(tmpDir, 'taste', 'cinetrack-taste-events.json');
+    const eventsPath = resolveTastePathsForProfile('profile-a', tmpDir).paths.events;
     await fs.rm(`${eventsPath}.bak`, { force: true });
     await fs.writeFile(eventsPath, '{ bozuk taste events', 'utf8');
 

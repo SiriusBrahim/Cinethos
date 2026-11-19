@@ -270,39 +270,35 @@ test('F4-A2 duplicate eventId: deduplicated=true, yeni görev üretilmez, mevcut
 // A3. Profil çakışması: retry_wait → tekrar → failed; çapraz yazım engellenir
 // ---------------------------------------------------------------------------
 
-test('F4-A3 profil çakışması: görev retry_wait olur, deneme hakkı tükenince failed olur', async () => {
+test('F4-A3 profil çakışması: hedef profil aktif değilken görev pending kalır, aktif olunca tamamlanır (R2-A4)', async () => {
+  const state = { profileId: 'profile-a', revision: 5 };
   const { tmpDir, manager } = await makeManager({
-    profileContext: makeProfileContext('profile-a'),
+    profileContext: { getCurrent: () => ({ ...state }) },
   });
   try {
     await manager.start();
 
-    // Olay 'profile-b' profiline ait; aktif profil 'profile-a' → çakışma.
+    // Olay 'profile-b' profiline ait; aktif profil 'profile-a' → görev bekler.
     await manager.acceptEvent(makeEvent({ profileId: 'profile-b', ref: { profileId: 'profile-b', revision: 5 } }));
     await manager.pumpOnce();
 
     const afterFirst = manager.listTasks()[0];
-    assert.equal(afterFirst.status, 'retry_wait', 'ilk çakışmada görev yeniden planlanmalı');
-    assert.ok(afterFirst.nextRetryAt, 'retry zamanı yazılmalı');
-    assert.match(afterFirst.lastError, /profile-b/);
+    assert.equal(afterFirst.status, 'pending', 'hedef profil aktif değilken görev beklemeli');
+    assert.equal(afterFirst.attempts, 0, 'deneme hakkı tüketilmemeli');
+    assert.equal(afterFirst.lastError, null, 'bekleme hata olarak işaretlenmemeli');
 
-    // Retry zamanı geçince görev yeniden denenir; her denemede attempts artar.
-    const attempts = [];
-    for (let i = 0; i < 5; i += 1) {
-      await manager.pumpOnce(); // süresi gelen retry_wait görevini kiralar
-      const task = manager.listTasks()[0];
-      attempts.push(task.status);
-      if (task.status === 'failed') break;
+    // Aynı pompa turu bekleyen görevi başka profile yazmaz.
+    for (let i = 0; i < 3; i += 1) {
+      await manager.pumpOnce();
+      assert.equal(manager.listTasks()[0].status, 'pending');
     }
-    assert.equal(
-      manager.listTasks()[0].status,
-      'failed',
-      `deneme hakkı tükenmeli (durumlar: ${attempts.join(',')})`
-    );
-    assert.ok(
-      manager.listTasks()[0].attempts >= 3,
-      'en az 3 deneme yapılmış olmalı'
-    );
+
+    // Hedef profil aktif olunca görev çalışır ve tamamlanır.
+    state.profileId = 'profile-b';
+    manager.notify();
+    await pumpUntil(manager, () => manager.listTasks()[0]?.status === 'completed');
+    assert.equal(manager.listTasks()[0].status, 'completed');
+    assert.equal(manager.listTasks()[0].attempts, 1, 'tek denemede tamamlanmalı');
     await manager.stop();
   } finally {
     await cleanup(tmpDir);
@@ -339,10 +335,14 @@ test('F4-A3b çapraz profil yazımı engellenir: çakışan görev, hedef profil
         makeEvent({ eventId: id, profileId: 'profile-b', ref: { profileId: 'profile-b', revision: 5 } })
       );
     }
-    await pumpUntil(manager, () =>
-      manager.listTasks().every((t) => t.status === 'retry_wait' || t.status === 'failed')
-    );
+    for (let i = 0; i < 3; i += 1) {
+      await manager.pumpOnce();
+    }
     assert.deepEqual(writes, [], 'çakışan görevler hiçbir profile yazmamalı');
+    assert.ok(
+      manager.listTasks().every((t) => t.status === 'pending' && t.attempts === 0),
+      'hedef profil aktif değilken görevler beklemeli ve deneme tüketmemeli'
+    );
     assert.equal(
       manager.listTasks().every((t) => t.profileId === 'profile-b'),
       true,

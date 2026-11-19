@@ -29,17 +29,20 @@ import {
 import type { TasteEvent } from '../core/taste/types.ts';
 import { CorruptJsonFileError } from './atomic-json.ts';
 import {
-  appendTasteEventIdempotent,
-  readTasteEvents,
-  readTasteProfile,
+  appendTasteEventIdempotentForProfile,
+  readTasteEventsForProfile,
+  readTasteProfileForProfile,
 } from './taste-store.ts';
 import { triggerTasteProfileRebuild } from './taste-rebuild-coordinator.ts';
+import { TasteProfileScopeError, validateCanonicalProfileId } from './taste-profile-scope.ts';
 
 export interface TasteServiceAdapterOptions {
   dataDir?: string;
   profileContext?: IProfileContext;
   /** İsteğe bağlı olay sonrası rebuild tetiklemesi (varsayılan true). */
   rebuildOnEvent?: boolean;
+  /** Rebuild port: allows deterministic retry testing and alternate coordinators. */
+  rebuildProfile?: (profileId: string, dataDir: string) => Promise<unknown>;
 }
 
 function mapListToTasteStatus(list: LibraryListId | null): string {
@@ -158,19 +161,22 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
   private readonly dataDir: string;
   private readonly profileContext?: IProfileContext;
   private readonly rebuildOnEvent: boolean;
+  private readonly rebuildProfile: (profileId: string, dataDir: string) => Promise<unknown>;
   private readonly processedEventIds = new Set<string>();
 
   constructor(options: TasteServiceAdapterOptions = {}) {
     this.dataDir = options.dataDir ?? 'data';
     this.profileContext = options.profileContext;
     this.rebuildOnEvent = options.rebuildOnEvent ?? true;
+    this.rebuildProfile = options.rebuildProfile ?? triggerTasteProfileRebuild;
   }
 
   async getProfile(ref: ProfileRef): Promise<TasteProfileSummaryView | null> {
     if (this.profileContext) {
       this.profileContext.assertCurrent(ref);
     }
-    const stored = await readTasteProfile(this.dataDir);
+    const profileId = validateCanonicalProfileId(ref.profileId);
+    const stored = await readTasteProfileForProfile(profileId, this.dataDir);
     if (!stored) return null;
     const revision =
       typeof ref.revision === 'number'
@@ -198,7 +204,8 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
         };
       }
 
-      await triggerTasteProfileRebuild(this.dataDir);
+      const profileId = validateCanonicalProfileId(ref.profileId);
+      await triggerTasteProfileRebuild(profileId, this.dataDir);
 
       // Uzun süren worker hesabından sonra profil değişmişse uyarı sinyali üret.
       if (this.profileContext) {
@@ -219,52 +226,126 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
 
   async processEvent(event: TypedAppEvent): Promise<OperationOutcome> {
     try {
+      const eventProfileId = validateCanonicalProfileId(event.profileId);
+      const activeProfileId = this.profileContext?.getCurrent().profileId;
+      // R2-A3 S4: kimlik otoritesi sunucudadır — istemcinin `profileId` alanı
+      // hedef profili seçemez; yalnızca aktif profille eşleşmesi doğrulanır.
+      if (activeProfileId && activeProfileId !== eventProfileId) {
+        return {
+          ok: false,
+          error: `Profil uyuşmazlığı: olay '${eventProfileId}' için geldi, aktif profil '${activeProfileId}'.`,
+          retryable: false,
+          code: 'profile-not-active',
+        };
+      }
+      const targetProfileId = activeProfileId ?? eventProfileId;
+
       if (this.profileContext) {
         this.profileContext.assertWritable({
-          profileId: event.profileId,
+          profileId: targetProfileId,
           revision: event.sourceRevision,
         });
       }
 
-      if (this.processedEventIds.has(event.eventId)) {
+      const memoryKey = `${targetProfileId}:${event.eventId}`;
+      if (this.processedEventIds.has(memoryKey)) {
         return { ok: true };
       }
 
       const tasteEvent = translateAppEventToTasteEvent(event);
       if (!tasteEvent) {
-        this.processedEventIds.add(event.eventId);
+        this.processedEventIds.add(memoryKey);
         return { ok: true };
       }
 
       // Kalıcı olay deposunda aynı eventId varsa çift kanıt/yeniden yazım yapma.
-      const existing = await readTasteEvents(this.dataDir);
+      const existing = await readTasteEventsForProfile(targetProfileId, this.dataDir);
       if (existing.some((e) => e.eventId === tasteEvent.eventId)) {
-        this.processedEventIds.add(event.eventId);
+        this.processedEventIds.add(memoryKey);
         return { ok: true };
       }
 
-      const { added } = await appendTasteEventIdempotent(tasteEvent, this.dataDir);
-      this.processedEventIds.add(event.eventId);
+      const { added } = await appendTasteEventIdempotentForProfile(
+        targetProfileId,
+        tasteEvent,
+        this.dataDir
+      );
+      this.processedEventIds.add(memoryKey);
 
       if (added && this.rebuildOnEvent) {
-        await triggerTasteProfileRebuild(this.dataDir);
+        await this.rebuildProfile(targetProfileId, this.dataDir);
       }
 
       return { ok: true };
     } catch (error) {
-      if (error instanceof ProfileConflictError) {
-        return { ok: false, error: error.message, retryable: false };
-      }
-      if (error instanceof CorruptJsonFileError) {
-        return { ok: false, error: error.message, retryable: false };
-      }
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        retryable: true,
-      };
+      return toAdapterOutcome(error);
     }
   }
+
+  /**
+   * R2-A4 — ertelenmiş (kaçırılmış) olayın telafisi.
+   *
+   * Canlı abonelik sırasında hedef profil aktif olmadığı için yazılmamış olay,
+   * hedef profil aktif olduğunda bu yöntemle işlenir. Fark: olay geçmişe ait
+   * olduğundan `sourceRevision` eşitliği ARANMAZ; yalnızca profil kimliği
+   * doğrulanır. Yazma `eventId` ile idempotenttir; yeniden hesap tetiklenir.
+   */
+  async processDeferredEvent(event: TypedAppEvent): Promise<OperationOutcome> {
+    try {
+      const eventProfileId = validateCanonicalProfileId(event.profileId);
+      const activeProfileId = this.profileContext?.getCurrent().profileId;
+      if (activeProfileId && activeProfileId !== eventProfileId) {
+        return {
+          ok: false,
+          error: `Telafi için hedef profil aktif değil: olay '${eventProfileId}', aktif profil '${activeProfileId}'.`,
+          retryable: false,
+          code: 'profile-not-active',
+        };
+      }
+      const targetProfileId = activeProfileId ?? eventProfileId;
+      const tasteEvent = translateAppEventToTasteEvent(event);
+      if (!tasteEvent) return { ok: true };
+
+      // Event persistence and projection completion are separate idempotency
+      // boundaries. An existing event MUST still trigger rebuild on retry:
+      // the previous attempt may have appended the event and then failed while
+      // rebuilding the profile.
+      await appendTasteEventIdempotentForProfile(
+        targetProfileId,
+        tasteEvent,
+        this.dataDir
+      );
+
+      if (this.rebuildOnEvent) {
+        await this.rebuildProfile(targetProfileId, this.dataDir);
+      }
+
+      // Uzun süren hesaptan sonra profil değişmediyse sonuç hedef profile aittir;
+      // değiştiyse yeni profile yazma yapılmadı, yalnızca kendi profiline yazıldı.
+      return { ok: true };
+    } catch (error) {
+      return toAdapterOutcome(error);
+    }
+  }
+}
+
+/** Hata sınıflarını yapısal `code` alanıyla sonuçlandırır (metin ayrıştırması yok). */
+function toAdapterOutcome(error: unknown): OperationOutcome {
+  if (error instanceof ProfileConflictError) {
+    return { ok: false, error: error.message, retryable: false, code: 'profile-conflict' };
+  }
+  if (error instanceof TasteProfileScopeError) {
+    return { ok: false, error: error.message, retryable: false, code: 'invalid-profile' };
+  }
+  if (error instanceof CorruptJsonFileError) {
+    return { ok: false, error: error.message, retryable: false, code: 'corrupt-store' };
+  }
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+    retryable: true,
+    code: 'unavailable',
+  };
 }
 
 export function createServerTasteServiceAdapter(
@@ -288,12 +369,23 @@ const TASTE_SUBSCRIBED_DOMAIN_EVENTS = [
 export function subscribeTasteAdapterToEventBus(
   subscriber: IEventSubscriber,
   adapter: IMemoryService,
-  onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void
+  onError?: (event: TypedAppEvent, outcome: OperationOutcome) => void,
+  onSkipped?: (event: TypedAppEvent, outcome: OperationOutcome) => Promise<void> | void
 ): EventSubscription {
   const subs: EventSubscription[] = TASTE_SUBSCRIBED_DOMAIN_EVENTS.map((eventType) =>
     subscriber.subscribe(eventType, async (event) => {
       const outcome = await adapter.processEvent(event);
       if (!outcome.ok) {
+        // PUT /api/data tüm profillerin library farklarını yayınlayabilir.
+        // Taste yalnızca sunucudaki aktif profile yazabilir; başka profile ait
+        // iç EventBus olayı beklenen bir kapsam dışı bırakmadır.
+        // HTTP /domain-event rotası ayrı olarak 409 döndürmeye devam eder.
+        // R2-A4: hata metni ayrıştırılmaz; yapısal kod tek otoritedir.
+        const inactiveProfileEvent = !outcome.retryable && outcome.code === 'profile-not-active';
+        if (inactiveProfileEvent) {
+          await onSkipped?.(event, outcome);
+          return;
+        }
         onError?.(event, outcome);
         throw new Error(outcome.error || `Taste olay kalıcılığı başarısız (${event.eventType})`);
       }
