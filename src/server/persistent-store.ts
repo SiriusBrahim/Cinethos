@@ -1855,7 +1855,9 @@ export class PersistentDataStore {
     },
     writeOptions: { beforeRenameHook?: (tempFilePath: string) => void } = {}
   ): { updated: boolean; count: number; contentHash: string } {
-    const { profileId, algorithmVersion, profileFingerprint, items } = input;
+    const profileId = normalizeProfileId(input.profileId);
+    if (!profileId) throw new Error('Geçersiz profil kimliği; türetilmiş profil yazılamadı.');
+    const { algorithmVersion, profileFingerprint, items } = input;
     const targetSchemaVersion = input.schemaVersion ?? DERIVED_PROFILE_SCHEMA_VERSION;
     const resolvedSourceCatalogHash =
       input.sourceCatalogHash !== undefined
@@ -2027,7 +2029,9 @@ export class PersistentDataStore {
   public async upsertDerivedProfileAsync(
     input: Parameters<PersistentDataStore['upsertDerivedProfile']>[0]
   ): Promise<{ updated: boolean; count: number; contentHash: string }> {
-    const { profileId, algorithmVersion, profileFingerprint, items } = input;
+    const profileId = normalizeProfileId(input.profileId);
+    if (!profileId) throw new Error('Geçersiz profil kimliği; türetilmiş profil yazılamadı.');
+    const { algorithmVersion, profileFingerprint, items } = input;
     const targetSchemaVersion = input.schemaVersion ?? DERIVED_PROFILE_SCHEMA_VERSION;
     const resolvedSourceCatalogHash =
       input.sourceCatalogHash !== undefined
