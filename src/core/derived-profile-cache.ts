@@ -1,3 +1,4 @@
+import { normalizeProfileId } from './profile-id.ts';
 import { canonicalizeMediaKey, parseMediaKey } from './keys.ts';
 
 /**
@@ -308,7 +309,9 @@ export function validateDerivedProfileCache(
     return { valid: false, reason: 'invalid_structure' };
   }
 
-  if (String(rawDoc.profileId || '') !== expected.profileId) {
+  const rawProfileId = normalizeProfileId(rawDoc.profileId);
+  const expectedProfileId = normalizeProfileId(expected.profileId);
+  if (!rawProfileId || !expectedProfileId || rawProfileId !== expectedProfileId) {
     return { valid: false, reason: 'profile_id_mismatch' };
   }
 
@@ -343,7 +346,7 @@ export function validateDerivedProfileCache(
 
   const recomputedHash = computeDerivedProfileContentHash({
     schemaVersion: requiredSchema,
-    profileId: expected.profileId,
+    profileId: String(rawDoc.profileId || ''),
     algorithmVersion: expected.algorithmVersion,
     profileFingerprint: expected.profileFingerprint,
     sourceCatalogHash: String(rawDoc.sourceCatalogHash || ''),
@@ -358,7 +361,7 @@ export function validateDerivedProfileCache(
     valid: true,
     document: {
       schemaVersion: requiredSchema,
-      profileId: expected.profileId,
+      profileId: expectedProfileId,
       algorithmVersion: expected.algorithmVersion,
       profileFingerprint: expected.profileFingerprint,
       sourceCatalogHash: String(rawDoc.sourceCatalogHash || ''),
