@@ -291,26 +291,28 @@ export class BackgroundTaskRepository {
       const eventInserted = (insertEvent.changes ?? 0) > 0;
       let tasksCreated = 0;
 
-      if (eventInserted) {
-        const insertTask = db.prepare(
-          `INSERT OR IGNORE INTO background_tasks
-             (task_id, event_id, handler_id, profile_id, status, attempts,
-              max_attempts, next_retry_at, lease_until, last_error,
-              created_at, updated_at, completed_at)
-           VALUES (?, ?, ?, ?, 'pending', 0, ?, NULL, NULL, NULL, ?, ?, NULL)`
+      // An event may be persisted before a live subscriber discovers that its
+      // profile became inactive. A later idempotent acceptEvent call must be
+      // able to add the missing handler task without duplicating existing ones.
+      // The (event_id, handler_id) uniqueness constraint is the idempotency guard.
+      const insertTask = db.prepare(
+        `INSERT OR IGNORE INTO background_tasks
+           (task_id, event_id, handler_id, profile_id, status, attempts,
+            max_attempts, next_retry_at, lease_until, last_error,
+            created_at, updated_at, completed_at)
+         VALUES (?, ?, ?, ?, 'pending', 0, ?, NULL, NULL, NULL, ?, ?, NULL)`
+      );
+      for (const handlerId of handlerIds) {
+        const result = insertTask.run(
+          crypto.randomUUID(),
+          input.eventId,
+          handlerId,
+          input.profileId,
+          this.defaultMaxAttempts,
+          nowIso,
+          nowIso
         );
-        for (const handlerId of handlerIds) {
-          const result = insertTask.run(
-            crypto.randomUUID(),
-            input.eventId,
-            handlerId,
-            input.profileId,
-            this.defaultMaxAttempts,
-            nowIso,
-            nowIso
-          );
-          if ((result.changes ?? 0) > 0) tasksCreated += 1;
-        }
+        if ((result.changes ?? 0) > 0) tasksCreated += 1;
       }
 
       db.exec('COMMIT');

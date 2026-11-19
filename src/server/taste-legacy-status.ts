@@ -59,21 +59,29 @@ async function fileExists(filePath: string): Promise<boolean> {
 async function countProfilePartitions(
   dataDir: string
 ): Promise<{ count: number; unreadable: boolean }> {
+  // Mapping validation is independent of directory discovery. A populated
+  // profiles/ folder must not mask a corrupt _profile-id-map.json manifest.
+  let manifestCount = 0;
+  let unreadable = false;
+  try {
+    const map = await readTasteProfileIdMap(dataDir);
+    if (map.status !== 'missing') {
+      manifestCount = Object.keys(map.data.entries).length;
+    }
+  } catch {
+    unreadable = true;
+  }
+
+  let directoryCount = 0;
   const profilesRoot = path.join(dataDir, 'taste', 'profiles');
   try {
     const entries = await fs.readdir(profilesRoot, { withFileTypes: true });
-    const dirs = entries.filter((entry) => entry.isDirectory());
-    if (dirs.length > 0) return { count: dirs.length, unreadable: false };
+    directoryCount = entries.filter((entry) => entry.isDirectory()).length;
   } catch {
     // profiles/ yok → henüz profil partition'ı yok.
   }
-  try {
-    const map = await readTasteProfileIdMap(dataDir);
-    if (map.status === 'missing') return { count: 0, unreadable: false };
-    return { count: Object.keys(map.data.entries).length, unreadable: false };
-  } catch {
-    return { count: 0, unreadable: true };
-  }
+
+  return { count: Math.max(directoryCount, manifestCount), unreadable };
 }
 
 /**
