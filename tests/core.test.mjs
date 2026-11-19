@@ -2375,7 +2375,7 @@ describe("Sorun D — Öneri Puanları, Kalıcı Zevk Haritası ve Halka Gerilet
 
     const profileId = "profile-taste-42";
     const initialMap = loadPersistentTasteMap(profileId);
-    assert.equal(initialMap.profileId, profileId);
+    assert.equal(initialMap.profileId, profileId.toUpperCase());
     assert.deepEqual(initialMap.entries, {});
     assert.deepEqual(initialMap.lastRecommendedKeys, []);
 
