@@ -28,9 +28,17 @@ const LATIN_TRANSLITERATION: Record<string, string> = {
   İ: "i",
 };
 
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
 export function normalizeProfileId(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  if (/[\u0000-\u001f\u007f/\\]/u.test(value)) return null;
+  if (hasControlCharacter(value) || value.includes("/") || value.includes("\\")) return null;
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 128 || trimmed.includes("..")) return null;
 
