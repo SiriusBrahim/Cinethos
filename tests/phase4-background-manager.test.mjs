@@ -66,12 +66,12 @@ function makeEvent(overrides = {}) {
   return {
     eventId: 'evt-test-1',
     eventType: 'LibraryItemAdded',
-    profileId: 'profile-a',
+    profileId: 'PROFILE-A',
     entityId: 'movie:157336',
     schemaVersion: 1,
     sourceRevision: 5,
     occurredAt: '2026-01-01T00:00:00.000Z',
-    ref: { profileId: 'profile-a', revision: 5 },
+    ref: { profileId: 'PROFILE-A', revision: 5 },
     payload: { mediaKey: 'movie:157336', mediaType: 'movie', list: 'watched' },
     ...overrides,
   };
@@ -91,7 +91,7 @@ async function makeManager(options = {}) {
       createLibraryItemAddedHandler(),
       createLibraryRatingChangedHandler(),
     ],
-    profileContext: options.profileContext ?? makeProfileContext('profile-a'),
+    profileContext: options.profileContext ?? makeProfileContext('PROFILE-A'),
     now,
     baseRetryDelayMs: 10,
     ...options.manager,
@@ -141,7 +141,7 @@ test('F4-A1 acceptEvent: olay kalıcı deftere yazılır, kayıtlı işleyici ba
     const event = repository.getEvent('evt-test-1');
     assert.ok(event, 'olay kaydı okunabilmeli');
     assert.equal(event.eventType, 'LibraryItemAdded');
-    assert.equal(event.profileId, 'profile-a');
+    assert.equal(event.profileId, 'PROFILE-A');
     assert.equal(event.sourceRevision, 5);
     assert.deepEqual(event.payload, { mediaKey: 'movie:157336', mediaType: 'movie', list: 'watched' });
 
@@ -172,7 +172,7 @@ test('F4-A1b acceptEvent: iki olay türü iki ayrı görev üretir; işleyicisiz
 
     // Kayıtlı işleyicisi olmayan olay türü: deftere yazılır, görev üretilmez.
     const r3 = await manager.acceptEvent(
-      makeEvent({ eventId: 'evt-c', eventType: 'ProfileSwitched', payload: { toProfileId: 'profile-b' } })
+      makeEvent({ eventId: 'evt-c', eventType: 'ProfileSwitched', payload: { toProfileId: 'PROFILE-B' } })
     );
     assert.equal(r3.eventInserted, true, 'tüm olaylar deftere yazılmalı');
     assert.equal(r3.tasksCreated, 0, 'işleyicisi olmayan olay için görev üretilmemeli');
@@ -206,7 +206,7 @@ test('F4-A1c atomiklik: görev yazımı başarısız olursa olay da kalıcılaş
         {
           eventId: 'evt-broken',
           eventType: 'LibraryItemAdded',
-          profileId: 'profile-a',
+          profileId: 'PROFILE-A',
           entityId: null,
           schemaVersion: 1,
           sourceRevision: 5,
@@ -271,15 +271,15 @@ test('F4-A2 duplicate eventId: deduplicated=true, yeni görev üretilmez, mevcut
 // ---------------------------------------------------------------------------
 
 test('F4-A3 profil çakışması: hedef profil aktif değilken görev pending kalır, aktif olunca tamamlanır (R2-A4)', async () => {
-  const state = { profileId: 'profile-a', revision: 5 };
+  const state = { profileId: 'PROFILE-A', revision: 5 };
   const { tmpDir, manager } = await makeManager({
     profileContext: { getCurrent: () => ({ ...state }) },
   });
   try {
     await manager.start();
 
-    // Olay 'profile-b' profiline ait; aktif profil 'profile-a' → görev bekler.
-    await manager.acceptEvent(makeEvent({ profileId: 'profile-b', ref: { profileId: 'profile-b', revision: 5 } }));
+    // Olay 'PROFILE-B' profiline ait; aktif profil 'PROFILE-A' → görev bekler.
+    await manager.acceptEvent(makeEvent({ profileId: 'PROFILE-B', ref: { profileId: 'PROFILE-B', revision: 5 } }));
     await manager.pumpOnce();
 
     const afterFirst = manager.listTasks()[0];
@@ -294,7 +294,7 @@ test('F4-A3 profil çakışması: hedef profil aktif değilken görev pending ka
     }
 
     // Hedef profil aktif olunca görev çalışır ve tamamlanır.
-    state.profileId = 'profile-b';
+    state.profileId = 'PROFILE-B';
     manager.notify();
     await pumpUntil(manager, () => manager.listTasks()[0]?.status === 'completed');
     assert.equal(manager.listTasks()[0].status, 'completed');
@@ -324,15 +324,15 @@ test('F4-A3b çapraz profil yazımı engellenir: çakışan görev, hedef profil
     },
   };
   const { tmpDir, manager } = await makeManager({
-    profileContext: makeProfileContext('profile-a'),
+    profileContext: makeProfileContext('PROFILE-A'),
     handlers: [conflictHandler],
   });
   try {
     await manager.start();
-    // 'profile-b' profiline ait üç ayrı olay → hepsi çakışır.
+    // 'PROFILE-B' profiline ait üç ayrı olay → hepsi çakışır.
     for (const id of ['evt-p1', 'evt-p2', 'evt-p3']) {
       await manager.acceptEvent(
-        makeEvent({ eventId: id, profileId: 'profile-b', ref: { profileId: 'profile-b', revision: 5 } })
+        makeEvent({ eventId: id, profileId: 'PROFILE-B', ref: { profileId: 'PROFILE-B', revision: 5 } })
       );
     }
     for (let i = 0; i < 3; i += 1) {
@@ -344,7 +344,7 @@ test('F4-A3b çapraz profil yazımı engellenir: çakışan görev, hedef profil
       'hedef profil aktif değilken görevler beklemeli ve deneme tüketmemeli'
     );
     assert.equal(
-      manager.listTasks().every((t) => t.profileId === 'profile-b'),
+      manager.listTasks().every((t) => t.profileId === 'PROFILE-B'),
       true,
       'görevlerin profil kimliği korunmalı'
     );
@@ -365,7 +365,7 @@ test('F4-A4 lease süresi dolan processing görevi pending durumuna alınır; ha
       {
         eventId: 'evt-lease',
         eventType: 'LibraryItemAdded',
-        profileId: 'profile-a',
+        profileId: 'PROFILE-A',
         entityId: 'movie:157336',
         schemaVersion: 1,
         sourceRevision: 5,
@@ -406,7 +406,7 @@ test('F4-A4b lease süresi içindeki processing görevi kurtarılmaz (çalışan
       {
         eventId: 'evt-live',
         eventType: 'LibraryItemAdded',
-        profileId: 'profile-a',
+        profileId: 'PROFILE-A',
         entityId: 'movie:157336',
         schemaVersion: 1,
         sourceRevision: 5,
@@ -558,7 +558,7 @@ test('F4-A6 persistEvent başarısızsa publish reddedilir ve aboneler hiç çal
 
   const event = createAppEvent({
     eventType: 'LibraryItemAdded',
-    ref: { profileId: 'profile-a', revision: 1 },
+    ref: { profileId: 'PROFILE-A', revision: 1 },
     payload: { mediaKey: 'movie:157336', mediaType: 'movie', list: 'watched' },
   });
 
@@ -584,7 +584,7 @@ test('F4-A6b persistEvent başarılıysa aboneler normal çalışır (mevcut Eve
 
   const event = createAppEvent({
     eventType: 'LibraryItemAdded',
-    ref: { profileId: 'profile-a', revision: 1 },
+    ref: { profileId: 'PROFILE-A', revision: 1 },
     payload: { mediaKey: 'movie:157336', mediaType: 'movie', list: 'watched' },
   });
   await bus.publish(event);
@@ -753,7 +753,7 @@ test('F4-A9 duplicate kabul: event/task sayaçları ve durum dağılımı deği�
 async function makeRuntime() {
   const tmpDir = await makeTempDir();
   const runtime = createCineTrackApp({ dataDir: tmpDir });
-  const doc = makeDoc([makeProfile('profile-a', 'Profil A'), makeProfile('profile-b', 'Profil B')]);
+  const doc = makeDoc([makeProfile('PROFILE-A', 'Profil A'), makeProfile('PROFILE-B', 'Profil B')]);
   const seed = await runtime.primaryRepository.saveRaw(doc, { forceOverwrite: true });
   assert.equal(seed.ok, true, `tohum belge yazılamadı: ${JSON.stringify(seed)}`);
   await runtime.startRuntimeModules();
@@ -777,7 +777,7 @@ test('F4-B1 entegrasyon: LibraryService ekleme olayı BackgroundManager görevin
   const { tmpDir, runtime } = await makeRuntime();
   try {
     const outcome = await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watched',
@@ -790,7 +790,7 @@ test('F4-B1 entegrasyon: LibraryService ekleme olayı BackgroundManager görevin
     const tasks = runtime.backgroundManager.listTasks();
     assert.equal(tasks.length, 1, 'kütüphane ekleme olayı için bir görev üretilmeli');
     assert.equal(tasks[0].handlerId, LIBRARY_ITEM_ADDED_HANDLER_ID);
-    assert.equal(tasks[0].profileId, 'profile-a');
+    assert.equal(tasks[0].profileId, 'PROFILE-A');
 
     // Pompa görevi tamamlamalı (otomatik pompa veya açık tur).
     for (let i = 0; i < 20 && runtime.backgroundManager.listTasks()[0].status !== 'completed'; i += 1) {
@@ -815,14 +815,14 @@ test('F4-B1b entegrasyon: puan olayı görev üretir; audit işleyicisi puanı o
   const { tmpDir, runtime } = await makeRuntime();
   try {
     await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watched',
       rating: 9,
     });
     const outcome = await runtime.libraryService.updateItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       rating: 7,
     });
@@ -841,7 +841,7 @@ test('F4-B1b entegrasyon: puan olayı görev üretir; audit işleyicisi puanı o
 
     // Puan yalnızca kullanıcı kütüphane kaydında; ortak metadata kanalı puan taşımaz.
     const raw = await runtime.primaryRepository.readRaw();
-    const item = raw.document.profiles.find((p) => p.id === 'profile-a').items[0];
+    const item = raw.document.profiles.find((p) => p.id === 'PROFILE-A').items[0];
     assert.equal(item.personal_rating, 7, 'kişisel puan kütüphane kaydında güncellenmeli');
     const event = runtime.backgroundManager.getEvent(ratingTasks[0].eventId);
     assert.deepEqual(
@@ -892,7 +892,7 @@ test('F4-B3 stopRuntimeModules BackgroundManager\'ı durdurur; bekleyen görev k
   const { tmpDir, runtime } = await makeRuntime();
   try {
     await runtime.libraryService.addItem({
-      ref: ref(runtime, 'profile-a'),
+      ref: ref(runtime, 'PROFILE-A'),
       mediaKey: 'movie:157336',
       mediaType: 'movie',
       list: 'watchlist',
