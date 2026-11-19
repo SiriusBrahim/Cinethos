@@ -328,7 +328,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
     await flushCoreIdbWrites();
 
     assert.equal(fakeLs.getItem('cinetrack_taste_map_PROFILE-DEFAULT'), null);
-    assert.equal(fakeLs.getItem('cinetrack_pool_movie_profile-default'), null);
+    assert.equal(fakeLs.getItem('cinetrack_pool_movie_PROFILE-DEFAULT'), null);
     assert.equal(
       fakeIdb._databases
         .get('cinetrack-discovery-history-db')
@@ -340,7 +340,7 @@ test('Aşama 1 (BUG-01, BUG-02, BUG-04): 127.0.0.1 varsayılan dinleme + CINETRA
       fakeIdb._databases
         .get('cinetrack-candidate-pool-db')
         ?.stores.get('ct_candidate_pool')
-        ?.has('cinetrack_pool_movie_profile-default'),
+        ?.has('cinetrack_pool_movie_PROFILE-DEFAULT'),
       true
     );
 
