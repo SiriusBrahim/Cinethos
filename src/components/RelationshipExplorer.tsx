@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
+import { normalizeProfileId } from '../core/profile-id.ts';
 import {
   buildRelationshipGraph,
   computeRelationshipPoolSignature,
@@ -269,7 +270,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
           preferences,
           favoriteActorIds: favoriteActors.map((actor) => actor.id),
         });
-        if (snapshot.profileId !== profileId || snapshot.mode !== mode) return;
+        if (normalizeProfileId(snapshot.profileId) !== normalizeProfileId(profileId) || snapshot.mode !== mode) return;
         if (snapshot.profileSignature !== currentSignatureForSnapshot) {
           setCacheNotice(
             'Kullanıcı tercihleri güncellendiği için harita taze verilerle yenilendi.',
