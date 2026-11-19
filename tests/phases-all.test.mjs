@@ -720,7 +720,7 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
   const tvPool = Array.from({ length: 24 }, (_, idx) =>
     makeCandidate(2000 + idx, 'tv', { genre_ids: [10765, (idx % 4) + 18] })
   );
-  const profileA = makeSampleProfile('prof-a', [
+  const profileA = makeSampleProfile('profile-a', [
     {
       id: 11,
       media_type: 'movie',
@@ -829,7 +829,7 @@ test('Faz 10: evaluateRecommendationEngine, Zevk DNA, CSV (Letterboxd/IMDb), ICS
   assert.ok(ics.includes('END:VCALENDAR'));
 
   // 5. İki profil izleme listesi kesişimi
-  const profileB = makeSampleProfile('prof-b', [
+  const profileB = makeSampleProfile('profile-b', [
     { ...profileA.items[1], status: 'watchlist' },
     { ...profileA.items[0], status: 'watchlist', personal_rating: '' },
   ]);
