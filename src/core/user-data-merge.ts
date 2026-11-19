@@ -704,7 +704,7 @@ export function reconcileUserDataDocumentsLossless(
         mergedProfiles[0]?.id ||
         'profile-default'
       : mergedProfiles.find((p) => p.id === effectiveLocalActiveId)?.id ||
-        mergedProfiles.find((p) => p.id === remoteDoc.activeProfileId)?.id ||
+        mergedProfiles.find((p) => p.id === remoteActiveProfileId)?.id ||
         mergedProfiles[0]?.id ||
         'profile-default';
 
