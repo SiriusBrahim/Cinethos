@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -1419,7 +1420,7 @@ function inspectDerivedProfileRawContent(
   if (
     !isPlainObject(parsed) ||
     typeof parsed.profileId !== 'string' ||
-    !parsed.profileId.trim() ||
+    !normalizeProfileId(parsed.profileId) ||
     typeof parsed.algorithmVersion !== 'string' ||
     typeof parsed.profileFingerprint !== 'string' ||
     !isPlainObject(parsed.items)

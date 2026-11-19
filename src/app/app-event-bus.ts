@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 /**
  * MIA Faz 1B — Adım 8: Uygulama Olay Yolu (IEventPublisher / IEventSubscriber).
  *
@@ -43,7 +44,7 @@ export interface CreateAppEventInput<K extends keyof AppEventMap> {
 export function createAppEvent<K extends keyof AppEventMap>(
   input: CreateAppEventInput<K>
 ): TypedAppEvent<K> {
-  const profileId = typeof input.ref?.profileId === 'string' ? input.ref.profileId.trim() : '';
+  const profileId = normalizeProfileId(input.ref?.profileId) ?? '';
   if (!profileId) {
     throw new Error(`Olay üretilemedi (${String(input.eventType)}): profileId boş olamaz.`);
   }
@@ -65,7 +66,7 @@ export function createAppEvent<K extends keyof AppEventMap>(
     schemaVersion: input.schemaVersion ?? 1,
     payload: input.payload,
     sourceRevision: input.ref.revision,
-    ref: input.ref,
+    ref: { ...input.ref, profileId },
   };
 }
 
@@ -82,7 +83,7 @@ export class AppEventBus implements IEventPublisher, IEventSubscriber {
 
   async publish<K extends keyof AppEventMap>(event: TypedAppEvent<K>): Promise<void> {
     const eventId = typeof event?.eventId === 'string' ? event.eventId.trim() : '';
-    const profileId = typeof event?.profileId === 'string' ? event.profileId.trim() : '';
+    const profileId = normalizeProfileId(event?.profileId) ?? '';
     if (!eventId) {
       throw new Error(`Olay yayınlanamadı (${String(event?.eventType)}): eventId zorunludur.`);
     }
@@ -96,12 +97,17 @@ export class AppEventBus implements IEventPublisher, IEventSubscriber {
     }
 
     // Kalıcılık kancası başarısızsa hata çağıran modüle iletilir (sessiz catch yok).
+    const canonicalEvent = {
+      ...event,
+      profileId,
+      ref: event.ref ? { ...event.ref, profileId } : event.ref,
+    } as TypedAppEvent<K>;
     if (this.persistEvent) {
-      await this.persistEvent(event);
+      await this.persistEvent(canonicalEvent);
     }
 
     if (this.historyLimit > 0) {
-      this.history.push(event);
+      this.history.push(canonicalEvent);
       if (this.history.length > this.historyLimit) {
         this.history.splice(0, this.history.length - this.historyLimit);
       }

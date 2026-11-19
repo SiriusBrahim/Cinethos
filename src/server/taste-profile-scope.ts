@@ -2,22 +2,22 @@
 // Cinethos Taste Engine — Profil Kapsamı (Faz 5 / R2-A1)
 //
 // Bu modül R2-A1'in üç altyapı parçasını tek sorumluluklu bir yerde toplar:
-//   1. Kanonik `profileId` doğrulama (mevcut `PROFILE_ID_PATTERN` sözleşmesi)
-//      ve kayıpsız `p1-b64url` profil dizini kodlaması.
+//   1. Kanonik `profileId` doğrulama/normalizasyon ve `p2-hex` profil dizini
+//      kodlaması.
 //   2. Profil id eşleme manifesti (`_profile-id-map.json`) okuma/doğrulama/
 //      atomik yazma; `entries` ↔ `byDir` birebir tutarlılık denetimi.
 //   3. Kapsam bazlı kilit altyapısı: atomik sahiplenme, lease + heartbeat,
 //      yalnızca kanıtlanabilir stale devralma ve sahiplik doğrulamalı bırakma.
 //
-// A2–A5 kapsamı (profil partition IO yayılımı, adapter/rebuild/routes bağlamı,
-// BackgroundManager, uçtan uca legacy geçişi) burada ele alınmaz.
+// A2–A5 kapsamı profil store ve servis katmanlarında tamamlanır; burada yalnızca
+// kimlik, manifest ve güvenli p1 → p2 partition geçişi yönetilir.
 // ===========================================================================
 
 import { createHash, randomUUID } from "node:crypto";
 import fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PROFILE_ID_PATTERN } from "../core/cinetrack-core.ts";
+import { normalizeProfileId } from "../core/profile-id.ts";
 import { writeJsonFileAtomicAsync } from "./atomic-json.ts";
 
 // === Sabitler ===
@@ -25,9 +25,10 @@ import { writeJsonFileAtomicAsync } from "./atomic-json.ts";
 /** Profil id eşleme manifestinin dosya adı (profil kökü altında). */
 export const TASTE_PROFILE_ID_MAP_FILENAME = "_profile-id-map.json";
 /** Profil dizini kodlama şeması kimliği. */
-export const TASTE_PROFILE_ID_MAP_SCHEME = "p1-b64url";
+export const TASTE_PROFILE_ID_MAP_SCHEME = "p2-hex";
+const LEGACY_PROFILE_ID_MAP_SCHEME = "p1-b64url";
 /** Desteklenen manifest sürümü. Bilinmeyen sürüm fail-fast reddedilir. */
-export const TASTE_PROFILE_ID_MAP_VERSION = 1;
+export const TASTE_PROFILE_ID_MAP_VERSION = 2;
 /** Kanonik profil kimliği için üst sınır (trim sonrası). */
 export const TASTE_PROFILE_ID_MAX_LENGTH = 128;
 
@@ -110,9 +111,9 @@ export class TasteLockError extends Error {
 /**
  * Kanonik `profileId` doğrulaması (fail-fast).
  *
- * Mevcut `PROFILE_ID_PATTERN` sözleşmesi korunur; ek olarak trim sonrası boşluk,
- * 128 karakter üstü uzunluk, yol ayıracı ve kontrol karakterleri reddedilir.
- * Geçersiz kimlik sessizce sanitize edilmez/yeniden adlandırılmaz.
+ * Tek merkezli Latin/ASCII normalizasyonu uygulanır. Türkçe ve Latin aksanları
+ * temel harflere dönüştürülür; desteklenmeyen Unicode alfabeleri reddedilir.
+ * Geçersiz kimlik sessizce silinmez veya yeniden adlandırılmaz.
  */
 function containsControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -123,108 +124,77 @@ function containsControlCharacter(value: string): boolean {
 }
 
 export function validateCanonicalProfileId(raw: unknown): string {
-  if (typeof raw !== "string") {
+  const canonical = normalizeProfileId(raw);
+  if (!canonical) {
     throw new TasteProfileScopeError(
       "invalid_profile_id",
-      "Profil kimliği metin olmalıdır."
+      "Profil kimliği geçerli bir Latin profil kimliği olmalıdır; desteklenmeyen Unicode alfabeleri kabul edilmez."
     );
   }
-  // Kontrol karakterleri (NUL, satır sonu, DEL vb.) trim öncesi reddedilir:
-  // baştaki/sondaki boşluk temizlenir ama gizli kontrol karakteri taşıyan
-  // kimlik sessizce normalize edilmez.
-  if (containsControlCharacter(raw)) {
+  if (canonical.length > TASTE_PROFILE_ID_MAX_LENGTH) {
     throw new TasteProfileScopeError(
       "invalid_profile_id",
-      "Profil kimliği kontrol karakteri içeremez."
+      `Profil kimliği en fazla ${TASTE_PROFILE_ID_MAX_LENGTH} karakter olabilir.`
     );
   }
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_id",
-      "Profil kimliği boş olamaz."
-    );
-  }
-  if (trimmed.length > TASTE_PROFILE_ID_MAX_LENGTH) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_id",
-      `Profil kimliği en fazla ${TASTE_PROFILE_ID_MAX_LENGTH} karakter olabilir (girilen: ${trimmed.length}).`
-    );
-  }
-  if (/[/\\]/.test(trimmed)) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_id",
-      "Profil kimliği yol ayıracı içeremez."
-    );
-  }
-  if (trimmed === "." || trimmed === ".." || trimmed.includes("..")) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_id",
-      "Profil kimliği '.' / '..' segmentleri içeremez."
-    );
-  }
-  if (!PROFILE_ID_PATTERN.test(trimmed)) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_id",
-      `Profil kimliği mevcut PROFILE_ID_PATTERN sözleşmesine uymuyor: ${JSON.stringify(trimmed)}`
-    );
-  }
-  return trimmed;
+  return canonical;
 }
 
-/**
- * Kanonik kimliği kayıpsız `p1-b64url` dizin adına çevirir.
- * Dizin adı yalnızca depolama temsilidir; iş mantığı kanonik kimliği kullanır.
- */
+/** Yeni kanonik kimliği yalnızca küçük harfli hex içeren p2 dizinine çevirir. */
 export function encodeProfileIdSafe(rawProfileId: unknown): string {
   const canonical = validateCanonicalProfileId(rawProfileId);
-  const encoded = Buffer.from(canonical, "utf8").toString("base64url");
-  return `${TASTE_PROFILE_ID_MAP_SCHEME}-${encoded}`;
+  return `p2-hex-${Buffer.from(canonical, "utf8").toString("hex")}`;
+}
+
+function encodeLegacyProfileId(rawProfileId: string): string {
+  return `${LEGACY_PROFILE_ID_MAP_SCHEME}-${Buffer.from(rawProfileId, "utf8").toString("base64url")}`;
 }
 
 /**
- * `p1-b64url-*` dizin adını kanonik kimliğe geri çözer.
- * Şema öneki, alfabe ve kayıpsız round-trip doğrulanır; aksi halde fail-fast.
+ * Hem eski p1-b64url hem yeni p2-hex dizinlerini çözer.
+ * p1 round-trip'i ham eski kimlikle; p2 round-trip'i kanonik kimlikle doğrulanır.
  */
 export function decodeProfileIdSafe(dir: unknown): string {
   if (typeof dir !== "string") {
-    throw new TasteProfileScopeError(
-      "invalid_profile_dir",
-      "Profil dizin adı metin olmalıdır."
-    );
+    throw new TasteProfileScopeError("invalid_profile_dir", "Profil dizin adı metin olmalıdır.");
   }
-  const prefix = `${TASTE_PROFILE_ID_MAP_SCHEME}-`;
-  if (!dir.startsWith(prefix)) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_dir",
-      `Profil dizin adı '${prefix}' şema önekiyle başlamalıdır.`
-    );
+
+  if (dir.startsWith(`${LEGACY_PROFILE_ID_MAP_SCHEME}-`)) {
+    const encoded = dir.slice(LEGACY_PROFILE_ID_MAP_SCHEME.length + 1);
+    if (!/^[A-Za-z0-9_-]+$/.test(encoded)) {
+      throw new TasteProfileScopeError("invalid_profile_dir", "Eski profil dizini geçersiz Base64URL alfabesi içeriyor.");
+    }
+    const decoded = Buffer.from(encoded, "base64url").toString("utf8");
+    if (encodeLegacyProfileId(decoded) !== dir) {
+      throw new TasteProfileScopeError("invalid_profile_dir", "Eski profil dizini Base64URL round-trip doğrulamasından geçemedi.");
+    }
+    try {
+      return validateCanonicalProfileId(decoded);
+    } catch (err) {
+      throw new TasteProfileScopeError(
+        "invalid_profile_dir",
+        `Eski profil dizini kanonik kimliğe çözülemedi: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
-  const encoded = dir.slice(prefix.length);
-  if (!/^[A-Za-z0-9_-]+$/.test(encoded)) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_dir",
-      "Profil dizin adı geçersiz Base64URL alfabesi içeriyor."
-    );
+
+  const match = /^p2-hex-([0-9a-f]+)$/.exec(dir);
+  if (!match || match[1]!.length % 2 !== 0) {
+    throw new TasteProfileScopeError("invalid_profile_dir", "Profil dizini p2-hex biçiminde değil.");
   }
-  const decoded = Buffer.from(encoded, "base64url").toString("utf8");
+  const encoded = match[1]!;
+  const decoded = Buffer.from(encoded, "hex").toString("utf8");
   let canonical: string;
   try {
     canonical = validateCanonicalProfileId(decoded);
   } catch (err) {
     throw new TasteProfileScopeError(
       "invalid_profile_dir",
-      `Profil dizin adı kanonik kimliğe çözülemedi: ${
-        err instanceof Error ? err.message : String(err)
-      }`
+      `Profil dizini kanonik kimliğe çözülemedi: ${err instanceof Error ? err.message : String(err)}`
     );
   }
-  const roundTrip = `${prefix}${Buffer.from(canonical, "utf8").toString("base64url")}`;
-  if (roundTrip !== dir) {
-    throw new TasteProfileScopeError(
-      "invalid_profile_dir",
-      "Profil dizin adı kayıpsız round-trip doğrulamasından geçemedi."
-    );
+  if (canonical !== decoded || encodeProfileIdSafe(canonical) !== dir) {
+    throw new TasteProfileScopeError("invalid_profile_dir", "Profil dizini kanonik p2-hex round-trip doğrulamasından geçemedi.");
   }
   return canonical;
 }
@@ -356,16 +326,12 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
       "Profil id eşleme manifesti JSON nesnesi olmalıdır."
     );
   }
-  if (raw.version !== TASTE_PROFILE_ID_MAP_VERSION) {
+  const legacyManifest = raw.version === 1 && raw.scheme === LEGACY_PROFILE_ID_MAP_SCHEME;
+  const currentManifest = raw.version === TASTE_PROFILE_ID_MAP_VERSION && raw.scheme === TASTE_PROFILE_ID_MAP_SCHEME;
+  if (!legacyManifest && !currentManifest) {
     throw new TasteProfileScopeError(
       "profile_id_map_corrupt",
-      `Desteklenmeyen profil id eşleme manifest sürümü: ${JSON.stringify(raw.version)} (beklenen ${TASTE_PROFILE_ID_MAP_VERSION}).`
-    );
-  }
-  if (raw.scheme !== TASTE_PROFILE_ID_MAP_SCHEME) {
-    throw new TasteProfileScopeError(
-      "profile_id_map_corrupt",
-      `Desteklenmeyen profil dizini şeması: ${JSON.stringify(raw.scheme)} (beklenen ${TASTE_PROFILE_ID_MAP_SCHEME}).`
+      `Desteklenmeyen profil id eşleme manifesti: version=${JSON.stringify(raw.version)}, scheme=${JSON.stringify(raw.scheme)}.`
     );
   }
   const rawEntries = raw.entries;
@@ -378,12 +344,12 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
   }
 
   const entries: Record<string, TasteProfileIdMapEntry> = {};
-  for (const [profileId, entry] of Object.entries(rawEntries)) {
-    const canonical = validateCanonicalProfileId(profileId);
-    if (canonical !== profileId) {
+  for (const [rawProfileId, entry] of Object.entries(rawEntries)) {
+    const profileId = validateCanonicalProfileId(rawProfileId);
+    if (entries[profileId]) {
       throw new TasteProfileScopeError(
         "profile_id_map_corrupt",
-        `Manifest anahtarı kanonik değil (${JSON.stringify(profileId)} → ${JSON.stringify(canonical)}).`
+        `Birden fazla eski profil kimliği aynı kanonik kimliğe dönüşüyor (${JSON.stringify(rawProfileId)} → ${profileId}).`
       );
     }
     if (!isPlainRecord(entry)) {
@@ -425,12 +391,6 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
       );
     }
     const canonical = validateCanonicalProfileId(profileId);
-    if (canonical !== profileId) {
-      throw new TasteProfileScopeError(
-        "profile_id_map_corrupt",
-        `'byDir.${dir}' kanonik olmayan kimliğe işaret ediyor.`
-      );
-    }
     let dirProfileId: string;
     try {
       dirProfileId = decodeProfileIdSafe(dir);
@@ -442,13 +402,13 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
         }`
       );
     }
-    if (dirProfileId !== profileId) {
+    if (dirProfileId !== canonical) {
       throw new TasteProfileScopeError(
         "profile_id_map_corrupt",
         `'byDir.${dir}' ile dizin adının çözümü uyuşmuyor (${dirProfileId}).`
       );
     }
-    const entry = entries[profileId];
+    const entry = entries[canonical];
     if (!entry) {
       throw new TasteProfileScopeError(
         "profile_id_map_corrupt",
@@ -461,7 +421,10 @@ export function parseTasteProfileIdMap(raw: unknown): TasteProfileIdMap {
         `'byDir.${dir}' ile 'entries.${profileId}.dir' (${entry.dir}) uyuşmuyor.`
       );
     }
-    byDir[dir] = profileId;
+    if (byDir[dir] !== undefined) {
+      throw new TasteProfileScopeError("profile_id_map_corrupt", `'byDir.${dir}' yinelenen dizin kaydı içeriyor.`);
+    }
+    byDir[dir] = canonical;
   }
 
   const entryDirs = Object.values(entries).map((entry) => entry.dir);
@@ -599,6 +562,152 @@ export async function writeTasteProfileIdMap(
   );
 }
 
+
+async function directoryExists(directory: string): Promise<boolean> {
+  try {
+    const stat = await fsPromises.lstat(directory);
+    return stat.isDirectory() && !stat.isSymbolicLink();
+  } catch (err) {
+    if ((err as { code?: string })?.code === "ENOENT") return false;
+    throw err;
+  }
+}
+
+async function hashFile(filePath: string): Promise<string> {
+  const bytes = await fsPromises.readFile(filePath);
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function copyDirectoryContents(source: string, target: string): Promise<void> {
+  const sourceStat = await fsPromises.lstat(source);
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) {
+    throw new TasteProfileScopeError("profile_id_map_conflict", `Eski profil kaynağı güvenli bir dizin değil: ${source}`);
+  }
+  await fsPromises.mkdir(target, { recursive: false });
+  const entries = await fsPromises.readdir(source, { withFileTypes: true });
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const from = path.join(source, entry.name);
+    const to = path.join(target, entry.name);
+    const stat = await fsPromises.lstat(from);
+    if (stat.isSymbolicLink()) {
+      throw new TasteProfileScopeError("profile_id_map_conflict", `Profil verisi sembolik bağlantı içeriyor; geçiş durduruldu: ${from}`);
+    }
+    if (stat.isDirectory()) {
+      await copyDirectoryContents(from, to);
+    } else if (stat.isFile()) {
+      await fsPromises.copyFile(from, to);
+      if (await hashFile(from) !== await hashFile(to)) {
+        throw new TasteProfileScopeError("profile_id_map_conflict", `Profil dosyası kopya doğrulamasından geçemedi: ${entry.name}`);
+      }
+    } else {
+      throw new TasteProfileScopeError("profile_id_map_conflict", `Desteklenmeyen profil dosya türü: ${from}`);
+    }
+  }
+}
+
+async function directoriesHaveSameContents(left: string, right: string): Promise<boolean> {
+  if (!(await directoryExists(left)) || !(await directoryExists(right))) return false;
+  const leftEntries = await fsPromises.readdir(left, { withFileTypes: true });
+  const rightEntries = await fsPromises.readdir(right, { withFileTypes: true });
+  const leftNames = leftEntries.map((entry) => entry.name).sort();
+  const rightNames = rightEntries.map((entry) => entry.name).sort();
+  if (leftNames.length !== rightNames.length || leftNames.some((name, index) => name !== rightNames[index])) return false;
+  for (const name of leftNames) {
+    const leftPath = path.join(left, name);
+    const rightPath = path.join(right, name);
+    const leftStat = await fsPromises.lstat(leftPath);
+    const rightStat = await fsPromises.lstat(rightPath);
+    if (leftStat.isSymbolicLink() || rightStat.isSymbolicLink()) return false;
+    if (leftStat.isDirectory() !== rightStat.isDirectory() || leftStat.isFile() !== rightStat.isFile()) return false;
+    if (leftStat.isDirectory()) {
+      if (!(await directoriesHaveSameContents(leftPath, rightPath))) return false;
+    } else if (leftStat.isFile()) {
+      if (await hashFile(leftPath) !== await hashFile(rightPath)) return false;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * p1 -> p2 geçişi kopya-doğrula-manifesti-değiştir sırasını izler.
+ * Kaynak, hedef kopya ve manifest doğrulanmadan silinmez.
+ */
+async function migrateLegacyProfileDirectory(
+  legacyDir: string,
+  currentDir: string,
+  dataDir: string
+): Promise<void> {
+  if (legacyDir === currentDir) return;
+  const profilesRoot = resolveTasteProfilesRoot(dataDir);
+  const source = path.join(profilesRoot, legacyDir);
+  const target = path.join(profilesRoot, currentDir);
+
+  await withScopedTasteLock({ dataDir, scope: `profile:${legacyDir}` }, async () => {
+    const sourceExists = await directoryExists(source);
+    const targetExists = await directoryExists(target);
+    if (!sourceExists) return;
+
+    if (targetExists) {
+      if (!(await directoriesHaveSameContents(source, target))) {
+        throw new TasteProfileScopeError(
+          "profile_id_map_conflict",
+          `Eski ve yeni profil dizinleri farklı içerik taşıyor; otomatik birleştirme yapılmadı (${legacyDir} / ${currentDir}).`
+        );
+      }
+      return;
+    }
+
+    const staging = path.join(profilesRoot, `.${currentDir}.migration-tmp`);
+    await fsPromises.rm(staging, { recursive: true, force: true });
+    try {
+      await copyDirectoryContents(source, staging);
+      if (!(await directoriesHaveSameContents(source, staging))) {
+        throw new TasteProfileScopeError("profile_id_map_conflict", "Profil geçiş kopyası bütünlük doğrulamasından geçemedi.");
+      }
+      await fsPromises.rename(staging, target);
+      if (!(await directoriesHaveSameContents(source, target))) {
+        throw new TasteProfileScopeError("profile_id_map_conflict", "Yeni profil dizini kaynakla eşleşmiyor; eski veri korundu.");
+      }
+    } catch (error) {
+      await fsPromises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+}
+
+async function findLegacyProfileDirectory(
+  canonicalProfileId: string,
+  dataDir: string
+): Promise<string | null> {
+  const profilesRoot = resolveTasteProfilesRoot(dataDir);
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fsPromises.readdir(profilesRoot, { withFileTypes: true });
+  } catch (err) {
+    if ((err as { code?: string })?.code === "ENOENT") return null;
+    throw err;
+  }
+  const matches: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(`${LEGACY_PROFILE_ID_MAP_SCHEME}-`)) continue;
+    try {
+      if (decodeProfileIdSafe(entry.name) === canonicalProfileId) matches.push(entry.name);
+    } catch {
+      // Geçersiz/yarım kalmış başka bir profil dizini bu profile atanmaz.
+    }
+  }
+  if (matches.length > 1) {
+    throw new TasteProfileScopeError(
+      "profile_id_map_conflict",
+      `Aynı kanonik profile ait birden fazla eski dizin bulundu (${matches.join(", ")}); veri birleştirilmedi.`
+    );
+  }
+  return matches[0] ?? null;
+}
+
 export interface EnsureTasteProfileIdMapResult extends TasteProfileIdMapLookupResult {
   /** Bu çağrı yeni kayıt oluşturduysa true. */
   created: boolean;
@@ -616,46 +725,75 @@ export async function ensureTasteProfileIdMapEntry(
   dataDir: string = "data"
 ): Promise<EnsureTasteProfileIdMapResult> {
   const canonical = validateCanonicalProfileId(profileId);
-  const dir = encodeProfileIdSafe(canonical);
+  const currentDir = encodeProfileIdSafe(canonical);
+
   return withScopedTasteLock(
     { dataDir, scope: TASTE_PROFILE_ID_MAP_SCOPE },
     async () => {
       const current = await readTasteProfileIdMap(dataDir);
       const map = current.status === "ok" ? current.data : createEmptyTasteProfileIdMap();
-
       const existing = map.entries[canonical];
-      if (existing) {
-        if (existing.dir !== dir) {
-          throw new TasteProfileScopeError(
-            "profile_id_map_conflict",
-            `'${canonical}' için manifest dizini beklenen kodlamayla uyuşmuyor (${existing.dir} ≠ ${dir}).`
-          );
-        }
+      const legacyDir = existing?.dir.startsWith(`${LEGACY_PROFILE_ID_MAP_SCHEME}-`)
+        ? existing.dir
+        : existing
+          ? null
+          : await findLegacyProfileDirectory(canonical, dataDir);
+
+      if (legacyDir) {
+        await migrateLegacyProfileDirectory(legacyDir, currentDir, dataDir);
+      }
+
+      if (existing && existing.dir === currentDir && map.version === TASTE_PROFILE_ID_MAP_VERSION) {
         return {
           profileId: canonical,
-          dir: existing.dir,
+          dir: currentDir,
           createdAt: existing.createdAt,
           created: false,
         };
       }
 
-      const ownerOfDir = map.byDir[dir];
+      const ownerOfDir = map.byDir[currentDir];
       if (ownerOfDir !== undefined && ownerOfDir !== canonical) {
         throw new TasteProfileScopeError(
           "profile_id_map_conflict",
-          `'${dir}' dizini başka bir kanonik kimliğe kayıtlı (${ownerOfDir}).`
+          `'${currentDir}' dizini başka bir kanonik kimliğe kayıtlı (${ownerOfDir}).`
         );
       }
 
-      const createdAt = new Date().toISOString();
+      const createdAt = existing?.createdAt ?? new Date().toISOString();
+      const entries = { ...map.entries };
+      const byDir = { ...map.byDir };
+      if (existing && existing.dir !== currentDir) {
+        delete byDir[existing.dir];
+      }
+      entries[canonical] = { dir: currentDir, createdAt };
+      byDir[currentDir] = canonical;
+
       const next = sortTasteProfileIdMap({
         version: TASTE_PROFILE_ID_MAP_VERSION,
         scheme: TASTE_PROFILE_ID_MAP_SCHEME,
-        entries: { ...map.entries, [canonical]: { dir, createdAt } },
-        byDir: { ...map.byDir, [dir]: canonical },
+        entries,
+        byDir,
       });
       await writeTasteProfileIdMapUnlocked(next, dataDir);
-      return { profileId: canonical, dir, createdAt, created: true };
+
+      // Manifest yeni dizini işaret ediyor ve hedefin bütünlüğü doğrulandı.
+      // Kaynak ancak bu noktadan sonra kaldırılır; başarısız cleanup güvenlidir.
+      if (legacyDir && legacyDir !== currentDir) {
+        const profilesRoot = resolveTasteProfilesRoot(dataDir);
+        const source = path.join(profilesRoot, legacyDir);
+        const target = path.join(profilesRoot, currentDir);
+        if (await directoriesHaveSameContents(source, target)) {
+          await fsPromises.rm(source, { recursive: true, force: true }).catch(() => undefined);
+        }
+      }
+
+      return {
+        profileId: canonical,
+        dir: currentDir,
+        createdAt,
+        created: !existing,
+      };
     }
   );
 }

@@ -6,6 +6,7 @@
  * `IEventPublisher` kanalına (`ProfileSwitched`) bildirir.
  */
 
+import { normalizeProfileId } from '../core/profile-id.ts';
 import {
   ProfileConflictError,
   type IEventPublisher,
@@ -17,8 +18,8 @@ import {
   type WriteProfileRef,
 } from '../contracts/index.ts';
 
-function normalizeProfileId(profileId: unknown): string {
-  return typeof profileId === 'string' ? profileId.trim() : '';
+function requireCanonicalProfileId(profileId: unknown): string {
+  return normalizeProfileId(profileId) ?? '';
 }
 
 function isValidRevision(revision: unknown): revision is number {
@@ -43,7 +44,7 @@ export class ProfileContext implements IProfileContext {
   private readonly onInvalidateInFlight?: () => void;
 
   constructor(options: ProfileContextOptions) {
-    const profileId = normalizeProfileId(options.initialProfileId);
+    const profileId = requireCanonicalProfileId(options.initialProfileId);
     if (!profileId) {
       throw new ProfileConflictError('profile-not-found', {
         message: 'Başlangıç profil kimliği boş olamaz.',
@@ -70,7 +71,7 @@ export class ProfileContext implements IProfileContext {
   }
 
   assertCurrent(ref: ProfileRef): void {
-    const profileId = normalizeProfileId(ref?.profileId);
+    const profileId = requireCanonicalProfileId(ref?.profileId);
     if (!profileId) {
       throw new ProfileConflictError('profile-not-found', {
         message: 'Profil referansında geçerli bir profileId yok.',
@@ -122,7 +123,7 @@ export class ProfileContext implements IProfileContext {
    */
   commitRevision(nextRevision: number, expectedProfileId?: string): WriteProfileRef {
     if (expectedProfileId !== undefined) {
-      const normalized = normalizeProfileId(expectedProfileId);
+      const normalized = requireCanonicalProfileId(expectedProfileId);
       if (!normalized || normalized !== this.current.profileId) {
         throw new ProfileConflictError('profile-switched', {
           expectedRevision: nextRevision,
@@ -149,7 +150,7 @@ export class ProfileContext implements IProfileContext {
     nextProfileId: string,
     nextRevision: number = this.current.revision
   ): Promise<ProfileChangeEvent> {
-    const normalizedNext = normalizeProfileId(nextProfileId);
+    const normalizedNext = requireCanonicalProfileId(nextProfileId);
     if (!normalizedNext) {
       throw new ProfileConflictError('profile-not-found', {
         message: 'Hedef profil kimliği boş olamaz.',

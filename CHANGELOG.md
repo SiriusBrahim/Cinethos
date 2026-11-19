@@ -1,3 +1,9 @@
+## Unreleased — 2026-11-19
+
+- Profil kimlikleri merkezi Türkçe/Latin normalizasyonuyla büyük harfli ASCII biçimine sabitlendi.
+- Yeni profil partition dizinleri `p2-hex` oldu; eski `p1-b64url` manifestleri ve verileri doğrulamalı, atomik geçişle destekleniyor.
+- Normalizasyon, p2 kodlama, p1 geçişi, veri bütünlüğü ve profil izolasyonu testleri eklendi.
+
 ## [Unreleased — 2026-11-15 üçüncü tur]
 
 ### P0 — Geri yükleme güvenliği (P0-01 tamamlandı)

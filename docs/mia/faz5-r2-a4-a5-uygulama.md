@@ -79,3 +79,25 @@ değişmedi.
 
 **Kapsam dışı bırakılanlar:** S1 legacy kopyası (kullanıcı onayı), gerçek TMDB
 hidrasyonlu telafi, çok profilli `PUT /api/data` tarayıcı E2E'si.
+
+
+## 4. 2026-11-19 — Profil kimliği p2-hex geçişi
+
+Önceki A5 kaydındaki **global ve profile atanmamış legacy dosyaların** salt okunur
+tutulması kararı aynen korunur. Buna ek olarak, zaten bir profile ait olduğu
+manifest veya tekil p1 partition diziniyle kanıtlanan **profil partition'ları**
+için güvenli p1-b64url → p2-hex geçişi eklendi.
+
+- Kimlikler tek normalizer ile büyük harfli ASCII biçimine çevrilir; Türkçe ve
+  Latin aksanları translitere edilir, desteklenmeyen Unicode alfabeleri reddedilir.
+- Manifest v1/p1-b64url okunur; yeni yazımlar v2/p2-hex biçimindedir.
+- p1 verisi p2'ye kopyalanır, SHA-256 ve ağaç yapısı doğrulanır, hedef atomik
+  yayımlanır, manifest atomik güncellenir; kaynak ancak bundan sonra silinir.
+- Çakışan p1/p2 içerikleri birleştirilmez. Kaynak ve hedef korunur, manifest
+  değişmeden kalır.
+- Okuma yolları da migration giriş noktasından geçtiği için eski profiller
+  yalnızca yeni profil oluşturma akışına bağlı değildir.
+- Yeni test dosyaları: `tests/profile-id-normalization.test.mjs` ve
+  `tests/taste/taste-profile-p2-migration.test.mjs`.
+
+Ayrıntılı sözleşme: `docs/mia/profile-id-p2-hex-migration.md`.

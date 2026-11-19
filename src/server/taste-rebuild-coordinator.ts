@@ -28,6 +28,7 @@ import {
   writeTasteProfileForProfile,
   readTasteManifestForProfile,
   readTasteObjectionsForProfile,
+  ensureTasteProfileIdMapEntry,
 } from "./taste-store.ts";
 import {
   resolveTastePathsForProfile,
@@ -329,6 +330,7 @@ async function computeBootstrapSignature(
           path.join(dataDir, "stock.json"),
           path.join(dataDir, "taste", "cinetrack-taste-metadata-cache.json"),
         ];
+  await ensureTasteProfileIdMapEntry(profileId, dataDir);
   const profilePaths = resolveTastePathsForProfile(profileId, dataDir).paths;
   const files = [
     ...globalFiles,

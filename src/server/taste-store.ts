@@ -182,7 +182,9 @@ async function resolveProfileTasteStore(
   profileId: string,
   dataDir: string
 ): Promise<{ profileDir: string; paths: TasteProfileStorePaths }> {
-  const scoped = resolveTastePathsForProfile(profileId, dataDir);
+  // Okumalar da eski p1 dizinini p2'ye güvenli biçimde geçirir.
+  const ensured = await ensureTasteProfileIdMapEntry(profileId, dataDir);
+  const scoped = resolveTastePathsForProfile(ensured.profileId, dataDir);
   return { profileDir: scoped.dir, paths: scoped.paths };
 }
 
@@ -190,8 +192,6 @@ async function ensureProfileTasteStoreEntry(
   profileId: string,
   dataDir: string
 ): Promise<{ profileDir: string; paths: TasteProfileStorePaths }> {
-  // Manifest kaydını global kilit altında garanti eder, sonra yol çözümle.
-  await ensureTasteProfileIdMapEntry(profileId, dataDir);
   return resolveProfileTasteStore(profileId, dataDir);
 }
 

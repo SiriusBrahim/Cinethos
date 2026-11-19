@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 /**
  * MIA Faz 1B — Adım 7: Sunucu PrimaryDataRepository Adaptörü.
  *
@@ -166,8 +167,8 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
     ref: WriteProfileRef,
     reason?: string
   ): Promise<number> {
-    const expectedProfileId = typeof ref?.profileId === 'string' ? ref.profileId.trim() : '';
-    if (!expectedProfileId || document.activeProfileId !== expectedProfileId) {
+    const expectedProfileId = normalizeProfileId(ref?.profileId) ?? '';
+    if (!expectedProfileId || normalizeProfileId(document.activeProfileId) !== expectedProfileId) {
       throw new ProfileConflictError('profile-switched', {
         expectedRevision: ref.revision,
         message: `Profil uyuşmazlığı: yazma '${expectedProfileId || 'bilinmiyor'}' profili için istendi, belge '${document.activeProfileId || 'bilinmiyor'}' profiline ait.`,

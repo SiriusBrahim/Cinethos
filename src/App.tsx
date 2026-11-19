@@ -1,3 +1,4 @@
+import { normalizeProfileId } from './core/profile-id.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -203,27 +204,56 @@ function hasPersistedProfilesInStorage(): boolean {
 function loadInitialProfiles(): Profile[] {
   try {
     const stored = JSON.parse(localStorage.getItem(PROFILES_STORAGE) || 'null');
-    const profiles = Array.isArray(stored)
-      ? stored
-          .filter((p) => p && /^profile-[A-Za-z0-9_-]{1,60}$/.test(p.id) && typeof p.name === 'string')
-          .map((p) => {
-            const delKeys = loadDeletedKeys(p.id);
-            return {
-              id: p.id,
-              name: p.name.slice(0, 40),
-              createdAt: p.createdAt || '',
-              isDemo: Boolean(p.isDemo),
-              preferences: loadProfilePreferences(p.id),
-              items: loadProfileItems(p.id),
-              favoriteActors: loadFavoriteActors(p.id),
-              ...(Object.keys(delKeys).length > 0 ? { deleted_keys: delKeys } : {}),
-            };
-          })
-      : [];
+    const profiles: Profile[] = [];
+    if (Array.isArray(stored)) {
+      for (const p of stored) {
+        const canonicalId = normalizeProfileId(p?.id);
+        if (!p || !canonicalId || typeof p.name !== 'string') continue;
+        // Eski localStorage anahtarları ham profileId ile yazılmış olabilir;
+        // ilk açılışta veriyi eski anahtardan oku, sonraki kayıt kanonik anahtarı yazar.
+        const storageId = p.id as string;
+        const delKeys = loadDeletedKeys(storageId);
+        const loaded: Profile = {
+          id: canonicalId,
+          name: p.name.slice(0, 40),
+          createdAt: p.createdAt || '',
+          isDemo: Boolean(p.isDemo),
+          preferences: loadProfilePreferences(storageId),
+          items: loadProfileItems(storageId),
+          favoriteActors: loadFavoriteActors(storageId),
+          ...(Object.keys(delKeys).length > 0 ? { deleted_keys: delKeys } : {}),
+        };
+        const existing = profiles.find((profile) => profile.id === canonicalId);
+        if (existing) {
+          existing.items = dedupeItems([...existing.items, ...loaded.items]);
+          existing.favoriteActors = normalizeFavoriteActors([
+            ...(existing.favoriteActors || []),
+            ...(loaded.favoriteActors || []),
+          ]);
+          existing.preferences = normalizePreferences({
+            ...existing.preferences,
+            disliked: [...(existing.preferences.disliked || []), ...(loaded.preferences.disliked || [])],
+            hidden: [...(existing.preferences.hidden || []), ...(loaded.preferences.hidden || [])],
+            providers: [...(existing.preferences.providers || []), ...(loaded.preferences.providers || [])],
+            mood: existing.preferences.mood || loaded.preferences.mood,
+            reminders: existing.preferences.reminders || loaded.preferences.reminders,
+            notified: [...(existing.preferences.notified || []), ...(loaded.preferences.notified || [])],
+          });
+          const mergedDeleted = normalizeDeletedKeys({
+            ...(existing.deleted_keys || {}),
+            ...(loaded.deleted_keys || {}),
+          });
+          if (Object.keys(mergedDeleted).length) existing.deleted_keys = mergedDeleted;
+          existing.isDemo = Boolean(existing.isDemo && loaded.isDemo);
+        } else {
+          profiles.push(loaded);
+        }
+      }
+    }
     if (profiles.length) return profiles;
     const legacyName = localStorage.getItem(PROFILE_STORAGE) || '';
     const defaultProfile: Profile = {
-      id: 'profile-default',
+      id: 'PROFILE-DEFAULT',
       name: legacyName || 'Profilim',
       createdAt: new Date().toISOString(),
       preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
@@ -233,7 +263,7 @@ function loadInitialProfiles(): Profile[] {
   } catch {
     return [
       {
-        id: 'profile-default',
+        id: 'PROFILE-DEFAULT',
         name: 'Profilim',
         createdAt: '',
         preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
@@ -245,8 +275,8 @@ function loadInitialProfiles(): Profile[] {
 
 function loadActiveProfileId(profiles: Profile[]): string {
   try {
-    const active = localStorage.getItem(ACTIVE_PROFILE_STORAGE);
-    return profiles.some((p) => p.id === active) ? active! : profiles[0].id;
+    const active = normalizeProfileId(localStorage.getItem(ACTIVE_PROFILE_STORAGE));
+    return active && profiles.some((p) => p.id === active) ? active : profiles[0].id;
   } catch {
     return profiles[0].id;
   }
@@ -3437,8 +3467,9 @@ export function App() {
     showToast('Profil kaydedildi.');
   };
 
-  const handleSwitchProfile = (newId: string) => {
-    if (newId === activeProfileId) return;
+  const handleSwitchProfile = (rawNewId: string) => {
+    const newId = normalizeProfileId(rawNewId);
+    if (!newId || newId === activeProfileId) return;
     const outgoingId = activeProfileId;
     const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
     const updatedProfiles = profiles.map((p) =>
@@ -3496,7 +3527,7 @@ export function App() {
   const handleCreateProfile = (name: string, isDemo = false) => {
     const outgoingId = activeProfileId;
     const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
-    const newId = `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const newId = normalizeProfileId(`profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)!;
     const newProf: Profile = {
       id: newId,
       name,

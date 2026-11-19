@@ -523,7 +523,7 @@ describe("normalizeDataDocument", () => {
     });
     assert.equal(document.version, 3);
     assert.equal(document.profiles.length, 1);
-    assert.equal(document.activeProfileId, "profile-default");
+    assert.equal(document.activeProfileId, "PROFILE-DEFAULT");
     assert.equal(document.profiles[0].name, "Elif");
     assert.equal(document.profiles[0].items.length, 2);
   });
@@ -536,7 +536,7 @@ describe("normalizeDataDocument", () => {
       items: [baseItem()],
       preferences: { mood: "energetic" }
     });
-    assert.equal(document.activeProfileId, "profile-ayse");
+    assert.equal(document.activeProfileId, "PROFILE-AYSE");
     assert.equal(document.profiles[0].preferences.mood, "energetic");
   });
 
@@ -549,24 +549,24 @@ describe("normalizeDataDocument", () => {
         { id: "profile-b", name: "B", items: [] }
       ]
     });
-    assert.equal(document.activeProfileId, "profile-b");
+    assert.equal(document.activeProfileId, "PROFILE-B");
     assert.equal(document.profiles.length, 2);
     const fallback = normalizeDataDocument({ version: 3, activeProfileId: "profile-x", profiles: [{ id: "profile-a" }] });
-    assert.equal(fallback.activeProfileId, "profile-a");
+    assert.equal(fallback.activeProfileId, "PROFILE-A");
   });
 
-  it("tekrarlanan profil kimliklerinde ilkini korur ve profil sayısını sınırlar", () => {
+  it("kanonik kimlikte birleşen profilleri veri kaybetmeden birleştirir ve profil sayısını sınırlar", () => {
     const document = normalizeDataDocument({
       version: 3,
       profiles: [
         { id: "profile-a", name: "Bir", items: [baseItem({ id: 1 })] },
-        { id: "profile-a", name: "İki", items: [baseItem({ id: 2 })] },
+        { id: "PROFILE-A", name: "İki", items: [baseItem({ id: 2 })] },
         { id: "profile-b" }
       ]
     });
     assert.equal(document.profiles.length, 2);
     assert.equal(document.profiles[0].name, "Bir");
-    assert.equal(document.profiles[0].items.length, 1);
+    assert.equal(document.profiles[0].items.length, 2);
     const capped = normalizeDataDocument(
       { version: 3, profiles: Array.from({ length: 30 }, (_, index) => ({ id: `profile-p${index}` })) },
       { maxProfiles: 5 }

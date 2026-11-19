@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import { type DataDocument } from '../core/cinetrack-core.ts';
 import {
   ProfileConflictError,
@@ -89,10 +90,9 @@ function normalizeQueuedSnapshot(raw: any): QueuedSyncSnapshot | null {
   const rawRef =
     raw.profileRef &&
     typeof raw.profileRef === 'object' &&
-    typeof raw.profileRef.profileId === 'string' &&
-    raw.profileRef.profileId.trim()
+    normalizeProfileId(raw.profileRef.profileId)
       ? {
-          profileId: raw.profileRef.profileId.trim(),
+          profileId: normalizeProfileId(raw.profileRef.profileId)!,
           ...(typeof raw.profileRef.revision === 'number' &&
           Number.isSafeInteger(raw.profileRef.revision) &&
           raw.profileRef.revision >= 0
@@ -227,7 +227,7 @@ function tryDeriveSnapshotProfileRef(
   explicitRef?: ProfileRef
 ): ProfileRef | undefined {
   if (explicitRef?.profileId) {
-    const pid = explicitRef.profileId.trim();
+    const pid = normalizeProfileId(explicitRef.profileId) ?? '';
     if (!pid) return undefined;
     return explicitRef.revision !== undefined
       ? { profileId: pid, revision: explicitRef.revision }
@@ -236,8 +236,7 @@ function tryDeriveSnapshotProfileRef(
           ...(typeof baseRevision === 'number' ? { revision: baseRevision } : {}),
         };
   }
-  const activeId =
-    typeof payload?.activeProfileId === 'string' ? payload.activeProfileId.trim() : '';
+  const activeId = normalizeProfileId(payload?.activeProfileId) ?? '';
   if (!activeId) return undefined;
   return typeof baseRevision === 'number'
     ? { profileId: activeId, revision: baseRevision }
@@ -250,7 +249,7 @@ function assertValidWriteProfileRefForPayload(
   explicitRef?: ProfileRef
 ): WriteProfileRef {
   const derived = tryDeriveSnapshotProfileRef(payload, baseRevision, explicitRef);
-  const profileId = typeof derived?.profileId === 'string' ? derived.profileId.trim() : '';
+  const profileId = normalizeProfileId(derived?.profileId) ?? '';
   if (!profileId) {
     throw new Error('Çevrimdışı kuyruğa almak için geçerli WriteProfileRef (profileId) zorunludur.');
   }
@@ -259,7 +258,7 @@ function assertValidWriteProfileRefForPayload(
     throw new Error('Çevrimdışı kuyruğa almak için geçerli WriteProfileRef (revision) zorunludur.');
   }
   const docProfileId =
-    typeof payload?.activeProfileId === 'string' ? payload.activeProfileId.trim() : '';
+    normalizeProfileId(payload?.activeProfileId) ?? '';
   if (docProfileId && docProfileId !== profileId) {
     throw new ProfileConflictError('profile-switched', {
       expectedRevision: rev,
@@ -413,10 +412,9 @@ export async function flushOfflineQueueWithRepository(
   }
 
   const targetProfileId =
-    queued.profileRef?.profileId ||
-    (typeof queued.payload?.activeProfileId === 'string'
-      ? queued.payload.activeProfileId.trim()
-      : '');
+    normalizeProfileId(queued.profileRef?.profileId) ??
+    normalizeProfileId(queued.payload?.activeProfileId) ??
+    '';
 
   if (options.profileContext && targetProfileId) {
     try {

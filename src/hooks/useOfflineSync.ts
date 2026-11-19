@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IProfileContext, WriteProfileRef } from '../contracts/index.ts';
 import { type DataDocument } from '../core/cinetrack-core.ts';
@@ -50,10 +51,9 @@ export function useOfflineSync(
     (payload: DataDocument, explicitRevision?: number | null): WriteProfileRef => {
       const ctxRef = profileContext?.getCurrent();
       const profileId =
-        ctxRef?.profileId ||
-        (typeof payload?.activeProfileId === 'string' && payload.activeProfileId.trim()
-          ? payload.activeProfileId.trim()
-          : 'default');
+        normalizeProfileId(ctxRef?.profileId) ??
+        normalizeProfileId(payload?.activeProfileId) ??
+        'PROFILE-DEFAULT';
       const revCandidate =
         explicitRevision !== undefined && explicitRevision !== null
           ? explicitRevision
@@ -206,7 +206,7 @@ export function useOfflineSync(
 
       if (profileContext && !options.forceOverwrite) {
         try {
-          profileContext.assertCurrent({ profileId: payload.activeProfileId });
+          profileContext.assertCurrent({ profileId: normalizeProfileId(payload.activeProfileId) ?? '' });
         } catch (err) {
           return {
             ok: false,
@@ -238,7 +238,7 @@ export function useOfflineSync(
         expectedRevision: baseRevision ?? undefined,
         expectedProfileId: options.forceOverwrite
           ? undefined
-          : profileContext?.getCurrent().profileId ?? payload.activeProfileId,
+          : profileContext?.getCurrent().profileId ?? (normalizeProfileId(payload.activeProfileId) ?? 'PROFILE-DEFAULT'),
         confirmBulkDelete: options.confirmBulkDelete,
         forceOverwrite: options.forceOverwrite,
         mergeStrategy: useLossless ? 'lossless' : undefined,

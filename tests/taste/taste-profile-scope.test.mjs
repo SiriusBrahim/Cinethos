@@ -16,7 +16,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { PROFILE_ID_PATTERN } from "../../src/core/cinetrack-core.ts";
+import { PROFILE_ID_PATTERN } from "../../src/core/profile-id.ts";
 import {
   TASTE_PATHS,
   TASTE_PROFILE_ID_MAP_FILENAME,
@@ -54,7 +54,7 @@ function makeProfile() {
 }
 
 function preEncodedDir(profileId) {
-  return `${TASTE_PROFILE_ID_MAP_SCHEME}-${Buffer.from(profileId, "utf8").toString("base64url")}`;
+  return encodeProfileIdSafe(profileId);
 }
 
 function makeMap(profileIds) {
@@ -65,7 +65,7 @@ function makeMap(profileIds) {
     entries[profileId] = { dir, createdAt: AS_OF };
     byDir[dir] = profileId;
   }
-  return { version: 1, scheme: TASTE_PROFILE_ID_MAP_SCHEME, entries, byDir };
+  return { version: 2, scheme: TASTE_PROFILE_ID_MAP_SCHEME, entries, byDir };
 }
 
 function expectScopeError(fn, code) {
@@ -91,7 +91,7 @@ describe("R2-A1 — §3.1 Kanonik profil kimliği", () => {
       "p1",
       "p1234567890",
     ]) {
-      assert.strictEqual(validateCanonicalProfileId(id), id);
+      assert.strictEqual(validateCanonicalProfileId(id), id.toUpperCase());
       assert.ok(PROFILE_ID_PATTERN.test(id), `${id} sözleşmeye uymalı`);
     }
   });
@@ -109,7 +109,7 @@ describe("R2-A1 — §3.1 Kanonik profil kimliği", () => {
   });
 
   it("Baştaki/sondaki boşluk trim edilir, kontrol karakterli kimlik reddedilir", () => {
-    assert.strictEqual(validateCanonicalProfileId("  p1  "), "p1");
+    assert.strictEqual(validateCanonicalProfileId("  p1  "), "P1");
     for (const bad of ["p1\n", "\tp1", "p1\u0000", "p1\u007f"]) {
       expectScopeError(() => validateCanonicalProfileId(bad), "invalid_profile_id");
     }
@@ -118,7 +118,7 @@ describe("R2-A1 — §3.1 Kanonik profil kimliği", () => {
   it("Sözleşme dışı biçim ve uzunluk üst sınırı reddedilir", () => {
     for (const bad of [
       "unknown",
-      "Profile-1",
+      "profile-",
       "profile_1",
       "profile-",
       `profile-${"a".repeat(61)}`,
@@ -144,13 +144,13 @@ describe("R2-A1 — §3.1 Kanonik profil kimliği", () => {
   });
 });
 
-describe("R2-A1 — §3.1 p1-b64url kodlama", () => {
+describe("R2-A1 — §3.1 p2-hex kodlama", () => {
   it("Kayıpsız encode/decode round-trip sağlar", () => {
     for (const id of ["profile-default", "p1", "profile-A_b-9", "p1234567890"]) {
       const dir = encodeProfileIdSafe(id);
       assert.ok(dir.startsWith(`${TASTE_PROFILE_ID_MAP_SCHEME}-`), "şema öneki eksik");
-      assert.ok(!dir.includes("="), "Base64URL padding içermemeli");
-      assert.strictEqual(decodeProfileIdSafe(dir), id);
+      assert.match(dir, /^p2-hex-[0-9a-f]+$/);
+      assert.strictEqual(decodeProfileIdSafe(dir), id.toUpperCase());
       assert.strictEqual(encodeProfileIdSafe(decodeProfileIdSafe(dir)), dir);
     }
   });
@@ -168,9 +168,9 @@ describe("R2-A1 — §3.1 p1-b64url kodlama", () => {
     for (const id of ids) {
       assert.match(id, PROFILE_ID_PATTERN, `fixture desen dışı: ${id}`);
       const dir = encodeProfileIdSafe(id);
-      assert.match(dir, /^p1-b64url-[A-Za-z0-9_-]+$/, `dizin alfabesi hatalı: ${dir}`);
+      assert.match(dir, /^p2-hex-[0-9a-f]+$/, `dizin alfabesi hatalı: ${dir}`);
       assert.ok(!dir.includes("=") && !dir.includes("+") && !dir.includes("/"));
-      assert.strictEqual(decodeProfileIdSafe(dir), id);
+      assert.strictEqual(decodeProfileIdSafe(dir), id.toUpperCase());
     }
   });
 
@@ -187,7 +187,9 @@ describe("R2-A1 — §3.1 p1-b64url kodlama", () => {
       "p1-b64url-",
       "p1-b64url-!!!",
       "p1-b64url-cHJvZmlsZS1kZWZhdWx0=",
-      `${TASTE_PROFILE_ID_MAP_SCHEME}-${Buffer.from("../escape", "utf8").toString("base64url")}`,
+      "p2-hex-",
+      "p2-hex-abc",
+      "p2-hex-2e2e2f657363617065",
       null,
     ]) {
       expectScopeError(() => decodeProfileIdSafe(dir), "invalid_profile_dir");
@@ -203,7 +205,7 @@ describe("R2-A1 — §3.1 Profil yolu kök sınırı", () => {
 
     assert.ok(scope.root.startsWith(profilesRoot), "profil kökü profiles altında olmalı");
     assert.strictEqual(scope.dir, encodeProfileIdSafe("profile-default"));
-    assert.strictEqual(decodeProfileIdSafe(scope.dir), "profile-default");
+    assert.strictEqual(decodeProfileIdSafe(scope.dir), "PROFILE-DEFAULT");
     for (const [key, filePath] of Object.entries(scope.paths)) {
       assert.ok(filePath.startsWith(`${scope.root}/`), `${key} profil kökü dışında`);
       assert.ok(filePath.includes("cinetrack-taste-"), `${key} dosya adı beklenen biçimde değil`);
@@ -221,7 +223,7 @@ describe("R2-A1 — §3.1 Profil yolu kök sınırı", () => {
 describe("R2-A1 — §3.2 Manifest şeması ve bütünlüğü", () => {
   it("Geçerli manifest version/scheme/entries/byDir ile doğrulanır", () => {
     const parsed = parseTasteProfileIdMap(makeMap(["profile-default", "p1"]));
-    assert.strictEqual(parsed.version, 1);
+    assert.strictEqual(parsed.version, 2);
     assert.strictEqual(parsed.scheme, TASTE_PROFILE_ID_MAP_SCHEME);
     assert.strictEqual(Object.keys(parsed.entries).length, 2);
     assert.strictEqual(Object.keys(parsed.byDir).length, 2);
@@ -248,10 +250,10 @@ describe("R2-A1 — §3.2 Manifest şeması ve bütünlüğü", () => {
   });
 
   it("Şema/sürüm uyumsuzluğu ve bozuk alanlar fail-fast reddedilir", () => {
-    const badVersion = { ...makeMap(["p1"]), version: 2 };
+    const badVersion = { ...makeMap(["p1"]), version: 99 };
     expectScopeError(() => parseTasteProfileIdMap(badVersion), "profile_id_map_corrupt");
 
-    const badScheme = { ...makeMap(["p1"]), scheme: "p2-hex" };
+    const badScheme = { ...makeMap(["p1"]), scheme: "p1-b64url" };
     expectScopeError(() => parseTasteProfileIdMap(badScheme), "profile_id_map_corrupt");
 
     const badCreatedAt = makeMap(["p1"]);
@@ -285,11 +287,11 @@ describe("R2-A1 — §3.3 Manifest ilk oluşturma ve eşzamanlılık", () => {
     assert.ok(existsSync(mapPath), "manifest yazılmalı");
 
     const raw = JSON.parse(await readFile(mapPath, "utf8"));
-    assert.strictEqual(raw.version, 1);
+    assert.strictEqual(raw.version, 2);
     assert.strictEqual(raw.scheme, TASTE_PROFILE_ID_MAP_SCHEME);
     assert.strictEqual(Object.keys(raw.entries).length, 1);
-    assert.strictEqual(raw.entries["profile-default"].dir, first.dir);
-    assert.strictEqual(raw.byDir[first.dir], "profile-default");
+    assert.strictEqual(raw.entries["PROFILE-DEFAULT"].dir, first.dir);
+    assert.strictEqual(raw.byDir[first.dir], "PROFILE-DEFAULT");
   });
 
   it("Aynı kimlik için ikinci çağrı idempotenttir (createdAt korunur)", async () => {
@@ -318,14 +320,15 @@ describe("R2-A1 — §3.3 Manifest ilk oluşturma ve eşzamanlılık", () => {
     assert.strictEqual(Object.keys(map.data.entries).length, ids.length);
     assert.strictEqual(Object.keys(map.data.byDir).length, ids.length);
     for (const id of ids) {
-      const entry = map.data.entries[id];
-      assert.ok(entry, `${id} manifestte yok`);
-      assert.strictEqual(map.data.byDir[entry.dir], id);
-      assert.strictEqual(decodeProfileIdSafe(entry.dir), id);
+      const canonicalId = id.toUpperCase();
+      const entry = map.data.entries[canonicalId];
+      assert.ok(entry, `${canonicalId} manifestte yok`);
+      assert.strictEqual(map.data.byDir[entry.dir], canonicalId);
+      assert.strictEqual(decodeProfileIdSafe(entry.dir), canonicalId);
     }
 
     const lookup = await readTasteProfileIdMapEntry("p2", dataDir);
-    assert.strictEqual(lookup?.profileId, "p2");
+    assert.strictEqual(lookup?.profileId, "P2");
     assert.strictEqual(await readTasteProfileIdMapEntry("p9", dataDir), null);
   });
 });

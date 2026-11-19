@@ -1,3 +1,4 @@
+import { normalizeProfileId } from '../core/profile-id.ts';
 import crypto from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
@@ -507,7 +508,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   });
   const profileContext = createProfileContext({
     // R2-A3 §12.3 mekanizma (a): açılış kimliği belge normalizasyonuyla hizalı
-    // (`PROFILE_ID_PATTERN` 'profile-default' kabul eder, 'default' kabul etmez).
+    // (kanonik profil kimliği `PROFILE-DEFAULT` olur; `default` geçersizdir).
     initialProfileId: 'profile-default',
     initialRevision: 0,
     eventPublisher: eventBus,
@@ -2349,7 +2350,11 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   app.get('/api/profiles/derived/:profileId', personalReadGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const profileId = String(req.params.profileId || '');
+      const profileId = normalizeProfileId(req.params.profileId);
+      if (!profileId) {
+        res.status(400).json({ ok: false, status_message: 'Geçersiz profil kimliği.' });
+        return;
+      }
       const expectedFp =
         typeof req.query.profileFingerprint === 'string' ? req.query.profileFingerprint : undefined;
       const expectedAlg =
@@ -2512,9 +2517,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const exportDoc = resolveExportDocument(storedDoc, req.body);
 
       const profileId =
-        typeof req.body?.profileId === 'string' && req.body.profileId.trim()
-          ? req.body.profileId.trim()
-          : exportDoc.activeProfileId;
+        normalizeProfileId(req.body?.profileId) ?? normalizeProfileId(exportDoc.activeProfileId) ?? '';
       const includeJson = typeof req.body?.includeJson === 'boolean' ? req.body.includeJson : true;
       const includeXlsx = typeof req.body?.includeXlsx === 'boolean' ? req.body.includeXlsx : true;
       const uploadToGithub = Boolean(req.body?.uploadToGithub);
@@ -2569,9 +2572,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
       const profileId =
-        typeof req.body?.profileId === 'string' && req.body.profileId.trim()
-          ? req.body.profileId.trim()
-          : exportDoc.activeProfileId;
+        normalizeProfileId(req.body?.profileId) ?? normalizeProfileId(exportDoc.activeProfileId) ?? '';
       const dislikedItemsHint = Array.isArray(req.body?.dislikedItemsHint)
         ? req.body.dislikedItemsHint
         : undefined;
@@ -2645,10 +2646,8 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
       const profileId =
-        typeof req.body?.profileId === 'string' && req.body.profileId.trim()
-          ? req.body.profileId.trim()
-          : exportDoc.activeProfileId;
-      const profile = exportDoc.profiles.find((p) => p.id === profileId) || exportDoc.profiles[0];
+        normalizeProfileId(req.body?.profileId) ?? normalizeProfileId(exportDoc.activeProfileId) ?? '';
+      const profile = exportDoc.profiles.find((p) => normalizeProfileId(p.id) === profileId) || exportDoc.profiles[0];
       if (!profile) {
         res.status(404).json({ ok: false, status_message: 'Profil bulunamadı.' });
         return;

@@ -1,3 +1,5 @@
+import { normalizeProfileId } from './profile-id.ts';
+export { PROFILE_ID_PATTERN, normalizeProfileId } from './profile-id.ts';
 import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
 import { apiFetch } from '../services/api-client.ts';
 import { getCandidatePoolStorePort } from './candidate-pool-store-port.ts';
@@ -714,7 +716,7 @@ export function parseBackupText(
   };
 }
 
-export const PROFILE_ID_PATTERN = /^(?:profile-[A-Za-z0-9_-]{1,60}|p\d{1,10})$/;
+
 export const DISLIKED_KEY_PATTERN = /^(?:movie|tv)[:-](?:[1-9]\d{0,11}|custom-[A-Za-z0-9_-]{1,80})$/;
 
 export function normalizePreferences(
@@ -806,7 +808,8 @@ export function normalizeProfile(
   { maxItems = DEFAULT_MAX_ITEMS_PER_PROFILE, knownMoods = null }: { maxItems?: number; knownMoods?: string[] | null } = {}
 ): Profile | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  if (typeof raw.id !== 'string' || !PROFILE_ID_PATTERN.test(raw.id)) return null;
+  const canonicalId = normalizeProfileId(raw.id);
+  if (!canonicalId) return null;
   const items = Array.isArray(raw.items)
     ? (raw.items.map(normalizeSavedItem).filter(Boolean) as SavedItem[])
     : [];
@@ -819,7 +822,7 @@ export function normalizeProfile(
     }
   }
   return {
-    id: raw.id,
+    id: canonicalId,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 40) : 'Profilim',
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt.slice(0, 40) : '',
     preferences: normalizePreferences(raw.preferences, { knownMoods }),
@@ -842,14 +845,11 @@ export function normalizeDataDocument(
   let activeCandidate = '';
   if (Array.isArray(raw.profiles)) {
     candidates = raw.profiles;
-    activeCandidate = typeof raw.activeProfileId === 'string' ? raw.activeProfileId : '';
+    activeCandidate = normalizeProfileId(raw.activeProfileId) ?? '';
   } else if (Array.isArray(raw.items)) {
     candidates = [
       {
-        id:
-          typeof raw.profileId === 'string' && PROFILE_ID_PATTERN.test(raw.profileId)
-            ? raw.profileId
-            : 'profile-default',
+        id: normalizeProfileId(raw.profileId) ?? 'PROFILE-DEFAULT',
         name: typeof raw.profileName === 'string' ? raw.profileName : 'Profilim',
         createdAt: '',
         preferences: raw.preferences,
@@ -863,12 +863,36 @@ export function normalizeDataDocument(
     return null;
   }
   const profiles: Profile[] = [];
-  const seen = new Set<string>();
+  const byCanonicalId = new Map<string, Profile>();
   for (const candidate of candidates) {
-    if (profiles.length >= maxProfiles) break;
     const profile = normalizeProfile(candidate, { maxItems });
-    if (!profile || seen.has(profile.id)) continue;
-    seen.add(profile.id);
+    if (!profile) continue;
+    const existing = byCanonicalId.get(profile.id);
+    if (existing) {
+      existing.items = dedupeItems([...existing.items, ...profile.items]).slice(0, maxItems);
+      existing.favoriteActors = normalizeFavoriteActors([
+        ...(existing.favoriteActors || []),
+        ...(profile.favoriteActors || []),
+      ]);
+      existing.preferences = normalizePreferences({
+        ...existing.preferences,
+        disliked: [...(existing.preferences.disliked || []), ...(profile.preferences.disliked || [])],
+        hidden: [...(existing.preferences.hidden || []), ...(profile.preferences.hidden || [])],
+        providers: [...(existing.preferences.providers || []), ...(profile.preferences.providers || [])],
+        mood: existing.preferences.mood || profile.preferences.mood,
+        reminders: existing.preferences.reminders || profile.preferences.reminders,
+        notified: [...(existing.preferences.notified || []), ...(profile.preferences.notified || [])],
+      });
+      const mergedDeleted = normalizeDeletedKeys({
+        ...(existing.deleted_keys || {}),
+        ...(profile.deleted_keys || {}),
+      });
+      if (Object.keys(mergedDeleted).length) existing.deleted_keys = mergedDeleted;
+      existing.isDemo = existing.isDemo && profile.isDemo;
+      continue;
+    }
+    if (profiles.length >= maxProfiles) break;
+    byCanonicalId.set(profile.id, profile);
     profiles.push(profile);
   }
   if (!profiles.length) return null;
@@ -880,7 +904,7 @@ export function normalizeDataDocument(
     version: 3,
     schemaVersion,
     engineVersion: ENGINE_VERSION,
-    activeProfileId: seen.has(activeCandidate) ? activeCandidate : profiles[0].id,
+    activeProfileId: byCanonicalId.has(normalizeProfileId(activeCandidate) ?? '') ? (normalizeProfileId(activeCandidate) ?? profiles[0].id) : profiles[0].id,
     profiles,
     revision: Number.isSafeInteger(rawRev) && rawRev > 0 ? rawRev : 1,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
