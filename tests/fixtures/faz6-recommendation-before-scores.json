@@ -1,0 +1,407 @@
+{
+  "description": "Faz 6 önce/sonra karşılaştırması: taşınmadan önceki öneri motorunun aynı veri setindeki puanları.",
+  "referenceNow": "2026-11-18T00:00:00.000Z",
+  "enrich": [
+    {
+      "key": "movie:201",
+      "title": "Sisli Vadi",
+      "tasteScore": 81,
+      "matchScore": 81,
+      "priorityScore": 77,
+      "ring": "ring1",
+      "lifecycleRing": "ring1",
+      "tags": [
+        "Sevdiğin Elif Yılmaz oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "TMDB'de 8.0 puan"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:202",
+      "title": "Yıldız Tozu",
+      "tasteScore": 68,
+      "matchScore": 68,
+      "priorityScore": 68,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Selin Kara oynuyor",
+        "Science Fiction türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "Sevdiğin \"Kuzey Işıkları\" ile benzer (%73)"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:203",
+      "title": "Kırık Saat",
+      "tasteScore": 60,
+      "matchScore": 60,
+      "priorityScore": 60,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Deniz Su oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Mert Kaya",
+        "TMDB'de 7.8 puan"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "tv:204",
+      "title": "Kırık Mevsim",
+      "tasteScore": 66,
+      "matchScore": 66,
+      "priorityScore": 57,
+      "ring": "ring2",
+      "lifecycleRing": "ring2",
+      "tags": [
+        "Sevdiğin Elif Yılmaz oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Mert Kaya",
+        "Sevdiğin \"Sessiz İstasyon\" ile benzer (%65)"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "tv:205",
+      "title": "Liman Sokakları",
+      "tasteScore": 62,
+      "matchScore": 62,
+      "priorityScore": 62,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "Yeni keşif için"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:206",
+      "title": "Son Kervan",
+      "tasteScore": 59,
+      "matchScore": 59,
+      "priorityScore": 59,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Mert Kaya",
+        "TMDB'de 7.7 puan"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "tv:207",
+      "title": "Cam Ev",
+      "tasteScore": 68,
+      "matchScore": 68,
+      "priorityScore": 68,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Kerem Ak oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "Sevdiğin \"Sessiz İstasyon\" ile benzer (%67)"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:208",
+      "title": "Küçük Devler",
+      "tasteScore": 52,
+      "matchScore": 52,
+      "priorityScore": 52,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin yönetmen Mert Kaya",
+        "Yeni keşif için"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:209",
+      "title": "Buz Üstünde",
+      "tasteScore": 62,
+      "matchScore": 62,
+      "priorityScore": 62,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Science Fiction türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "TMDB'de 7.3 puan"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "tv:210",
+      "title": "Gece Nöbeti",
+      "tasteScore": 69,
+      "matchScore": 69,
+      "priorityScore": 69,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Selin Kara oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Mert Kaya",
+        "Sevdiğin \"Gölge Oyunu\" ile benzer (%62)"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:211",
+      "title": "Eski Şarkı",
+      "tasteScore": 63,
+      "matchScore": 63,
+      "priorityScore": 63,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Elif Yılmaz oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "Sevdiğin \"Uzak Kıyılar\" ile benzer (%71)"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "tv:212",
+      "title": "Yedinci Kat",
+      "tasteScore": 60,
+      "matchScore": 60,
+      "priorityScore": 60,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Kerem Ak oynuyor",
+        "Science Fiction türünü sevdiğin için",
+        "Sevdiğin yönetmen Mert Kaya",
+        "TMDB'de 8.1 puan"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:213",
+      "title": "Anlatılmamış",
+      "tasteScore": 59,
+      "matchScore": 59,
+      "priorityScore": 59,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Ayşe Demir",
+        "Yeni keşif için"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "tv:214",
+      "title": "Deniz Feneri",
+      "tasteScore": 68,
+      "matchScore": 68,
+      "priorityScore": 68,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin Elif Yılmaz oynuyor",
+        "Drama türünü sevdiğin için",
+        "Sevdiğin yönetmen Mert Kaya",
+        "Sevdiğin \"Sessiz İstasyon\" ile benzer (%61)"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:9001",
+      "title": "İstenmeyen Yapım",
+      "tasteScore": 54,
+      "matchScore": 54,
+      "priorityScore": 54,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin yönetmen Ayşe Demir",
+        "Yeni keşif için"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    },
+    {
+      "key": "movie:9002",
+      "title": "Gizlenen Yapım",
+      "tasteScore": 51,
+      "matchScore": 51,
+      "priorityScore": 51,
+      "ring": "ring0",
+      "lifecycleRing": "ring0",
+      "tags": [
+        "Sevdiğin yönetmen Mert Kaya",
+        "Yeni keşif için"
+      ],
+      "scoreCoverage": "enriched",
+      "confidenceLevel": "high"
+    }
+  ],
+  "display": {
+    "items": [
+      {
+        "key": "movie:201",
+        "title": "Sisli Vadi",
+        "tasteScore": 81,
+        "matchScore": 81,
+        "priorityScore": 77,
+        "ring": "ring1",
+        "lifecycleRing": "ring1",
+        "tags": [
+          "faz6-movie",
+          "sıra-0"
+        ],
+        "scoreCoverage": "enriched",
+        "confidenceLevel": "high"
+      },
+      {
+        "key": "movie:202",
+        "title": "Yıldız Tozu",
+        "tasteScore": 79,
+        "matchScore": 79,
+        "priorityScore": 79,
+        "ring": "ring0",
+        "lifecycleRing": "ring0",
+        "tags": [
+          "faz6-movie",
+          "sıra-1"
+        ],
+        "scoreCoverage": "enriched",
+        "confidenceLevel": "high"
+      },
+      {
+        "key": "tv:204",
+        "title": "Kırık Mevsim",
+        "tasteScore": 66,
+        "matchScore": 66,
+        "priorityScore": 57,
+        "ring": "ring2",
+        "lifecycleRing": "ring2",
+        "tags": [
+          "faz6-tv",
+          "sıra-2"
+        ],
+        "scoreCoverage": "basic",
+        "confidenceLevel": "high"
+      },
+      {
+        "key": "tv:207",
+        "title": "Cam Ev",
+        "tasteScore": 77,
+        "matchScore": 77,
+        "priorityScore": 77,
+        "ring": "ring0",
+        "lifecycleRing": "ring0",
+        "tags": [
+          "faz6-tv",
+          "sıra-3"
+        ],
+        "scoreCoverage": "enriched",
+        "confidenceLevel": "high"
+      },
+      {
+        "key": "tv:210",
+        "title": "Gece Nöbeti",
+        "tasteScore": 76,
+        "matchScore": 76,
+        "priorityScore": 76,
+        "ring": "ring0",
+        "lifecycleRing": "ring0",
+        "tags": [
+          "faz6-tv",
+          "sıra-4"
+        ],
+        "scoreCoverage": "enriched",
+        "confidenceLevel": "high"
+      },
+      {
+        "key": "movie:213",
+        "title": "Anlatılmamış",
+        "tasteScore": 75,
+        "matchScore": 75,
+        "priorityScore": 75,
+        "ring": "ring0",
+        "lifecycleRing": "ring0",
+        "tags": [
+          "faz6-movie",
+          "sıra-5"
+        ],
+        "scoreCoverage": "enriched",
+        "confidenceLevel": "high"
+      },
+      {
+        "key": "tv:214",
+        "title": "Deniz Feneri",
+        "tasteScore": 74,
+        "matchScore": 74,
+        "priorityScore": 74,
+        "ring": "ring0",
+        "lifecycleRing": "ring0",
+        "tags": [
+          "faz6-tv",
+          "sıra-6"
+        ],
+        "scoreCoverage": "enriched",
+        "confidenceLevel": "high"
+      }
+    ],
+    "reasons": [
+      [
+        "movie:201",
+        "faz6-movie · sıra-0"
+      ],
+      [
+        "movie:202",
+        "faz6-movie · sıra-1"
+      ],
+      [
+        "movie:213",
+        "faz6-movie · sıra-5"
+      ],
+      [
+        "tv:204",
+        "faz6-tv · sıra-2"
+      ],
+      [
+        "tv:207",
+        "faz6-tv · sıra-3"
+      ],
+      [
+        "tv:210",
+        "faz6-tv · sıra-4"
+      ],
+      [
+        "tv:214",
+        "faz6-tv · sıra-6"
+      ]
+    ]
+  }
+}
