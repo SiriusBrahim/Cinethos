@@ -1820,7 +1820,7 @@ export function App() {
           const inMemTasteMap = tasteMapRef.current;
           let storedTasteMap =
             inMemTasteMap &&
-            inMemTasteMap.profileId === currentProfileId &&
+            normalizeProfileId(inMemTasteMap.profileId) === normalizeProfileId(currentProfileId) &&
             (inMemTasteMap.updatedAt || '') > (diskTasteMap.updatedAt || '')
               ? inMemTasteMap
               : diskTasteMap;
@@ -2152,7 +2152,7 @@ export function App() {
           const latestDiskMap = loadPersistentTasteMap(currentProfileId);
           const tasteMap =
             tasteMapRef.current &&
-            tasteMapRef.current.profileId === currentProfileId &&
+            normalizeProfileId(tasteMapRef.current.profileId) === normalizeProfileId(currentProfileId) &&
             (tasteMapRef.current.updatedAt || '') >= (latestDiskMap.updatedAt || '') &&
             (tasteMapRef.current.lastRecommendedKeys?.length || 0) >=
               (latestDiskMap.lastRecommendedKeys?.length || 0)
