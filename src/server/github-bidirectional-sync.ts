@@ -3708,7 +3708,7 @@ export class GitHubBidirectionalSyncManager {
           if (!remoteProfDoc) continue;
 
           const matchingProfile = finalUserData?.profiles?.find(
-            (p) => p.id === remoteProfDoc.profileId
+            (p) => normalizeProfileId(p.id) === normalizeProfileId(remoteProfDoc.profileId)
           );
           const freshness = this.isDerivedDocFreshForContext(
             remoteProfDoc,
