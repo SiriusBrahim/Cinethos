@@ -135,7 +135,7 @@ test('SQLite arşivi: profil, stok, zevk haritası ve posterler tam gidiş-dön�
   assert.deepEqual(profileA.preferences.disliked, ['movie:99']);
   assert.deepEqual(profileA.preferences.hidden, ['tv:42']);
   assert.equal(profileA.preferences.mood, 'dark');
-  assert.deepEqual(profileA.favoriteActors, [{ id: 525, name: 'Nolan' }]);
+  assert.deepEqual(profileA.favoriteActors, [{ id: 525, name: 'Nolan', profile_path: null }]);
   assert.deepEqual(profileA.deleted_keys, { 'movie:900': AS_OF });
   assert.equal(profileA.items.length, 2);
   assert.equal(profileA.items[0].personal_rating, 8);
