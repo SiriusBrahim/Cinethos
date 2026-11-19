@@ -420,14 +420,33 @@ export function savePersistentTasteMap(profileId: string, data: PersistentTasteM
 export async function hydrateCandidatePoolsIdb(
   profileId: string
 ): Promise<{ movie: PersistentCandidatePoolData; tv: PersistentCandidatePoolData }> {
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) {
+    return { movie: createDefaultPoolData('movie'), tv: createDefaultPoolData('tv') };
+  }
   const store = getCandidatePoolIdbStore();
   if (store) {
     for (const mediaType of ['movie', 'tv'] as const) {
-      const key = `cinetrack_pool_${mediaType}_${profileId}`;
+      const prefix = `cinetrack_pool_${mediaType}_`;
+      const key = `${prefix}${canonicalProfileId}`;
       try {
-        const idbVal = await idbGet<PersistentCandidatePoolData>(key, store);
+        let sourceKey = key;
+        let idbVal = await idbGet<PersistentCandidatePoolData>(key, store);
+        if (!idbVal) {
+          const allKeys = await idbKeys(store);
+          const legacyKey = allKeys.find(
+            (candidate) =>
+              typeof candidate === 'string' &&
+              candidate.startsWith(prefix) &&
+              normalizeProfileId(candidate.slice(prefix.length)) === canonicalProfileId
+          );
+          if (typeof legacyKey === 'string') {
+            sourceKey = legacyKey;
+            idbVal = await idbGet<PersistentCandidatePoolData>(legacyKey, store);
+          }
+        }
         if (idbVal && idbVal.mediaType === mediaType && Array.isArray(idbVal.items)) {
-          idbHydratedPools.set(key, {
+          const normalizedPool = {
             mediaType,
             updatedAt: idbVal.updatedAt || new Date().toISOString(),
             items: idbVal.items,
@@ -435,7 +454,9 @@ export async function hydrateCandidatePoolsIdb(
               ...createDefaultPoolCursors(),
               ...(idbVal.cursors || {}),
             },
-          });
+          } as PersistentCandidatePoolData;
+          idbHydratedPools.set(key, normalizedPool);
+          if (sourceKey !== key) savePersistentPoolData(canonicalProfileId, normalizedPool);
           try {
             if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
           } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
@@ -444,8 +465,8 @@ export async function hydrateCandidatePoolsIdb(
     }
   }
   return {
-    movie: loadPersistentPoolData(profileId, 'movie'),
-    tv: loadPersistentPoolData(profileId, 'tv'),
+    movie: loadPersistentPoolData(canonicalProfileId, 'movie'),
+    tv: loadPersistentPoolData(canonicalProfileId, 'tv'),
   };
 }
 
@@ -453,7 +474,9 @@ export function loadPersistentPoolData(
   profileId: string,
   mediaType: 'movie' | 'tv'
 ): PersistentCandidatePoolData {
-  const key = `cinetrack_pool_${mediaType}_${profileId}`;
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) return createDefaultPoolData(mediaType);
+  const key = `cinetrack_pool_${mediaType}_${canonicalProfileId}`;
   const store = getCandidatePoolIdbStore();
   if (store && idbHydratedPools.has(key)) {
     const cached = idbHydratedPools.get(key) as PersistentCandidatePoolData;
@@ -473,8 +496,24 @@ export function loadPersistentPoolData(
   try {
     if (typeof localStorage !== 'undefined') {
       const fallback = inMemoryPoolFallback.get(key);
+      let sourceKey = key;
       let raw = localStorage.getItem(key);
-      if (fallback && fallback.storageRef === localStorage) {
+      if (!raw) {
+        const prefix = `cinetrack_pool_${mediaType}_`;
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const candidate = localStorage.key(index);
+          if (
+            candidate &&
+            candidate.startsWith(prefix) &&
+            normalizeProfileId(candidate.slice(prefix.length)) === canonicalProfileId
+          ) {
+            sourceKey = candidate;
+            raw = localStorage.getItem(candidate);
+            break;
+          }
+        }
+      }
+      if (fallback && fallback.storageRef === localStorage && sourceKey === key) {
         raw = fallback.raw;
       } else if (fallback && fallback.storageRef !== localStorage) {
         inMemoryPoolFallback.delete(key);
@@ -493,8 +532,8 @@ export function loadPersistentPoolData(
               ...(parsed.cursors || {}),
             },
           };
-          if (store) {
-            savePersistentPoolData(profileId, loadedPool);
+          if (store || sourceKey !== key) {
+            savePersistentPoolData(canonicalProfileId, loadedPool);
           }
           return loadedPool;
         }
@@ -508,7 +547,9 @@ export function savePersistentPoolData(
   profileId: string,
   data: PersistentCandidatePoolData
 ): void {
-  const key = `cinetrack_pool_${data.mediaType}_${profileId}`;
+  const canonicalProfileId = normalizeProfileId(profileId);
+  if (!canonicalProfileId) throw new Error('Geçersiz profil kimliği; aday havuzu kaydedilemedi.');
+  const key = `cinetrack_pool_${data.mediaType}_${canonicalProfileId}`;
   const updatedAt = new Date().toISOString();
   const sliced = data.items.slice(0, POOL_TARGET_CAPACITY);
   const poolRecord: PersistentCandidatePoolData = {
