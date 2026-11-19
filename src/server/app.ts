@@ -2400,12 +2400,13 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     try {
       const { profileId, algorithmVersion, profileFingerprint, sourceCatalogHash, schemaVersion, items } =
         req.body || {};
-      if (!profileId || typeof profileId !== 'string') {
-        res.status(400).json({ ok: false, message: 'profileId zorunludur.' });
+      const canonicalProfileId = normalizeProfileId(profileId);
+      if (!canonicalProfileId) {
+        res.status(400).json({ ok: false, message: 'Geçerli profileId zorunludur.' });
         return;
       }
       const result = await persistentStore.upsertDerivedProfileSerialized({
-        profileId,
+        profileId: canonicalProfileId,
         algorithmVersion: algorithmVersion || '3.0.0',
         profileFingerprint: profileFingerprint || 'default',
         ...(sourceCatalogHash !== undefined ? { sourceCatalogHash: String(sourceCatalogHash) } : {}),
