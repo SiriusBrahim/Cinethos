@@ -189,14 +189,11 @@ export class BackgroundManager {
     deduplicated: boolean;
   }> {
     const allHandlers = this.handlersByEvent.get(event.eventType) ?? [];
-    // R2-A4: profil kapsamlı işleyiciler yalnızca HEDEF PROFİL AKTİF DEĞİLKEN
-    // görev üretir. Aktif profilin olayı canlı abonelikte zaten işlenir; ayrıca
-    // görev üretmek gereksiz çift iş olurdu. Aktif olmayan profilin olayı ise
-    // kalıcı kuyrukta bekler ve o profil aktif olunca telafi edilir.
-    const activeProfileId = this.profileContext?.getCurrent().profileId;
-    const handlers = allHandlers.filter(
-      (handler) => !handler.profileScoped || activeProfileId !== event.profileId
-    );
+    // R2-A4: profile-scoped handlers are durable outbox consumers. Enqueue
+    // every event, including one for the currently active profile: the profile
+    // may switch after this persistence hook returns but before live subscribers
+    // run. The handler and adapter are idempotent, so live and deferred paths
+    // cannot create duplicate Taste evidence.
     const result = this.repository.acceptEvent(
       {
         eventId: event.eventId,
@@ -207,7 +204,7 @@ export class BackgroundManager {
         sourceRevision: event.sourceRevision,
         occurredAt: event.occurredAt,
         payload: sanitizeEventPayload(event.eventType, event.payload),
-        handlerIds: handlers.map((handler) => handler.id),
+        handlerIds: allHandlers.map((handler) => handler.id),
       },
       this.now()
     );

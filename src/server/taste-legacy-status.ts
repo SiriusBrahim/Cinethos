@@ -20,6 +20,15 @@ import { readTasteProfileIdMap, resolveTastePaths } from './taste-store.ts';
 /** Legacy sınıflandırma senaryosu (tasarım §5). */
 export type TasteLegacyScenario = 'S1' | 'S2' | 'S3';
 
+export interface TasteLegacyOwnershipEvidence {
+  /** Profile identity proven by an external, auditable source (never title heuristics). */
+  readonly profileId: string;
+  /** Stable legacy record keys attributed to this profile. */
+  readonly recordKeys: readonly string[];
+  /** Must be explicitly true; unverified evidence is ignored. */
+  readonly verified: true;
+}
+
 export interface TasteLegacyStatus {
   /** Legacy (global) taste dosyası var mı? */
   readonly present: boolean;
@@ -75,7 +84,10 @@ async function countProfilePartitions(
  * - legacy var, profil partition'ı yok → `S1` (atanmamış legacy adayı)
  * - legacy var, profil partition'ı var → `S3` (çakışan/belirsiz; dışlanır)
  */
-export async function describeTasteLegacyState(dataDir: string): Promise<TasteLegacyStatus> {
+export async function describeTasteLegacyState(
+  dataDir: string,
+  options: { ownershipEvidence?: readonly TasteLegacyOwnershipEvidence[] } = {}
+): Promise<TasteLegacyStatus> {
   const paths = resolveTastePaths(dataDir);
   const legacyFiles: string[] = [];
   for (const filePath of Object.values(paths)) {
@@ -86,7 +98,29 @@ export async function describeTasteLegacyState(dataDir: string): Promise<TasteLe
 
   let scenario: TasteLegacyScenario | null = null;
   if (present) {
-    scenario = count === 0 ? 'S1' : 'S3';
+    const evidence = options.ownershipEvidence ?? [];
+    const profileIds = evidence.map((entry) => entry.profileId);
+    const recordOwners = new Map<string, string>();
+    const hasVerifiedDisjointEvidence =
+      evidence.length >= 2 &&
+      evidence.every((entry) =>
+        entry.verified === true &&
+        typeof entry.profileId === 'string' &&
+        entry.profileId.trim().length > 0 &&
+        entry.recordKeys.length > 0
+      ) &&
+      new Set(profileIds).size === profileIds.length &&
+      evidence.every((entry) => entry.recordKeys.every((key) => {
+        if (typeof key !== 'string' || !key.trim()) return false;
+        const owner = recordOwners.get(key);
+        if (owner && owner !== entry.profileId) return false;
+        recordOwners.set(key, entry.profileId);
+        return true;
+      }));
+
+    // S2 is only emitted with explicit, verified, disjoint ownership evidence.
+    // The classifier never derives profile ownership from titles or filenames.
+    scenario = hasVerifiedDisjointEvidence ? 'S2' : count === 0 ? 'S1' : 'S3';
   }
 
   return {

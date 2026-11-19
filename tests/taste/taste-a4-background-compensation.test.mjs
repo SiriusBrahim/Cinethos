@@ -19,9 +19,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createAppEvent } from '../../src/app/app-event-bus.ts';
+import { createAppEvent, createAppEventBus } from '../../src/app/app-event-bus.ts';
 import { createProfileContext } from '../../src/app/ProfileContext.ts';
-import { createServerTasteServiceAdapter } from '../../src/server/taste-service-adapter.ts';
+import { createServerTasteServiceAdapter, subscribeTasteAdapterToEventBus } from '../../src/server/taste-service-adapter.ts';
 import { readTasteEventsForProfile } from '../../src/server/taste-store.ts';
 import { createBackgroundTaskRepository } from '../../src/server/background-task-repository.ts';
 import { createBackgroundManager } from '../../src/modules/background/service.ts';
@@ -163,6 +163,119 @@ test('R2-A4 aktif profilin olayı için telafi görevi üretilmez', async () => 
     assert.notEqual(tasks[0].handlerId, 'intelligence.taste-event-sync');
   } finally {
     await runtime.manager.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+
+test('R2-A4 yarış: persistEvent sonrasında profil değişse de aktif profilin canlı atladığı olay outbox üzerinden kaybolmaz', async () => {
+  const tmpDir = await makeTempDir();
+  const profileContext = createProfileContext({
+    initialProfileId: 'profile-a',
+    initialRevision: 1,
+  });
+  const adapter = createServerTasteServiceAdapter({
+    dataDir: tmpDir,
+    profileContext,
+    rebuildOnEvent: false,
+  });
+  const repository = createBackgroundTaskRepository({ dataDir: tmpDir });
+  const manager = createBackgroundManager({
+    repository,
+    handlers: [createLibraryItemAddedHandler(), createTasteEventSyncHandler(adapter)],
+    profileContext,
+  });
+  const eventBus = createAppEventBus({
+    persistEvent: async (event) => {
+      await manager.acceptEvent(event);
+      await profileContext.switchProfile('profile-b', 2);
+    },
+  });
+  const skipped = [];
+  const subscription = subscribeTasteAdapterToEventBus(
+    eventBus,
+    adapter,
+    undefined,
+    (event, outcome) => skipped.push({ eventId: event.eventId, code: outcome.code })
+  );
+
+  try {
+    const event = makeEvent({
+      eventId: 'evt-a4-profile-switch-race',
+      ref: { profileId: 'profile-a', revision: 1 },
+    });
+    await eventBus.publish(event);
+
+    assert.deepEqual(skipped, [
+      { eventId: 'evt-a4-profile-switch-race', code: 'profile-not-active' },
+    ]);
+    assert.ok(
+      manager.listTasks().some((task) => task.handlerId === 'intelligence.taste-event-sync'),
+      'profil aktifken persist edilen olay için de kalıcı Taste outbox görevi bulunmalı'
+    );
+
+    await profileContext.switchProfile('profile-a', 3);
+    await manager.start();
+    await pumpUntil(manager, () =>
+      manager.listTasks()
+        .filter((task) => task.handlerId === 'intelligence.taste-event-sync')
+        .every((task) => task.status === 'completed')
+    );
+
+    assert.deepEqual(
+      (await readTasteEventsForProfile('profile-a', tmpDir)).map((entry) => entry.eventId),
+      ['evt-a4-profile-switch-race']
+    );
+    assert.deepEqual(await readTasteEventsForProfile('profile-b', tmpDir), []);
+  } finally {
+    subscription.unsubscribe();
+    await manager.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('R2-A4 retry: event kalıcı yazıldıktan sonra rebuild başarısız olursa aynı adapter yeniden rebuild yapar', async () => {
+  const tmpDir = await makeTempDir();
+  const profileContext = createProfileContext({
+    initialProfileId: 'profile-a',
+    initialRevision: 1,
+  });
+  let rebuildAttempts = 0;
+  const adapter = createServerTasteServiceAdapter({
+    dataDir: tmpDir,
+    profileContext,
+    rebuildOnEvent: true,
+    rebuildProfile: async () => {
+      rebuildAttempts += 1;
+      if (rebuildAttempts === 1) throw new Error('deterministic-first-rebuild-failure');
+      return {};
+    },
+  });
+
+  try {
+    const event = makeEvent({
+      eventId: 'evt-a4-rebuild-retry',
+      ref: { profileId: 'profile-a', revision: 1 },
+    });
+
+    const first = await adapter.processDeferredEvent(event);
+    assert.equal(first.ok, false);
+    assert.equal(first.retryable, true);
+    assert.deepEqual(
+      (await readTasteEventsForProfile('profile-a', tmpDir)).map((entry) => entry.eventId),
+      ['evt-a4-rebuild-retry'],
+      'ilk denemede olay kalıcı olarak eklenmiş olmalı'
+    );
+
+    const retry = await adapter.processDeferredEvent(event);
+    assert.deepEqual(retry, { ok: true });
+    assert.equal(rebuildAttempts, 2, 'mevcut eventId retry sırasında rebuild işlemini atlamamalı');
+    assert.equal(
+      (await readTasteEventsForProfile('profile-a', tmpDir)).length,
+      1,
+      'retry aynı Taste kanıtını ikinci kez eklememeli'
+    );
+  } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });

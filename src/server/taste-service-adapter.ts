@@ -41,6 +41,8 @@ export interface TasteServiceAdapterOptions {
   profileContext?: IProfileContext;
   /** İsteğe bağlı olay sonrası rebuild tetiklemesi (varsayılan true). */
   rebuildOnEvent?: boolean;
+  /** Rebuild port: allows deterministic retry testing and alternate coordinators. */
+  rebuildProfile?: (profileId: string, dataDir: string) => Promise<unknown>;
 }
 
 function mapListToTasteStatus(list: LibraryListId | null): string {
@@ -159,12 +161,14 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
   private readonly dataDir: string;
   private readonly profileContext?: IProfileContext;
   private readonly rebuildOnEvent: boolean;
+  private readonly rebuildProfile: (profileId: string, dataDir: string) => Promise<unknown>;
   private readonly processedEventIds = new Set<string>();
 
   constructor(options: TasteServiceAdapterOptions = {}) {
     this.dataDir = options.dataDir ?? 'data';
     this.profileContext = options.profileContext;
     this.rebuildOnEvent = options.rebuildOnEvent ?? true;
+    this.rebuildProfile = options.rebuildProfile ?? triggerTasteProfileRebuild;
   }
 
   async getProfile(ref: ProfileRef): Promise<TasteProfileSummaryView | null> {
@@ -269,7 +273,7 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
       this.processedEventIds.add(memoryKey);
 
       if (added && this.rebuildOnEvent) {
-        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
+        await this.rebuildProfile(targetProfileId, this.dataDir);
       }
 
       return { ok: true };
@@ -299,32 +303,21 @@ export class ServerTasteServiceAdapter implements ITasteService, IMemoryService 
         };
       }
       const targetProfileId = activeProfileId ?? eventProfileId;
-      const memoryKey = `${targetProfileId}:${event.eventId}`;
-      if (this.processedEventIds.has(memoryKey)) {
-        return { ok: true };
-      }
-
       const tasteEvent = translateAppEventToTasteEvent(event);
-      if (!tasteEvent) {
-        this.processedEventIds.add(memoryKey);
-        return { ok: true };
-      }
+      if (!tasteEvent) return { ok: true };
 
-      const existing = await readTasteEventsForProfile(targetProfileId, this.dataDir);
-      if (existing.some((e) => e.eventId === tasteEvent.eventId)) {
-        this.processedEventIds.add(memoryKey);
-        return { ok: true };
-      }
-
-      const { added } = await appendTasteEventIdempotentForProfile(
+      // Event persistence and projection completion are separate idempotency
+      // boundaries. An existing event MUST still trigger rebuild on retry:
+      // the previous attempt may have appended the event and then failed while
+      // rebuilding the profile.
+      await appendTasteEventIdempotentForProfile(
         targetProfileId,
         tasteEvent,
         this.dataDir
       );
-      this.processedEventIds.add(memoryKey);
 
-      if (added && this.rebuildOnEvent) {
-        await triggerTasteProfileRebuild(targetProfileId, this.dataDir);
+      if (this.rebuildOnEvent) {
+        await this.rebuildProfile(targetProfileId, this.dataDir);
       }
 
       // Uzun süren hesaptan sonra profil değişmediyse sonuç hedef profile aittir;

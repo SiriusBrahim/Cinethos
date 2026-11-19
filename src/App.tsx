@@ -45,7 +45,6 @@ import {
   normalizeDataDocument,
   resolveAirDate,
   reminderDaysUntil,
-  createRequestGate,
   parseBackupText,
   buildTasteProfileV3,
   scoreCandidatesV3,
@@ -122,6 +121,7 @@ import {
 } from './modules/recommendations/index.ts';
 import { createClientLibraryService } from './modules/library/client-service.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
+import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
@@ -328,34 +328,39 @@ export function App() {
   const [tab, setTab] = useState<'discover' | 'list' | 'taste-map' | 'relationships'>('discover');
   const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'graph' | 'identity'>('identity');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
-  const [category, setCategory] = useState<string>('trending');
-  const [forYouSubTab, setForYouSubTab] = useState<'recommendations' | 'series'>('recommendations');
+  const discoverState = useDiscoverState({
+    initialHideListedItems: () => {
+      try {
+        return localStorage.getItem(HIDE_LISTED_STORAGE_KEY) === '1';
+      } catch {
+        return false;
+      }
+    },
+  });
+  const {
+    category, setCategory,
+    forYouSubTab, setForYouSubTab,
+    selectedGenre, setSelectedGenre,
+    selectedType, setSelectedType,
+    selectedSort, setSelectedSort,
+    selectedProvider, setSelectedProvider,
+    hideListedItems, setHideListedItems,
+    genresMap, setGenresMap,
+    catalogItems, setCatalogItems,
+    trendingTop, setTrendingTop,
+    catalogPage, setCatalogPage,
+    catalogTotalPages, setCatalogTotalPages,
+    isLoading, setIsLoading,
+    loadingMore, setLoadingMore,
+    forYouItems, setForYouItems,
+    forYouReasons, setForYouReasons,
+    forYouExplanation, setForYouExplanation,
+    forYouProgressStep, setForYouProgressStep,
+    requestGateRef,
+  } = discoverState;
   const [seriesIndexVersion, setSeriesIndexVersion] = useState<number>(0);
   const [listStatus, setListStatus] = useState<string>('all');
   const [query, setQuery] = useState<string>('');
-  const [selectedGenre, setSelectedGenre] = useState<string>('');
-  const [selectedType, setSelectedType] = useState<string>('all');
-  const [selectedSort, setSelectedSort] = useState<string>('popular');
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
-  const [hideListedItems, setHideListedItems] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(HIDE_LISTED_STORAGE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [genresMap, setGenresMap] = useState<Record<number, string>>({});
-
-  const [catalogItems, setCatalogItems] = useState<any[]>([]);
-  const [trendingTop, setTrendingTop] = useState<any | null>(null);
-  const [catalogPage, setCatalogPage] = useState<number>(1);
-  const [catalogTotalPages, setCatalogTotalPages] = useState<number>(1);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const [forYouItems, setForYouItems] = useState<any[]>([]);
-  const [forYouReasons, setForYouReasons] = useState<Map<string, string>>(new Map());
-  const [forYouExplanation, setForYouExplanation] = useState<string>('');
-  const [forYouProgressStep, setForYouProgressStep] = useState<string>('');
   const [serverConflict, setServerConflict] = useState<ServerConflictDetail | null>(null);
   const [serverSyncReady, setServerSyncReady] = useState(false);
   const [tmdbSourceMeta, setTmdbSourceMeta] = useState<TmdbSourceMeta>({
@@ -375,7 +380,6 @@ export function App() {
   const [pendingBackup, setPendingBackup] = useState<any | null>(null);
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
-  const requestGateRef = useRef(createRequestGate());
   const toastTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const lastForYouQueryKeyRef = useRef<string>('');
   const confirmNextBulkSyncRef = useRef<boolean>(false);
