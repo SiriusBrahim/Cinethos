@@ -1716,8 +1716,12 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const rawProfileHeader = req.headers['x-cinetrack-profile-id'];
       const expectedProfileId =
         typeof rawProfileHeader === 'string' && rawProfileHeader.trim()
-          ? rawProfileHeader.trim()
+          ? normalizeProfileId(rawProfileHeader)
           : undefined;
+      if (typeof rawProfileHeader === 'string' && rawProfileHeader.trim() && !expectedProfileId) {
+        res.status(400).json({ ok: false, code: 'invalid_profile_id', message: 'Geçersiz profileId başlığı.' });
+        return;
+      }
       const strictProfileMatch =
         req.headers['x-cinetrack-strict-profile'] === '1' ||
         req.headers['x-cinetrack-strict-profile'] === 'true';
