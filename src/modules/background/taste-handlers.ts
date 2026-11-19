@@ -26,6 +26,7 @@ import {
   type IMemoryService,
   type TypedAppEvent,
 } from '../../contracts/index.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 import { PermanentBackgroundError, RetryableBackgroundError } from './errors.ts';
 
 export const TASTE_EVENT_SYNC_HANDLER_ID = 'intelligence.taste-event-sync';
@@ -39,7 +40,7 @@ const TASTE_EVENT_TYPES = [
 
 function assertTargetProfile(event: TypedAppEvent, context: BackgroundTaskHandlerContext): void {
   const current = context.profileContext.getCurrent();
-  if (current.profileId !== event.profileId) {
+  if (normalizeProfileId(current.profileId) !== normalizeProfileId(event.profileId)) {
     throw new ProfileConflictError('profile-switched', {
       expectedRevision: event.sourceRevision,
       actualRevision: current.revision,
