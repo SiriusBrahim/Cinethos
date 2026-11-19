@@ -14,7 +14,9 @@ import type { ModuleId } from '../app/module-registry.ts';
  * Etiketler mevcut masaüstü metnini korur.
  */
 const DESKTOP_LABEL_OVERRIDES: Readonly<Partial<Record<ModuleId, string>>> = {
-  'taste-map': 'Kimliğim',
+  relationships: 'İlişkiler',
+  series: 'Seriler',
+  operations: 'İşlemler',
 };
 
 interface HeaderProps {

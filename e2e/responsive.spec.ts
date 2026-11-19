@@ -47,11 +47,12 @@ for (const viewport of VIEWPORTS) {
     );
     expect(overflow, 'sayfa yatay olarak taşmamalı').toBeLessThanOrEqual(1);
 
-    // Gorunur gezinme ogesi uzerinden Listem'e gec (mobil tab barinda etiket 'Listem').
+    // Gorunur gezinme ogesi uzerinden Kutuphane'ye gec: mobil dock etiketi
+    // 'Kütüphane', masaustu sekmesi ise 'Kütüphanem'.
     if (viewport.width <= 768) {
-      await page.locator('.mobile-tab-btn', { hasText: 'Listem' }).click();
+      await page.locator('.mobile-tab-btn', { hasText: 'Kütüphane' }).click();
     } else {
-      await page.locator('[role="tab"]:visible', { hasText: 'Listem' }).first().click();
+      await page.locator('[role="tab"]:visible', { hasText: 'Kütüphanem' }).first().click();
     }
     await expect(page.getByText('E2E Alfa Filmi').first()).toBeVisible();
 

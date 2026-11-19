@@ -42,7 +42,7 @@ test.describe('Profil ve çakışma senaryoları', () => {
       .poll(() => page.evaluate(() => localStorage.getItem('cinetrack.activeProfile.v1')))
       .toBe(PROFILE_B.toUpperCase());
 
-    await page.getByRole('tab', { name: 'Listem' }).click();
+    await page.getByRole('tab', { name: 'Kütüphanem' }).click();
     await expect(page.getByText('E2E Beta Filmi').first()).toBeVisible();
     await expect(page.getByText('E2E Alfa Filmi')).toHaveCount(0);
   });
@@ -63,7 +63,7 @@ test.describe('Profil ve çakışma senaryoları', () => {
 
     await page.goto('/');
     await expect(page.getByRole('button', { name: 'Profil: Işık' })).toBeVisible();
-    await page.getByRole('tab', { name: 'Listem' }).click();
+    await page.getByRole('tab', { name: 'Kütüphanem' }).click();
     await expect(page.getByText('Türkçe Profil Filmi').first()).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('cinetrack.activeProfile.v1')))
@@ -117,7 +117,7 @@ test.describe('Profil ve çakışma senaryoları', () => {
     });
 
     await page.goto('/');
-    await page.getByRole('tab', { name: 'Listem' }).click();
+    await page.getByRole('tab', { name: 'Kütüphanem' }).click();
     await expect(page.getByText('E2E Yerel Filmi').first()).toBeVisible();
 
     // Başlangıç birleştirmesi yerel veriyi kirli işaretler ve ilk PUT 409 alır.

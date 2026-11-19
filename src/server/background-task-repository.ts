@@ -537,6 +537,29 @@ export class BackgroundTaskRepository {
   }
 
   /**
+   * Operatör yeniden denemesi: yalnızca sonuçlanmış/başarısız görevleri
+   * `pending` durumuna döndürür ve deneme hakkını sıfırlar. `processing`
+   * (kiralanmış) veya zaten `pending` olan görevler için değişiklik yapmaz;
+   * böylece aynı görev iki kez işlenmez.
+   */
+  requeueTask(taskId: string, nowIso = this.now()): boolean {
+    const result = this.requireDb()
+      .prepare(
+        `UPDATE background_tasks
+            SET status = 'pending',
+                attempts = 0,
+                lease_until = NULL,
+                next_retry_at = NULL,
+                last_error = NULL,
+                completed_at = NULL,
+                updated_at = ?
+          WHERE task_id = ? AND status IN ('failed', 'cancelled', 'retry_wait', 'completed')`
+      )
+      .run(nowIso, taskId);
+    return (result.changes ?? 0) > 0;
+  }
+
+  /**
    * Çökme kurtarması: lease süresi dolmuş `processing` görevleri yeniden
    * `pending` olur; deneme hakkı tükendiyse `failed` işaretlenir.
    */

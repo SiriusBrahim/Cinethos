@@ -121,6 +121,11 @@ import {
   mapRecommendationBatchToDisplayItems,
 } from './modules/recommendations/index.ts';
 import { createClientLibraryService } from './modules/library/client-service.ts';
+import { HomeSection } from './modules/home/HomeSection.tsx';
+import { SeriesSection } from './modules/series/SeriesSection.tsx';
+import { OperationsSection } from './modules/operations/OperationsSection.tsx';
+import type { ModuleId } from './app/module-registry.ts';
+import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
@@ -362,7 +367,9 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<string>('Kayıt yeri: data/cinetrack-data.json');
 
   // Discover & Grid State
-  const [tab, setTab] = useState<'discover' | 'list' | 'taste-map' | 'relationships'>('discover');
+  const [tab, setTab] = useState<ModuleId>('home');
+  // Derin bağlantı: #/discover, #/series … adresleri sekmeyle çift yönlü eşitlenir.
+  useHashNavigation(tab, setTab);
   const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'graph' | 'identity'>('identity');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
   const discoverState = useDiscoverState({
@@ -645,6 +652,9 @@ export function App() {
     },
     onOpenAddCustom: () => {
       setAddCustomOpen(true);
+    },
+    onOpenSettings: () => {
+      setProfileOpen(true);
     },
     onEscape: () => {
       setDetailItem(null);
@@ -3814,6 +3824,7 @@ export function App() {
           />
         )}
 
+        {(tab === 'discover' || tab === 'list') && (
         <Controls
           tab={tab}
           onTabChange={setTab}
@@ -3846,8 +3857,45 @@ export function App() {
           onOpenTvdbStock={() => setTvdbModalOpen(true)}
           tvdbCount={tvdbCount}
         />
+        )}
 
-        {tab === 'relationships' ? (
+        {tab === 'home' ? (
+          <ErrorBoundary sectionName="Ana Sayfa">
+            <HomeSection
+              profileName={profileName}
+              savedItems={savedItems}
+              forYouItems={forYouItems}
+              genresMap={genresMap}
+              isDemo={Boolean(activeProfile?.isDemo)}
+              onOpenDetails={(item) => setDetailItem(item)}
+              onQuickSave={(item) => setQuickSaveItem(item)}
+              onSetStatus={(item, status) => handleSetStatus(item, status)}
+              onIncrementEpisode={(item) => handleIncrementTvEpisode(item)}
+              onGoDiscover={() => setTab('discover')}
+              onGoTaste={() => setTab('taste-map')}
+            />
+          </ErrorBoundary>
+        ) : tab === 'series' ? (
+          <ErrorBoundary sectionName="Seriler ve Evrenler">
+            <SeriesSection
+              profileId={activeProfileId}
+              savedItems={savedItems}
+              preferences={preferences}
+              favoriteActors={favoriteActors}
+              genreNames={genresMap}
+              onRefresh={handleLoadRelationshipCandidates}
+              onOpenDetails={(item) => setDetailItem(item)}
+              onQuickSave={(item) => setQuickSaveItem(item)}
+            />
+          </ErrorBoundary>
+        ) : tab === 'operations' ? (
+          <ErrorBoundary sectionName="İşlem Merkezi">
+            <OperationsSection
+              profileId={activeProfileId}
+              onOpenBackup={() => setProfileOpen(true)}
+            />
+          </ErrorBoundary>
+        ) : tab === 'relationships' ? (
           <ErrorBoundary sectionName="İlişki Keşfi">
             <Suspense
               fallback={
@@ -4039,7 +4087,8 @@ export function App() {
           </div>
           <div className="footer-shortcuts-hint">
             <span>Kısayollar: </span>
-            <kbd className="footer-kbd">1-4</kbd> Sekmeler ·{' '}
+            <kbd className="footer-kbd">1-7</kbd> Sekmeler ·{' '}
+            <kbd className="footer-kbd">0</kbd> Ayarlar ·{' '}
             <kbd className="footer-kbd">/</kbd> Ara ·{' '}
             <kbd className="footer-kbd">S</kbd> Eşitle ·{' '}
             <kbd className="footer-kbd">N</kbd> Ekle ·{' '}
@@ -4049,7 +4098,12 @@ export function App() {
       </footer>
 
       {/* Mobil 56px sticky alt tab bar — kayıt defterinden türetilir (Faz 7) */}
-      <MobileBottomNav tab={tab} myListCount={allListCount} onSelectTab={setTab} />
+      <MobileBottomNav
+        tab={tab}
+        myListCount={allListCount}
+        onSelectTab={setTab}
+        onOpenProfile={() => setProfileOpen(true)}
+      />
 
       {/* Modals & Drawers */}
       <DetailModal

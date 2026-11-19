@@ -13,7 +13,7 @@ test.describe('Offline dayanıklılığı', () => {
     await mockApi(page);
 
     await page.goto('/');
-    await page.getByRole('tab', { name: 'Listem' }).click();
+    await page.getByRole('tab', { name: 'Kütüphanem' }).click();
     await expect(page.getByText('E2E Çevrimdışı Filmi').first()).toBeVisible();
 
     // Ağ katmanında yalnızca API'yi kes: statik dosyalar yüklenmeye devam eder,
@@ -28,7 +28,7 @@ test.describe('Offline dayanıklılığı', () => {
     await expect(
       page.getByText('Çevrimdışı mod — önbellekteki veriler kullanılıyor.')
     ).toBeVisible();
-    await page.getByRole('tab', { name: 'Listem' }).click();
+    await page.getByRole('tab', { name: 'Kütüphanem' }).click();
     await expect(page.getByText('E2E Çevrimdışı Filmi').first()).toBeVisible();
   });
 });

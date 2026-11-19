@@ -1,0 +1,918 @@
+/**
+ * Çalışma alanı yüzeyleri (Ana Sayfa, Seriler, İşlem Merkezi).
+ *
+ * Yalnızca `src/styles/tokens.css` değişkenlerini kullanır; yeni bir renk,
+ * gölge veya radius icat etmez. Katmansız (unlayered) tanımlandığı için mevcut
+ * katmanlı bileşen stillerini istemeden ezmez.
+ */
+
+.ws-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-block: var(--space-4) var(--space-6);
+}
+
+.ws-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Panel & bölüm başlığı ------------------------------------------------ */
+
+.ws-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.ws-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.ws-section-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ws-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.ws-section-title {
+  margin: 0;
+  font-size: clamp(1.15rem, 1.7vw, 1.5rem);
+  line-height: 1.2;
+  color: var(--text-1);
+}
+
+.ws-section-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  max-width: 62ch;
+}
+
+.ws-section-action,
+.ws-section-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ws-hint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* --- Hero ----------------------------------------------------------------- */
+
+.ws-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: clamp(20px, 3vw, 36px);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background:
+    radial-gradient(circle at 0% 0%, var(--gold-soft), transparent 55%),
+    radial-gradient(circle at 100% 100%, var(--accent-soft), transparent 55%),
+    var(--bg-elevated);
+  overflow: hidden;
+}
+
+.ws-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.035) 50%, transparent 60%);
+  pointer-events: none;
+}
+
+.ws-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ws-hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.ws-hero-desc {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  max-width: 58ch;
+}
+
+.ws-hero-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
+.ws-hero-stats,
+.ws-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-2);
+}
+
+.ws-hero-stats {
+  align-content: start;
+}
+
+/* --- İstatistik kutuları --------------------------------------------------- */
+
+.ws-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
+}
+
+.ws-stat--info { border-color: var(--accent-border); }
+.ws-stat--ok { border-color: var(--success-border); }
+.ws-stat--warn { border-color: var(--warning-border); }
+.ws-stat--bad { border-color: var(--danger-border); }
+
+.ws-stat-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.ws-stat-value {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2vw, 1.65rem);
+  line-height: 1.1;
+  color: var(--text-1);
+}
+
+.ws-stat-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* --- Rozet & buton --------------------------------------------------------- */
+
+.ws-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.ws-badge--ok { color: var(--success); border-color: var(--success-border); background: var(--success-soft); }
+.ws-badge--warn { color: var(--gold); border-color: var(--warning-border); background: var(--warning-soft); }
+.ws-badge--bad { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
+.ws-badge--info { color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft); }
+
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.ws-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent-border);
+  transform: translateY(-1px);
+}
+
+.ws-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ws-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-btn--primary {
+  background: var(--gold);
+  border-color: transparent;
+  color: var(--text-on-gold);
+}
+
+.ws-btn--primary:hover:not(:disabled) {
+  background: var(--gold-hover);
+  border-color: transparent;
+}
+
+.ws-btn--danger {
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.ws-btn--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* --- Devam eden ray ------------------------------------------------------- */
+
+.ws-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(230px, 1fr);
+  gap: var(--space-3);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.ws-rail-item {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  scroll-snap-align: start;
+  min-width: 0;
+}
+
+.ws-rail-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+
+.ws-rail-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ws-rail-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+/* --- Poster ızgarası ------------------------------------------------------ */
+
+.ws-poster-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--space-3);
+}
+
+.ws-poster-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ws-poster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  min-width: 0;
+}
+
+.ws-poster img,
+.ws-poster-fallback {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  transition: transform var(--dur-med) var(--ease), border-color var(--dur-med) var(--ease);
+}
+
+.ws-poster:hover img,
+.ws-poster:focus-visible img {
+  transform: translateY(-2px);
+  border-color: var(--gold-glow);
+}
+
+.ws-poster:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-md);
+}
+
+.ws-poster-fallback {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: var(--text-3);
+}
+
+.ws-poster-title {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-poster-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* --- Listeler ------------------------------------------------------------- */
+
+.ws-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+.ws-column {
+  min-width: 0;
+}
+
+.ws-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.ws-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ws-list-row:last-child { border-bottom: 0; }
+.ws-list-row:hover { background: var(--bg-hover); }
+
+.ws-list-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ws-list-main:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-xs); }
+
+.ws-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-list-meta,
+.ws-list-date {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.ws-list-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.ws-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ws-mini-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ws-mini-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* --- Ölçer ---------------------------------------------------------------- */
+
+.ws-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+}
+
+.ws-meter-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ws-meter-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.ws-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--gold));
+  transition: width var(--dur-med) var(--ease);
+}
+
+.ws-meter-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* --- Boş durum & iskelet -------------------------------------------------- */
+
+.ws-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.ws-empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-1); }
+.ws-empty-desc { margin: 0; font-size: 12.5px; color: var(--text-2); max-width: 52ch; }
+.ws-empty-icon { color: var(--text-3); }
+
+.ws-skeleton-list { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.ws-skeleton-row {
+  display: block;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+  background-size: 200% 100%;
+  animation: ws-shimmer 1.4s linear infinite;
+}
+
+@keyframes ws-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* --- Araç çubuğu & filtreler ---------------------------------------------- */
+
+.ws-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-block: var(--space-3);
+}
+
+.ws-toolbar-main {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.ws-filter {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.ws-filter:hover { background: var(--bg-hover); color: var(--text-1); }
+.ws-filter:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.ws-filter.is-active {
+  background: var(--gold-soft);
+  border-color: var(--warning-border);
+  color: var(--gold);
+}
+
+/* --- Tablo ---------------------------------------------------------------- */
+
+.ws-table-wrap { overflow-x: auto; }
+
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.ws-table th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.ws-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  color: var(--text-2);
+}
+
+.ws-table tr:last-child td { border-bottom: 0; }
+.ws-table tbody tr:hover { background: var(--bg-hover); }
+
+.ws-table-title { display: block; font-weight: 600; color: var(--text-1); }
+
+.ws-table-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  word-break: break-word;
+}
+
+.ws-error-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--danger);
+  font-size: 11.5px;
+  max-width: 30ch;
+  word-break: break-word;
+}
+
+.ws-row-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
+.ws-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+  margin-bottom: var(--space-3);
+}
+
+.ws-alert--warn { color: var(--gold); border-color: var(--warning-border); background: var(--warning-soft); }
+.ws-alert--bad { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
+
+/* --- Evrenler & sağlık listeleri ------------------------------------------ */
+
+.ws-series-hint { display: block; margin-top: var(--space-3); }
+
+.ws-universe-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ws-universe-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.ws-universe-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ws-universe-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.ws-universe-meta { font-size: 11.5px; color: var(--text-3); }
+.ws-universe-side { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
+.ws-health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ws-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ws-health-row:last-child { border-bottom: 0; }
+
+/* --- Üst çubuk: yedi sekmeli gezinme ------------------------------------- */
+
+/* Yedi birincil sekme dar masaüstü genişliklerinde taşmasın: sekme şeridi
+   kendi içinde yatay kayar, belge genişliğini büyütmez. */
+.app-header .shell.topbar {
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.app-header .brand {
+  flex-shrink: 0;
+}
+
+.app-header .header-nav-tabs {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.app-header .header-nav-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.app-header .nav-tab-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Mobil dock beş öğe taşır (dört modül + Daha fazla); etiketler kırpılmasın. */
+.mobile-tab-bar .mobile-tab-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.mobile-tab-bar .mobile-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Mobil "Daha fazla" sayfası ------------------------------------------- */
+
+.mobile-more-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--bg-scrim);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: var(--space-3);
+  padding-bottom: calc(var(--space-5) + 56px + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-more-sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-float);
+  padding: var(--space-3);
+}
+
+.mobile-more-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.mobile-more-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.mobile-more-close:hover { background: var(--bg-hover); color: var(--text-1); }
+.mobile-more-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.mobile-more-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobile-more-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-more-item .icon { width: 18px; height: 18px; color: var(--text-2); flex-shrink: 0; }
+.mobile-more-item:hover { background: var(--bg-hover); }
+.mobile-more-item:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.mobile-more-item.is-active { background: var(--gold-soft); color: var(--gold); }
+.mobile-more-item.is-active .icon { color: var(--gold); }
+
+/* --- Duyarlı düzen -------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .ws-hero { grid-template-columns: 1fr; }
+  .ws-hero-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 780px) {
+  .ws-page { gap: var(--space-4); padding-block: var(--space-3) calc(var(--space-6) + 64px); }
+  .ws-panel { padding: var(--space-4); border-radius: var(--radius-md); }
+  .ws-hero { padding: var(--space-4); }
+  .ws-hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws-columns { grid-template-columns: 1fr; }
+  .ws-poster-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--space-2); }
+  .ws-rail { grid-auto-columns: minmax(78vw, 1fr); }
+  .ws-list { max-height: none; }
+
+  /* Tabloyu kart listesine çevir — yatay kaydırma gerektirmez. */
+  .ws-table-wrap { overflow: visible; }
+  .ws-table thead { display: none; }
+  .ws-table, .ws-table tbody, .ws-table tr, .ws-table td { display: block; width: 100%; }
+  .ws-table tr {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+    margin-bottom: var(--space-2);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .ws-table td { border-bottom: 0; padding: 3px var(--space-1); }
+  .ws-table td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--text-3);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .ws-table-title { display: inline; }
+  .ws-error-text { max-width: none; }
+}
+
+@media (max-width: 900px) {
+  /* Sabit alt gezinme içerik alanını kapatmasın. */
+  .ws-page { padding-bottom: calc(var(--space-6) + 72px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 460px) {
+  .ws-section-head { flex-direction: column; }
+  .ws-hero-actions .ws-btn { flex: 1; }
+  .ws-list-side { flex-direction: column; align-items: flex-end; gap: 2px; }
+}

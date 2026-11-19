@@ -13,6 +13,7 @@ import { formatMatchBadge } from '../i18n/index.ts';
 import { getItemSeriesInfo } from '../services/series-service.ts';
 import { recordPosterAccess } from '../services/poster-cache-manager.ts';
 import { deriveTvProgressSummary } from '../core/tv-progress.ts';
+import type { ModuleId } from '../app/module-ids.ts';
 
 export interface MediaCardProps {
   item: TmdbItem | any;
@@ -20,7 +21,7 @@ export interface MediaCardProps {
   genres?: Record<number, string>;
   recommendationReason?: string;
   isDisliked?: boolean;
-  tab?: 'discover' | 'list' | 'taste-map' | 'relationships';
+  tab?: ModuleId;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   context?: 'discover' | 'taste' | 'actor' | 'related' | 'hero';
   showMatch?: boolean;
