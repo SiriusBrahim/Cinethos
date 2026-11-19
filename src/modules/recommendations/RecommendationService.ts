@@ -110,7 +110,7 @@ export class RecommendationService implements IRecommendationService {
     if (!ref || typeof ref.profileId !== 'string' || !ref.profileId.trim()) {
       throw new Error('RecommendationService için profileId zorunludur.');
     }
-    if (!Number.isSafeInteger(ref.revision) || ref.revision < 0) {
+    if (typeof ref.revision !== 'number' || !Number.isSafeInteger(ref.revision) || ref.revision < 0) {
       throw new Error('RecommendationService için geçerli profile revision zorunludur.');
     }
   }
