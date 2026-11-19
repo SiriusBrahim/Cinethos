@@ -329,6 +329,58 @@ export class BackgroundTaskRepository {
     }
   }
 
+
+  /**
+   * Adds a missing task for an event already persisted by acceptEvent.
+   * Used when a profile switch races with the live Taste subscriber.
+   */
+  ensureTaskForEvent(
+    eventId: string,
+    handlerId: string,
+    profileId: string,
+    nowIso = this.now()
+  ): boolean {
+    const db = this.requireDb();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const event = db
+        .prepare('SELECT profile_id FROM background_events WHERE event_id = ?')
+        .get(eventId) as { profile_id?: string } | undefined;
+      if (!event) {
+        throw new Error(`Background olayı bulunamadı: ${eventId}`);
+      }
+      if (event.profile_id !== profileId) {
+        throw new Error(`Background görev profili olayla uyuşmuyor: ${eventId}`);
+      }
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO background_tasks
+             (task_id, event_id, handler_id, profile_id, status, attempts,
+              max_attempts, next_retry_at, lease_until, last_error,
+              created_at, updated_at, completed_at)
+           VALUES (?, ?, ?, ?, 'pending', 0, ?, NULL, NULL, NULL, ?, ?, NULL)`
+        )
+        .run(
+          crypto.randomUUID(),
+          eventId,
+          handlerId,
+          profileId,
+          this.defaultMaxAttempts,
+          nowIso,
+          nowIso
+        );
+      db.exec('COMMIT');
+      return (result.changes ?? 0) > 0;
+    } catch (error) {
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        /* rollback hatası asıl hatayı gizlemesin */
+      }
+      throw error;
+    }
+  }
+
   getEvent(eventId: string): BackgroundEventRecord | null {
     const row = this.requireDb()
       .prepare('SELECT * FROM background_events WHERE event_id = ?')
