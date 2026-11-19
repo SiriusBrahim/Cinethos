@@ -504,7 +504,7 @@ export function App() {
       );
       return filtered.length === prev.length ? prev : filtered;
     });
-  }, [savedItems, preferences, tab, category]);
+  }, [savedItems, preferences, tab, category, setCatalogItems]);
 
   // IMP-17 (IDB Schema Migration) + IMP-16 (Weekly Auto-Backup Check) + IMP-11 (Idle Stock Enrichment)
   useEffect(() => {
@@ -553,7 +553,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [activeProfileId]);
+  }, [activeProfileId, setForYouSubTab, setHideListedItems, setSelectedGenre, setSelectedSort, setSelectedType]);
 
   useEffect(() => {
     if (uiPrefsHydratedProfileRef.current !== activeProfileId) return;
@@ -1248,7 +1248,7 @@ export function App() {
     return () => {
       unsubSource();
     };
-  }, [mergeRemoteDocumentIntoState, resolveQueuedConflict]);
+  }, [mergeRemoteDocumentIntoState, resolveQueuedConflict, setGenresMap]);
 
   // Release Reminders check (ref-backed with single batched state update — BUG-13.3)
   const checkReleaseReminders = useCallback(() => {
@@ -2535,7 +2535,7 @@ export function App() {
         }
       }
     },
-    [query, selectedProvider, showToast]
+    [query, selectedProvider, showToast, requestGateRef, setCatalogItems, setCatalogPage, setCatalogTotalPages, setForYouExplanation, setForYouItems, setForYouProgressStep, setForYouReasons, setIsLoading, setLoadingMore, setTrendingTop]
   );
 
   const handleRefreshForYou = useCallback(() => {
@@ -2583,12 +2583,12 @@ export function App() {
   const handleSelectType = useCallback((newType: string) => {
     setSelectedType(newType);
     selectedTypeRef.current = newType;
-  }, []);
+  }, [setSelectedType]);
 
   const handleSelectGenre = useCallback((newGenre: string) => {
     setSelectedGenre(newGenre);
     selectedGenreRef.current = newGenre;
-  }, []);
+  }, [setSelectedGenre]);
 
   useEffect(() => {
     if (tab === 'taste-map') {
