@@ -9,6 +9,7 @@ import {
   unlinkSync,
 } from 'node:fs';
 import path from 'node:path';
+import { normalizeProfileId } from '../core/profile-id.ts';
 import zlib from 'node:zlib';
 import ExcelJS from 'exceljs';
 import {
@@ -3177,9 +3178,12 @@ export async function executeProfileBackupExport(
   const baseName = formatExportBaseName(now);
 
   const profiles = Array.isArray(options.document?.profiles) ? options.document.profiles : [];
-  const targetId = options.profileId || options.document?.activeProfileId || 'profile-default';
+  const targetId =
+    normalizeProfileId(options.profileId) ??
+    normalizeProfileId(options.document?.activeProfileId) ??
+    'PROFILE-DEFAULT';
   const foundProfile =
-    profiles.find((p) => p && p.id === targetId) ||
+    profiles.find((p) => p && normalizeProfileId(p.id) === targetId) ||
     profiles[0] || {
       id: targetId,
       name: 'Profilim',
