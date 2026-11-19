@@ -340,10 +340,17 @@ export function App() {
   const [activeProfileId, setActiveProfileId] = useState<string>(() => loadActiveProfileId(profiles));
   const activeProfile = profiles.find((p) => p.id === activeProfileId) || profiles[0];
   const [profileName, setProfileName] = useState<string>(activeProfile.name);
-  const [preferences, setPreferences] = useState<Preferences>(() => loadProfilePreferences(activeProfileId));
-  const [savedItems, setSavedItems] = useState<SavedItem[]>(() => loadProfileItems(activeProfileId));
-  const [favoriteActors, setFavoriteActors] = useState<FavoriteActorInfo[]>(() => loadFavoriteActors(activeProfileId));
-  const [deletedKeys, setDeletedKeys] = useState<Record<string, string>>(() => loadDeletedKeys(activeProfileId));
+  // loadInitialProfiles legacy anahtarları ham ID üzerinden okur. İlk render'da
+  // aynı veriyi kanonik ID anahtarıyla tekrar okumak eski listeleri boşaltır;
+  // bu yüzden başlangıç state'i normalize edilmiş profil snapshot'ından alınır.
+  const [preferences, setPreferences] = useState<Preferences>(() => activeProfile.preferences);
+  const [savedItems, setSavedItems] = useState<SavedItem[]>(() => activeProfile.items);
+  const [favoriteActors, setFavoriteActors] = useState<FavoriteActorInfo[]>(
+    () => activeProfile.favoriteActors || []
+  );
+  const [deletedKeys, setDeletedKeys] = useState<Record<string, string>>(
+    () => activeProfile.deleted_keys || {}
+  );
   const [dislikedItems, setDislikedItems] = useState<any[]>(() => {
     try {
       const cache = JSON.parse(localStorage.getItem('cinetrack_disliked_cache') || '{}');
