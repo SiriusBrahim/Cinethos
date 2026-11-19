@@ -22,11 +22,12 @@ import path from 'node:path';
 import { createAppEvent, createAppEventBus } from '../../src/app/app-event-bus.ts';
 import { createProfileContext } from '../../src/app/ProfileContext.ts';
 import { createServerTasteServiceAdapter, subscribeTasteAdapterToEventBus } from '../../src/server/taste-service-adapter.ts';
-import { readTasteEventsForProfile, readTasteProfileForProfile, resolveTastePathsForProfile } from '../../src/server/taste-store.ts';
+import { readTasteEventsForProfile, readTasteProfileForProfile } from '../../src/server/taste-store.ts';
 import { createBackgroundTaskRepository } from '../../src/server/background-task-repository.ts';
 import { createBackgroundManager } from '../../src/modules/background/service.ts';
 import { createLibraryItemAddedHandler } from '../../src/modules/background/handlers.ts';
 import { createTasteEventSyncHandler, TASTE_EVENT_SYNC_HANDLER_ID } from '../../src/modules/background/taste-handlers.ts';
+import { triggerTasteProfileRebuild } from '../../src/server/taste-rebuild-coordinator.ts';
 
 async function makeTempDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'ct-taste-a4-compensation-'));
@@ -43,7 +44,7 @@ function makeEvent(overrides = {}) {
   });
 }
 
-async function makeRuntime(tmpDir, rebuildOnEvent = false) {
+async function makeRuntime(tmpDir, rebuildOnEvent = false, rebuildProfile) {
   let clock = Date.UTC(2026, 0, 1, 0, 0, 0);
   const now = () => new Date((clock += 1000)).toISOString();
   const profileContext = createProfileContext({
@@ -54,6 +55,7 @@ async function makeRuntime(tmpDir, rebuildOnEvent = false) {
     dataDir: tmpDir,
     profileContext,
     rebuildOnEvent,
+    ...(rebuildProfile ? { rebuildProfile } : {}),
   });
   const repository = createBackgroundTaskRepository({ dataDir: tmpDir, now });
   const manager = createBackgroundManager({
@@ -239,12 +241,15 @@ test('R2-A4 yarış: persistEvent sırasında aktif profil değişirse atlanan o
 
 test('R2-A4 retry: olay yazıldıktan sonra rebuild başarısızsa tekrar deneme profili yeniden oluşturmalı', async () => {
   const tmpDir = await makeTempDir();
-  const runtime = await makeRuntime(tmpDir, true);
+  let failNextRebuild = true;
+  const runtime = await makeRuntime(tmpDir, true, async (profileId, dataDir) => {
+    if (failNextRebuild) {
+      failNextRebuild = false;
+      throw new Error('temporary rebuild failure');
+    }
+    return triggerTasteProfileRebuild(profileId, dataDir);
+  });
   try {
-    const paths = resolveTastePathsForProfile('profile-a', tmpDir).paths;
-    // Olay deposu yazılabilir kalırken profil çıktı dosyasını yazılamaz hâle getir.
-    await fs.mkdir(paths.profile, { recursive: true });
-
     const event = makeEvent({
       eventId: 'evt-a4-rebuild-retry',
       ref: { profileId: 'profile-a', revision: 1 },
@@ -258,8 +263,7 @@ test('R2-A4 retry: olay yazıldıktan sonra rebuild başarısızsa tekrar deneme
       'kanıt olayı rebuild hatasına rağmen kalıcılaşmış olmalı'
     );
 
-    // Altyapı hatası giderildi; aynı kuyruk görevi tekrar çalıştırılır.
-    await fs.rm(paths.profile, { recursive: true, force: true });
+    // Geçici rebuild hatası giderildi; aynı kalıcı olay yeniden işlenir.
     const retry = await runtime.adapter.processDeferredEvent(event);
     assert.deepEqual(retry, { ok: true });
     assert.ok(
