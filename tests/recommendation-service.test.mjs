@@ -60,7 +60,7 @@ test('Faz 6 IRecommendationService: stale profile sonucu cache hit olsa bile dö
   current = false;
   await assert.rejects(
     service.getRecommendations(ref, 10),
-    /eski profile\\/revision/
+    (error) => error instanceof Error && error.message.includes('eski profile/revision')
   );
 });
 test('Faz 6 IRecommendationService: refresh profile cache alanını yeniler', async () => {
