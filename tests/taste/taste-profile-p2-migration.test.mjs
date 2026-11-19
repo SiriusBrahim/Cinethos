@@ -9,7 +9,6 @@ import {
   encodeProfileIdSafe,
   ensureTasteProfileIdMapEntry,
   readTasteEventsForProfile,
-  readTasteProfileIdMap,
   resolveTasteProfileIdMapPath,
   resolveTasteProfilesRoot,
 } from "../../src/server/taste-store.ts";
@@ -26,7 +25,6 @@ function p1Dir(rawId) {
 
 async function writeV1Manifest(dataDir, rawId) {
   const oldDir = p1Dir(rawId);
-  const canonical = rawId.toUpperCase();
   const mapPath = resolveTasteProfileIdMapPath(dataDir);
   await fs.mkdir(path.dirname(mapPath), { recursive: true });
   await fs.writeFile(mapPath, JSON.stringify({
