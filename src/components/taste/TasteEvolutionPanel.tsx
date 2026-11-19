@@ -35,8 +35,8 @@ function formatYearMonthTr(ym: string): string {
 }
 
 export const TasteEvolutionPanel: React.FC<TasteEvolutionPanelProps> = ({
-  snapshots,
-  drifts,
+  snapshots = [],
+  drifts = [],
   onSelectMetric,
 }) => {
   return (
