@@ -261,6 +261,11 @@ test('F7-6 sinema kimliği panelleri ve korumalı runtime tanılama hattı bağl
   assert.match(dashboard, /<TasteEvolutionPanel/);
   assert.match(dashboard, /overviewStatus === "error"/);
   assert.match(dashboard, /Yeniden Dene/);
+  const evolution = read('src/components/taste/TasteEvolutionPanel.tsx');
+  assert.match(evolution, /snapshots = \\[\\]/);
+  assert.match(evolution, /drifts = \\[\\]/);
+  const e2eFixtures = read('e2e/fixtures.ts');
+  assert.ok(e2eFixtures.includes("path === '/api/taste/overview'"));
 
   const server = read('src/server/app.ts');
   assert.ok(server.includes("app.get('/api/diagnostics/runtime', personalReadGuard"));
