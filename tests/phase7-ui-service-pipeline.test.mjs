@@ -262,8 +262,8 @@ test('F7-6 sinema kimliği panelleri ve korumalı runtime tanılama hattı bağl
   assert.match(dashboard, /overviewStatus === "error"/);
   assert.match(dashboard, /Yeniden Dene/);
   const evolution = read('src/components/taste/TasteEvolutionPanel.tsx');
-  assert.match(evolution, /snapshots = \\[\\]/);
-  assert.match(evolution, /drifts = \\[\\]/);
+  assert.ok(evolution.includes('snapshots = []'));
+  assert.ok(evolution.includes('drifts = []'));
   const e2eFixtures = read('e2e/fixtures.ts');
   assert.ok(e2eFixtures.includes("path === '/api/taste/overview'"));
 
