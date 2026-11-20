@@ -4,7 +4,7 @@
 - `github-bidirectional-sync` ile `persistent-store` arasındaki runtime import döngüsü kaldırıldı; ortak tip sözleşmeleri ve saf yardımcılar ayrı modüllere taşındı. Mimari regresyon testi artık sıfır döngü bekliyor.
 - App kabuğundaki sunucu gönderim/çakışma/debounce eylemleri `useServerSyncCoordinator`, yerel JSON yedek dışa/içe aktarma akışı `useProfileBackupCoordinator` kancasına taşındı.
 - Excel yedeğine `Durum Çakışmaları` sayfası eklendi. Aynı içeriğin izleme listesi ve `İlgilenmiyorum` tercihi altında bulunması açıklanıyor; hiçbir kaynak kayıt otomatik silinmiyor veya yeniden sınıflandırılmıyor.
-- `p1-b64url` → `p2-hex` geçişinin mevcut kopyala/doğrula/manifesti atomik güncelle akışı ve çoklu profil izolasyonu için ek regresyon kapsamı hazırlanıyor.
+- `p1-b64url` → `p2-hex` geçişi için iki profilli izolasyon ve hedef dizin çakışmasında kaynak/hedef verilerinin korunması regresyon testleri eklendi.
 
 ### Veri bütünlüğü — etkileşim tarihleri
 - `src/core/item-dates.ts` tek tarih çözümleyicisi eklendi: `addedAt`/`firstAddedAt`,
