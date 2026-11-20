@@ -29,9 +29,10 @@ import {
   createContentIntelligenceService,
 } from '../modules/content/content-intelligence-service.ts';
 import { createContentSemanticAnalyzer } from '../modules/content/content-semantic-analyzer.ts';
-import type {
-  AnonymizedAggregateStats,
-  ContentFeatureBundle,
+import {
+  CONTENT_INTELLIGENCE_VERSION,
+  type AnonymizedAggregateStats,
+  type ContentFeatureBundle,
   ContentIntelligenceRecord,
   ContentMoodVector,
   ContentProcessingStatus,
@@ -305,6 +306,38 @@ export class ContentProcessingCoordinator implements IApplicationModule {
   }): ReturnType<ContentIntelligenceRepository['listRecords']> {
     this.repository.ensureInitialized();
     return this.repository.listRecords(options);
+  }
+
+  countStaleRecords(): number {
+    this.repository.ensureInitialized();
+    return this.repository.countStaleRecords(CONTENT_INTELLIGENCE_VERSION);
+  }
+
+  listStaleRecords(limit = 100): Array<{ mediaKey: string; mediaType: MediaKind; tmdbId: number }> {
+    this.repository.ensureInitialized();
+    return this.repository
+      .listStaleMediaKeys(CONTENT_INTELLIGENCE_VERSION, limit)
+      .map((row) => ({ mediaKey: row.media_key, mediaType: row.media_type, tmdbId: row.tmdb_id }));
+  }
+
+  /**
+   * Eksik/başarısız/eski sürümlü analizleri kuyruğa geri verir.
+   * Aynı `media_key` için tek iş üretilir (kuyruk koalesansı).
+   */
+  async reprocessStale(options: { limit?: number; pageSize?: number } = {}) {
+    this.repository.ensureInitialized();
+    const stale = this.listStaleRecords(options.limit ?? 100);
+    if (stale.length === 0) {
+      return { total: 0, accepted: 0, rejected: 0 };
+    }
+    return this.queue.enqueueBatch(
+      stale.map((row) => ({
+        mediaKey: row.mediaKey,
+        mediaType: row.mediaType,
+        tmdbId: row.tmdbId,
+      })),
+      { pageSize: options.pageSize ?? 25, yieldBetweenPages: true }
+    );
   }
 
   getRelated(mediaKey: string, limit = 10): ContentRelationshipLink[] {

@@ -52,7 +52,7 @@ export function createContentIntelligenceRouter(
 
   router.get('/status', (_req, res) => {
     try {
-      res.json({ ok: true, ...coordinator.getStatus() });
+      res.json({ ok: true, stale: coordinator.countStaleRecords(), ...coordinator.getStatus() });
     } catch (err) {
       handleError(res, err, 'Content Intelligence durumu okunamadı.');
     }
@@ -177,6 +177,29 @@ export function createContentIntelligenceRouter(
       });
     } catch (err) {
       handleError(res, err, 'İçerik kuyruğa alınamadı.');
+    }
+  });
+
+  router.get('/stale', (req, res) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : 100;
+      res.json({
+        ok: true,
+        total: coordinator.countStaleRecords(),
+        items: coordinator.listStaleRecords(limit),
+      });
+    } catch (err) {
+      handleError(res, err, 'Yeniden işlenecek kayıtlar okunamadı.');
+    }
+  });
+
+  router.post('/reprocess', async (req, res) => {
+    try {
+      const limit = req.body?.limit ? Number(req.body.limit) : 100;
+      const result = await coordinator.reprocessStale({ limit });
+      res.status(202).json({ ok: true, stale: coordinator.countStaleRecords(), ...result });
+    } catch (err) {
+      handleError(res, err, 'Yeniden işleme kuyruğa alınamadı.');
     }
   });
 
