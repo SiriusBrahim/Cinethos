@@ -5,7 +5,6 @@ import crypto from 'node:crypto';
 import { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
 import type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
 export type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
-
 import { normalizeProfileId } from '../core/profile-id.ts';
 import {
   cleanupStaleTempFiles,
@@ -267,40 +266,50 @@ const STAGE_LABELS: Record<SyncFileStage, SyncFileStateRecord['statusLabel']> = 
   failed: 'başarısız',
 };
 
-/**
- * Hata mesajları veya günlük metinlerinden GitHub token ve Bearer başlıklarını temizler.
- */
-export function redactSecrets(input: string, extraSecrets: Array<string | undefined> = []): string {
-  if (!input) return '';
-  let sanitized = String(input);
-  for (const secret of extraSecrets) {
-    const trimmed = secret?.trim();
-    if (trimmed && trimmed.length >= 4) {
-      sanitized = sanitized.split(trimmed).join('[REDACTED]');
-    }
-  }
-  sanitized = sanitized
-    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
-    .replace(/\btoken\s+[A-Za-z0-9._-]{16,}/gi, 'token [REDACTED]')
-    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, '[REDACTED]')
-    .replace(/github_pat_[A-Za-z0-9_]+/g, '[REDACTED]');
-  return sanitized;
+function isPlainRecordObject(raw: any): boolean {
+  return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw));
 }
 
-/**
- * Deterministic JSON stringifier that sorts object keys recursively and alphabetically.
- */
-export function stringifyDeterministic(obj: any, space = 2): string {
-  const sortRecursively = (val: any): any => {
-    if (val === null || typeof val !== 'object') return val;
-    if (Array.isArray(val)) return val.map(sortRecursively);
-    const sortedKeys = Object.keys(val)
-      .filter((k) => val[k] !== undefined)
-      .sort((a, b) => a.localeCompare(b));
-    const out: Record<string, any> = {};
-    for (const k of sortedKeys) {
-      out[k] = sortRecursively(val[k]);
-    }te lastRemoteSummary: SyncSideSummary | null = null;
+function classifyHttpFailure(status: number, headers: Headers, bodyMessage: string): GitHubSyncErrorCategory {
+  const remaining = headers.get('x-ratelimit-remaining');
+  const lowerMsg = (bodyMessage || '').toLowerCase();
+  if (
+    status === 429 ||
+    (status === 403 && (remaining === '0' || lowerMsg.includes('rate limit')))
+  ) {
+    return 'rate_limit';
+  }
+  if (status === 401 || status === 403) {
+    return 'auth_error';
+  }
+  if (status === 409) {
+    return 'conflict';
+  }
+  if (status === 404) {
+    return 'not_found';
+  }
+  return 'http_error';
+}
+
+function classifyTokenFormat(token?: string): TokenFormatKind {
+  if (!token) return 'none';
+  if (token.startsWith('github_pat_')) return 'fine_grained_pat';
+  if (token.startsWith('ghp_')) return 'classic_pat';
+  if (/^gh[ousr]_/.test(token)) return 'oauth_or_app';
+  return 'custom';
+}
+
+export class PersistentDataStore {
+  private dataDir: string;
+  private catalogDir: string;
+  private profilesDir: string;
+  private moviesFile: string;
+  private tvFile: string;
+  private manifestFile: string;
+  private syncStateFile: string;
+  private lastSyncAt: string | null = null;
+  private lastError: string | null = null;
+  private lastRemoteSummary: SyncSideSummary | null = null;
   private lastComparison: SyncComparisonSummary | null = null;
   private lastSyncReport: Omit<BidirectionalSyncReport, 'updatedDataDocument'> | null = null;
   private persistedInitialReconcile = false;
