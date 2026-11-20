@@ -51,18 +51,9 @@ import type {
   UserDataConflictItem,
 } from '../core/sync-display.ts';
 import { tryParseValidJson, writeJsonFileAtomic } from './atomic-json.ts';
-import {
-  hashContent,
-  redactSecrets,
-  sanitizeProfileId,
-  stringifyDeterministic,
-  toCanonicalKey,
-  type CatalogManifest,
-  type CatalogRecord,
-  type DerivedProfileDocument,
-  type DerivedProfileItem,
-  type PersistentDataStore,
-} from './persistent-store.ts';
+import { hashContent, redactSecrets, sanitizeProfileId, stringifyDeterministic, toCanonicalKey } from './persistent-store-utils.ts';
+import type { CatalogManifest, CatalogRecord, DerivedProfileDocument, DerivedProfileItem } from './persistent-store-types.ts';
+import type { PersistentDataStore } from './persistent-store.ts';
 import type { createDataStorage } from './storage.ts';
 
 /**
