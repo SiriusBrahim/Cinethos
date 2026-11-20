@@ -37,7 +37,7 @@ export interface UseServerSyncCoordinatorOptions {
   setServerConflict: (conflict: ServerConflictDetail | null) => void;
   setSyncStatus: (status: string) => void;
   showToast: (message: string) => void;
-  isDirtyRef: MutableRefObject<boolean>;
+  isDirtyRef: MutableRefObject<boolean | null>;
   isPushingRef: MutableRefObject<boolean>;
   inFlightPushRef: MutableRefObject<Promise<void> | null>;
   confirmNextBulkSyncRef: MutableRefObject<boolean>;
