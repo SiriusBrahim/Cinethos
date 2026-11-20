@@ -21,7 +21,6 @@ import {
   DERIVED_PROFILE_SCHEMA_VERSION,
   normalizeDerivedProfileItem,
   validateDerivedProfileCache,
-  type DerivedPillarsRecord,
   type DerivedProfileValidationResult,
 } from '../core/derived-profile-cache.ts';
 import {
