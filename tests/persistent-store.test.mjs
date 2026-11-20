@@ -498,12 +498,20 @@ test('Faz C: Türetilmiş profil verisi (signals & reasons değişiklik tespiti,
       assert.deepEqual(rebuiltPayload.items['movie:550'].signals, { director: 12, genre: 20 });
       assert.deepEqual(rebuiltPayload.items['movie:550'].reasons, ['Dram uyumu', 'Kült Başyapıt']);
 
-      // App.tsx içinde fetchDerivedProfileData'nın gerçekten çağrıldığının statik doğrulaması
+      // Keşfet/Sana Özel akışı App'ten ayrıldı; çağrı artık katalog yükleyicide.
       const repoRoot = path.resolve(import.meta.dirname, '..');
       const appCode = fs.readFileSync(path.join(repoRoot, 'src/App.tsx'), 'utf8');
+      const loaderCode = fs.readFileSync(
+        path.join(repoRoot, 'src/app/catalog-loader.ts'),
+        'utf8'
+      );
       assert.ok(
-        appCode.includes('fetchDerivedProfileData('),
-        'App.tsx öneri akışında fetchDerivedProfileData gerçekten çağrılmalı'
+        appCode.includes('createCatalogLoader({'),
+        'App katalog yükleyicisini bağlamalı'
+      );
+      assert.ok(
+        loaderCode.includes('fetchDerivedProfileData('),
+        'Katalog yükleyici öneri akışında fetchDerivedProfileData çağırmalı'
       );
     });
   } finally {

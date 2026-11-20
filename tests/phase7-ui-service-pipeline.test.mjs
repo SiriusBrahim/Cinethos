@@ -182,17 +182,25 @@ test('F7-3 useItemActions verilen servisi kullanır ve ikinci bir hat kurmaz', (
 test('F7-4 App tek kütüphane hattı kurar, mobil ve masaüstü gezinme kayıttan türer', () => {
   const app = read('src/App.tsx');
 
+  const libraryController = read('src/hooks/useLibraryController.ts');
   assert.ok(
-    app.includes("from './modules/library/client-service.ts'"),
-    'App tek istemci kütüphane hattını import etmeli'
+    app.includes('useLibraryController({'),
+    'App tek kütüphane denetleyicisini bağlamalı'
   );
-  assert.ok(app.includes('createClientLibraryService({'), 'App hattı kurmalı');
   assert.ok(
-    /useItemActions\(\{[\s\S]*?service: libraryService/.test(app),
-    'App aynı hattı useItemActions’a vermeli (ikinci hat kurulmamalı)'
+    libraryController.includes("from '../modules/library/client-service.ts'"),
+    'Kütüphane denetleyicisi tek istemci hattını import etmeli'
+  );
+  assert.ok(
+    libraryController.includes('createClientLibraryService({'),
+    'Kütüphane hattı denetleyicide kurulmalı'
+  );
+  assert.ok(
+    /useItemActions\(\{[\s\S]*?service: libraryService/.test(libraryController),
+    'Aynı hat useItemActions’a verilmeli (ikinci hat kurulmamalı)'
   );
   for (const method of ['libraryService.removeItem', 'libraryService.advanceEpisode', 'libraryService.mergeDuplicates']) {
-    assert.ok(app.includes(method), `App ${method} çağrısını hattan yapmalı`);
+    assert.ok(libraryController.includes(method), `${method} çağrısı hattan yapılmalı`);
   }
   assert.equal(
     /buildLibraryItem\(|resolveItemActionTimestamps\(/.test(app),
