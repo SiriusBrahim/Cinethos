@@ -269,3 +269,49 @@ envanterinde değildir; bu nedenle yeni API senkronizasyon kapsamını genişlet
 render edilmiyordu ve kendi gezinme/sekme listelerini tutuyordu. Tek doğruluk
 kaynağı ilkesi gereği kaldırıldı; geriye kalan `Header` (masaüstü) ve
 `MobileBottomNav` (mobil) listelerini kayıt defterinden türetir.
+
+## 10. Tek öneri hattı, sunucu zevk sinyali ve içerik zekâsı geri işleme
+
+### 10.1 Uygulama kabuğu ve sorumluluk ayrımı
+
+`src/App.tsx` artık profil kalıcılığını, bildirim yaşam döngüsünü ve öneri
+kararlarını kendi içinde tutmaz:
+
+| Modül | Sorumluluk |
+|---|---|
+| `src/app/profile-storage.ts` | localStorage anahtarları, legacy ham profil kimliklerinin kanonik kimliğe taşınması, izole liste/tercih/favori/tombstone okuması. React bağımlılığı yok. |
+| `src/app/useToasts.ts` | Bildirim yığını, otomatik sönme zamanlayıcıları ve unmount temizliği. |
+| `src/modules/recommendations/pipeline.ts` | Havuz puanlama, zenginleştirme kısa listesi, dengeli seçim ve gerekçe üretimi. Ağ erişimi çağıranda kalır; karar mantığı React'ten ayrıdır. |
+| `src/modules/recommendations/taste-signal.ts` | Sunucu `TasteProfile` metriklerini dar, tipli bir sıralama sinyaline indirger. |
+| `src/services/taste-signal-service.ts` | Profil başına sinyal önbelleği; hata durumunda `null` (sıralama yerel profille sürer). |
+| `src/services/content-intelligence-api.ts` | Anlamsal komşuluk ipuçları ve işleme durumu; 4 sn zaman aşımı ve sessiz geri dönüş. |
+
+`scoreCandidatesV3` sözleşmesi `serverTaste?: ServerTasteInput` ile genişletildi.
+Sinyal yoksa veya `confidence < 0.35` ise puanlar birebir eski davranışla aynıdır
+(`tests/recommendation-pipeline.test.mjs` geriye dönük uyum testi). Manuel
+`exclude` override'ları `resolveEffectiveMetricView` üzerinden elenir; tür ve ruh
+hâli afiniteleri sırasıyla %25 ve %15 ağırlıkla puanlanır ve gerekçe etiketi üretir.
+
+### 10.2 İçerik zekâsı → keşif
+
+`content_intelligence` kayıtlarındaki anlamsal komşuluklar
+(`GET /api/content-intelligence/items/:mediaKey/related`) öneri hattına
+`semanticHints` olarak girer; her komşu için azami 4 puanlık bir bonus uygulanır
+ve "Sunucu anlamsal analiziyle ilişkili" gerekçesi eklenir. Sunucu kapalıysa
+ipucu haritası boş döner ve akış değişmez.
+
+Katalog yazımı (`POST /api/catalog/upsert`) zaten içerik kuyruğuna iş üretir.
+Eksik, başarısız veya eski `processing_version` ile üretilmiş kayıtlar için:
+
+| Uç | Davranış |
+|---|---|
+| `GET /api/content-intelligence/status` | `stale` sayısını da döner. |
+| `GET /api/content-intelligence/stale?limit=` | Yeniden işlenecek kayıtları listeler. |
+| `POST /api/content-intelligence/reprocess` | `failed`/`pending`/sürüm uyuşmayan kayıtları kuyruğa verir (202). Aynı `media_key` için kuyruk koalesansı geçerlidir. |
+
+### 10.3 Kaldırılan paralel öneri yolu
+
+`src/core/taste/recommendation-adapter.ts` üretimde hiçbir yerden çağrılmıyordu
+(yalnızca kendi testi kullanıyordu) ve ikinci bir "taste fit" sıralaması
+tanımlıyordu. Tek motor ilkesi gereği kaldırıldı; sunucu profilinin sıralamaya
+etkisi artık `taste-signal.ts` üzerinden tek hatta uygulanıyor.
