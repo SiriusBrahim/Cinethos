@@ -817,22 +817,6 @@ export function App() {
     [mergeRemoteDocumentIntoState]
   );
 
-  // Debounced auto-push when user edits state (buildCurrentPayload tracks state dependencies)
-  useEffect(() => {
-    if (!serverSyncReady) return;
-    let lsDirty = false;
-    try {
-      lsDirty = localStorage.getItem(DIRTY_KEY) === '1';
-    } catch {}
-    if (!isDirtyRef.current && !lsDirty && !confirmNextBulkSyncRef.current && !hasPendingOfflineSync()) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      void pushToServer();
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [buildCurrentPayload, pushToServer, serverSyncReady, favoriteActors, deletedKeys]);
-
   // Arka plandaki GitHub otomatik senkronizasyonu (server.ts) revizyonu ilerlettiğinde
   // veya bekleyen yerel değişiklik varsa kayıpsız eşitleme yap
   const pullMergeFromServerIfAdvanced = useCallback(async () => {
