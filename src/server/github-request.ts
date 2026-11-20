@@ -7,10 +7,10 @@
  * `X-RateLimit-Reset` başlıklarına saygı duyulur.
  *
  * Kurallar:
- * - Yalnızca **gex tekrarı güvenli** hatalar yeniden denenir (ağ hatası, 408,
+ * - Yalnızca **güvenli biçimde tekrarlanabilir** hatalar yeniden denenir (ağ hatası, 408,
  *   429, 5xx, rate-limit 403). 401/404/409 yeniden denenmez (çağıran tarafta
  *   özel işlem gerekir).
- * - Bekleme süresi sınırlıdır ve jitter deterministik tohumla üretilebilir;
+ * - Üstel geri çekilme beklemesi sınırlıdır; sunucunun `Retry-After` ve reset süreleri kırpılmadan uygulanır. Jitter deterministik tohumla üretilebilir;
  *   testler saat/uyku bağımlılığını enjekte ederek hızlı koşar.
  * - İstek gövdesi yeniden kullanılabilir olmalıdır (string/Buffer) — GitHub
  *   PUT istekleri aynı içerikle idempotenttir.
@@ -80,11 +80,11 @@ export function computeGitHubRetryDelayMs(
   if (retryAfterRaw) {
     const asSeconds = Number(retryAfterRaw);
     if (Number.isFinite(asSeconds) && asSeconds >= 0) {
-      return Math.min(max, Math.round(asSeconds * 1000));
+      return Math.round(asSeconds * 1000);
     }
     const asDate = Date.parse(retryAfterRaw);
     if (Number.isFinite(asDate)) {
-      return Math.min(max, Math.max(0, asDate - now()));
+      return Math.max(0, asDate - now());
     }
   }
 
@@ -92,7 +92,7 @@ export function computeGitHubRetryDelayMs(
   const resetSeconds = headerNumber(headers, 'x-ratelimit-reset');
   if (remaining === 0 && resetSeconds !== null) {
     const waitMs = resetSeconds * 1000 - now();
-    if (waitMs > 0) return Math.min(max, Math.max(base, Math.round(waitMs)));
+    if (waitMs > 0) return Math.max(base, Math.round(waitMs));
   }
 
   const exponential = base * Math.pow(2, Math.max(0, attempt - 1));
