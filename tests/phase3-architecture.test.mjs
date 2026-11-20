@@ -11,7 +11,7 @@ import {
 } from '../src/app/profile-backup.ts';
 import { normalizeDataDocument } from '../src/core/cinetrack-core.ts';
 
-const BASELINE_CYCLES = 1; // github-bidirectional-sync.ts <-> persistent-store.ts (belgelenmiş)
+const BASELINE_CYCLES = 0; // sync/store runtime cycle was extracted into shared contracts and utilities.
 
 test('Faz 3 · 8 — Yeni modüller bağımlılık döngüsü oluşturmaz', () => {
   const cycles = findImportCycles();
@@ -29,6 +29,8 @@ test('Faz 3 · 8 — Yeni modüller bağımlılık döngüsü oluşturmaz', () =
     'src/server/github-request.ts',
     'src/app/server-sync.ts',
     'src/app/profile-backup.ts',
+    'src/server/persistent-store-types.ts',
+    'src/server/persistent-store-utils.ts',
   ];
   for (const cycle of cycles) {
     for (const modulePath of NEW_MODULES) {
