@@ -443,6 +443,47 @@ export class ContentIntelligenceRepository {
     );
   }
 
+  /**
+   * Yeniden işlenmesi gereken kayıtlar: başarısız, yarım kalmış veya
+   * güncel olmayan `processing_version` ile üretilmiş satırlar.
+   * Aynı içerik gereksiz yere yeniden analiz edilmesin diye yalnızca bu
+   * koşulları sağlayanlar döner.
+   */
+  listStaleMediaKeys(
+    currentVersion: string = CONTENT_INTELLIGENCE_VERSION,
+    limit = 100
+  ): Array<{ media_key: string; media_type: MediaKind; tmdb_id: number }> {
+    const db = this.requireDb();
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+    return db
+      .prepare(
+        `SELECT media_key, media_type, tmdb_id
+           FROM content_intelligence
+          WHERE processing_status IN ('failed', 'pending')
+             OR processing_version != ?
+          ORDER BY updated_at ASC, media_key ASC
+          LIMIT ?`
+      )
+      .all(currentVersion, safeLimit) as Array<{
+      media_key: string;
+      media_type: MediaKind;
+      tmdb_id: number;
+    }>;
+  }
+
+  countStaleRecords(currentVersion: string = CONTENT_INTELLIGENCE_VERSION): number {
+    const db = this.requireDb();
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS cnt
+           FROM content_intelligence
+          WHERE processing_status IN ('failed', 'pending')
+             OR processing_version != ?`
+      )
+      .get(currentVersion) as { cnt?: number } | undefined;
+    return Number(row?.cnt ?? 0);
+  }
+
   listRecords(
     options: {
       limit?: number;

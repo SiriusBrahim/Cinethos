@@ -220,3 +220,23 @@ Tüm önemli değişiklikler bu dosyada tutulur. Sürümleme [Semantic Versionin
 ### Eklenen
 - Taste Engine v1.0: 37 metrikli taksonomi, kanıt defteri ve güven hesaplayıcıları.
 - TMDB destekli keşif, kişisel kütüphane, GitHub yedekleme ve çoklu profil desteği.
+
+## Unreleased — 2026-11-20 (mimari entegrasyon)
+
+### Mimari
+- `App.tsx` sorumlulukları ayrıldı: profil kalıcılığı `src/app/profile-storage.ts`,
+  bildirimler `src/app/useToasts.ts`, öneri kararları
+  `src/modules/recommendations/pipeline.ts`. App yalnızca durum ve koordinasyon tutar.
+- Profil başına sunucu zevk sinyali eklendi; `scoreCandidatesV3` tür ve ruh hâli
+  puanlarını bu sinyalle, düşük güvende hiç değiştirmeden harmanlar.
+- `src/core/taste/recommendation-adapter.ts` (üretimde kullanılmayan paralel
+  sıralama yolu) ve testi kaldırıldı.
+- İçerik zekâsı: `stale` listesi + `POST /reprocess` uçları; sürüm/başarısızlık
+  temelli yeniden işleme. Anlamsal komşuluklar öneri puanına ve gerekçesine girer.
+
+### Testler
+- `tests/recommendation-pipeline.test.mjs` (tek hat, geriye dönük uyum, sunucu
+  sinyali, anlamsal ipucu, film/dizi ayrımı).
+- `tests/profile-storage.test.mjs` (legacy kimlik taşıma, birleştirme, izolasyon).
+- `tests/content-intelligence-reprocess.test.mjs` (stale tespiti, koalesans,
+  sürüm yükseltmesi, başarısız işin yeniden denenmesi).

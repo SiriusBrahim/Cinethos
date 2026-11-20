@@ -1,3 +1,23 @@
+import { useToasts } from './app/useToasts.ts';
+import {
+  ACTIVE_PROFILE_STORAGE,
+  DIRTY_KEY,
+  HIDE_LISTED_STORAGE_KEY,
+  PROFILES_STORAGE,
+  PROFILE_STORAGE,
+  deletedKeysStorageKey,
+  favActorsStorageKey,
+  hasPersistedProfilesInStorage,
+  listStorageKey,
+  loadActiveProfileId,
+  loadDeletedKeys,
+  loadDislikedCache,
+  loadFavoriteActors,
+  loadInitialProfiles,
+  loadProfileItems,
+  loadProfilePreferences,
+  preferencesStorageKey,
+} from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
@@ -12,7 +32,7 @@ import { AddCustomModal } from './components/AddCustomModal.tsx';
 import { ProfileModal } from './components/ProfileModal.tsx';
 import { ImportChoiceModal } from './components/ImportChoiceModal.tsx';
 import { TvdbStockModal } from './components/TvdbStockModal.tsx';
-import { Toast, type ToastEntry, type ToastKind } from './components/Toast.tsx';
+import { Toast } from './components/Toast.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
@@ -48,8 +68,6 @@ import {
   reminderDaysUntil,
   parseBackupText,
   buildTasteProfileV3,
-  scoreCandidatesV3,
-  RECOMMENDATION_WEIGHTS_V3,
   findSavedItem,
   makeMediaKey,
   isItemSaved,
@@ -60,7 +78,6 @@ import {
   normalizeFavoriteActors,
   replenishCandidatePool,
   isCandidateEligibleInPool,
-  selectBalancedRecommendations,
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
   loadPersistentTasteMap,
@@ -119,7 +136,16 @@ import {
   enrichCatalogItemsWithTaste,
   hydrateTasteMapWithDerivedCache,
   mapRecommendationBatchToDisplayItems,
+  rescoreShortlist,
+  scoreRecommendationPool,
+  selectRecommendationBatch,
+  type ServerTasteSignal,
 } from './modules/recommendations/index.ts';
+import {
+  clearServerTasteSignalCache,
+  loadServerTasteSignal,
+} from './services/taste-signal-service.ts';
+import { loadSemanticRelationHints } from './services/content-intelligence-api.ts';
 import { createClientLibraryService } from './modules/library/client-service.ts';
 import { HomeSection } from './modules/home/HomeSection.tsx';
 import { SeriesSection } from './modules/series/SeriesSection.tsx';
@@ -183,161 +209,7 @@ import {
   isWithinReleaseWindow,
 } from './utils/release-window.ts';
 
-const PROFILES_STORAGE = 'cinetrack.profiles.v1';
-const ACTIVE_PROFILE_STORAGE = 'cinetrack.activeProfile.v1';
-const PROFILE_STORAGE = 'cinetrack.profile.v1';
-const DIRTY_KEY = 'cinetrack.dirty.v2';
-const HIDE_LISTED_STORAGE_KEY = 'cinetrack_hide_listed_items';
 const EMPTY_REASONS_MAP = new Map<string, string>();
-
-function listStorageKey(profileId: string) {
-  return `cinetrack.profile.${profileId}.watchlist.v1`;
-}
-function preferencesStorageKey(profileId: string) {
-  return `cinetrack.profile.${profileId}.preferences.v1`;
-}
-
-function hasPersistedProfilesInStorage(): boolean {
-  try {
-    const stored = JSON.parse(localStorage.getItem(PROFILES_STORAGE) || 'null');
-    return Array.isArray(stored) && stored.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function loadInitialProfiles(): Profile[] {
-  try {
-    const stored = JSON.parse(localStorage.getItem(PROFILES_STORAGE) || 'null');
-    const profiles: Profile[] = [];
-    if (Array.isArray(stored)) {
-      for (const p of stored) {
-        const canonicalId = normalizeProfileId(p?.id);
-        if (!p || !canonicalId || typeof p.name !== 'string') continue;
-        // Eski localStorage anahtarları ham profileId ile yazılmış olabilir;
-        // ilk açılışta veriyi eski anahtardan oku, sonraki kayıt kanonik anahtarı yazar.
-        const storageId = p.id as string;
-        const delKeys = loadDeletedKeys(storageId);
-        const loaded: Profile = {
-          id: canonicalId,
-          name: p.name.slice(0, 40),
-          createdAt: p.createdAt || '',
-          isDemo: Boolean(p.isDemo),
-          preferences: loadProfilePreferences(storageId),
-          items: loadProfileItems(storageId),
-          favoriteActors: loadFavoriteActors(storageId),
-          ...(Object.keys(delKeys).length > 0 ? { deleted_keys: delKeys } : {}),
-        };
-        const existing = profiles.find((profile) => profile.id === canonicalId);
-        if (existing) {
-          existing.items = dedupeItems([...existing.items, ...loaded.items]);
-          existing.favoriteActors = normalizeFavoriteActors([
-            ...(existing.favoriteActors || []),
-            ...(loaded.favoriteActors || []),
-          ]);
-          existing.preferences = normalizePreferences({
-            ...existing.preferences,
-            disliked: [...(existing.preferences.disliked || []), ...(loaded.preferences.disliked || [])],
-            hidden: [...(existing.preferences.hidden || []), ...(loaded.preferences.hidden || [])],
-            providers: [...(existing.preferences.providers || []), ...(loaded.preferences.providers || [])],
-            mood: existing.preferences.mood || loaded.preferences.mood,
-            reminders: existing.preferences.reminders || loaded.preferences.reminders,
-            notified: [...(existing.preferences.notified || []), ...(loaded.preferences.notified || [])],
-          });
-          const mergedDeleted = normalizeDeletedKeys({
-            ...(existing.deleted_keys || {}),
-            ...(loaded.deleted_keys || {}),
-          });
-          if (Object.keys(mergedDeleted).length) existing.deleted_keys = mergedDeleted;
-          existing.isDemo = Boolean(existing.isDemo && loaded.isDemo);
-        } else {
-          profiles.push(loaded);
-        }
-      }
-    }
-    if (profiles.length) return profiles;
-    const legacyName = localStorage.getItem(PROFILE_STORAGE) || '';
-    const defaultProfile: Profile = {
-      id: 'PROFILE-DEFAULT',
-      name: legacyName || 'Profilim',
-      createdAt: new Date().toISOString(),
-      preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
-      items: [],
-    };
-    return [defaultProfile];
-  } catch {
-    return [
-      {
-        id: 'PROFILE-DEFAULT',
-        name: 'Profilim',
-        createdAt: '',
-        preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
-        items: [],
-      },
-    ];
-  }
-}
-
-function loadActiveProfileId(profiles: Profile[]): string {
-  try {
-    const active = normalizeProfileId(localStorage.getItem(ACTIVE_PROFILE_STORAGE));
-    return active && profiles.some((p) => p.id === active) ? active : profiles[0].id;
-  } catch {
-    return profiles[0].id;
-  }
-}
-
-function loadProfilePreferences(profileId: string): Preferences {
-  try {
-    return normalizePreferences(
-      JSON.parse(localStorage.getItem(preferencesStorageKey(profileId)) || '{}'),
-      { knownMoods: Object.keys(MOOD_GENRES) }
-    );
-  } catch {
-    return { disliked: [], providers: [], mood: '', reminders: false, notified: [] };
-  }
-}
-
-function loadProfileItems(profileId: string): SavedItem[] {
-  try {
-    const stored = localStorage.getItem(listStorageKey(profileId)) || '[]';
-    const parsed = JSON.parse(stored);
-    return Array.isArray(parsed)
-      ? (parsed
-          .filter((item) => item && (item.media_type === 'movie' || item.media_type === 'tv') && item.id != null)
-          .map(normalizeSavedItem)
-          .filter(Boolean) as SavedItem[])
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function favActorsStorageKey(profileId: string): string {
-  return `cinetrack_fav_actors_${profileId}`;
-}
-
-function loadFavoriteActors(profileId: string): FavoriteActorInfo[] {
-  try {
-    const stored = localStorage.getItem(favActorsStorageKey(profileId));
-    return stored ? normalizeFavoriteActors(JSON.parse(stored)) : [];
-  } catch {
-    return [];
-  }
-}
-
-function deletedKeysStorageKey(profileId: string): string {
-  return `cinetrack_deleted_keys_${profileId}`;
-}
-
-function loadDeletedKeys(profileId: string): Record<string, string> {
-  try {
-    const stored = localStorage.getItem(deletedKeysStorageKey(profileId));
-    return stored ? normalizeDeletedKeys(JSON.parse(stored)) : {};
-  } catch {
-    return {};
-  }
-}
 
 export function App() {
   // Profiles and Watchlist State
@@ -356,22 +228,29 @@ export function App() {
   const [deletedKeys, setDeletedKeys] = useState<Record<string, string>>(
     () => activeProfile.deleted_keys || {}
   );
-  const [dislikedItems, setDislikedItems] = useState<any[]>(() => {
-    try {
-      const cache = JSON.parse(localStorage.getItem('cinetrack_disliked_cache') || '{}');
-      return Object.values(cache);
-    } catch {
-      return [];
-    }
-  });
+  const [dislikedItems, setDislikedItems] = useState<any[]>(() => loadDislikedCache());
   const [syncStatus, setSyncStatus] = useState<string>('Kayıt yeri: data/cinetrack-data.json');
 
   // Discover & Grid State
   const [tab, setTab] = useState<ModuleId>('home');
   // Derin bağlantı: #/discover, #/series … adresleri sekmeyle çift yönlü eşitlenir.
   useHashNavigation(tab, setTab);
+  // Sunucu zevk profili (Faz 1/2 metrik motoru) → tek öneri hattının tür/ruh
+  // hâli sinyali. Profil veya ruh hâli değişince tazelenir; hata sıralamayı bozmaz.
+  useEffect(() => {
+    let cancelled = false;
+    void loadServerTasteSignal({ profileId: activeProfileId, mood: preferences.mood }).then(
+      (signal) => {
+        if (!cancelled) setServerTasteSignal(signal);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfileId, preferences.mood]);
   const [tasteMapDisplayMode, setTasteMapDisplayMode] = useState<'poster' | 'graph' | 'identity'>('identity');
   const [tasteMap, setTasteMap] = useState<PersistentTasteMapData>(() => loadPersistentTasteMap(activeProfileId));
+  const [serverTasteSignal, setServerTasteSignal] = useState<ServerTasteSignal | null>(null);
   const discoverState = useDiscoverState({
     initialHideListedItems: () => {
       try {
@@ -422,9 +301,8 @@ export function App() {
   const [profileOpen, setProfileOpen] = useState<boolean>(false);
   const [tvdbModalOpen, setTvdbModalOpen] = useState<boolean>(false);
   const [pendingBackup, setPendingBackup] = useState<any | null>(null);
-  const [toasts, setToasts] = useState<ToastEntry[]>([]);
+  const { toasts, showToast, dismissToast } = useToasts();
 
-  const toastTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const lastForYouQueryKeyRef = useRef<string>('');
   const confirmNextBulkSyncRef = useRef<boolean>(false);
   const selectedTypeRef = useRef<string>(selectedType);
@@ -443,6 +321,8 @@ export function App() {
   profileNameRef.current = profileName;
   const tasteMapRef = useRef<PersistentTasteMapData>(tasteMap);
   tasteMapRef.current = tasteMap;
+  const serverTasteRef = useRef<ServerTasteSignal | null>(null);
+  serverTasteRef.current = serverTasteSignal;
   const forYouItemsRef = useRef<any[]>(forYouItems);
   forYouItemsRef.current = forYouItems;
   const hasHydratedLocalEffectRef = useRef(false);
@@ -611,28 +491,6 @@ export function App() {
       updatedAt: new Date().toISOString(),
     });
   }, [activeProfileId, selectedType, selectedSort, selectedGenre, hideListedItems, forYouSubTab]);
-
-  const dismissToast = useCallback((id: number) => {
-    const timer = toastTimersRef.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      toastTimersRef.current.delete(id);
-    }
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  const showToast = useCallback((msg: string, kind: ToastKind = 'success') => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((prev) => [...prev.slice(-7), { id, message: msg, kind }]);
-    // UX-01: hata bildirimleri elle kapatılana kadar kalıcı; diğerleri otomatik söner.
-    if (kind !== 'error') {
-      const timer = setTimeout(() => {
-        toastTimersRef.current.delete(id);
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 7000);
-      toastTimersRef.current.set(id, timer);
-    }
-  }, []);
 
   // Global Keyboard Shortcuts (IMP-08 & Section 6.5)
   useKeyboardShortcuts({
@@ -1368,6 +1226,7 @@ export function App() {
         preferences: preferencesRef.current,
         genresMap: genresMapRef.current,
         tasteMap: currentTasteMap,
+        serverTaste: serverTasteRef.current,
       });
     } catch {
       return items;
@@ -2177,6 +2036,17 @@ export function App() {
               : latestDiskMap;
           const prevRecommendedKeys = tasteMap.lastRecommendedKeys || [];
 
+          // İçerik Zekâsı → öneri: en güçlü geçmiş sinyallerinin sunucudaki
+          // anlamsal komşuları sıralamaya gerçek bir bonus olarak katılır.
+          const semanticSeedKeys = rawSaved
+            .filter((item) => item.status === 'completed' || Number(item.personal_rating) >= 7)
+            .slice(0, 6)
+            .map((item) => makeMediaKey(item));
+          const semanticHints = await loadSemanticRelationHints(semanticSeedKeys, {
+            signal: ticket.signal,
+          });
+          if (!requestGateRef.current.isCurrent(ticket.id)) return;
+
           // Daraltılmış filtrelerde (örn. Sana Özel -> Film -> Fantastik) 20 öneriyi garantilemek için çok sayfalı tamamlama
           let movieCandidates = fullMovieCandidates;
           let tvCandidates = fullTvCandidates;
@@ -2246,61 +2116,45 @@ export function App() {
             allTvUnionMap.set(makeMediaKey(t), t);
           }
 
-          const fullMovieScored = scoreCandidatesV3(
-            Array.from(allMoviesUnionMap.values()),
-            movieTasteProfile,
-            {
-              weights: RECOMMENDATION_WEIGHTS_V3,
-              genreNames: currentGenres,
-              mood: currentPrefs.mood,
-              tasteMap,
-            }
-          ).sort((a, b) => b.score - a.score);
-
-          const fullTvScored = scoreCandidatesV3(
-            Array.from(allTvUnionMap.values()),
-            tvTasteProfile,
-            {
-              weights: RECOMMENDATION_WEIGHTS_V3,
-              genreNames: currentGenres,
-              mood: currentPrefs.mood,
-              tasteMap,
-            }
-          ).sort((a, b) => b.score - a.score);
-
-          const activeMovieKeys = new Set(movieCandidates.map((m) => makeMediaKey(m)));
-          const activeTvKeys = new Set(tvCandidates.map((t) => makeMediaKey(t)));
-
-          const movieScored = isFilteredView
-            ? fullMovieScored.filter((entry) => activeMovieKeys.has(makeMediaKey(entry.candidate)))
-            : fullMovieScored;
-          const tvScored = isFilteredView
-            ? fullTvScored.filter((entry) => activeTvKeys.has(makeMediaKey(entry.candidate)))
-            : fullTvScored;
-
-          // Adayları ayrıntılı bilgilerle zenginleştirme (Halka 1 kesinlikle hariç)
-          const buildEnrichmentShortlist = (scoredList: any[], count: number) => {
-            const withoutLastBatch = filterOutLastRecommendedCandidates(scoredList, prevRecommendedKeys);
-            const ring0Items = withoutLastBatch.filter((e) => e.ring === 'ring0');
-            const ring2Items = withoutLastBatch.filter((e) => e.ring === 'ring2');
-            return [...ring0Items, ...ring2Items].slice(0, count);
+          // Tek öneri hattı: havuz puanlama + zenginleştirme kısa listesi.
+          const poolScoreBase = {
+            savedItems: rawSaved,
+            preferences: currentPrefs,
+            genresMap: currentGenres,
+            tasteMap,
+            isFilteredView,
+            serverTaste: serverTasteRef.current,
+            semanticHints,
           };
+          const moviePoolScore = scoreRecommendationPool({
+            ...poolScoreBase,
+            candidates: Array.from(allMoviesUnionMap.values()),
+            activeCandidates: movieCandidates,
+            profile: movieTasteProfile,
+            targetType: 'movie',
+            shortlistSize: targetType === 'all' ? 24 : 40,
+          });
+          const tvPoolScore = scoreRecommendationPool({
+            ...poolScoreBase,
+            candidates: Array.from(allTvUnionMap.values()),
+            activeCandidates: tvCandidates,
+            profile: tvTasteProfile,
+            targetType: 'tv',
+            shortlistSize: targetType === 'all' ? 24 : 40,
+          });
 
-          let shortlist: any[] = [];
-          let movieShortlist: any[] = [];
-          let tvShortlist: any[] = [];
-
-          if (targetType === 'all') {
-            movieShortlist = buildEnrichmentShortlist(movieScored, 24);
-            tvShortlist = buildEnrichmentShortlist(tvScored, 24);
-            shortlist = [...movieShortlist, ...tvShortlist];
-          } else if (targetType === 'movie') {
-            movieShortlist = buildEnrichmentShortlist(movieScored, 40);
-            shortlist = movieShortlist;
-          } else {
-            tvShortlist = buildEnrichmentShortlist(tvScored, 40);
-            shortlist = tvShortlist;
-          }
+          const fullMovieScored = moviePoolScore.scored;
+          const fullTvScored = tvPoolScore.scored;
+          const movieScored = fullMovieScored;
+          const tvScored = fullTvScored;
+          const movieShortlist = moviePoolScore.shortlist;
+          const tvShortlist = tvPoolScore.shortlist;
+          const shortlist: any[] =
+            targetType === 'movie'
+              ? movieShortlist
+              : targetType === 'tv'
+              ? tvShortlist
+              : [...movieShortlist, ...tvShortlist];
 
           setForYouProgressStep('Öne çıkan adayların kadro ve hikâye sinyalleri zenginleştiriliyor…');
           const shortlistTopCast: Record<string, number[]> = {};
@@ -2335,45 +2189,26 @@ export function App() {
           }
           if (!requestGateRef.current.isCurrent(ticket.id)) return;
 
-          // Zenginleştirilmiş adayları bağımsız olarak yeniden puanla ve lastRecommendedKeys'i süz
-          let enrichedMovieScored: any[] = [];
-          let enrichedTvScored: any[] = [];
-
-          if (movieShortlist.length > 0) {
-            enrichedMovieScored = filterOutLastRecommendedCandidates(
-              scoreCandidatesV3(
-                movieShortlist.map((e) => e.candidate),
-                movieTasteProfile,
-                {
-                  weights: RECOMMENDATION_WEIGHTS_V3,
-                  genreNames: currentGenres,
-                  mood: currentPrefs.mood,
-                  tasteMap,
-                }
-              ),
-              prevRecommendedKeys
-            )
-              .filter((entry) => isCandidateEligibleInPool(entry.candidate, rawSaved, currentPrefs))
-              .sort((a, b) => b.score - a.score);
-          }
-
-          if (tvShortlist.length > 0) {
-            enrichedTvScored = filterOutLastRecommendedCandidates(
-              scoreCandidatesV3(
-                tvShortlist.map((e) => e.candidate),
-                tvTasteProfile,
-                {
-                  weights: RECOMMENDATION_WEIGHTS_V3,
-                  genreNames: currentGenres,
-                  mood: currentPrefs.mood,
-                  tasteMap,
-                }
-              ),
-              prevRecommendedKeys
-            )
-              .filter((entry) => isCandidateEligibleInPool(entry.candidate, rawSaved, currentPrefs))
-              .sort((a, b) => b.score - a.score);
-          }
+          // Zenginleştirilmiş adayları aynı motorla yeniden puanla; seçim ve
+          // gerekçeler tek hattan (`selectRecommendationBatch`) gelir.
+          const rescoreBase = {
+            savedItems: rawSaved,
+            preferences: currentPrefs,
+            genresMap: currentGenres,
+            tasteMap,
+            serverTaste: serverTasteRef.current,
+            semanticHints,
+          };
+          const enrichedMovieScored = rescoreShortlist({
+            ...rescoreBase,
+            shortlist: movieShortlist,
+            profile: movieTasteProfile,
+          });
+          const enrichedTvScored = rescoreShortlist({
+            ...rescoreBase,
+            shortlist: tvShortlist,
+            profile: tvTasteProfile,
+          });
 
           const movieShortlistKeys = new Set(movieShortlist.map((e) => makeMediaKey(e.candidate)));
           const tvShortlistKeys = new Set(tvShortlist.map((e) => makeMediaKey(e.candidate)));
@@ -2388,40 +2223,22 @@ export function App() {
               isCandidateEligibleInPool(entry.candidate, rawSaved, currentPrefs)
           );
 
-          const balancedResult = selectBalancedRecommendations({
+          const selection = selectRecommendationBatch({
             targetType,
-            scoredMovies: enrichedMovieScored,
-            scoredTv: enrichedTvScored,
+            isFilteredView,
+            tasteMap,
+            lastRecommendedKeys: prevRecommendedKeys,
+            savedItems: rawSaved,
+            preferences: currentPrefs,
+            enrichedMovies: enrichedMovieScored,
+            enrichedTv: enrichedTvScored,
             remainingMovies: remainingMovieScored,
             remainingTv: remainingTvScored,
-            lastRecommendedKeys: prevRecommendedKeys,
-            tasteMap,
             targetTotal: TARGET_RECOMMENDATION_COUNT,
-            minPerTypeInAll: 10,
-            maxPerGenre: isFilteredView ? TARGET_RECOMMENDATION_COUNT : undefined,
           });
 
-          const picked = [...balancedResult.items];
-          // Dar bir tür/platform filtresinde 'all' seçiliyken bir medya tipi 10 adedin altında kalırsa 20'ye tamamla
-          if (isFilteredView && targetType === 'all' && picked.length < TARGET_RECOMMENDATION_COUNT) {
-            const pickedKeys = new Set(picked.map((e: any) => makeMediaKey(e.candidate || e)));
-            const overflowPool = [
-              ...enrichedMovieScored,
-              ...enrichedTvScored,
-              ...remainingMovieScored,
-              ...remainingTvScored,
-            ].sort((a, b) => b.score - a.score);
-            for (const candidateEntry of overflowPool) {
-              if (picked.length >= TARGET_RECOMMENDATION_COUNT) break;
-              const k = makeMediaKey(candidateEntry.candidate || candidateEntry);
-              if (!pickedKeys.has(k)) {
-                pickedKeys.add(k);
-                picked.push(candidateEntry);
-              }
-            }
-          }
-
-          const explanationText = balancedResult.explanation;
+          const picked = selection.picked;
+          const explanationText = selection.explanation;
           setForYouExplanation(explanationText);
 
           // Tam 500 film + 500 dizi kullanıcı puanlarını tek bir haritada birleştir (hiçbir filtre havuz kayıtlarını silmez!)
@@ -2813,6 +2630,15 @@ export function App() {
     void removeSkippedKeyIdb(activeProfileIdRef.current, itemKey);
     void indexItemForSeries(normalized);
     void recordProfileChangeAndMaybeBackup();
+
+    // Kütüphane değişikliği → sunucu zevk profili → öneri sinyali zinciri:
+    // önbellek düşürülür ve sinyal bir sonraki koşuda tazelenir.
+    clearServerTasteSignalCache(activeProfileIdRef.current);
+    void loadServerTasteSignal({
+      profileId: activeProfileIdRef.current,
+      mood: preferencesRef.current.mood,
+      force: true,
+    }).then((signal) => setServerTasteSignal(signal));
 
     const title = displayTitle(rawItem);
     if (effectiveStatus === 'completed') {
@@ -3485,6 +3311,9 @@ export function App() {
   };
 
   const handleSwitchProfile = (rawNewId: string) => {
+    // Profil değişimi: sunucu zevk sinyali de dahil tüm profil kapsamlı
+    // önbellekler düşürülür; yeni profilin verisi eskisiyle karışmaz.
+    clearServerTasteSignalCache();
     const newId = normalizeProfileId(rawNewId);
     if (!newId || newId === activeProfileId) return;
     const outgoingId = activeProfileId;

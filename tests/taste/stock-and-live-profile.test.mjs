@@ -24,7 +24,7 @@ import {
   getStatusLabelTr,
   resolveEffectiveMetricView,
 } from "../../src/core/taste/metric-labels.ts";
-import { createRecommendationAdapter } from "../../src/core/taste/recommendation-adapter.ts";
+import { buildServerTasteSignal } from "../../src/modules/recommendations/taste-signal.ts";
 import { createTasteRouter } from "../../src/server/taste-routes.ts";
 import { createProfileContext } from "../../src/app/ProfileContext.ts";
 import {
@@ -284,43 +284,37 @@ describe("Derin Sinema Kabuk, Exclude Override ve V1.5 Etiket İtirazı", () => 
     assert.strictEqual(excluded.isExcluded, true);
     assert.strictEqual(excluded.effectiveAffinity, 0);
 
-    // Recommendation adapter excluded metriği tamamen atlar
-    const profileWithExclude = {
+    // Öneri sinyali (tek hat) dışlanmış metriği tamamen atlar: sıralamaya girmez.
+    const excludedMetric = {
+      metricId: "genre.scifi",
+      affinity: 50,
+      longTermAffinity: 50,
+      recentAffinity: 50,
+      status: "directional",
+      evidence: baseMetric.evidence,
+      manualOverride: { mode: "exclude", value: 0 },
+    };
+    const includedMetric = {
+      ...excludedMetric,
+      metricId: "genre.drama",
+      affinity: 40,
+      manualOverride: undefined,
+    };
+    const signal = buildServerTasteSignal({
       mediaType: "unified",
       algorithmVersion: "1.0.0",
       taxonomyVersion: "v0.1",
       asOf: AS_OF,
+      profileId: "profile-default",
+      generationId: "gen-test",
       metrics: {
-        "genre.scifi": {
-          metricId: "genre.scifi",
-          affinity: 50,
-          longTermAffinity: 50,
-          recentAffinity: 50,
-          status: "directional",
-          evidence: baseMetric.evidence,
-          manualOverride: { mode: "exclude", value: 0 },
-        },
+        "genre.scifi": excludedMetric,
+        "genre.drama": includedMetric,
       },
-    };
-    const candidateEntry = {
-      contentId: "movie:157336",
-      mediaType: "movie",
-      extractedAt: AS_OF,
-      metadataHash: "h",
-      completeness: 0.5,
-      features: {
-        "genre.scifi": { strength: 95, confidence: 1.0, source: "tmdb", state: "present" },
-      },
-    };
-    const adapter = createRecommendationAdapter();
-    const [adapted] = adapter.suggestFor(
-      [{ contentId: "movie:157336", mediaType: "movie" }],
-      "movie",
-      profileWithExclude,
-      { "movie:157336": candidateEntry }
-    );
-    assert.strictEqual(adapted.tasteFit, 0);
-    assert.strictEqual(adapted.reasonIds.length, 0);
+    });
+    assert.ok(signal);
+    assert.strictEqual(signal.genreAffinity["genre.scifi"], undefined);
+    assert.strictEqual(signal.genreAffinity["genre.drama"], 0.4);
   });
 
   it("GET /api/taste/metric/:id kanıt başlıklarını zenginleştirir ve POST /api/taste/objection cinetrack-data.json'a dokunmadan etiketi düşürür", async () => {

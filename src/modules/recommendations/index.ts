@@ -11,7 +11,29 @@
  * - `RankingManager`           — oyuncu kaynaklı öneri sıralaması
  */
 
-export { createRecommendationService, RecommendationService, type RecommendationServiceOptions, type RecommendationSnapshot } from './RecommendationService.ts';
+export {
+  createRecommendationService, RecommendationService, type RecommendationServiceOptions, type RecommendationSnapshot } from './RecommendationService.ts';
+
+export {
+  buildServerTasteSignal,
+  genreMetricIdFor,
+  isServerTasteSignalUsable,
+  SERVER_TASTE_MIN_CONFIDENCE,
+  type ServerTasteSignal,
+} from './taste-signal.ts';
+
+export {
+  rescoreShortlist,
+  scoreRecommendationPool,
+  selectRecommendationBatch,
+  toServerTasteInput,
+  type FinalSelectionInput,
+  type FinalSelectionResult,
+  type PoolScoreInput,
+  type PoolScoreResult,
+  type ScoredCandidateEntry,
+  type TargetMediaType,
+} from './pipeline.ts';
 
 export {
   buildDerivedProfilePayloadFromTasteMap,
