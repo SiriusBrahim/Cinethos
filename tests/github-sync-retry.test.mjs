@@ -56,6 +56,13 @@ test('Retry-After saniye ve tarih biçimleri ile rate limit reset dikkate alın�
   const retryAfterSeconds = new Response('', { status: 429, headers: { 'retry-after': '3' } });
   assert.equal(computeGitHubRetryDelayMs(1, retryAfterSeconds, { now: () => BASE_NOW }), 3000);
 
+  const longRetryAfter = new Response('', { status: 429, headers: { 'retry-after': '30' } });
+  assert.equal(
+    computeGitHubRetryDelayMs(1, longRetryAfter, { now: () => BASE_NOW }),
+    30_000,
+    'sunucunun 8 saniyeden uzun Retry-After talimatı kırpılmamalı'
+  );
+
   const retryAfterDate = new Response('', {
     status: 429,
     headers: { 'retry-after': new Date(BASE_NOW + 5000).toUTCString() },
@@ -70,6 +77,19 @@ test('Retry-After saniye ve tarih biçimleri ile rate limit reset dikkate alın�
     },
   });
   assert.equal(computeGitHubRetryDelayMs(1, reset, { now: () => BASE_NOW }), 2000);
+
+  const longReset = new Response('', {
+    status: 403,
+    headers: {
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-reset': String(Math.floor(BASE_NOW / 1000) + 45),
+    },
+  });
+  assert.equal(
+    computeGitHubRetryDelayMs(1, longReset, { now: () => BASE_NOW }),
+    45_000,
+    'X-RateLimit-Reset sunucu süresi kırpılmamalı'
+  );
 
   const exponential = [1, 2, 3].map((attempt) =>
     computeGitHubRetryDelayMs(attempt, null, { random: () => 0, now: () => BASE_NOW })
