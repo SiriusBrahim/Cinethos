@@ -285,6 +285,10 @@ kararlarını kendi içinde tutmaz:
 | `src/modules/recommendations/taste-signal.ts` | Sunucu `TasteProfile` metriklerini dar, tipli bir sıralama sinyaline indirger. |
 | `src/services/taste-signal-service.ts` | Profil başına sinyal önbelleği; hata durumunda `null` (sıralama yerel profille sürer). |
 | `src/services/content-intelligence-api.ts` | Anlamsal komşuluk ipuçları ve işleme durumu; 4 sn zaman aşımı ve sessiz geri dönüş. |
+| `src/app/catalog-loader.ts` | Keşfet/Sana Özel veri toplama akışı (~1.140 satır): katalog sayfaları, aday havuzu, kadro zenginleştirme, tek hattan puanlama/seçim ve gerekçe. React bağımlılığı yok; durum/setter'lar bağlamla verilir. |
+| `src/hooks/useLibraryController.ts` | Kütüphane yazımları: ekleme, durum/puan, bölüm ilerletme, silme, beğenmeme/gizleme. Tek `createClientLibraryService` örneği burada kurulur. |
+| `src/app/user-data-payload.ts` | Sunucuya gönderilecek kullanıcı veri belgesini tek üreticide birleştirir; aktif profil canlı state'ten, diğerleri izole depodan okunur. |
+| `src/core/relationship-server-links.ts` + `src/hooks/useServerRelatedLinks.ts` | Sunucu anlamsal/atmosferik komşuluklarını ilişki grafiğine yalnızca görünen düğümler arasında katar; yerel bağları silmez. |
 
 `scoreCandidatesV3` sözleşmesi `serverTaste?: ServerTasteInput` ile genişletildi.
 Sinyal yoksa veya `confidence < 0.35` ise puanlar birebir eski davranışla aynıdır
@@ -315,3 +319,26 @@ Eksik, başarısız veya eski `processing_version` ile üretilmiş kayıtlar iç
 (yalnızca kendi testi kullanıyordu) ve ikinci bir "taste fit" sıralaması
 tanımlıyordu. Tek motor ilkesi gereği kaldırıldı; sunucu profilinin sıralamaya
 etkisi artık `taste-signal.ts` üzerinden tek hatta uygulanıyor.
+
+### 10.4 App kabuğunun daraltılması
+
+`App.tsx` 4.095 → 2.535 satıra indi. Katalog yükleme, kütüphane yazımları ve
+sunucu veri belgesi üretimi ayrı modüllere taşındı; App yalnızca profil
+durumunu, efekt sırasını ve bu modüller arasındaki koordinasyonu tutuyor.
+Katalog yükleyici yeni bir sıralama yolu açmaz: aynı
+`scoreRecommendationPool → rescoreShortlist → selectRecommendationBatch`
+zincirini kullanır. Profil kimlikleri (`normalizeProfileId`, `p2-hex`) ve
+kullanıcı verisi yerleşimi değişmedi; `buildUserDataDocument` iki eski kopyayı
+tek üreticide birleştirir.
+
+### 10.5 İşlem Merkezi ve İlişki Keşfi entegrasyonu
+
+İşlem Merkezi artık `/api/content-intelligence/status` özetini okur: indekslenen,
+bekleyen, çalışan, başarısız ve eski sürümlü kayıt sayıları görünür; "Eskileri
+yeniden işle" düğmesi `POST /api/content-intelligence/reprocess` çağırır ve
+sonucu (kabul/yinelenen) gösterir. Görev tablosu gerçek kuyruk durumunu,
+deneme sayısını ve son hatayı göstermeye devam eder.
+
+İlişki Keşfi'nde kaynak içerik seçildiğinde sunucudaki anlamsal/atmosferik
+komşular grafiğe eklenir; bağlantı kanıtı "İçerik zekâsı: %N anlamsal benzerlik"
+ve varsa ortak kavramlarla açıklanır. Sunucu erişilemezse yerel grafik bozulmaz.
