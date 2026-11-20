@@ -61,6 +61,14 @@ for (const viewport of VIEWPORTS) {
       contentType: 'image/png',
     });
 
+    const wrappedCard = page.locator('.wrapped-summary-card');
+    await expect(wrappedCard).toBeVisible();
+    await wrappedCard.scrollIntoViewIfNeeded();
+    await testInfo.attach('wrapped-card-' + viewport.name, {
+      body: await page.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+
     await context.close();
   });
 }
