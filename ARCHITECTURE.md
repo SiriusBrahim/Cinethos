@@ -362,4 +362,4 @@ Faz 3 takip düzeltmesi: `github-bidirectional-sync.ts` artık `persistent-store
 
 ### 10.7 App senkron koordinatörü
 
-`src/hooks/useServerSyncCoordinator.ts`, gönderimlerin tek uçuşta serileştirilmesini, debounce tabanlı otomatik gönderimi ve yerel/uzak/birleştir kararlarını kapsar. App kabuğu React state/ref adaptörlerini, ilk açılış veri hidrasyonunu ve görünürlük/interval tabanlı uzak revizyon kontrolünü tutar. Bu ayrım veri sahipliğini hook'a taşımaz; yalnızca senkron komutlarını tek yerde toplar.
+`src/hooks/useServerSyncCoordinator.ts`, gönderimlerin tek uçuşta serileştirilmesini, debounce tabanlı otomatik gönderimi ve yerel/uzak/birleştir kararlarını kapsar. `src/hooks/useProfileBackupCoordinator.ts` yerel JSON yedek üretme, içe aktarma ve birleştirme eylemlerini App'ten ayırır. XLSX üretim/upload sunucu tarafındaki `excel-profile-backup.ts` ve `PersistentDataStore` katmanında kalır. App kabuğu React state/ref adaptörlerini, ilk açılış veri hidrasyonunu ve görünürlük/interval tabanlı uzak revizyon kontrolünü tutar. Bu ayrım veri sahipliğini hook'a taşımaz; yalnızca senkron komutlarını tek yerde toplar.
