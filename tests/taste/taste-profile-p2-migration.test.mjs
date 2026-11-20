@@ -231,6 +231,10 @@ test("p1 → p2 geçişi birden fazla profili birbirinden yalıtır", async () =
         eventId: "event-" + index,
         contentId: "movie:" + (700 + index),
         eventType: "rating_changed",
+        payload: { previousValue: null, newValue: 8 },
+        recordedAt: CREATED_AT,
+        timeSource: "actual",
+        timePrecision: "exact",
       }]));
     }
     const mapPath = resolveTasteProfileIdMapPath(dataDir);
