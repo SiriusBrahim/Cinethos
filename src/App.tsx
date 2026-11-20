@@ -97,7 +97,9 @@ import {
 } from './services/api.ts';
 import {
   areUserDataDocumentsSemanticallyEqual,
+  mergeSavedItemListsLossless,
 } from './core/user-data-merge.ts';
+import { enrichSavedItemsFromCinemaKunye } from './core/cinema-kunye.ts';
 import {
   type ServerTasteSignal,
 } from './modules/recommendations/index.ts';
