@@ -1465,7 +1465,7 @@ export interface BuildDatasetOptions {
 }
 
 /**
- * Pure, non-mutating builder that maps a Cinethos `Profile` into the 5-sheet dataset.
+ * Pure, non-mutating builder that maps a Cinethos `Profile` into the 6-sheet dataset.
  * Strictly preserves `movie:<id>` vs `tv:<id>` separation and reports any dual-state keys.
  */
 export async function buildProfileBackupDataset(
