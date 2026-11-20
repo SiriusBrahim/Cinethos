@@ -44,5 +44,7 @@ yapılan düzeltmeleri ve doğrulanamayan noktaları kaydeder.
 
 ## Kalan doğrulama işleri
 
-1. Mobil/masaüstü arayüzünün gerçek tarayıcıda görsel QA kontrolü. Playwright CI davranış testleri sağlar; piksel düzeyinde görsel incelemenin yerini tutmaz.
-2. Kullanıcının gerçek profil verisi bu ortamda erişilebilir/uygun bir test girdisi değildir. Mevcut kabul kapsamı sentetik ama gerçekçi profil verisiyle iki yönlü GitHub reconcile, conflict merge/overwrite, XLSX üretim ve SHA-256 read-back testlerini kapsar. XLSX mevcut tasarımda dışa aktarma formatıdır; içe aktarma JSON/SQLite yedek akışları üzerinden yapılır, bu nedenle XLSX restore testi uygulanabilir bir ürün akışı değildir.
+1. Gerçek kullanıcının kişisel profil verisi bu ortamda kullanılmadı. Otomatik kabul testleri sentetik ama gerçekçi profil verileriyle iki yönlü GitHub reconcile, conflict merge/overwrite, XLSX üretim + SHA-256 read-back ve SQLite arşiv restore/rollback senaryolarını kapsar. Gerçek profil ile son kabul kontrolü kullanıcı ortamında yapılmalıdır.
+2. XLSX mevcut tasarımda dışa aktarma formatıdır; içe aktarma/geri yükleme JSON ve SQLite arşiv akışları üzerinden yapılır. Bu nedenle XLSX restore testi uygulanabilir bir ürün akışı değildir.
+
+Görsel QA tamamlandı: Playwright ekran görüntüleri 360, 390, 768, 1024, 1440 ve 1920 px genişliklerde incelendi. Yatay taşma görülmedi. Bu incelemede WrappedCard JSX/CSS sınıf uyumsuzluğu bulundu ve KPI, tür/dönem/oyuncu, aylık yoğunluk ve favori yapım alanları responsive grid düzenine alındı. 1024 px ve altındaki üst gezinme öğeleri birden fazla satıra geçebilir; içerik kırpılmıyor.
