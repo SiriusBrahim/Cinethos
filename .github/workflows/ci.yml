@@ -3,8 +3,8 @@ name: Cinethos CI
 on:
   push:
     branches: [main, master]
+  # Faz 3: yığılmış (stacked) PR'lar da doğrulansın; hedef dal filtresi yok.
   pull_request:
-    branches: [main, master, agent-2/phase-3, agent-2/phase-5-r2-a3-codlama-master]
 
 jobs:
   verify:
