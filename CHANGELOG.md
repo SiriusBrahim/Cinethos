@@ -2,6 +2,7 @@
 
 ### Faz 3 takip düzeltmeleri
 - `github-bidirectional-sync` ile `persistent-store` arasındaki runtime import döngüsü kaldırıldı; ortak tip sözleşmeleri ve saf yardımcılar ayrı modüllere taşındı. Mimari regresyon testi artık sıfır döngü bekliyor.
+- App kabuğundaki sunucu gönderim/çakışma/debounce eylemleri `useServerSyncCoordinator`, yerel JSON yedek dışa/içe aktarma akışı `useProfileBackupCoordinator` kancasına taşındı.
 - Excel yedeğine `Durum Çakışmaları` sayfası eklendi. Aynı içeriğin izleme listesi ve `İlgilenmiyorum` tercihi altında bulunması açıklanıyor; hiçbir kaynak kayıt otomatik silinmiyor veya yeniden sınıflandırılmıyor.
 - `p1-b64url` → `p2-hex` geçişinin mevcut kopyala/doğrula/manifesti atomik güncelle akışı ve çoklu profil izolasyonu için ek regresyon kapsamı hazırlanıyor.
 
