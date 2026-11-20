@@ -608,7 +608,9 @@ test('Dual-state items (simultaneously in saved items and preferences.disliked) 
   assert.equal(ds.sheetCounts.İlgilenmiyorum.total, 1);
   // Deduplicated statistical summary counts unique canonical keys once
   assert.equal(ds.decadeDistribution.length, 0);
-  const workbookResult = await generateProfileExcelBuffer({ profile });
+  const conflictPosterCache = createTempDir('cinethos-conflict-test-');
+  const workbookResult = await generateProfileExcelBuffer({ profile, posterCacheDir: conflictPosterCache });
+  fs.rmSync(conflictPosterCache, { recursive: true, force: true });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(workbookResult.buffer);
   const conflicts = workbook.getWorksheet('Durum Çakışmaları');
