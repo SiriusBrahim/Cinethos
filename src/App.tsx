@@ -20,12 +20,6 @@ import {
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
 import { mergeRemoteDocument } from './app/server-sync.ts';
-import {
-  buildBackupFileName,
-  buildLocalBackupDocument,
-  resolveImportedFavoriteActors,
-  resolveImportedPreferences,
-} from './app/profile-backup.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -68,11 +62,9 @@ import {
   Preferences,
   DataDocument,
   normalizeSavedItem,
-  dedupeItems,
   normalizeDataDocument,
   resolveAirDate,
   reminderDaysUntil,
-  parseBackupText,
   buildTasteProfileV3,
   findSavedItem,
   makeMediaKey,
@@ -105,13 +97,7 @@ import {
 } from './services/api.ts';
 import {
   areUserDataDocumentsSemanticallyEqual,
-  mergeSavedItemListsLossless,
 } from './core/user-data-merge.ts';
-import {
-  enrichSavedItemsFromCinemaKunye,
-  extractCinemaKunyeFromItems,
-  mergeCinemaKunyeDocumentsLossless,
-} from './core/cinema-kunye.ts';
 import {
   type ServerTasteSignal,
 } from './modules/recommendations/index.ts';
@@ -128,6 +114,7 @@ import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useServerSyncCoordinator } from './hooks/useServerSyncCoordinator.ts';
+import { useProfileBackupCoordinator } from './hooks/useProfileBackupCoordinator.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
@@ -1845,92 +1832,36 @@ export function App() {
     );
   };
 
-  // Export / Import
-  const handleExportBackup = () => {
-    const nowIso = new Date().toISOString();
-    const exportedKunye = mergeCinemaKunyeDocumentsLossless(
-      cinemaKunye,
-      extractCinemaKunyeFromItems(savedItems, genresMap)
-    );
-    const enrichedExportItems = enrichSavedItemsFromCinemaKunye(savedItems, exportedKunye);
-    const backup = buildLocalBackupDocument({
-      profileId: activeProfileId,
-      profileName,
-      items: enrichedExportItems,
-      cinemaKunye: exportedKunye,
-      preferences,
-      favoriteActors: favoriteActorsRef.current,
-      isDemo: Boolean(activeProfile?.isDemo),
-      nowIso,
-    });
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = buildBackupFileName(nowIso);
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  const handleImportBackupFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      const parsed = parseBackupText(text);
-      setPendingBackup(parsed);
-    } catch (err: any) {
-      showToast(err.message || 'Yedek dosyası okunamadı.');
-    }
-  };
-
-  const handleConfirmImport = (mode: 'overwrite' | 'merge') => {
-    if (!pendingBackup) return;
-    if (mode === 'overwrite') {
-      confirmNextBulkSyncRef.current = true;
-    }
-
-    const effectiveKunye =
-      mode === 'merge'
-        ? mergeIncomingCinemaKunye(pendingBackup.cinemaKunye)
-        : replaceCinemaKunye(pendingBackup.cinemaKunye);
-
-    const rawImportedItems =
-      mode === 'merge'
-        ? mergeSavedItemListsLossless(savedItems, pendingBackup.items, activeProfileId)
-        : dedupeItems(pendingBackup.items);
-    const importedItems = enrichSavedItemsFromCinemaKunye(rawImportedItems, effectiveKunye);
-
-    savedItemsRef.current = importedItems;
-    setSavedItems(importedItems);
-    lastForYouQueryKeyRef.current = '';
-    setForYouItems([]);
-    if (pendingBackup.profileName) {
-      handleSaveProfileName(pendingBackup.profileName);
-    }
-    if (pendingBackup.preferences) {
-      setPreferences((prev) =>
-        resolveImportedPreferences(prev, pendingBackup.preferences, mode) ?? prev
-      );
-    }
-    const importedActors = resolveImportedFavoriteActors(
-      favoriteActors,
-      pendingBackup.favoriteActors,
-      mode
-    );
-    setFavoriteActors(importedActors);
-    try {
-      localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(importedActors));
-    } catch {}
-
-    if (pendingBackup.isDemo !== undefined) {
-      setProfiles((prev) =>
-        prev.map((p) => (p.id === activeProfileId ? { ...p, isDemo: pendingBackup.isDemo } : p))
-      );
-    }
-
-    setPendingBackup(null);
-    setProfileOpen(false);
-    showToast(`Yedek başarıyla içe aktarıldı (${importedItems.length} içerik)!`);
-  };
+  const {
+    handleExportBackup,
+    handleImportBackupFile,
+    handleConfirmImport,
+  } = useProfileBackupCoordinator({
+    activeProfileId,
+    profileName,
+    savedItems,
+    preferences,
+    favoriteActors,
+    favoriteActorsRef,
+    genresMap,
+    cinemaKunye,
+    isDemo: Boolean(activeProfile?.isDemo),
+    pendingBackup,
+    setPendingBackup,
+    setSavedItems,
+    savedItemsRef,
+    lastForYouQueryKeyRef,
+    setForYouItems,
+    setPreferences,
+    setFavoriteActors,
+    setProfiles,
+    setProfileOpen,
+    confirmNextBulkSyncRef,
+    mergeIncomingCinemaKunye,
+    replaceCinemaKunye,
+    handleSaveProfileName,
+    showToast,
+  });
 
   const handleEmptyAction = (act: string) => {
     switch (act) {
