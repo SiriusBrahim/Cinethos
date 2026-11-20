@@ -9,7 +9,7 @@ import { hasPendingOfflineSync } from '../services/offline-queue.ts';
 type SyncResult = {
   ok: boolean;
   queued?: boolean;
-  conflict?: boolean;
+  conflict?: boolean | ServerConflictDetail;
   document?: DataDocument;
 };
 
