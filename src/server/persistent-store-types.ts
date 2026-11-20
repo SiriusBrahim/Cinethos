@@ -55,3 +55,12 @@ export interface DerivedProfileDocument {
   generatedAt: string;
   items: Record<string, DerivedProfileItem>;
 }
+
+/** Narrow adapter contract consumed by the bidirectional sync manager. */
+export interface PersistentDataStoreSyncPort {
+  recoverGitHubTokenOn401?: (failedToken?: string) => Promise<string | null>;
+  verifyRemoteRepoAccess: () => Promise<any>;
+  getProfileFilePath: (profileId: string) => string;
+  syncToGitHub: (options?: any) => Promise<any>;
+  commitFileToGitHub: (repoPath: string, content: string, message: string, options?: any) => Promise<any>;
+}
