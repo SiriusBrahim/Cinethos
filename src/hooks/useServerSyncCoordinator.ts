@@ -138,7 +138,7 @@ export function useServerSyncCoordinator(options: UseServerSyncCoordinatorOption
     if (result.ok) {
       isDirtyRef.current = false;
       try {
-        localStorage.removeItem('cinetrack_data_dirty');
+        localStorage.removeItem(DIRTY_KEY);
       } catch {}
       resolveQueuedConflict();
       setServerConflict(null);
