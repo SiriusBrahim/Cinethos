@@ -53,6 +53,20 @@ import {
   pushDerivedProfileData,
 } from '../services/api.ts';
 import { loadSemanticRelationHints } from '../services/content-intelligence-api.ts';
+import { rankBySemanticAffinity } from '../core/semantic-ranking.ts';
+import { filterRecommendableItems } from '../core/item-effective-state.ts';
+
+/**
+ * Keşfet ve arama sonuçlarında "ilgilenmiyorum"/"gizli" içerikleri tek merkezi
+ * çözümleyiciyle eler. Bileşenler kendi filtrelerini yazmaz; bu fonksiyon
+ * `enrichItemsWithPersonalizedTaste` üzerinden tüm katalog yollarına uygulanır.
+ */
+export function filterCatalogItemsByPreferences(
+  input: Parameters<typeof filterRecommendableItems>[0],
+  items: any[]
+): any[] {
+  return filterRecommendableItems(input, items);
+}
 import { getItemEncodingSync } from '../services/encoding-service.ts';
 import {
   isCandidateEligibleForStock,
@@ -153,13 +167,72 @@ export function createCatalogLoader(ctx: CatalogLoaderContext) {
     setStockStats,
   } = ctx;
 
+  /**
+   * Keşfet'in genel sıralamasında İçerik Zekâsı semantik sinyali.
+   * Yalnızca kategori kendi doğal sırasını korumak zorunda olmadığında ve
+   * kullanıcı özel bir sıralama seçmediğinde devreye girer. Sunucu kapalıysa
+   * veya analiz yoksa sıralama değişmez (güvenli dönüş).
+   */
+  const DISCOVER_SEMANTIC_CATEGORIES = new Set(['trending', 'gems', 'provider']);
+  let discoverSemanticCache: {
+    signature: string;
+    at: number;
+    hints: Map<string, number>;
+  } | null = null;
+
+  async function loadDiscoverSemanticHints(): Promise<Map<string, number> | null> {
+    const seeds = Array.from(savedItemsRef.current || [])
+      .filter((it) => it && (Number(it.personal_rating) > 0 || it.status === 'completed'))
+      .sort(
+        (a, b) =>
+          Number(b.personal_rating || 0) - Number(a.personal_rating || 0) ||
+          String(b.completedAt || b.ratedAt || '').localeCompare(String(a.completedAt || a.ratedAt || ''))
+      )
+      .slice(0, 6)
+      .map((it) => `${it.media_type}:${it.id}`)
+      .filter((key) => /^(movie|tv):\d+$/.test(key));
+    if (seeds.length === 0) return null;
+
+    const signature = [...seeds].sort().join('|');
+    const now = Date.now();
+    if (
+      discoverSemanticCache &&
+      discoverSemanticCache.signature === signature &&
+      now - discoverSemanticCache.at < 5 * 60_000
+    ) {
+      return discoverSemanticCache.hints.size > 0 ? discoverSemanticCache.hints : null;
+    }
+
+    const hints = await loadSemanticRelationHints(seeds, { limit: 10, maxSources: 6 });
+    discoverSemanticCache = { signature, at: now, hints };
+    return hints.size > 0 ? hints : null;
+  }
+
+  async function applyDiscoverSemanticOrdering(cat: string, items: any[]): Promise<any[]> {
+    if (!Array.isArray(items) || items.length < 2) return items;
+    if (!DISCOVER_SEMANTIC_CATEGORIES.has(cat)) return items;
+    const activeSort = selectedSortRef.current;
+    if (activeSort && activeSort !== 'popularity' && activeSort !== 'default') return items;
+    try {
+      const hints = await loadDiscoverSemanticHints();
+      if (!hints) return items;
+      return rankBySemanticAffinity(items, hints);
+    } catch {
+      return items;
+    }
+  }
+
   const enrichItemsWithPersonalizedTaste = (items: any[]): any[] => {
     if (!items || items.length === 0) return items;
     try {
       const currentProfileId = activeProfileIdRef.current;
       const currentTasteMap = tasteMapRef.current || loadPersistentTasteMap(currentProfileId);
+      const visibleItems = filterCatalogItemsByPreferences(
+        { savedItems: savedItemsRef.current, preferences: preferencesRef.current },
+        items
+      );
       return enrichCatalogItemsWithTaste({
-        items,
+        items: visibleItems,
         savedItems: savedItemsRef.current,
         preferences: preferencesRef.current,
         genresMap: genresMapRef.current,
@@ -1304,7 +1377,10 @@ export function createCatalogLoader(ctx: CatalogLoaderContext) {
           }
         }
 
-        const enriched = enrichItemsWithPersonalizedTaste(combinedRawItems);
+        const enriched = await applyDiscoverSemanticOrdering(
+          cat,
+          enrichItemsWithPersonalizedTaste(combinedRawItems)
+        );
 
         if (cat === 'trending' && !append && enriched[0]) {
           setTrendingTop(enriched[0]);
