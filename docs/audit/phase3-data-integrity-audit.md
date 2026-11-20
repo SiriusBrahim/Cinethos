@@ -17,12 +17,18 @@ yapılan düzeltmeleri ve doğrulanamayan noktaları kaydeder.
 | 5 | App.tsx'te kalan sorumluluklar | **Doğrulandı, kısmen düzeltildi** | Sunucu birleştirmesinin saf hesabı `src/app/server-sync.ts`, yedek/geri yükleme saf yardımcıları `src/app/profile-backup.ts` dosyalarına taşındı; App state ataması ve efekt koordinasyonu yapıyor. Kalan senkron efektleri/çakışma eylemleri hâlâ App içinde (aşağıdaki "Kalan işler"). |
 | 6 | Keşfet genel sıralaması Content Intelligence verisini kullanmıyor | **Doğrulandı ve düzeltildi** | `loadSemanticRelationHints` yalnızca Sana Özel/İlişki Keşfi yolunda kullanılıyordu. Keşfet'in `trending`, `gems`, `provider` kategorilerinde semantik/atmosferik afinite sınırlı (azami +8 uyum puanı) ikincil sıralama anahtarı olarak kullanılıyor. Sunucu kapalıysa veya analiz yoksa sıralama değişmiyor. Sana Özel hattı etkilenmiyor. |
 | 7 | Öneri algoritması objektif değerlendirme | **Doğrulandı ve düzeltildi** | `EvaluationManager` yalnızca çevrimdışı metrikleri sunuyordu, eski/yeni karşılaştırma raporu yoktu. Yeni `src/core/recommendation-comparison.ts` aynı sabit veri kümesi ve profille iki yapılandırmayı koşar ve ilk 20 kesişimi, sıra değişimleri, favori oyuncu, tür/ruh hâli uyumu, kullanıcı puanları, film/dizi dengesi, benzer içerik yoğunluğu ve elenenleri raporlar. Puanlama formülü değiştirilmedi. |
-| 8 | Node.js sürümü ve döngüsel bağımlılık | **Kısmen düzeltildi** | Sürüm zaten tutarlıydı (`engines >=22.18.0`, README, CI `22.18.0`); `.nvmrc` + `engine-strict` + CI sürüm doğrulaması eklendi. Döngü denetimi (`scripts/check-cycles.mjs`) iki mevcut döngü buldu: `relationship-explorer ↔ relationship-wordlists` (düzeltildi: `relationship-types.ts`) ve `github-bidirectional-sync ↔ persistent-store` (belgelendi, baseline 1). Yeni modüller döngü oluşturmuyor; `tests/phase3-architecture.test.mjs` sayının artmasını engelliyor. |
+| 8 | Node.js sürümü ve döngüsel bağımlılık | **Tamamlandı** | `.nvmrc` + `engine-strict` + CI sürüm doğrulaması sürüm sözleşmesini sabitler. `relationship-explorer ↔ relationship-wordlists` ve `github-bidirectional-sync ↔ persistent-store` döngüleri kaldırıldı: ortak tipler `persistent-store-types.ts`, saf yardımcılar `persistent-store-utils.ts` içine taşındı; sync manager artık dar bir `PersistentDataStoreSyncPort` sözleşmesi kullanıyor. Mimari testi artık sıfır döngü şartı koyuyor. |
 
 ## Doğrulanamayan noktalar
 
 - **Playwright E2E yerel sandbox'ta çalıştırılamadı** (Chromium sistem kütüphaneleri yok, `sudo` yok). CI'da koşuyor.
 - **Görsel/arayüz doğrulaması yapılmadı** (bu ortamda tarayıcı yok).
+
+## Profil kimliği migration politikası
+
+- `taste-profile-scope.ts` zaten `p1-b64url` manifestlerini `p2-hex` şemasına dönüştüren doğrulamalı geçişi içerir. Eski dizin önce geçici alana kopyalanır, dosya hash'leri ve dizin ağacı karşılaştırılır; hedef doğrulanmadan manifest güncellenmez.
+- Eski dizin, geçiş doğrulamasından sonra da geriye dönüş/inceleme için korunur; hedef dizin farklı içerik taşıyorsa otomatik birleştirme yapılmaz ve `profile_id_map_conflict` üretilir.
+- `tests/taste/taste-profile-p2-migration.test.mjs` temel p1 → p2 akışını doğrular; bu PR'da çakışma ve çoklu profil izolasyonu regresyon testleri de eklenecektir.
 
 ## Veri ve migration politikası
 
@@ -38,10 +44,6 @@ yapılan düzeltmeleri ve doğrulanamayan noktaları kaydeder.
 
 ## Kalan işler
 
-1. App.tsx'teki sunucu senkron efektleri ve çakışma eylemlerinin
-   `useServerSyncCoordinator` kancasına taşınması (davranış riski nedeniyle bu
-   aşamada yalnızca saf hesap katmanı ayrıldı).
-2. `github-bidirectional-sync ↔ persistent-store` döngüsünün ortak tip
-   modülüne ayrılarak tamamen kaldırılması.
-3. `#StateConflict` bilgisinin Excel'e ayrı bir rapor sekmesi olarak eklenmesi
-   (Özet sayfasındaki mevcut çift durum bilgisi korunuyor).
+1. App.tsx'teki senkronizasyon efektleri, çakışma eylemleri ve Excel yedekleme akışının `useServerSyncCoordinator` / yedekleme kancasına ayrılması.
+2. Mobil/masaüstü arayüzünün gerçek tarayıcıda görsel QA kontrolü.
+3. Gerçek kullanıcı profilinin kişisel verisini dışarı çıkarmadan, iki yönlü GitHub sync, çakışma çözümü ve Excel geri yükleme kabul testlerini çalıştırmak.
