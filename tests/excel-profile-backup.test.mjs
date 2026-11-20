@@ -549,10 +549,10 @@ test('8. Poster HTTP errors, timeouts, and corrupt image bytes do not abort expo
   // Workbook still opens cleanly
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(built.buffer);
-  assert.equal(wb.worksheets.length, 5);
+  assert.equal(wb.worksheets.length, 6);
 });
 
-test('9. Empty profile generates a valid, openable 5-sheet .xlsx with zero counts', async (t) => {
+test('9. Empty profile generates a valid, openable 6-sheet .xlsx with zero counts', async (t) => {
   const tmpDir = createTempDir();
   t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
