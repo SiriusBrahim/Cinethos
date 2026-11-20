@@ -118,12 +118,16 @@ export interface YearlyWrappedSummary {
 }
 
 export function resolveItemTrackedDate(item: SavedItem): Date | null {
+  // Faz 3: yıllık özet gerçek etkileşim tarihlerini kullanır. `updatedAt`
+  // (not düzenlemesi) yalnızca hiç etkileşim tarihi olmayan eski kayıtta,
+  // ekleme tarihinden de sonra olmak üzere son çare olarak okunur.
   const candidates = [
     item.completedAt,
+    item.watchedAt,
     item.ratedAt,
-    item.updatedAt,
     item.addedAt,
     item.firstAddedAt,
+    item.updatedAt,
   ];
   for (const raw of candidates) {
     if (!raw || typeof raw !== 'string') continue;

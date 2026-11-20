@@ -18,12 +18,52 @@
 
 import type { LibraryListId } from '../../contracts/index.ts';
 import { normalizeSavedItem, type SavedItem } from '../../core/cinetrack-core.ts';
+import { effectiveSeasonMarks } from '../../core/season-progress.ts';
+
+/**
+ * İlerleme alanları değiştiğinde sezon damgasını ve bölüm işaretlerini üretir.
+ * Damga, senkronizasyonda "bilinçli geri alma"yı eski veriden ayırır.
+ */
+function applySeasonProgressTracking(
+  existing: SavedItem,
+  tracking: Record<string, unknown>,
+  nowIso: string
+): Partial<SavedItem> {
+  const incoming = tracking.season_progress;
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return {};
+  const prev = existing.season_progress || {};
+  const next = incoming as Record<number, number>;
+  const stamps: Record<number, string> = { ...(existing.progress_updated_at || {}) };
+  const marks = { ...effectiveSeasonMarks(existing) };
+  let changed = false;
+  const seasons = new Set<number>([
+    ...Object.keys(prev).map(Number),
+    ...Object.keys(next).map(Number),
+  ]);
+  for (const season of seasons) {
+    if (!Number.isSafeInteger(season) || season < 1) continue;
+    const prevCount = Math.max(0, Math.floor(Number(prev[season]) || 0));
+    const nextCount = Math.max(0, Math.floor(Number(next[season]) || 0));
+    if (prevCount === nextCount) continue;
+    changed = true;
+    stamps[season] = nowIso;
+    if (nextCount > 0) {
+      marks[season] = Array.from({ length: Math.min(nextCount, 10000) }, (_, i) => i + 1);
+    } else {
+      delete marks[season];
+    }
+  }
+  if (!changed) return {};
+  return { season_progress: next, watched_episodes: marks, progress_updated_at: stamps };
+}
 
 export type ItemWatchStatus = 'watching' | 'watchlist' | 'completed';
 
 export interface ResolvedItemTimestamps {
   effectiveStatus: ItemWatchStatus;
   ratedAt?: string;
+  /** İzleme etkileşiminin son anı (puan/tamamlama değil). */
+  watchedAt?: string;
   completedAt?: string;
   addedAt: string;
   updatedAt: string;
@@ -122,9 +162,20 @@ export function resolveItemActionTimestamps(
     completedAt = undefined;
   }
 
+  // Faz 3: izleme etkileşimi puanlamadan ayrı tutulur. Durum değişmediyse eski
+  // `watchedAt` korunur; not düzenlemesi bu alanı etkilemez.
+  const statusChanged = !existing || existing.status !== effectiveStatus;
+  let watchedAt: string | undefined;
+  if (effectiveStatus === 'watchlist') {
+    watchedAt = existing?.watchedAt;
+  } else {
+    watchedAt = statusChanged || !existing?.watchedAt ? nowIso : existing.watchedAt;
+  }
+
   return {
     effectiveStatus,
     ratedAt,
+    watchedAt,
     completedAt,
     addedAt: existing?.addedAt || nowIso,
     updatedAt: nowIso,
@@ -207,15 +258,28 @@ export function buildLibraryItem(input: BuildLibraryItemInput): SavedItem | null
   const mediaType =
     (existing?.media_type ?? (incoming.media_type as string | undefined)) === 'tv' ? 'tv' : 'movie';
 
+  // Faz 3: ilerleme alanları değiştiyse sezon damgası ve `watchedAt` yazılır;
+  // böylece bilinçli geri alma (10 → 8) senkronda korunur ve not düzenlemesi
+  // izleme tarihini değiştirmez.
+  const tracking = input.tracking ?? {};
+  const hasProgressInput =
+    tracking.season_progress !== undefined || tracking.watched_episodes !== undefined;
+  let progressPatch: Record<string, unknown> = {};
+  if (hasProgressInput && existing) {
+    progressPatch = applySeasonProgressTracking(existing, tracking, timestamps.updatedAt);
+  }
+
   const normalized = normalizeSavedItem({
     ...existing,
     ...incoming,
     media_type: mediaType,
-    ...(input.tracking ?? {}),
+    ...tracking,
+    ...progressPatch,
     status: timestamps.effectiveStatus,
     personal_rating: input.rating || '',
     personal_rating_cleared: timestamps.personalRatingCleared,
     ratedAt: timestamps.ratedAt,
+    watchedAt: hasProgressInput ? timestamps.updatedAt : timestamps.watchedAt,
     completedAt: timestamps.completedAt,
     addedAt: timestamps.addedAt,
     updatedAt: timestamps.updatedAt,
