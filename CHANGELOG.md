@@ -1,5 +1,10 @@
 ## Unreleased — 2026-11-20 (Faz 3: veri bütünlüğü ve senkronizasyon)
 
+### Faz 3 takip düzeltmeleri
+- `github-bidirectional-sync` ile `persistent-store` arasındaki runtime import döngüsü kaldırıldı; ortak tip sözleşmeleri ve saf yardımcılar ayrı modüllere taşındı. Mimari regresyon testi artık sıfır döngü bekliyor.
+- Excel yedeğine `Durum Çakışmaları` sayfası eklendi. Aynı içeriğin izleme listesi ve `İlgilenmiyorum` tercihi altında bulunması açıklanıyor; hiçbir kaynak kayıt otomatik silinmiyor veya yeniden sınıflandırılmıyor.
+- `p1-b64url` → `p2-hex` geçişinin mevcut kopyala/doğrula/manifesti atomik güncelle akışı ve çoklu profil izolasyonu için ek regresyon kapsamı hazırlanıyor.
+
 ### Veri bütünlüğü — etkileşim tarihleri
 - `src/core/item-dates.ts` tek tarih çözümleyicisi eklendi: `addedAt`/`firstAddedAt`,
   `watchedAt`, `ratedAt`, `completedAt` ve `updatedAt` (son düzenleme) ayrı anlamlara sahip.
