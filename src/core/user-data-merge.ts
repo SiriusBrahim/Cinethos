@@ -21,6 +21,8 @@ import {
   slugifyCinemaKunyeTitle,
 } from './cinema-kunye.ts';
 import type { UserDataConflictItem } from './sync-display.ts';
+import { mergeSeasonProgressLossless } from './season-progress.ts';
+import { resolveItemLastKnownTimestampMs } from './item-dates.ts';
 
 function sortKeysDeepPure(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -62,23 +64,14 @@ function pickLatestIso(candidates: Array<string | undefined>): string | undefine
   return [...valid].sort().slice(-1)[0];
 }
 
+/**
+ * Mezar taşı karşılaştırması için kaydın "son bilinen" zamanı.
+ * Faz 3: öncelik gerçek etkileşim tarihlerindedir; `updatedAt` yalnızca hiçbir
+ * etkileşim tarihi olmayan eski kayıtta son çare olarak okunur (not düzenlemesi
+ * silinmiş bir kaydı tek başına geri diriltmemelidir).
+ */
 export function getSavedItemEffectiveTimestampMs(item: SavedItem): number {
-  const candidates = [
-    item.updatedAt,
-    item.ratedAt,
-    item.completedAt,
-    item.addedAt,
-    item.firstAddedAt,
-  ].filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (candidates.length === 0) return NaN;
-  let maxMs = NaN;
-  for (const iso of candidates) {
-    const ms = Date.parse(iso);
-    if (Number.isFinite(ms) && (!Number.isFinite(maxMs) || ms > maxMs)) {
-      maxMs = ms;
-    }
-  }
-  return maxMs;
+  return resolveItemLastKnownTimestampMs(item);
 }
 
 export function mergeTwoSavedItemsLossless(
@@ -92,17 +85,21 @@ export function mergeTwoSavedItemsLossless(
   changedRemote: boolean;
 } {
   const key = makeMediaKey(localItem);
+  // Durum/puan çakışmasında "daha yeni" belirleyicisi gerçek etkileşim
+  // tarihidir; not/metadata düzenlemesi (`updatedAt`) yalnızca son çaredir.
   const localTime =
-    localItem.updatedAt ||
     localItem.ratedAt ||
     localItem.completedAt ||
+    localItem.watchedAt ||
     localItem.addedAt ||
+    localItem.updatedAt ||
     '';
   const remoteTime =
-    remoteItem.updatedAt ||
     remoteItem.ratedAt ||
     remoteItem.completedAt ||
+    remoteItem.watchedAt ||
     remoteItem.addedAt ||
+    remoteItem.updatedAt ||
     '';
 
   const statusDiffers = localItem.status !== remoteItem.status;
@@ -171,13 +168,11 @@ export function mergeTwoSavedItemsLossless(
     }
   }
 
-  // Sezon ilerlemelerini kayıpsız birleştir (her sezon için daha yüksek izlenen bölüm sayısını koru)
-  const mergedSeasonProgress: Record<number, number> = { ...(localItem.season_progress || {}) };
-  for (const [seasonKey, epCount] of Object.entries(remoteItem.season_progress || {})) {
-    const sNum = Number(seasonKey);
-    const prev = mergedSeasonProgress[sNum] || 0;
-    mergedSeasonProgress[sNum] = Math.max(prev, Number(epCount) || 0);
-  }
+  // Faz 3: sezon ilerlemesi sezon bazında deterministik birleştirilir. Bilinçli
+  // geri alma (10 → 8) yeni damgayla kazanır; `Math.max` yalnızca hiçbir taraf
+  // damga/işaret taşımayan legacy veride devreye girer.
+  const seasonMerge = mergeSeasonProgressLossless(localItem, remoteItem);
+  const mergedSeasonProgress: Record<number, number> = seasonMerge.season_progress;
   const mergedSeasonTotals: Record<number, number> = {
     ...(localItem.season_episode_counts || {}),
     ...(remoteItem.season_episode_counts || {}),
@@ -205,6 +200,7 @@ export function mergeTwoSavedItemsLossless(
     chosenRating !== '' && chosenRating != null
       ? pickLatestIso([localItem.ratedAt, remoteItem.ratedAt])
       : undefined;
+  const resolvedWatchedAt = pickLatestIso([localItem.watchedAt, remoteItem.watchedAt]);
   const resolvedCompletedAt =
     chosenStatus === 'completed'
       ? pickEarliestIso([localItem.completedAt, remoteItem.completedAt])
@@ -280,6 +276,12 @@ export function mergeTwoSavedItemsLossless(
     ...(Object.keys(mergedSeasonProgress).length > 0
       ? { season_progress: mergedSeasonProgress }
       : {}),
+    ...(Object.keys(seasonMerge.watched_episodes).length > 0
+      ? { watched_episodes: seasonMerge.watched_episodes }
+      : {}),
+    ...(Object.keys(seasonMerge.progress_updated_at).length > 0
+      ? { progress_updated_at: seasonMerge.progress_updated_at }
+      : {}),
     ...(Object.keys(mergedSeasonTotals).length > 0
       ? { season_episode_counts: mergedSeasonTotals }
       : {}),
@@ -288,6 +290,7 @@ export function mergeTwoSavedItemsLossless(
     ...(mergedCast.length > 0 ? { cast: mergedCast } : {}),
     ...(mergedCrew.length > 0 ? { crew: mergedCrew } : {}),
     ratedAt: resolvedRatedAt,
+    ...(resolvedWatchedAt ? { watchedAt: resolvedWatchedAt } : {}),
     completedAt: resolvedCompletedAt,
     addedAt: earliestAdded || localItem.addedAt || remoteItem.addedAt,
     updatedAt: latestUpdated || localItem.updatedAt || remoteItem.updatedAt,
@@ -299,6 +302,9 @@ export function mergeTwoSavedItemsLossless(
   }
   if (mergedCrew.length === 0) {
     delete merged.crew;
+  }
+  if (!resolvedWatchedAt) {
+    delete merged.watchedAt;
   }
   if (!resolvedRatedAt) {
     delete merged.ratedAt;
@@ -314,7 +320,9 @@ export function mergeTwoSavedItemsLossless(
       cleared: Boolean(it.personal_rating_cleared),
       ratedAt: it.ratedAt || '',
       completedAt: it.completedAt || '',
+      watchedAt: it.watchedAt || '',
       progress: it.season_progress || {},
+      watchedEpisodes: it.watched_episodes || {},
       overview: it.overview || '',
       poster: it.poster_path || '',
       genres: [...(it.genre_ids || [])].sort((a, b) => a - b),
@@ -740,6 +748,9 @@ function buildComparableUserDataSnapshot(doc: DataDocument | null | undefined) {
           personal_rating: it.personal_rating === '' ? '' : Number(it.personal_rating),
           personal_rating_cleared: Boolean(it.personal_rating_cleared),
           season_progress: it.season_progress || {},
+          watched_episodes: it.watched_episodes || {},
+          progress_updated_at: it.progress_updated_at || {},
+          watchedAt: it.watchedAt || '',
           custom: Boolean(it.custom),
           isDemo: Boolean(it.isDemo),
         }))
