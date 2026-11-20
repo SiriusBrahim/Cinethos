@@ -358,3 +358,8 @@ ve varsa ortak kavramlarla açıklanır. Sunucu erişilemezse yerel grafik bozul
 
 
 Faz 3 takip düzeltmesi: `github-bidirectional-sync.ts` artık `persistent-store.ts` çalışma zamanı modülünden yardımcı fonksiyon veya sınıf tipi çekmez. Paylaşılan veri sözleşmeleri `persistent-store-types.ts`, saf yardımcılar `persistent-store-utils.ts` içindedir; sync manager yalnızca `PersistentDataStoreSyncPort` adaptörünü bilir. Excel yedeği, çift durumlu kayıtları `Durum Çakışmaları` adlı ayrı sayfada raporlar ve kaynak veriyi değiştirmez.
+
+
+### 10.7 App senkron koordinatörü
+
+`src/hooks/useServerSyncCoordinator.ts`, gönderimlerin tek uçuşta serileştirilmesini, debounce tabanlı otomatik gönderimi ve yerel/uzak/birleştir kararlarını kapsar. App kabuğu React state/ref adaptörlerini, ilk açılış veri hidrasyonunu ve görünürlük/interval tabanlı uzak revizyon kontrolünü tutar. Bu ayrım veri sahipliğini hook'a taşımaz; yalnızca senkron komutlarını tek yerde toplar.
