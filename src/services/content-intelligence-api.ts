@@ -99,3 +99,24 @@ export async function fetchContentIntelligenceStatus(): Promise<ContentIntellige
     stale: Number(data.stale ?? 0),
   };
 }
+
+
+/**
+ * Tek bir içerik için sunucudaki anlamsal/atmosferik komşuları döndürür.
+ * İlişki Keşfi bu bağlantıları grafiğe "İçerik zekâsı" kanıtıyla ekler.
+ */
+export async function fetchRelatedContent(
+  mediaKey: string,
+  options: { limit?: number; signal?: AbortSignal } = {}
+): Promise<ContentRelationshipSignal[]> {
+  if (!/^(movie|tv):\d+$/.test(mediaKey)) return [];
+  const limit = Math.max(1, Math.min(20, options.limit ?? 10));
+  const data = await fetchJson<RelatedResponse>(
+    `/api/content-intelligence/items/${encodeURIComponent(mediaKey)}/related?limit=${limit}`,
+    options.signal
+  );
+  if (!Array.isArray(data?.related)) return [];
+  return data.related.filter(
+    (link) => typeof link?.targetKey === 'string' && Number.isFinite(Number(link?.cosineSimilarity))
+  );
+}

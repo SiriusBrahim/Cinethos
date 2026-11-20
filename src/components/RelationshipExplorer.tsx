@@ -17,6 +17,7 @@ import {
   type RelationshipMode,
   type RelationshipType,
 } from '../core/relationship-explorer.ts';
+import { useServerRelatedLinks } from '../hooks/useServerRelatedLinks.ts';
 import {
   isCandidateEligibleInPool,
   loadPersistentPoolData,
@@ -379,6 +380,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
     }
   }, [mode, isRestoringCache, sourceOptions, sourceKey]);
 
+  useServerRelatedLinks({ graphData, mode, sourceKey, setGraphData: (u) => setGraphData(u) });
   // Grafik değiştiğinde mevcut seçili düğüm artık grafikte yoksa seçimi temizle
   useEffect(() => {
     if (!selectedNode) return;

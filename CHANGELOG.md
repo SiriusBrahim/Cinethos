@@ -1,3 +1,28 @@
+## Unreleased — 2026-11-20 (Faz 2 devamı)
+
+### Mimari — App kabuğu
+- `src/App.tsx` 4.095 → 2.535 satır. Keşfet/Sana Özel veri toplama akışı
+  `src/app/catalog-loader.ts` içine, kütüphane yazımları
+  `src/hooks/useLibraryController.ts` içine, sunucu veri belgesi üretimi
+  `src/app/user-data-payload.ts` içine taşındı. App yalnızca koordinasyon yapıyor.
+- İki kopya payload üreticisi tek fonksiyonda birleşti; aktif profil canlı state'ten,
+  diğer profiller izole depodan okunuyor (profil izolasyonu regresyon testi eklendi).
+- Katalog yükleyici yeni bir sıralama yolu açmıyor; aynı
+  `scoreRecommendationPool → rescoreShortlist → selectRecommendationBatch` hattını kullanıyor.
+
+### İçerik zekâsı
+- İşlem Merkezi `/api/content-intelligence/status` özetini gösteriyor: indekslenen,
+  bekleyen, çalışan, başarısız ve eski sürümlü kayıtlar. "Eskileri yeniden işle"
+  düğmesi `POST /api/content-intelligence/reprocess` çağırıyor ve kabul/yinelenen
+  sonucunu bildiriyor.
+- İlişki Keşfi, seçilen kaynağın sunucudaki anlamsal/atmosferik komşularını grafiğe
+  ekliyor; bağ kanıtı benzerlik yüzdesi ve ortak kavramlarla açıklanıyor. Sunucu
+  erişilemezse yerel grafik değişmiyor.
+
+### Testler
+- Yeni: `relationship-server-links`, `user-data-payload`, `operations-intelligence-summary`.
+- Toplam birim/entegrasyon testi 563 → 572; taste testleri 438/438.
+
 ## Unreleased — 2026-11-19 (çalışma alanı sürümü)
 
 ### Arayüz — yeni bilgi mimarisi

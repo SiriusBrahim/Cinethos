@@ -14,9 +14,12 @@ import {
 import {
   OPERATIONS_STATUSES,
   cancelOperationsTask,
+  fetchContentIntelligenceSummary,
   fetchOperationsSnapshot,
   fetchPipelineHealth,
+  reprocessStaleContent,
   retryOperationsTask,
+  type ContentIntelligenceSummary,
   type OperationsSnapshot,
   type OperationsTask,
   type OperationsTaskStatus,
@@ -90,6 +93,9 @@ export interface OperationsSectionProps {
 export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId, onOpenBackup }) => {
   const [snapshot, setSnapshot] = useState<OperationsSnapshot | null>(null);
   const [health, setHealth] = useState<PipelineHealth | null>(null);
+  const [intel, setIntel] = useState<ContentIntelligenceSummary | null>(null);
+  const [reprocessBusy, setReprocessBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<OperationsTaskStatus | 'all'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,13 +105,15 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const [nextSnapshot, nextHealth] = await Promise.all([
+        const [nextSnapshot, nextHealth, nextIntel] = await Promise.all([
           fetchOperationsSnapshot({ status: statusFilter, limit: 200, ...(signal ? { signal } : {}) }),
           fetchPipelineHealth(signal),
+          fetchContentIntelligenceSummary(signal).catch(() => null),
         ]);
         if (!mountedRef.current) return;
         setSnapshot(nextSnapshot);
         setHealth(nextHealth);
+        setIntel(nextIntel);
         setError(null);
       } catch (err: any) {
         if (err?.name === 'AbortError' || !mountedRef.current) return;
@@ -154,6 +162,26 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
     },
     [load]
   );
+
+  const handleReprocess = useCallback(async () => {
+    setReprocessBusy(true);
+    setNotice(null);
+    try {
+      const result = await reprocessStaleContent(100);
+      if (mountedRef.current) {
+        setNotice(
+          result.total === 0
+            ? 'Yeniden işlenecek eski veya başarısız analiz yok.'
+            : `${result.total} kayıt yeniden işleme kuyruğuna verildi (${result.accepted} kabul, ${result.rejected} yinelenen).`
+        );
+      }
+      await load();
+    } catch (err: any) {
+      if (mountedRef.current) setError(err?.message || 'Yeniden işleme başlatılamadı.');
+    } finally {
+      if (mountedRef.current) setReprocessBusy(false);
+    }
+  }, [load]);
 
   const counts = snapshot?.counts;
   const tasks = snapshot?.tasks || [];
@@ -330,25 +358,49 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
             eyebrow="Content Intelligence"
             title="İçerik işleme kuyruğu"
             description="Katalog yapımlarının vektör ve semantik indeksleme durumu."
+            action={
+              <ActionButton onClick={() => void handleReprocess()} disabled={reprocessBusy || !intel}>
+                {reprocessBusy ? 'Kuyruğa veriliyor…' : 'Eskileri yeniden işle'}
+              </ActionButton>
+            }
           />
-          {!queue ? (
-            <EmptyState title="Kuyruk bilgisi alınamadı" description="Sunucu sağlık ucu yanıt vermedi." />
+          {intel ? (
+            <div className="ws-mini-grid" role="list" aria-label="İçerik zekâsı özeti">
+              <span>İndekslenen</span>
+              <strong className="tabular-nums">{intel.completed}</strong>
+              <span>Bekleyen</span>
+              <strong className="tabular-nums">{intel.pending}</strong>
+              <span>Çalışan</span>
+              <strong className="tabular-nums">{intel.processing}</strong>
+              <span>Başarısız</span>
+              <strong className="tabular-nums">{intel.failed}</strong>
+              <span>Eski sürüm / eksik</span>
+              <strong className="tabular-nums">{intel.stale}</strong>
+              <span>Kuyrukta başarısız</span>
+              <strong className="tabular-nums">{intel.queue.failed}</strong>
+            </div>
           ) : (
-            <>
-              <Meter
-                label="Tamamlanan işleme"
-                value={queuePercent}
-                hint={`${queue.completed}/${queueTotal} iş`}
-              />
-              <div className="ws-mini-grid">
-                <span>Bekleyen</span>
-                <strong className="tabular-nums">{queue.pending}</strong>
-                <span>Çalışan</span>
-                <strong className="tabular-nums">{queue.processing}</strong>
-                <span>Başarısız</span>
-                <strong className="tabular-nums">{queue.failed}</strong>
-              </div>
-            </>
+            <EmptyState
+              title="İçerik zekâsı durumu alınamadı"
+              description="Sunucu içerik zekâsı ucu yanıt vermedi."
+            />
+          )}
+          {intel && intel.failed > 0 && (
+            <p className="ws-alert ws-alert--warn" role="status">
+              {intel.failed} kayıt başarısız analiz durumunda. Yeniden işleme kuyruğa alınabilir.
+            </p>
+          )}
+          {notice && (
+            <p className="ws-hint" role="status">
+              {notice}
+            </p>
+          )}
+          {queue && (
+            <Meter
+              label="Tamamlanan işleme"
+              value={queuePercent}
+              hint={`${queue.completed}/${queueTotal} iş`}
+            />
           )}
         </Panel>
 
