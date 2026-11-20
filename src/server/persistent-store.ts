@@ -3,6 +3,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
+export { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
 import type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
 export type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
 import { normalizeProfileId } from '../core/profile-id.ts';
