@@ -2,16 +2,18 @@ import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
   dedupeItems,
-  enrichSavedItemsFromCinemaKunye,
-  extractCinemaKunyeFromItems,
-  mergeCinemaKunyeDocumentsLossless,
-  mergeSavedItemListsLossless,
   parseBackupText,
   type FavoriteActorInfo,
   type Preferences,
   type Profile,
   type SavedItem,
 } from '../core/cinetrack-core.ts';
+import { mergeSavedItemListsLossless } from '../core/user-data-merge.ts';
+import {
+  enrichSavedItemsFromCinemaKunye,
+  extractCinemaKunyeFromItems,
+  mergeCinemaKunyeDocumentsLossless,
+} from '../core/cinema-kunye.ts';
 import {
   buildBackupFileName,
   buildLocalBackupDocument,
