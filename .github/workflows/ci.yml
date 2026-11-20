@@ -84,8 +84,8 @@ jobs:
       - name: E2E Tests
         run: npm run test:e2e
 
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: Upload Playwright report and responsive screenshots
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
