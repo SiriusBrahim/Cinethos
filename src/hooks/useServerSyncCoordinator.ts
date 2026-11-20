@@ -38,10 +38,10 @@ export interface UseServerSyncCoordinatorOptions {
   setSyncStatus: (status: string) => void;
   showToast: (message: string) => void;
   isDirtyRef: MutableRefObject<boolean | null>;
-  isPushingRef: MutableRefObject<boolean>;
+  isPushingRef: MutableRefObject<boolean | null>;
   inFlightPushRef: MutableRefObject<Promise<void> | null>;
-  confirmNextBulkSyncRef: MutableRefObject<boolean>;
-  hadStoredProfilesOnBootRef: MutableRefObject<boolean>;
+  confirmNextBulkSyncRef: MutableRefObject<boolean | null>;
+  hadStoredProfilesOnBootRef: MutableRefObject<boolean | null>;
   serverSyncReady: boolean;
   favoriteActors: unknown[];
   deletedKeys: Record<string, string>;
