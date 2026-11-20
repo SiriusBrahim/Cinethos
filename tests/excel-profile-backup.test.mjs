@@ -233,7 +233,7 @@ test('1 & 2 & 3. Workbook has exact 5 sheets in order, routes list states accura
   // Original profile object must never be mutated
   assert.equal(JSON.stringify(profile), originalSnapshot);
 
-  // Exact 5 sheets in exact order
+  // Exact 6 sheets in exact order
   assert.deepEqual(built.sheetNames, [
     'Özet',
     'İzlenen',
