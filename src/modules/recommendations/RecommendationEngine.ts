@@ -38,6 +38,7 @@ import {
 } from '../../core/derived-profile-cache.ts';
 import { enforceStrictMediaTypePool } from './CandidatePoolManager.ts';
 import { resolveDisplayedLifecycleRing } from './ExplanationManager.ts';
+import { genreMetricIdFor, type ServerTasteSignal } from './taste-signal.ts';
 
 /**
  * Keşfet sekmelerindeki (Gündemdekiler, Gizli Cevherler, Popüler vb.) içerikleri
@@ -50,6 +51,11 @@ export function enrichCatalogItemsWithTaste(params: {
   genresMap: Record<number, string>;
   tasteMap?: PersistentTasteMapData | null;
   /**
+   * Sunucu zevk profili sinyali (Faz 1/2 metrik motoru). Verildiğinde tür/ruh
+   * hâli puanına sınırlı ağırlıkla katılır; verilmezse davranış birebir eskidir.
+   */
+  serverTaste?: ServerTasteSignal | null;
+  /**
    * Faz 6: Referans zamanı. Öneri puanlaması zaman duyarlıdır (tazelik/bağlam);
    * önce/sonra karşılaştırma testinin deterministik olması için dışarıdan
    * verilebilir. Verilmezse mevcut davranış (güncel zaman) korunur.
@@ -60,7 +66,7 @@ export function enrichCatalogItemsWithTaste(params: {
     logFit?: (contentId: string, fit: number, confidence: string) => void;
   };
 }): any[] {
-  const { items, savedItems, preferences, genresMap, tasteMap, now } = params;
+  const { items, savedItems, preferences, genresMap, tasteMap, now, serverTaste } = params;
   if (!Array.isArray(items) || items.length === 0) return items;
 
   const tasteProfile = buildTasteProfileV3(savedItems, {
@@ -73,6 +79,16 @@ export function enrichCatalogItemsWithTaste(params: {
     genreNames: genresMap,
     mood: preferences.mood,
     tasteMap: tasteMap || undefined,
+    ...(serverTaste
+      ? {
+          serverTaste: {
+            confidence: serverTaste.confidence,
+            genreAffinity: serverTaste.genreAffinity,
+            moodAffinity: serverTaste.moodAffinity,
+            metricIdFor: genreMetricIdFor,
+          },
+        }
+      : {}),
     ...(now !== undefined ? { now } : {}),
   });
 

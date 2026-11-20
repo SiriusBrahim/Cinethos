@@ -3151,6 +3151,20 @@ export function syncPoolCandidatesWithTasteMap(
   });
 }
 
+/**
+ * Sunucu zevk profili sinyali (Faz 1/2 metrik motoru).
+ *
+ * `scoreCandidatesV3` yalnızca bu dar sözleşmeyi bilir; sunucu istemcisine
+ * veya modül yollarına bağımlılık kurmaz. `metricIdFor`, TMDB tür kimliğini
+ * sürümlü zevk metriğine çeviren çağıran tarafından sağlanır.
+ */
+export interface ServerTasteInput {
+  readonly confidence: number;
+  readonly genreAffinity: Readonly<Record<string, number>>;
+  readonly moodAffinity?: number | null;
+  readonly metricIdFor?: (mediaType: string, genreId: number) => string | null;
+}
+
 export function scoreCandidatesV3(
   candidates: any[],
   profile: TasteProfileV3,
@@ -3159,12 +3173,15 @@ export function scoreCandidatesV3(
     genreNames = null as Record<number | string, string> | null,
     mood = '',
     tasteMap = null as PersistentTasteMapData | null,
+    serverTaste = null as ServerTasteInput | null,
     now = new Date(),
   }: {
     weights?: typeof RECOMMENDATION_WEIGHTS_V3;
     genreNames?: Record<number | string, string> | null;
     mood?: string;
     tasteMap?: PersistentTasteMapData | null;
+    /** Sunucu zevk profili sinyali; verilmezse yalnızca yerel profil kullanılır. */
+    serverTaste?: ServerTasteInput | null;
     now?: Date | number | string;
   } = {}
 ) {
@@ -3195,9 +3212,28 @@ export function scoreCandidatesV3(
     const knownGenreScores = genreIds
       .map((gid: string) => profile.genres?.[gid])
       .filter((s: unknown): s is number => typeof s === 'number');
-    const genreScore = knownGenreScores.length
+    let genreScore = knownGenreScores.length
       ? clamp01(knownGenreScores.reduce((sum: number, s: number) => sum + (s + 1) / 2, 0) / knownGenreScores.length)
       : 0.5;
+
+    // 1b. Sunucu zevk profili (Faz 1/2 metrik motoru). Yalnızca yeterli güvene
+    // sahipse ve hesaplanabilirse tür puanına sınırlı ağırlıkla karışır; aksi
+    // halde sıralama yerel profille birebir aynı kalır (geri dönüş güvenli).
+    let serverTasteScore: number | null = null;
+    if (serverTaste && serverTaste.confidence >= 0.35 && serverTaste.metricIdFor) {
+      const affinities = genreIds
+        .map((gid: string) => {
+          const metricId = serverTaste.metricIdFor?.(candidate.media_type, Number(gid));
+          return metricId ? serverTaste.genreAffinity[metricId] : undefined;
+        })
+        .filter((val: unknown): val is number => typeof val === 'number');
+      if (affinities.length > 0) {
+        const avg = affinities.reduce((sum: number, val: number) => sum + val, 0) / affinities.length;
+        const weight = 0.25 * Math.max(0, Math.min(1, serverTaste.confidence));
+        serverTasteScore = avg;
+        genreScore = clamp01(genreScore * (1 - weight) + ((avg + 1) / 2) * weight);
+      }
+    }
 
     // 2. Film/Dizi Tercihi (0.03)
     const mediaPart =
@@ -3335,6 +3371,12 @@ export function scoreCandidatesV3(
     if (mood) {
       contextScore = 0.75;
     }
+    if (mood && serverTaste && typeof serverTaste.moodAffinity === 'number') {
+      // Sunucu ruh hâli afiniteti varsa bağlam puanı iki yöne de kayar.
+      contextScore = clamp01(
+        contextScore + 0.15 * serverTaste.moodAffinity * Math.min(1, serverTaste.confidence)
+      );
+    }
     const releaseDate = candidate.release_date || candidate.first_air_date;
     if (releaseDate && typeof releaseDate === 'string') {
       const year = parseInt(releaseDate.slice(0, 4), 10);
@@ -3372,6 +3414,7 @@ export function scoreCandidatesV3(
       context: contextScore,
       franchise: franchiseScore,
       sourceSignal: sourceSignalScore,
+      ...(serverTasteScore !== null ? { serverTaste: (serverTasteScore + 1) / 2 } : {}),
     };
 
     // Raw score formula: S_ham = 100 * (sum(w_j * s_j) / sum(w_j))
@@ -3416,6 +3459,9 @@ export function scoreCandidatesV3(
     }
     if (explorationScore >= 0.75 && tags.length < 3) {
       tags.push('Yeni keşif için');
+    }
+    if (serverTasteScore !== null && serverTasteScore >= 0.25 && tags.length < 5) {
+      tags.push('Sunucu zevk profilinle uyumlu');
     }
 
     // Sorun D & Zevk Haritası: Yaşam Döngüsü Halkaları (ring0 / ring1 / ring2) ve Geriletme Cezası Entegrasyonu
