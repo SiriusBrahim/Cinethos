@@ -104,7 +104,6 @@ export function useProfileBackupCoordinator(options: UseProfileBackupCoordinator
   }, [setPendingBackup, showToast]);
 
   const handleConfirmImport = useCallback((mode: 'overwrite' | 'merge') => {
-    const pendingBackup = pendingBackup;
     if (!pendingBackup) return;
     if (mode === 'overwrite') confirmNextBulkSyncRef.current = true;
 
