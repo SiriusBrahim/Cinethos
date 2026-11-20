@@ -19,6 +19,13 @@ import {
   preferencesStorageKey,
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
+import { mergeRemoteDocument } from './app/server-sync.ts';
+import {
+  buildBackupFileName,
+  buildLocalBackupDocument,
+  resolveImportedFavoriteActors,
+  resolveImportedPreferences,
+} from './app/profile-backup.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -75,8 +82,6 @@ import {
   FavoriteActorInfo,
   normalizeFavoriteActors,
   replenishCandidatePool,
-  CURRENT_SCHEMA_VERSION,
-  ENGINE_VERSION,
   loadPersistentTasteMap,
   PersistentTasteMapData,
   TasteProfileSummary,
@@ -101,7 +106,6 @@ import {
 import {
   areUserDataDocumentsSemanticallyEqual,
   mergeSavedItemListsLossless,
-  reconcileUserDataDocumentsLossless,
 } from './core/user-data-merge.ts';
 import {
   enrichSavedItemsFromCinemaKunye,
@@ -613,20 +617,20 @@ export function App() {
         keepDirtyIfLocalAhead?: boolean;
       } = {}
     ): DataDocument | null => {
-      const remoteDoc = normalizeDataDocument(rawRemoteDoc);
-      if (!remoteDoc) return null;
-
-      const liveLocalDoc = buildCurrentLivePayloadFromRefs();
-      const { mergedDoc } = reconcileUserDataDocumentsLossless(liveLocalDoc, remoteDoc, {
-        foldUnhydratedDefaultProfile: Boolean(options.foldUnhydrated),
-        preferActiveProfileFrom: options.preferActiveFrom || 'local',
+      const merged = mergeRemoteDocument(buildCurrentLivePayloadFromRefs(), rawRemoteDoc, {
+        preferActiveFrom: options.preferActiveFrom,
+        foldUnhydrated: options.foldUnhydrated,
+        keepDirtyIfLocalAhead: options.keepDirtyIfLocalAhead,
       });
+      if (!merged) return null;
 
-      const active =
-        mergedDoc.profiles.find((p) => p.id === mergedDoc.activeProfileId) ||
-        mergedDoc.profiles[0];
-      const activeFavs = normalizeFavoriteActors(active.favoriteActors || []);
-      const activeDeleted = normalizeDeletedKeys(active.deleted_keys);
+      const {
+        mergedDoc,
+        activeProfile: active,
+        favoriteActors: activeFavs,
+        deletedKeys: activeDeleted,
+        shouldStayDirty,
+      } = merged;
 
       applyingRemoteSnapshotRef.current = true;
       hadStoredProfilesOnBootRef.current = true;
@@ -652,13 +656,6 @@ export function App() {
       setTasteMap(loadedMap);
 
       persistProfilesBestEffort(mergedDoc.profiles);
-
-      const localHasUnpushedAdditions = !areUserDataDocumentsSemanticallyEqual(
-        mergedDoc,
-        remoteDoc
-      );
-      const shouldStayDirty =
-        options.keepDirtyIfLocalAhead !== false && localHasUnpushedAdditions;
 
       isDirtyRef.current = shouldStayDirty;
       try {
@@ -1911,15 +1908,13 @@ export function App() {
 
   // Export / Import
   const handleExportBackup = () => {
+    const nowIso = new Date().toISOString();
     const exportedKunye = mergeCinemaKunyeDocumentsLossless(
       cinemaKunye,
       extractCinemaKunyeFromItems(savedItems, genresMap)
     );
     const enrichedExportItems = enrichSavedItemsFromCinemaKunye(savedItems, exportedKunye);
-    const backup = {
-      version: 3,
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      engineVersion: ENGINE_VERSION,
+    const backup = buildLocalBackupDocument({
       profileId: activeProfileId,
       profileName,
       items: enrichedExportItems,
@@ -1927,13 +1922,13 @@ export function App() {
       preferences,
       favoriteActors: favoriteActorsRef.current,
       isDemo: Boolean(activeProfile?.isDemo),
-      exportedAt: new Date().toISOString(),
-    };
+      nowIso,
+    });
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `cinethos-local-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = buildBackupFileName(nowIso);
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -1973,29 +1968,15 @@ export function App() {
       handleSaveProfileName(pendingBackup.profileName);
     }
     if (pendingBackup.preferences) {
-      setPreferences((prev) => ({
-        ...prev,
-        ...pendingBackup.preferences,
-        disliked:
-          mode === 'merge'
-            ? Array.from(new Set([...(prev.disliked || []), ...(pendingBackup.preferences.disliked || [])]))
-            : pendingBackup.preferences.disliked || [],
-        hidden:
-          mode === 'merge'
-            ? Array.from(new Set([...(prev.hidden || []), ...(pendingBackup.preferences.hidden || [])]))
-            : pendingBackup.preferences.hidden || [],
-        providers:
-          mode === 'merge'
-            ? Array.from(new Set([...(prev.providers || []), ...(pendingBackup.preferences.providers || [])]))
-            : pendingBackup.preferences.providers || [],
-        reminders: false,
-        notified: [],
-      }));
+      setPreferences((prev) =>
+        resolveImportedPreferences(prev, pendingBackup.preferences, mode) ?? prev
+      );
     }
-    const importedActors =
-      mode === 'merge'
-        ? normalizeFavoriteActors([...favoriteActors, ...(pendingBackup.favoriteActors || [])])
-        : normalizeFavoriteActors(pendingBackup.favoriteActors || []);
+    const importedActors = resolveImportedFavoriteActors(
+      favoriteActors,
+      pendingBackup.favoriteActors,
+      mode
+    );
     setFavoriteActors(importedActors);
     try {
       localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(importedActors));

@@ -1,4 +1,4 @@
-import type { RelationshipType } from './relationship-explorer.ts';
+import type { RelationshipType } from './relationship-types.ts';
 
 export const STOP_WORDS = new Set([
   'acaba', 'ama', 'ancak', 'artık', 'aslında', 'bile', 'bir', 'birçok', 'bu',

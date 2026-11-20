@@ -18,7 +18,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '22.18.0'
+          node-version-file: '.nvmrc'
+
+      - name: Verify Node.js version contract
+        run: node -e "const want=require('fs').readFileSync('.nvmrc','utf8').trim();const got=process.versions.node;if(got!==want){console.error('Node sürümü .nvmrc ile uyuşmuyor:',got,'!=',want);process.exit(1)}"
 
       - name: Clean install dependencies
         run: npm ci
@@ -70,7 +73,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '22.18.0'
+          node-version-file: '.nvmrc'
 
       - name: Clean install dependencies
         run: npm ci
