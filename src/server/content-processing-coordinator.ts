@@ -33,12 +33,12 @@ import {
   CONTENT_INTELLIGENCE_VERSION,
   type AnonymizedAggregateStats,
   type ContentFeatureBundle,
-  ContentIntelligenceRecord,
-  ContentMoodVector,
-  ContentProcessingStatus,
-  ContentRelationshipLink,
-  ContentSemanticProfile,
-  NormalizedContentMetadata,
+  type ContentIntelligenceRecord,
+  type ContentMoodVector,
+  type ContentProcessingStatus,
+  type ContentRelationshipLink,
+  type ContentSemanticProfile,
+  type NormalizedContentMetadata,
 } from '../modules/content/types.ts';
 import {
   ContentEventSubscriber,
