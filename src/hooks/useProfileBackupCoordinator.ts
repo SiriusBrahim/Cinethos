@@ -28,21 +28,21 @@ export interface UseProfileBackupCoordinatorOptions {
   savedItems: SavedItem[];
   preferences: Preferences;
   favoriteActors: FavoriteActorInfo[];
-  favoriteActorsRef: MutableRefObject<FavoriteActorInfo[]>;
+  favoriteActorsRef: MutableRefObject<FavoriteActorInfo[] | null>;
   genresMap: Record<number, string>;
   cinemaKunye: any;
   isDemo: boolean;
   pendingBackup: any | null;
   setPendingBackup: Dispatch<SetStateAction<any | null>>;
   setSavedItems: Dispatch<SetStateAction<SavedItem[]>>;
-  savedItemsRef: MutableRefObject<SavedItem[]>;
-  lastForYouQueryKeyRef: MutableRefObject<string>;
+  savedItemsRef: MutableRefObject<SavedItem[] | null>;
+  lastForYouQueryKeyRef: MutableRefObject<string | null>;
   setForYouItems: Dispatch<SetStateAction<any[]>>;
   setPreferences: Dispatch<SetStateAction<Preferences>>;
   setFavoriteActors: Dispatch<SetStateAction<FavoriteActorInfo[]>>;
   setProfiles: Dispatch<SetStateAction<Profile[]>>;
   setProfileOpen: Dispatch<SetStateAction<boolean>>;
-  confirmNextBulkSyncRef: MutableRefObject<boolean>;
+  confirmNextBulkSyncRef: MutableRefObject<boolean | null>;
   mergeIncomingCinemaKunye: (document: any) => any;
   replaceCinemaKunye: (document: any) => any;
   handleSaveProfileName: (name: string) => void;
@@ -72,7 +72,7 @@ export function useProfileBackupCoordinator(options: UseProfileBackupCoordinator
       items: enrichedExportItems,
       cinemaKunye: exportedKunye,
       preferences: preferences,
-      favoriteActors: favoriteActorsRef.current,
+      favoriteActors: favoriteActorsRef.current || [],
       isDemo: isDemo,
       nowIso,
     });
