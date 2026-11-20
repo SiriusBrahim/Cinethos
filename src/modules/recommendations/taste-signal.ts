@@ -14,7 +14,7 @@
 
 import type { TasteProfile } from '../../core/taste/types.ts';
 import { resolveEffectiveMetricView } from '../../core/taste/metric-labels.ts';
-import { MOVIE_GENRE_IDS, TV_GENRE_IDS } from '../../core/taste/tmdb-mappings.ts';
+export { genreMetricIdFor } from '../../core/taste/genre-metric.ts';
 
 export const SERVER_TASTE_MIN_CONFIDENCE = 0.35;
 /** Sunucu sinyalinin tür puanındaki azami ağırlığı. */
@@ -34,27 +34,6 @@ export interface ServerTasteSignal {
   readonly updatedAt: string;
 }
 
-const MOVIE_GENRE_TO_METRIC = new Map<number, string>(
-  Object.entries(MOVIE_GENRE_IDS).map(([slug, id]) => [id, `genre.${slug}`])
-);
-const TV_GENRE_TO_METRIC = new Map<number, string>(
-  Object.entries(TV_GENRE_IDS).map(([slug, id]) => [
-    id,
-    // TV'de 10765 birleşik "Sci-Fi & Fantasy" türüdür; ana metrik sci-fi'dir.
-    slug === 'scifi_fantasy' ? 'genre.scifi' : `genre.${slug}`,
-  ])
-);
-
-/** TMDB tür kimliğini sürümlü zevk metrik kimliğine çevirir. */
-export function genreMetricIdFor(
-  mediaType: string | null | undefined,
-  genreId: number
-): string | null {
-  if (!Number.isFinite(genreId)) return null;
-  return mediaType === 'tv'
-    ? TV_GENRE_TO_METRIC.get(genreId) ?? null
-    : MOVIE_GENRE_TO_METRIC.get(genreId) ?? null;
-}
 
 function clampAffinity(value: unknown): number | null {
   const num = Number(value);
