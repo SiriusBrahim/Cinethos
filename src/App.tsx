@@ -127,6 +127,7 @@ import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
+import { useServerSyncCoordinator } from './hooks/useServerSyncCoordinator.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
@@ -791,93 +792,31 @@ export function App() {
     [persistProfilesBestEffort, resolveQueuedConflict]
   );
 
-  // Push server data on changes (with lossless merge foundation & offline queue)
-  const executePushToServer = useCallback(async () => {
-    const payload = buildCurrentLivePayloadFromRefs();
-    const confirmBulkDelete = confirmNextBulkSyncRef.current;
-    const foldUnhydrated = !hadStoredProfilesOnBootRef.current;
-    isPushingRef.current = true;
-    try {
-      const res = await syncDocument(
-        payload,
-        confirmBulkDelete
-          ? { confirmBulkDelete: true }
-          : { foldUnhydratedDefaultProfile: foldUnhydrated }
-      );
-      if (res.ok) {
-        confirmNextBulkSyncRef.current = false;
-        hadStoredProfilesOnBootRef.current = true;
-        const authoritativeServerDoc = res.document || payload;
-        const liveNow = buildCurrentLivePayloadFromRefs();
-        if (areUserDataDocumentsSemanticallyEqual(liveNow, authoritativeServerDoc)) {
-          isDirtyRef.current = false;
-          try {
-            localStorage.removeItem(DIRTY_KEY);
-          } catch {}
-        }
-        setServerConflict(null);
-        setSyncStatus('Kayıt yeri: data/cinetrack-data.json (bu bilgisayarda, tüm profiller).');
-      } else if (res.queued) {
-        setSyncStatus('Çevrimdışı kuyrukta: bağlantı sağlandığında yerel sunucuya aktarılacak.');
-      } else if (!res.conflict) {
-        setSyncStatus('Değişiklikler yerel veri dosyasına yazılamadı; şimdilik yalnızca bu tarayıcıda.');
-      }
-    } finally {
-      isPushingRef.current = false;
-    }
-  }, [buildCurrentLivePayloadFromRefs, syncDocument]);
-
-  const pushToServer = useCallback(async () => {
-    if (inFlightPushRef.current) {
-      await inFlightPushRef.current;
-      if (!isDirtyRef.current && !confirmNextBulkSyncRef.current && !hasPendingOfflineSync()) {
-        return;
-      }
-    }
-    const promise = executePushToServer().finally(() => {
-      if (inFlightPushRef.current === promise) {
-        inFlightPushRef.current = null;
-      }
-    });
-    inFlightPushRef.current = promise;
-    await promise;
-  }, [executePushToServer]);
-
-  const handleKeepLocalOnConflict = useCallback(async () => {
-    const payload = serverConflict?.localPayload || buildCurrentLivePayloadFromRefs();
-    const res = await syncDocument(payload, { forceOverwrite: true, confirmBulkDelete: true });
-    if (res.ok) {
-      isDirtyRef.current = false;
-      try {
-        localStorage.removeItem(DIRTY_KEY);
-      } catch {}
-      resolveQueuedConflict();
-      setServerConflict(null);
-      setSyncStatus('Yerel değişiklikler sunucuya kaydedildi.');
-      showToast('Yerel verileriniz sunucuya kaydedildi.');
-    }
-  }, [serverConflict, buildCurrentLivePayloadFromRefs, syncDocument, resolveQueuedConflict, showToast]);
-
-  const handleMergeBothOnConflict = useCallback(async () => {
-    if (serverConflict?.serverDocument) {
-      mergeRemoteDocumentIntoState(serverConflict.serverDocument, {
-        preferActiveFrom: 'local',
-        keepDirtyIfLocalAhead: true,
-      });
-    }
-    await pushToServer();
-    resolveQueuedConflict();
-    setServerConflict(null);
-    setSyncStatus('Yerel ve sunucu verileri kayıpsız birleştirildi.');
-    showToast('Yerel ve sunucu listeleriniz kayıpsız birleştirildi.');
-  }, [serverConflict, mergeRemoteDocumentIntoState, pushToServer, resolveQueuedConflict, showToast]);
-
-  const handleUseServerOnConflict = useCallback(() => {
-    if (serverConflict?.serverDocument) {
-      applyDataDocumentToState(serverConflict.serverDocument);
-      showToast('Sunucudaki güncel veri yüklendi.');
-    }
-  }, [serverConflict, applyDataDocumentToState, showToast]);
+  const {
+    pushToServer,
+    handleKeepLocalOnConflict,
+    handleMergeBothOnConflict,
+    handleUseServerOnConflict,
+  } = useServerSyncCoordinator({
+    buildCurrentLivePayloadFromRefs,
+    buildCurrentPayload,
+    syncDocument,
+    serverConflict,
+    mergeRemoteDocumentIntoState,
+    applyDataDocumentToState,
+    resolveQueuedConflict,
+    setServerConflict,
+    setSyncStatus,
+    showToast,
+    isDirtyRef,
+    isPushingRef,
+    inFlightPushRef,
+    confirmNextBulkSyncRef,
+    hadStoredProfilesOnBootRef,
+    serverSyncReady,
+    favoriteActors,
+    deletedKeys,
+  });
 
   const handleMergeSyncedDocument = useCallback(
     (doc: DataDocument) => {
