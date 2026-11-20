@@ -268,3 +268,100 @@ export function retryOperationsTask(taskId: string): Promise<OperationsTask> {
 export function cancelOperationsTask(taskId: string): Promise<OperationsTask> {
   return mutateTask(taskId, 'cancel');
 }
+
+/** İçerik zekâsı katalog durumu — İşlem Merkezi bu özeti gösterir. */
+export interface ContentIntelligenceSummary {
+  readonly started: boolean;
+  readonly stale: number;
+  readonly total: number;
+  readonly completed: number;
+  readonly failed: number;
+  readonly pending: number;
+  readonly processing: number;
+  readonly skipped: number;
+  readonly queue: {
+    readonly pending: number;
+    readonly processing: number;
+    readonly completed: number;
+    readonly failed: number;
+  };
+}
+
+export function normalizeContentIntelligenceSummary(
+  raw: unknown
+): ContentIntelligenceSummary | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const record = raw as Record<string, unknown>;
+  if (record.ok !== true) return null;
+  const counts =
+    record.counts && typeof record.counts === 'object'
+      ? (record.counts as Record<string, unknown>)
+      : {};
+  const queue =
+    record.queue && typeof record.queue === 'object'
+      ? (record.queue as Record<string, unknown>)
+      : {};
+  return {
+    started: record.started === true,
+    stale: asCount(record.stale),
+    total: asCount(counts.total),
+    completed: asCount(counts.completed),
+    failed: asCount(counts.failed),
+    pending: asCount(counts.pending),
+    processing: asCount(counts.processing),
+    skipped: asCount(counts.skipped),
+    queue: {
+      pending: asCount(queue.pending),
+      processing: asCount(queue.processing),
+      completed: asCount(queue.completed),
+      failed: asCount(queue.failed),
+    },
+  };
+}
+
+export async function fetchContentIntelligenceSummary(
+  signal?: AbortSignal
+): Promise<ContentIntelligenceSummary> {
+  const response = await requestDeduped('/api/content-intelligence/status', {
+    method: 'GET',
+    signal,
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    const { message, code } = await readApiErrorMessage(response, 'İçerik zekâsı durumu okunamadı.');
+    throw Object.assign(new Error(message), { code, status: response.status });
+  }
+  const summary = normalizeContentIntelligenceSummary(await response.json());
+  if (!summary) throw new Error('İçerik zekâsı durum yanıtı doğrulanamadı.');
+  return summary;
+}
+
+export interface ReprocessResult {
+  readonly total: number;
+  readonly accepted: number;
+  readonly rejected: number;
+  readonly stale: number;
+}
+
+/** Eski/başarısız analizleri kuyruğa verir; aynı içerik için kopya iş üretilmez. */
+export async function reprocessStaleContent(limit = 100): Promise<ReprocessResult> {
+  const response = await apiFetch('/api/content-intelligence/reprocess', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ limit }),
+  });
+  if (!response.ok) {
+    const { message, code } = await readApiErrorMessage(
+      response,
+      'Yeniden işleme başlatılamadı.'
+    );
+    throw Object.assign(new Error(message), { code, status: response.status });
+  }
+  const body = (await response.json()) as Record<string, unknown>;
+  return {
+    total: asCount(body.total),
+    accepted: asCount(body.accepted),
+    rejected: asCount(body.rejected),
+    stale: asCount(body.stale),
+  };
+}
