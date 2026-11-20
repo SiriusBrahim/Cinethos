@@ -2229,7 +2229,7 @@ export interface GenerateExcelOptions extends BuildDatasetOptions {
 }
 
 /**
- * Builds the formatted, 5-sheet, embedded-poster `.xlsx` workbook buffer.
+ * Builds the formatted, 6-sheet, embedded-poster `.xlsx` workbook buffer (summary, 4 lists, and state-conflict report).
  */
 export async function generateProfileExcelBuffer(
   options: GenerateExcelOptions
