@@ -354,4 +354,7 @@ ve varsa ortak kavramlarla açıklanır. Sunucu erişilemezse yerel grafik bozul
 | Öneri karşılaştırması | `src/core/recommendation-comparison.ts` | Aynı veri kümesinde taban/güncel yapılandırma raporu; puanlama formülü değişmez. |
 | GitHub dayanıklılığı | `src/server/github-request.ts` | Exponential backoff + jitter, `Retry-After`, `X-RateLimit-Reset`; PUT gövdesi idempotent. |
 | App koordinasyonu | `src/app/server-sync.ts`, `src/app/profile-backup.ts` | Uzak belge birleştirme ve yedek payload'ı saf fonksiyonlar; App state/efekt koordinatörü. |
-| Mimari denetim | `scripts/check-cycles.mjs` | Yerel import grafiğinde döngü raporu; `tests/phase3-architecture.test.mjs` sayının artmasını engeller. |
+| Mimari denetim | `scripts/check-cycles.mjs` | Yerel import grafiğinde döngü raporu; `tests/phase3-architecture.test.mjs` sıfır döngü şartı koyar. |
+
+
+Faz 3 takip düzeltmesi: `github-bidirectional-sync.ts` artık `persistent-store.ts` çalışma zamanı modülünden yardımcı fonksiyon veya sınıf tipi çekmez. Paylaşılan veri sözleşmeleri `persistent-store-types.ts`, saf yardımcılar `persistent-store-utils.ts` içindedir; sync manager yalnızca `PersistentDataStoreSyncPort` adaptörünü bilir. Excel yedeği, çift durumlu kayıtları `Durum Çakışmaları` adlı ayrı sayfada raporlar ve kaynak veriyi değiştirmez.
