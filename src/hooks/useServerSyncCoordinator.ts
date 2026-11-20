@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from 'react';
 import type { MutableRefObject } from 'react';
 import type { DataDocument } from '../core/cinetrack-core.ts';
+import { areUserDataDocumentsSemanticallyEqual } from '../core/user-data-merge.ts';
+import { DIRTY_KEY } from '../app/profile-storage.ts';
 import type { ServerConflictDetail } from '../services/api.ts';
 import { hasPendingOfflineSync } from '../services/offline-queue.ts';
 
@@ -89,10 +91,10 @@ export function useServerSyncCoordinator(options: UseServerSyncCoordinatorOption
         hadStoredProfilesOnBootRef.current = true;
         const authoritativeServerDoc = result.document || payload;
         const liveNow = buildCurrentLivePayloadFromRefs();
-        if (JSON.stringify(liveNow) === JSON.stringify(authoritativeServerDoc)) {
+        if (areUserDataDocumentsSemanticallyEqual(liveNow, authoritativeServerDoc)) {
           isDirtyRef.current = false;
           try {
-            localStorage.removeItem('cinetrack_data_dirty');
+            localStorage.removeItem(DIRTY_KEY);
           } catch {}
         }
         setServerConflict(null);
@@ -189,7 +191,7 @@ export function useServerSyncCoordinator(options: UseServerSyncCoordinatorOption
     if (!serverSyncReady) return;
     let localStorageDirty = false;
     try {
-      localStorageDirty = localStorage.getItem('cinetrack_data_dirty') === '1';
+      localStorageDirty = localStorage.getItem(DIRTY_KEY) === '1';
     } catch {}
     if (
       !isDirtyRef.current &&
