@@ -213,3 +213,70 @@ test("aynı kanonik kimliğe çözülen birden fazla p1 dizini otomatik birleşt
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+
+test("p1 → p2 geçişi birden fazla profili birbirinden yalıtır", async () => {
+  const dataDir = await tempDir();
+  try {
+    const ids = ["PROFILE-ALPHA", "PROFILE-BETA"];
+    const entries = {};
+    const byDir = {};
+    for (const [index, id] of ids.entries()) {
+      const oldDir = p1Dir(id);
+      entries[id] = { dir: oldDir, createdAt: CREATED_AT };
+      byDir[oldDir] = id;
+      const root = path.join(resolveTasteProfilesRoot(dataDir), oldDir);
+      await fs.mkdir(root, { recursive: true });
+      await fs.writeFile(path.join(root, "cinetrack-taste-events.json"), JSON.stringify([{
+        eventId: "event-" + index,
+        contentId: "movie:" + (700 + index),
+        eventType: "rating_changed",
+        payload: { previousValue: null, newValue: 8 },
+        recordedAt: CREATED_AT,
+        timeSource: "actual",
+        timePrecision: "exact",
+      }]));
+    }
+    const mapPath = resolveTasteProfileIdMapPath(dataDir);
+    await fs.mkdir(path.dirname(mapPath), { recursive: true });
+    await fs.writeFile(mapPath, JSON.stringify({ version: 1, scheme: "p1-b64url", entries, byDir }, null, 2));
+
+    const alpha = await readTasteEventsForProfile(ids[0], dataDir);
+    const beta = await readTasteEventsForProfile(ids[1], dataDir);
+    assert.deepEqual(alpha.map((event) => event.eventId), ["event-0"]);
+    assert.deepEqual(beta.map((event) => event.eventId), ["event-1"]);
+    assert.notEqual(encodeProfileIdSafe(ids[0]), encodeProfileIdSafe(ids[1]));
+    const migrated = JSON.parse(await fs.readFile(mapPath, "utf8"));
+    assert.equal(migrated.version, 2);
+    assert.equal(Object.keys(migrated.entries).length, 2);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("p2 hedef dizininde farklı veri varsa migration durur ve iki tarafı da korur", async () => {
+  const dataDir = await tempDir();
+  try {
+    const rawId = "PROFILE-COLLISION";
+    const oldDir = await writeV1Manifest(dataDir, rawId);
+    const profilesRoot = resolveTasteProfilesRoot(dataDir);
+    const oldRoot = path.join(profilesRoot, oldDir);
+    const newDir = encodeProfileIdSafe(rawId);
+    const newRoot = path.join(profilesRoot, newDir);
+    await fs.mkdir(oldRoot, { recursive: true });
+    await fs.mkdir(newRoot, { recursive: true });
+    await fs.writeFile(path.join(oldRoot, "cinetrack-taste-events.json"), JSON.stringify([{ eventId: "legacy" }]));
+    await fs.writeFile(path.join(newRoot, "cinetrack-taste-events.json"), JSON.stringify([{ eventId: "different" }]));
+
+    await assert.rejects(
+      ensureTasteProfileIdMapEntry(rawId, dataDir),
+      (error) => error.code === "profile_id_map_conflict"
+    );
+    assert.equal(JSON.parse(await fs.readFile(path.join(oldRoot, "cinetrack-taste-events.json"), "utf8"))[0].eventId, "legacy");
+    assert.equal(JSON.parse(await fs.readFile(path.join(newRoot, "cinetrack-taste-events.json"), "utf8"))[0].eventId, "different");
+    const manifest = JSON.parse(await fs.readFile(resolveTasteProfileIdMapPath(dataDir), "utf8"));
+    assert.equal(manifest.version, 1, "çakışma halinde manifest yükseltilmemeli");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});

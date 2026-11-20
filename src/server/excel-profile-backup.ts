@@ -42,10 +42,19 @@ export const EXCEL_SHEET_NAMES = Object.freeze([
   'İzlenecek',
   'İzleniyor',
   'İlgilenmiyorum',
+  'Durum Çakışmaları',
 ] as const);
 
 export type ExcelSheetName = (typeof EXCEL_SHEET_NAMES)[number];
-export type ContentSheetName = Exclude<ExcelSheetName, 'Özet'>;
+export type ContentSheetName = Exclude<ExcelSheetName, 'Özet' | 'Durum Çakışmaları'>;
+
+export interface ExportStateConflict {
+  canonicalKey: string;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  listStatus: string;
+  preferenceStatus: 'İlgilenmiyorum';
+}
 
 export const DEFAULT_TR_GENRES: Readonly<Record<number, string>> = Object.freeze({
   28: 'Aksiyon',
@@ -187,6 +196,7 @@ export interface ProfileBackupDataset {
   favoriteActorsCount: number;
   customItemsCount: number;
   dualStateKeys: string[];
+  stateConflicts: ExportStateConflict[];
   sheets: Record<ContentSheetName, ExportRowItem[]>;
   sheetCounts: Record<ContentSheetName, SheetBreakdownCount>;
   totalItemsCount: number;
@@ -1455,7 +1465,7 @@ export interface BuildDatasetOptions {
 }
 
 /**
- * Pure, non-mutating builder that maps a Cinethos `Profile` into the 5-sheet dataset.
+ * Pure, non-mutating builder that maps a Cinethos `Profile` into the 6-sheet dataset.
  * Strictly preserves `movie:<id>` vs `tv:<id>` separation and reports any dual-state keys.
  */
 export async function buildProfileBackupDataset(
@@ -1545,8 +1555,26 @@ export async function buildProfileBackupDataset(
     }
   }
 
-  // Detect any item simultaneously present in `items` and `preferences.disliked`
+  // Detect and explain dual-state records without changing either source record.
   const dualStateKeys = uniqueDislikedNewestFirst.filter((key) => savedByKey.has(key));
+  const stateConflicts: ExportStateConflict[] = dualStateKeys.map((canonicalKey) => {
+    const item = savedByKey.get(canonicalKey)!;
+    const row = [...izlenenRaw, ...izlenecekRaw, ...izleniyorRaw].find(
+      (candidate) => candidate.canonicalKey === canonicalKey
+    );
+    const listStatus = item.status === 'completed'
+      ? 'İzlenen'
+      : item.status === 'watching'
+        ? 'İzleniyor'
+        : 'İzlenecek';
+    return {
+      canonicalKey,
+      mediaType: item.media_type === 'tv' ? 'tv' : 'movie',
+      title: row?.title || String(item.title || item.name || canonicalKey),
+      listStatus,
+      preferenceStatus: 'İlgilenmiyorum',
+    };
+  });
 
   // Fetch missing or incomplete disliked metadata via TMDB if available
   const fetchedDislikedMap = new Map<string, Record<string, any>>();
@@ -1752,6 +1780,7 @@ export async function buildProfileBackupDataset(
     favoriteActorsCount: favActors.length,
     customItemsCount,
     dualStateKeys,
+    stateConflicts,
     sheets,
     sheetCounts,
     totalItemsCount,
@@ -2200,7 +2229,7 @@ export interface GenerateExcelOptions extends BuildDatasetOptions {
 }
 
 /**
- * Builds the formatted, 5-sheet, embedded-poster `.xlsx` workbook buffer.
+ * Builds the formatted, 6-sheet, embedded-poster `.xlsx` workbook buffer (summary, 4 lists, and state-conflict report).
  */
 export async function generateProfileExcelBuffer(
   options: GenerateExcelOptions
@@ -2433,6 +2462,13 @@ export async function generateProfileExcelBuffer(
     );
     writtenRowsBySheet[sheetName] = dataset.sheets[sheetName].length;
   }
+
+  // Explicit conflict report: informational only; no profile data is modified.
+  const conflictSheet = workbook.addWorksheet('Durum Çakışmaları', {
+    views: [{ state: 'frozen', ySplit: 4, showGridLines: true }],
+    properties: { tabColor: { argb: dataset.stateConflicts.length > 0 ? 'FFB45309' : 'FF64748B' } },
+  });
+  populateStateConflictWorksheet(conflictSheet, dataset);
 
   if (options.includeTasteDnaSheet) {
     populateTasteDnaWorksheet(
@@ -2875,6 +2911,58 @@ function populateSummaryWorksheet(
   }
 }
 
+function populateStateConflictWorksheet(ws: ExcelJS.Worksheet, dataset: ProfileBackupDataset): void {
+  ws.columns = [
+    { key: 'canonicalKey', width: 20 },
+    { key: 'mediaType', width: 12 },
+    { key: 'title', width: 42 },
+    { key: 'listStatus', width: 18 },
+    { key: 'preferenceStatus', width: 22 },
+    { key: 'resolution', width: 64 },
+  ];
+  ws.mergeCells('A1:F1');
+  ws.getCell('A1').value = 'Cinethos — Veri Durumu Çakışma Raporu';
+  ws.getCell('A1').font = { name: FONT_FAMILY, size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF78350F' } };
+  ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(1).height = 28;
+  ws.mergeCells('A2:F2');
+  ws.getCell('A2').value = dataset.stateConflicts.length
+    ? String(dataset.stateConflicts.length) + ' içerik hem bir izleme listesinde hem de “İlgilenmiyorum” tercihinde bulunuyor. Kayıtlar korunmuştur; bu sayfa yalnızca raporlar.'
+    : 'Çakışan durum bulunamadı. Profil verileri değiştirilmemiştir.';
+  ws.getCell('A2').alignment = { wrapText: true, vertical: 'middle' };
+  ws.getCell('A2').font = { name: FONT_FAMILY, size: 9, color: { argb: 'FF78350F' } };
+  ws.getRow(2).height = 32;
+  ws.getRow(3).height = 8;
+  const headers = ['Anahtar', 'Tür', 'İçerik', 'Liste Durumu', 'Tercih Durumu', 'Açıklama'];
+  const header = ws.getRow(4);
+  header.values = headers;
+  header.height = 22;
+  header.eachCell((cell) => {
+    cell.font = { name: FONT_FAMILY, size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF92400E' } };
+    cell.alignment = { vertical: 'middle', wrapText: true };
+  });
+  dataset.stateConflicts.forEach((conflict, index) => {
+    const row = ws.addRow([
+      conflict.canonicalKey,
+      conflict.mediaType === 'tv' ? 'DİZİ' : 'FİLM',
+      sanitizeSpreadsheetText(conflict.title) || conflict.canonicalKey,
+      conflict.listStatus,
+      conflict.preferenceStatus,
+      'İzleme listesi kaydı ve ilgilenmiyorum tercihi ayrı ayrı korundu. İstenirse uygulamada tercih veya liste durumu manuel olarak düzeltilebilir.',
+    ]);
+    row.height = 30;
+    row.eachCell((cell) => {
+      cell.font = { name: FONT_FAMILY, size: 9, color: { argb: 'FF334155' } };
+      cell.alignment = { vertical: 'middle', wrapText: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 ? 'FFFFFFFF' : 'FFFFFBEB' } };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFFDE68A' } } };
+    });
+  });
+  ws.autoFilter = { from: 'A4', to: 'F4' };
+  ws.views = [{ state: 'frozen', ySplit: 4, showGridLines: true }];
+}
 function populateContentWorksheet(
   ws: ExcelJS.Worksheet,
   sheetName: ContentSheetName,

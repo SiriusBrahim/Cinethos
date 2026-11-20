@@ -1200,4 +1200,271 @@
     color: var(--text-2);
     margin-bottom: 8px;
   }
+
+  /* WrappedCard.tsx current semantic layout (the older .wrapped-metric* rules
+     remain below for legacy screens; these selectors match the current JSX). */
+  .wrapped-summary-card {
+    margin-top: 14px;
+    padding: 16px 18px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    min-width: 0;
+    scroll-margin-top: 88px;
+  }
+
+  .wrapped-card-title-group {
+    min-width: 0;
+    flex: 1 1 280px;
+  }
+
+  .wrapped-card-subtitle {
+    margin: 5px 0 0;
+    color: var(--text-2);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .wrapped-kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .wrapped-kpi-item {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+    padding: 11px 13px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+  }
+
+  .wrapped-kpi-label {
+    display: block;
+    color: var(--text-2);
+    font-size: 10.5px;
+    line-height: 1.35;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+  }
+
+  .wrapped-kpi-val {
+    display: block;
+    color: var(--text-1);
+    font-size: clamp(15px, 1.5vw, 19px);
+    font-weight: 700;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .wrapped-kpi-meta {
+    display: block;
+    color: var(--text-2);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .wrapped-triad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .wrapped-triad-col,
+  .wrapped-months-box,
+  .wrapped-favorite-box {
+    min-width: 0;
+    padding: 12px 13px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+  }
+
+  .wrapped-section-label {
+    display: block;
+    margin-bottom: 9px;
+    color: var(--text-2);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+  }
+
+  .wrapped-rank-stat {
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .wrapped-bottom-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .wrapped-months-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 10px;
+    margin-bottom: 8px;
+  }
+
+  .wrapped-months-header .wrapped-section-label {
+    margin-bottom: 0;
+  }
+
+  .wrapped-months-caption {
+    color: var(--text-2);
+    font-size: 10.5px;
+  }
+
+  .wrapped-months-bars {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    align-items: end;
+    gap: 4px;
+  }
+
+  .wrapped-month-col {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .wrapped-month-svg {
+    display: block;
+    width: 100%;
+    max-width: 18px;
+    height: 44px;
+    overflow: visible;
+  }
+
+  .wrapped-month-track {
+    fill: var(--bg-elevated);
+  }
+
+  .wrapped-month-fill {
+    fill: var(--border-strong, var(--border-subtle));
+  }
+
+  .wrapped-month-fill.is-non-zero {
+    fill: var(--accent);
+  }
+
+  .wrapped-month-label {
+    color: var(--text-2);
+    font-size: 9px;
+    line-height: 1;
+  }
+
+  .wrapped-favorite-card {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 11px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .wrapped-favorite-poster {
+    display: block;
+    width: 48px;
+    height: 72px;
+    flex: 0 0 48px;
+    border-radius: var(--radius-xs);
+    object-fit: cover;
+    background: var(--bg-elevated);
+  }
+
+  .wrapped-favorite-poster--fallback {
+    display: grid;
+    place-items: center;
+    color: var(--text-2);
+  }
+
+  .wrapped-favorite-info {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .wrapped-favorite-title {
+    color: var(--text-1);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  .wrapped-favorite-meta,
+  .wrapped-favorite-match {
+    color: var(--text-2);
+    font-size: 10.5px;
+    line-height: 1.4;
+  }
+
+  .wrapped-favorite-match {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  @media (max-width: 900px) {
+    .wrapped-triad-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .wrapped-bottom-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .wrapped-summary-card {
+      padding: 12px;
+      scroll-margin-top: 240px;
+    }
+
+    .wrapped-card-header {
+      align-items: flex-start;
+    }
+
+    .wrapped-card-title-group {
+      flex-basis: 100%;
+    }
+
+    .wrapped-kpi-strip,
+    .wrapped-triad-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .wrapped-kpi-item {
+      padding: 10px 11px;
+    }
+
+    .wrapped-months-bars {
+      gap: 2px;
+    }
+
+    .wrapped-month-label {
+      font-size: 8px;
+    }
+  }
+
+
 }

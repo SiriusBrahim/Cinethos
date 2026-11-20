@@ -3,6 +3,8 @@ import {
   type Profile,
   type SavedItem,
 } from './cinetrack-core.ts';
+import { resolveItemWatchedDate } from './item-dates.ts';
+import { collectEffectiveStateConflicts } from './item-effective-state.ts';
 import {
   buildCinemaKunyeContentId,
   createEmptyCinemaKunyeDocument,
@@ -334,7 +336,9 @@ export function exportItemsToCsv(
       : formatCinemaKunyeActorsCsv(item.cast);
 
     const rating10 = typeof item.personal_rating === 'number' && item.personal_rating > 0 ? item.personal_rating : '';
-    const watchedDate = (item.updatedAt || item.addedAt || '').slice(0, 10);
+    // Faz 3: "İzleme Tarihi" sütunu artık not düzenlemesinden etkilenen
+    // `updatedAt` yerine gerçek etkileşim tarihini kullanır.
+    const watchedDate = (resolveItemWatchedDate(item) || '').slice(0, 10);
     const tmdbId = typeof item.id === 'number' || /^\d+$/.test(String(item.id)) ? String(item.id) : '';
     const seasonProgress =
       item.season_progress && Object.keys(item.season_progress).length > 0
@@ -396,6 +400,14 @@ export function exportItemsToCsv(
         lines.push(`#FavoriteActor,${escapeCsvCell(actorFields.join('|'))}`);
       }
     }
+    // Faz 3: hem kütüphanede hem "ilgilenmiyorum"/"gizli" listesinde bulunan
+    // kayıtlar yedekte görünür kalır (veri silinmez, çakışma raporlanır).
+    const conflicts = collectEffectiveStateConflicts(profile);
+    for (const conflict of conflicts) {
+      lines.push(
+        `#StateConflict,${escapeCsvCell(`${conflict.mediaKey}|${conflict.state}|${conflict.title}`)}`
+      );
+    }
     for (const entry of kunyeEntries) {
       lines.push(`#SinemaKunyesi,${escapeCsvCell(JSON.stringify(entry))}`);
     }
@@ -438,6 +450,7 @@ const CSV_PROFILE_DIRECTIVES = new Set([
   '#Reminders',
   '#Notified',
   '#FavoriteActor',
+  '#StateConflict',
   '#SinemaKunyesi',
   '#END',
 ]);

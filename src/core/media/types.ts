@@ -52,6 +52,8 @@ export interface SavedItem {
   number_of_episodes?: number;
   season_progress?: Record<number, number>;
   season_episode_counts?: Record<number, number>;
+  watched_episodes?: Record<number, number[]>;
+  progress_updated_at?: Record<number, string>;
   next_episode_to_air?: NextEpisode | null;
   current_season?: number;
   episodes_watched?: number;
@@ -60,6 +62,7 @@ export interface SavedItem {
   personal_rating: number | '';
   personal_rating_cleared?: boolean;
   ratedAt?: string;
+  watchedAt?: string;
   completedAt?: string;
   addedAt?: string;
   firstAddedAt?: string;

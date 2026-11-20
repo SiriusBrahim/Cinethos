@@ -1,4 +1,10 @@
 import type { SavedItem } from './cinetrack-core.ts';
+import {
+  contiguousWatchedCount,
+  effectiveSeasonMarks,
+  sanitizeSeasonWatchedMarks,
+  setEpisodeWatched,
+} from './season-progress.ts';
 
 export interface TvProgressSummary {
   currentSeason: number;
@@ -38,7 +44,11 @@ export function deriveTvProgressSummary(item: SavedItem): TvProgressSummary {
     }
   }
 
-  const seasonNumbers = Object.keys(seasonProgress)
+  // Faz 3: bölüm bazlı işaretler varsa (sırasız izleme) tek doğru kaynaktır.
+  const explicitMarks = Object.keys(sanitizeSeasonWatchedMarks(item.watched_episodes)).length > 0;
+  const marks = explicitMarks ? effectiveSeasonMarks(item) : null;
+
+  const seasonNumbers = Object.keys(marks || seasonProgress)
     .map(Number)
     .filter((s) => Number.isInteger(s) && s > 0)
     .sort((a, b) => a - b);
@@ -49,17 +59,23 @@ export function deriveTvProgressSummary(item: SavedItem): TvProgressSummary {
 
   if (seasonNumbers.length > 0) {
     for (const sNum of seasonNumbers) {
-      const epCount = Math.max(0, Math.floor(Number(seasonProgress[sNum]) || 0));
+      const epCount = marks
+        ? (marks[sNum] || []).length
+        : Math.max(0, Math.floor(Number(seasonProgress[sNum]) || 0));
       watchedFromMap += epCount;
     }
 
     // Determine active season: explicit current_season if present, else highest season with progress
     if (!getPositiveInt(item.current_season)) {
-      const nonZeroSeasons = seasonNumbers.filter((s) => (Number(seasonProgress[s]) || 0) > 0);
+      const nonZeroSeasons = seasonNumbers.filter((s) =>
+        marks ? (marks[s] || []).length > 0 : (Number(seasonProgress[s]) || 0) > 0
+      );
       activeSeason =
         nonZeroSeasons.length > 0 ? nonZeroSeasons[nonZeroSeasons.length - 1] : seasonNumbers[0];
     }
-    activeEpisode = Math.max(0, Math.floor(Number(seasonProgress[activeSeason]) || 0));
+    activeEpisode = marks
+      ? contiguousWatchedCount(marks[activeSeason] || [])
+      : Math.max(0, Math.floor(Number(seasonProgress[activeSeason]) || 0));
   } else {
     const directWatched = Math.max(0, Math.floor(Number(item.episodes_watched) || 0));
     watchedFromMap = directWatched;
@@ -113,6 +129,8 @@ export function deriveTvProgressSummary(item: SavedItem): TvProgressSummary {
       item.status === 'completed' && totalEpisodesCount
         ? Math.max(watchedEpisodesCount, totalEpisodesCount)
         : watchedEpisodesCount,
+    // `seasonProgressFromMarks` burada yalnızca sayaç tutarlılığını korumak için
+    // kullanılabilir; UI sayaçları doğrudan `season_progress` üzerinden okur.
     totalEpisodesCount,
     totalSeasonsCount,
     progressPercent,
@@ -134,6 +152,7 @@ export function advanceTvEpisodeProgress(
 
   const summary = deriveTvProgressSummary(item);
   const seasonCounts = item.season_episode_counts || {};
+  const marks = effectiveSeasonMarks(item);
   const nextProgress: Record<number, number> = { ...(item.season_progress || {}) };
 
   let targetSeason = summary.currentSeason;
@@ -159,15 +178,26 @@ export function advanceTvEpisodeProgress(
   }
 
   const nextSeasonLimit = getPositiveInt(seasonCounts[targetSeason]);
-  const updatedEpisodeInSeason =
-    nextSeasonLimit !== null
-      ? Math.min(nextSeasonLimit, currentSeasonWatched + 1)
-      : currentSeasonWatched + 1;
+  // Sırasız izleme: sayaç+1 yerine "ilk izlenmemiş bölüm" işaretlenir; böylece
+  // 1, 3, 5 izlenmişken sayaç 4'e atlamaz, 2 işaretlenir.
+  const watchedInTarget = new Set(marks[targetSeason] || []);
+  let nextEpisodeNumber = 1;
+  while (watchedInTarget.has(nextEpisodeNumber)) nextEpisodeNumber += 1;
+  if (nextSeasonLimit !== null) nextEpisodeNumber = Math.min(nextSeasonLimit, nextEpisodeNumber);
+  const updatedEpisodeInSeason = Math.max(nextEpisodeNumber, 1);
 
-  nextProgress[targetSeason] = updatedEpisodeInSeason;
+  const progressPatch = setEpisodeWatched(item, targetSeason, nextEpisodeNumber, true, nowIso);
+  const patchedProgress = progressPatch.season_progress || { ...nextProgress };
+  Object.assign(nextProgress, patchedProgress);
+  const mergedMarks = progressPatch.watched_episodes || marks;
+  const progressTimestamps = progressPatch.progress_updated_at || {};
 
   const mapTotal = Object.values(nextProgress).reduce(
     (sum, n) => sum + Math.max(0, Math.floor(Number(n) || 0)),
+    0
+  );
+  const marksTotal = Object.values(mergedMarks).reduce(
+    (sum, episodes) => sum + (episodes || []).length,
     0
   );
   const nextTotalWatched = Math.max(summary.watchedEpisodesCount + 1, mapTotal);
@@ -193,7 +223,11 @@ export function advanceTvEpisodeProgress(
     episodes_watched: cappedTotalWatched,
     next_episode: updatedEpisodeInSeason + 1,
     season_progress: nextProgress,
-    totalWatchTimeMinutes: cappedTotalWatched * avgEpMinutes,
+    watched_episodes: mergedMarks,
+    progress_updated_at: progressTimestamps,
+    watchedAt: nowIso,
+    ...(reachedSeriesEnd ? { completedAt: item.completedAt || nowIso } : {}),
+    totalWatchTimeMinutes: Math.max(cappedTotalWatched, marksTotal) * avgEpMinutes,
     updatedAt: nowIso,
   };
 }

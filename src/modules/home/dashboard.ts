@@ -73,12 +73,15 @@ function itemKey(item: SavedItem): string {
 }
 
 function itemTimestamp(item: SavedItem): string {
+  // Faz 3: "son etkinlik" gerçek etkileşim tarihinden gelir; not düzenlemesi
+  // (`updatedAt`) yalnızca hiç etkileşim tarihi yoksa son çare olarak okunur.
   return (
-    item.updatedAt ||
-    item.ratedAt ||
     item.completedAt ||
+    item.watchedAt ||
+    item.ratedAt ||
     item.addedAt ||
     item.firstAddedAt ||
+    item.updatedAt ||
     ''
   );
 }

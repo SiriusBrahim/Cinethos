@@ -36,6 +36,7 @@ import {
   DERIVED_PROFILE_SCHEMA_VERSION,
   normalizeDerivedProfileItem,
 } from '../core/derived-profile-cache.ts';
+import { githubFetch } from './github-request.ts';
 import type {
   BidirectionalSyncReport,
   PullConflictSummary,
@@ -50,18 +51,9 @@ import type {
   UserDataConflictItem,
 } from '../core/sync-display.ts';
 import { tryParseValidJson, writeJsonFileAtomic } from './atomic-json.ts';
-import {
-  hashContent,
-  redactSecrets,
-  sanitizeProfileId,
-  stringifyDeterministic,
-  toCanonicalKey,
-  type CatalogManifest,
-  type CatalogRecord,
-  type DerivedProfileDocument,
-  type DerivedProfileItem,
-  type PersistentDataStore,
-} from './persistent-store.ts';
+import { hashContent, redactSecrets, sanitizeProfileId, stringifyDeterministic, toCanonicalKey } from './persistent-store-utils.ts';
+import type { CatalogManifest, CatalogRecord, DerivedProfileDocument, DerivedProfileItem } from './persistent-store-types.ts';
+import type { PersistentDataStoreSyncPort } from './persistent-store-types.ts';
 import type { createDataStorage } from './storage.ts';
 
 /**
@@ -1733,7 +1725,7 @@ export function compareSyncSides(
 export interface BidirectionalSyncDependencies {
   dataDir: string;
   maxDataBytes?: number;
-  store: PersistentDataStore;
+  store: PersistentDataStoreSyncPort;
   storage: ReturnType<typeof createDataStorage>;
   getGitHubConfig: () => {
     token?: string;
@@ -2136,7 +2128,7 @@ export class GitHubBidirectionalSyncManager {
   ): Promise<{ ok: true; content: string } | { ok: false; error: SyncErrorRecord }> {
     const blobUrl = `https://api.github.com/repos/${owner}/${repo}/git/blobs/${encodeURIComponent(sha)}`;
     try {
-      const res = await fetch(blobUrl, {
+      const res = await githubFetch(blobUrl, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/vnd.github.v3+json',
@@ -2221,12 +2213,12 @@ export class GitHubBidirectionalSyncManager {
     });
 
     try {
-      let res = await fetch(apiUrl, { headers: makeHeaders(cfg.token) });
+      let res = await githubFetch(apiUrl, { headers: makeHeaders(cfg.token) });
       if (res.status === 401 && typeof this.deps.store.recoverGitHubTokenOn401 === 'function') {
         const recovered = await this.deps.store.recoverGitHubTokenOn401(cfg.token);
         if (recovered) {
           cfg.token = recovered;
-          res = await fetch(apiUrl, { headers: makeHeaders(cfg.token) });
+          res = await githubFetch(apiUrl, { headers: makeHeaders(cfg.token) });
         }
       }
       if (res.status === 404) {
@@ -2248,7 +2240,7 @@ export class GitHubBidirectionalSyncManager {
           const dirUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${parentDir}?ref=${encodeURIComponent(
             cfg.branch
           )}`;
-          const dirRes = await fetch(dirUrl, { headers: makeHeaders(cfg.token) });
+          const dirRes = await githubFetch(dirUrl, { headers: makeHeaders(cfg.token) });
           if (dirRes.status === 200) {
             const list = await dirRes.json().catch(() => null);
             if (Array.isArray(list)) {
@@ -2384,7 +2376,7 @@ export class GitHubBidirectionalSyncManager {
           typeof fileData.download_url === 'string' &&
           fileData.download_url.startsWith('https://')
         ) {
-          const dlRes = await fetch(fileData.download_url, {
+          const dlRes = await githubFetch(fileData.download_url, {
             headers: {
               Authorization: `Bearer ${cfg.token}`,
               'User-Agent': 'Cinethos-Sync-Agent',
@@ -2448,7 +2440,7 @@ export class GitHubBidirectionalSyncManager {
       cfg.branch
     )}`;
     try {
-      let res = await fetch(dirUrl, {
+      let res = await githubFetch(dirUrl, {
         headers: {
           Authorization: `Bearer ${cfg.token}`,
           Accept: 'application/vnd.github.v3+json',
@@ -2459,7 +2451,7 @@ export class GitHubBidirectionalSyncManager {
         const recovered = await this.deps.store.recoverGitHubTokenOn401(cfg.token);
         if (recovered) {
           cfg.token = recovered;
-          res = await fetch(dirUrl, {
+          res = await githubFetch(dirUrl, {
             headers: {
               Authorization: `Bearer ${cfg.token}`,
               Accept: 'application/vnd.github.v3+json',
@@ -4974,6 +4966,15 @@ export class GitHubBidirectionalSyncManager {
         filesUnchanged.length > 0;
       const partialFailure = !ok && anyProcessed && uniqueFailed.length > 0;
       const verifiedEqual = ok && postComparison.semanticEqual;
+
+      if (ok && !postComparison.semanticEqual) {
+        // Faz 3: eşitlik doğrulaması başarısız olduğunda veri ezilmez; uyuşmazlık
+        // açıkça raporlanır ve yeniden eşitleme önerilir.
+        const differing = postComparison.differingFiles.map((d) => d.repoPath).join(', ');
+        warnings.push(
+          `Doğrulama uyuşmazlığı: işlem sonrası uzak dosyalar yerelle eşleşmiyor (${differing || 'bilinmeyen dosya'}). Veri ezilmedi; yeniden eşitleme önerilir.`
+        );
+      }
 
       if (verifiedEqual) {
         this.initialReconcileCompleted = true;

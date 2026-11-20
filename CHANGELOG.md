@@ -1,3 +1,61 @@
+## Unreleased — 2026-11-20 (Faz 3: veri bütünlüğü ve senkronizasyon)
+
+### Faz 3 takip düzeltmeleri
+- `github-bidirectional-sync` ile `persistent-store` arasındaki runtime import döngüsü kaldırıldı; ortak tip sözleşmeleri ve saf yardımcılar ayrı modüllere taşındı. Mimari regresyon testi artık sıfır döngü bekliyor.
+- App kabuğundaki sunucu gönderim/çakışma/debounce eylemleri `useServerSyncCoordinator`, yerel JSON yedek dışa/içe aktarma akışı `useProfileBackupCoordinator` kancasına taşındı.
+- `WrappedCard` JSX/CSS sınıf uyumsuzluğu giderildi; KPI, sıralama, aylık yoğunluk ve favori içerik alanları için responsive grid stilleri eklendi. Playwright 6 viewport ekran görüntüsü üretti ve görsel QA'da incelendi.
+- Excel yedeğine `Durum Çakışmaları` sayfası eklendi. Aynı içeriğin izleme listesi ve `İlgilenmiyorum` tercihi altında bulunması açıklanıyor; hiçbir kaynak kayıt otomatik silinmiyor veya yeniden sınıflandırılmıyor.
+- `p1-b64url` → `p2-hex` geçişi için iki profilli izolasyon ve hedef dizin çakışmasında kaynak/hedef verilerinin korunması regresyon testleri eklendi.
+
+### Veri bütünlüğü — etkileşim tarihleri
+- `src/core/item-dates.ts` tek tarih çözümleyicisi eklendi: `addedAt`/`firstAddedAt`,
+  `watchedAt`, `ratedAt`, `completedAt` ve `updatedAt` (son düzenleme) ayrı anlamlara sahip.
+- `getUserSignalV3` artık `updatedAt` yerine gerçek etkileşim tarihini kullanıyor; not veya
+  metadata düzenlemesi sinyal yaşını tazelemiyor.
+- CSV "WatchedDate", yıllık özet ve Ana Sayfa "son etkinlik" sıralaması doğru tarih alanlarını
+  kullanıyor. Eski kayıtlar `normalizeDataDocument` içinde idempotent biçimde geri dolduruluyor;
+  `updatedAt` hiçbir yerde izlenme tarihi olarak kabul edilmiyor.
+
+### Senkronizasyon — dizi ilerlemesi
+- Sezon ilerlemesi artık geri alınabilir: `watched_episodes` (bölüm numaraları) ve
+  `progress_updated_at` (sezon damgası) ile `Math.max` birleştirmesi kaldırıldı.
+- Birleştirme sezon bazında deterministik: yeni damga kazanır, farklı sezonlar birbirini
+  etkilemez, silinen/izlenmedi işaretlenen bölümler geri dirilmez, damgasız legacy veride eski
+  davranış korunur. Sırasız izleme (1, 3, 5) destekleniyor.
+
+### Tercih tutarlılığı
+- `src/core/item-effective-state.ts` etkin durumu tek yerden çözüyor (`disliked > hidden >
+  saved > available`); keşif ve arama aynı merkezi filtreyi kullanıyor. Tercih geri alınınca
+  içerik yeniden görünür, kayıt silinmez.
+- CSV yedeği `#StateConflict` satırlarıyla çift durumlu kayıtları görünür kılıyor.
+
+### GitHub senkronizasyonu
+- `src/server/github-request.ts`: ağ hatası, 408/429/5xx ve rate-limit 403 için exponential
+  backoff + jitter, `Retry-After` ve `X-RateLimit-Reset` desteği. Tüm GitHub çağrıları bu
+  sarmalayıcıdan geçiyor; PUT gövdesi aynen yeniden gönderildiği için idempotent.
+- `verifiedEqual` başarısız olduğunda veri ezilmiyor; uyuşmazlık uyarı olarak raporlanıyor.
+
+### Keşfet ve değerlendirme
+- Keşfet'in genel kategorileri (`trending`, `gems`, `provider`) İçerik Zekâsı semantik/atmosferik
+  afinitesini sınırlı ikincil anahtar olarak kullanıyor; sunucu yoksa sıralama değişmiyor.
+- `src/core/recommendation-comparison.ts` eski/yeni yapılandırmayı aynı veri kümesiyle
+  karşılaştıran deterministik rapor üretiyor (ilk 20 kesişimi, sıra değişimleri, oyuncu/tür/ruh
+  hâli uyumu, film-dizi dengesi, benzer içerik yoğunluğu, elenen içerikler).
+
+### Mimari ve araçlar
+- `src/app/server-sync.ts` (uzak belge birleştirme) ve `src/app/profile-backup.ts` (yedek
+  üretme/içe aktarma) saf katmanları App'ten ayrıldı.
+- `.nvmrc` (22.18.0) + `.npmrc` (`engine-strict`) eklendi; CI Node sürümünü `.nvmrc`'den okuyup
+  doğruluyor.
+- `scripts/check-cycles.mjs` bağımlılık döngüsü denetimi; `relationship-explorer ↔
+  relationship-wordlists` döngüsü `relationship-types.ts` ile kaldırıldı.
+
+### Testler
+- Yeni: `phase3-item-dates`, `phase3-season-progress`, `phase3-effective-state`,
+  `github-sync-retry`, `phase3-semantic-discover`, `phase3-recommendation-comparison`,
+  `phase3-architecture`.
+- Birim/entegrasyon 572 → 608; taste 438/438.
+
 ## Unreleased — 2026-11-20 (Faz 2 devamı)
 
 ### Mimari — App kabuğu

@@ -342,3 +342,24 @@ deneme sayısını ve son hatayı göstermeye devam eder.
 İlişki Keşfi'nde kaynak içerik seçildiğinde sunucudaki anlamsal/atmosferik
 komşular grafiğe eklenir; bağlantı kanıtı "İçerik zekâsı: %N anlamsal benzerlik"
 ve varsa ortak kavramlarla açıklanır. Sunucu erişilemezse yerel grafik bozulmaz.
+
+### 10.6 Veri bütünlüğü ve senkronizasyon katmanları (Faz 3)
+
+| Sorumluluk | Modül | Not |
+|---|---|---|
+| Etkileşim tarihleri | `src/core/item-dates.ts` | `addedAt`/`firstAddedAt`, `watchedAt`, `ratedAt`, `completedAt` ayrı; `updatedAt` yalnızca son düzenleme. Sinyal yaşı, yıllık özet ve dışa aktarma gerçek etkileşim tarihini kullanır. |
+| Sezon ilerlemesi | `src/core/season-progress.ts` | `watched_episodes` (sırasız bölüm izleme) + `progress_updated_at` (sezon damgası). Sezon bazında deterministik birleştirme; geri alma korunur, silinen bölüm dirilmez. |
+| Etkin içerik durumu | `src/core/item-effective-state.ts` | `disliked > hidden > saved > available`; `inLibrary` ayrı bayrak. Keşfet/arama `filterCatalogItemsByPreferences` üzerinden tek filtre kullanır. |
+| Semantik keşif sıralaması | `src/core/semantic-ranking.ts` | İçerik Zekâsı benzerliği sınırlı (azami +8 uyum puanı) ikincil anahtar; Sana Özel hattına dokunmaz. |
+| Öneri karşılaştırması | `src/core/recommendation-comparison.ts` | Aynı veri kümesinde taban/güncel yapılandırma raporu; puanlama formülü değişmez. |
+| GitHub dayanıklılığı | `src/server/github-request.ts` | Exponential backoff + jitter, `Retry-After`, `X-RateLimit-Reset`; PUT gövdesi idempotent. |
+| App koordinasyonu | `src/app/server-sync.ts`, `src/app/profile-backup.ts` | Uzak belge birleştirme ve yedek payload'ı saf fonksiyonlar; App state/efekt koordinatörü. |
+| Mimari denetim | `scripts/check-cycles.mjs` | Yerel import grafiğinde döngü raporu; `tests/phase3-architecture.test.mjs` sıfır döngü şartı koyar. |
+
+
+Faz 3 takip düzeltmesi: `github-bidirectional-sync.ts` artık `persistent-store.ts` çalışma zamanı modülünden yardımcı fonksiyon veya sınıf tipi çekmez. Paylaşılan veri sözleşmeleri `persistent-store-types.ts`, saf yardımcılar `persistent-store-utils.ts` içindedir; sync manager yalnızca `PersistentDataStoreSyncPort` adaptörünü bilir. Excel yedeği, çift durumlu kayıtları `Durum Çakışmaları` adlı ayrı sayfada raporlar ve kaynak veriyi değiştirmez.
+
+
+### 10.7 App senkron koordinatörü
+
+`src/hooks/useServerSyncCoordinator.ts`, gönderimlerin tek uçuşta serileştirilmesini, debounce tabanlı otomatik gönderimi ve yerel/uzak/birleştir kararlarını kapsar. `src/hooks/useProfileBackupCoordinator.ts` yerel JSON yedek üretme, içe aktarma ve birleştirme eylemlerini App'ten ayırır. XLSX üretim/upload sunucu tarafındaki `excel-profile-backup.ts` ve `PersistentDataStore` katmanında kalır. App kabuğu React state/ref adaptörlerini, ilk açılış veri hidrasyonunu ve görünürlük/interval tabanlı uzak revizyon kontrolünü tutar. Bu ayrım veri sahipliğini hook'a taşımaz; yalnızca senkron komutlarını tek yerde toplar.

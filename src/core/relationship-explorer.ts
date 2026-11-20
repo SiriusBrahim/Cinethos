@@ -40,8 +40,11 @@ export { getRelationshipTypeLabel, getRelationshipNodeColor, getRelationshipLink
 
 export type RelationshipMode = 'taste-map' | 'relationships';
 export type MediaFilter = 'all' | 'movie' | 'tv';
-export type RelationshipType = 'semantic' | 'person' | 'universe' | 'atmosphere' | 'contrast' | 'personal';
-export type RelationshipStatusSignal = 'completed-history' | 'interest' | 'neutral' | 'disliked' | 'hidden';
+import type {
+  RelationshipStatusSignal,
+  RelationshipType,
+} from './relationship-types.ts';
+export type { RelationshipStatusSignal, RelationshipType } from './relationship-types.ts';
 
 export interface RelationshipMetadataCoverage {
   overview: boolean;

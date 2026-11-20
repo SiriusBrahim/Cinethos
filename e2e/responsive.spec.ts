@@ -11,7 +11,7 @@ const VIEWPORTS = [
 ];
 
 for (const viewport of VIEWPORTS) {
-  test(`layout ${viewport.name}`, async ({ browser }) => {
+  test(`layout ${viewport.name}`, async ({ browser }, testInfo) => {
     const context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
       serviceWorkers: 'block',
@@ -55,6 +55,19 @@ for (const viewport of VIEWPORTS) {
       await page.locator('[role="tab"]:visible', { hasText: 'Kütüphanem' }).first().click();
     }
     await expect(page.getByText('E2E Alfa Filmi').first()).toBeVisible();
+
+    await testInfo.attach('responsive-' + viewport.name, {
+      body: await page.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+
+    const wrappedCard = page.locator('.wrapped-summary-card');
+    await expect(wrappedCard).toBeVisible();
+    await wrappedCard.scrollIntoViewIfNeeded();
+    await testInfo.attach('wrapped-card-' + viewport.name, {
+      body: await page.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    });
 
     await context.close();
   });

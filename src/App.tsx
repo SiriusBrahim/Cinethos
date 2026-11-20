@@ -19,6 +19,7 @@ import {
   preferencesStorageKey,
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
+import { mergeRemoteDocument } from './app/server-sync.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -61,11 +62,9 @@ import {
   Preferences,
   DataDocument,
   normalizeSavedItem,
-  dedupeItems,
   normalizeDataDocument,
   resolveAirDate,
   reminderDaysUntil,
-  parseBackupText,
   buildTasteProfileV3,
   findSavedItem,
   makeMediaKey,
@@ -75,8 +74,6 @@ import {
   FavoriteActorInfo,
   normalizeFavoriteActors,
   replenishCandidatePool,
-  CURRENT_SCHEMA_VERSION,
-  ENGINE_VERSION,
   loadPersistentTasteMap,
   PersistentTasteMapData,
   TasteProfileSummary,
@@ -101,13 +98,8 @@ import {
 import {
   areUserDataDocumentsSemanticallyEqual,
   mergeSavedItemListsLossless,
-  reconcileUserDataDocumentsLossless,
 } from './core/user-data-merge.ts';
-import {
-  enrichSavedItemsFromCinemaKunye,
-  extractCinemaKunyeFromItems,
-  mergeCinemaKunyeDocumentsLossless,
-} from './core/cinema-kunye.ts';
+import { enrichSavedItemsFromCinemaKunye } from './core/cinema-kunye.ts';
 import {
   type ServerTasteSignal,
 } from './modules/recommendations/index.ts';
@@ -123,6 +115,8 @@ import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
+import { useServerSyncCoordinator } from './hooks/useServerSyncCoordinator.ts';
+import { useProfileBackupCoordinator } from './hooks/useProfileBackupCoordinator.ts';
 import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
@@ -613,20 +607,20 @@ export function App() {
         keepDirtyIfLocalAhead?: boolean;
       } = {}
     ): DataDocument | null => {
-      const remoteDoc = normalizeDataDocument(rawRemoteDoc);
-      if (!remoteDoc) return null;
-
-      const liveLocalDoc = buildCurrentLivePayloadFromRefs();
-      const { mergedDoc } = reconcileUserDataDocumentsLossless(liveLocalDoc, remoteDoc, {
-        foldUnhydratedDefaultProfile: Boolean(options.foldUnhydrated),
-        preferActiveProfileFrom: options.preferActiveFrom || 'local',
+      const merged = mergeRemoteDocument(buildCurrentLivePayloadFromRefs(), rawRemoteDoc, {
+        preferActiveFrom: options.preferActiveFrom,
+        foldUnhydrated: options.foldUnhydrated,
+        keepDirtyIfLocalAhead: options.keepDirtyIfLocalAhead,
       });
+      if (!merged) return null;
 
-      const active =
-        mergedDoc.profiles.find((p) => p.id === mergedDoc.activeProfileId) ||
-        mergedDoc.profiles[0];
-      const activeFavs = normalizeFavoriteActors(active.favoriteActors || []);
-      const activeDeleted = normalizeDeletedKeys(active.deleted_keys);
+      const {
+        mergedDoc,
+        activeProfile: active,
+        favoriteActors: activeFavs,
+        deletedKeys: activeDeleted,
+        shouldStayDirty,
+      } = merged;
 
       applyingRemoteSnapshotRef.current = true;
       hadStoredProfilesOnBootRef.current = true;
@@ -652,13 +646,6 @@ export function App() {
       setTasteMap(loadedMap);
 
       persistProfilesBestEffort(mergedDoc.profiles);
-
-      const localHasUnpushedAdditions = !areUserDataDocumentsSemanticallyEqual(
-        mergedDoc,
-        remoteDoc
-      );
-      const shouldStayDirty =
-        options.keepDirtyIfLocalAhead !== false && localHasUnpushedAdditions;
 
       isDirtyRef.current = shouldStayDirty;
       try {
@@ -794,93 +781,31 @@ export function App() {
     [persistProfilesBestEffort, resolveQueuedConflict]
   );
 
-  // Push server data on changes (with lossless merge foundation & offline queue)
-  const executePushToServer = useCallback(async () => {
-    const payload = buildCurrentLivePayloadFromRefs();
-    const confirmBulkDelete = confirmNextBulkSyncRef.current;
-    const foldUnhydrated = !hadStoredProfilesOnBootRef.current;
-    isPushingRef.current = true;
-    try {
-      const res = await syncDocument(
-        payload,
-        confirmBulkDelete
-          ? { confirmBulkDelete: true }
-          : { foldUnhydratedDefaultProfile: foldUnhydrated }
-      );
-      if (res.ok) {
-        confirmNextBulkSyncRef.current = false;
-        hadStoredProfilesOnBootRef.current = true;
-        const authoritativeServerDoc = res.document || payload;
-        const liveNow = buildCurrentLivePayloadFromRefs();
-        if (areUserDataDocumentsSemanticallyEqual(liveNow, authoritativeServerDoc)) {
-          isDirtyRef.current = false;
-          try {
-            localStorage.removeItem(DIRTY_KEY);
-          } catch {}
-        }
-        setServerConflict(null);
-        setSyncStatus('Kayıt yeri: data/cinetrack-data.json (bu bilgisayarda, tüm profiller).');
-      } else if (res.queued) {
-        setSyncStatus('Çevrimdışı kuyrukta: bağlantı sağlandığında yerel sunucuya aktarılacak.');
-      } else if (!res.conflict) {
-        setSyncStatus('Değişiklikler yerel veri dosyasına yazılamadı; şimdilik yalnızca bu tarayıcıda.');
-      }
-    } finally {
-      isPushingRef.current = false;
-    }
-  }, [buildCurrentLivePayloadFromRefs, syncDocument]);
-
-  const pushToServer = useCallback(async () => {
-    if (inFlightPushRef.current) {
-      await inFlightPushRef.current;
-      if (!isDirtyRef.current && !confirmNextBulkSyncRef.current && !hasPendingOfflineSync()) {
-        return;
-      }
-    }
-    const promise = executePushToServer().finally(() => {
-      if (inFlightPushRef.current === promise) {
-        inFlightPushRef.current = null;
-      }
-    });
-    inFlightPushRef.current = promise;
-    await promise;
-  }, [executePushToServer]);
-
-  const handleKeepLocalOnConflict = useCallback(async () => {
-    const payload = serverConflict?.localPayload || buildCurrentLivePayloadFromRefs();
-    const res = await syncDocument(payload, { forceOverwrite: true, confirmBulkDelete: true });
-    if (res.ok) {
-      isDirtyRef.current = false;
-      try {
-        localStorage.removeItem(DIRTY_KEY);
-      } catch {}
-      resolveQueuedConflict();
-      setServerConflict(null);
-      setSyncStatus('Yerel değişiklikler sunucuya kaydedildi.');
-      showToast('Yerel verileriniz sunucuya kaydedildi.');
-    }
-  }, [serverConflict, buildCurrentLivePayloadFromRefs, syncDocument, resolveQueuedConflict, showToast]);
-
-  const handleMergeBothOnConflict = useCallback(async () => {
-    if (serverConflict?.serverDocument) {
-      mergeRemoteDocumentIntoState(serverConflict.serverDocument, {
-        preferActiveFrom: 'local',
-        keepDirtyIfLocalAhead: true,
-      });
-    }
-    await pushToServer();
-    resolveQueuedConflict();
-    setServerConflict(null);
-    setSyncStatus('Yerel ve sunucu verileri kayıpsız birleştirildi.');
-    showToast('Yerel ve sunucu listeleriniz kayıpsız birleştirildi.');
-  }, [serverConflict, mergeRemoteDocumentIntoState, pushToServer, resolveQueuedConflict, showToast]);
-
-  const handleUseServerOnConflict = useCallback(() => {
-    if (serverConflict?.serverDocument) {
-      applyDataDocumentToState(serverConflict.serverDocument);
-      showToast('Sunucudaki güncel veri yüklendi.');
-    }
-  }, [serverConflict, applyDataDocumentToState, showToast]);
+  const {
+    pushToServer,
+    handleKeepLocalOnConflict,
+    handleMergeBothOnConflict,
+    handleUseServerOnConflict,
+  } = useServerSyncCoordinator({
+    buildCurrentLivePayloadFromRefs,
+    buildCurrentPayload,
+    syncDocument,
+    serverConflict,
+    mergeRemoteDocumentIntoState,
+    applyDataDocumentToState,
+    resolveQueuedConflict,
+    setServerConflict,
+    setSyncStatus,
+    showToast,
+    isDirtyRef,
+    isPushingRef,
+    inFlightPushRef,
+    confirmNextBulkSyncRef,
+    hadStoredProfilesOnBootRef,
+    serverSyncReady,
+    favoriteActors,
+    deletedKeys,
+  });
 
   const handleMergeSyncedDocument = useCallback(
     (doc: DataDocument) => {
@@ -891,22 +816,6 @@ export function App() {
     },
     [mergeRemoteDocumentIntoState]
   );
-
-  // Debounced auto-push when user edits state (buildCurrentPayload tracks state dependencies)
-  useEffect(() => {
-    if (!serverSyncReady) return;
-    let lsDirty = false;
-    try {
-      lsDirty = localStorage.getItem(DIRTY_KEY) === '1';
-    } catch {}
-    if (!isDirtyRef.current && !lsDirty && !confirmNextBulkSyncRef.current && !hasPendingOfflineSync()) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      void pushToServer();
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [buildCurrentPayload, pushToServer, serverSyncReady, favoriteActors, deletedKeys]);
 
   // Arka plandaki GitHub otomatik senkronizasyonu (server.ts) revizyonu ilerlettiğinde
   // veya bekleyen yerel değişiklik varsa kayıpsız eşitleme yap
@@ -1909,108 +1818,36 @@ export function App() {
     );
   };
 
-  // Export / Import
-  const handleExportBackup = () => {
-    const exportedKunye = mergeCinemaKunyeDocumentsLossless(
-      cinemaKunye,
-      extractCinemaKunyeFromItems(savedItems, genresMap)
-    );
-    const enrichedExportItems = enrichSavedItemsFromCinemaKunye(savedItems, exportedKunye);
-    const backup = {
-      version: 3,
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      engineVersion: ENGINE_VERSION,
-      profileId: activeProfileId,
-      profileName,
-      items: enrichedExportItems,
-      cinemaKunye: exportedKunye,
-      preferences,
-      favoriteActors: favoriteActorsRef.current,
-      isDemo: Boolean(activeProfile?.isDemo),
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `cinethos-local-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  const handleImportBackupFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      const parsed = parseBackupText(text);
-      setPendingBackup(parsed);
-    } catch (err: any) {
-      showToast(err.message || 'Yedek dosyası okunamadı.');
-    }
-  };
-
-  const handleConfirmImport = (mode: 'overwrite' | 'merge') => {
-    if (!pendingBackup) return;
-    if (mode === 'overwrite') {
-      confirmNextBulkSyncRef.current = true;
-    }
-
-    const effectiveKunye =
-      mode === 'merge'
-        ? mergeIncomingCinemaKunye(pendingBackup.cinemaKunye)
-        : replaceCinemaKunye(pendingBackup.cinemaKunye);
-
-    const rawImportedItems =
-      mode === 'merge'
-        ? mergeSavedItemListsLossless(savedItems, pendingBackup.items, activeProfileId)
-        : dedupeItems(pendingBackup.items);
-    const importedItems = enrichSavedItemsFromCinemaKunye(rawImportedItems, effectiveKunye);
-
-    savedItemsRef.current = importedItems;
-    setSavedItems(importedItems);
-    lastForYouQueryKeyRef.current = '';
-    setForYouItems([]);
-    if (pendingBackup.profileName) {
-      handleSaveProfileName(pendingBackup.profileName);
-    }
-    if (pendingBackup.preferences) {
-      setPreferences((prev) => ({
-        ...prev,
-        ...pendingBackup.preferences,
-        disliked:
-          mode === 'merge'
-            ? Array.from(new Set([...(prev.disliked || []), ...(pendingBackup.preferences.disliked || [])]))
-            : pendingBackup.preferences.disliked || [],
-        hidden:
-          mode === 'merge'
-            ? Array.from(new Set([...(prev.hidden || []), ...(pendingBackup.preferences.hidden || [])]))
-            : pendingBackup.preferences.hidden || [],
-        providers:
-          mode === 'merge'
-            ? Array.from(new Set([...(prev.providers || []), ...(pendingBackup.preferences.providers || [])]))
-            : pendingBackup.preferences.providers || [],
-        reminders: false,
-        notified: [],
-      }));
-    }
-    const importedActors =
-      mode === 'merge'
-        ? normalizeFavoriteActors([...favoriteActors, ...(pendingBackup.favoriteActors || [])])
-        : normalizeFavoriteActors(pendingBackup.favoriteActors || []);
-    setFavoriteActors(importedActors);
-    try {
-      localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(importedActors));
-    } catch {}
-
-    if (pendingBackup.isDemo !== undefined) {
-      setProfiles((prev) =>
-        prev.map((p) => (p.id === activeProfileId ? { ...p, isDemo: pendingBackup.isDemo } : p))
-      );
-    }
-
-    setPendingBackup(null);
-    setProfileOpen(false);
-    showToast(`Yedek başarıyla içe aktarıldı (${importedItems.length} içerik)!`);
-  };
+  const {
+    handleExportBackup,
+    handleImportBackupFile,
+    handleConfirmImport,
+  } = useProfileBackupCoordinator({
+    activeProfileId,
+    profileName,
+    savedItems,
+    preferences,
+    favoriteActors,
+    favoriteActorsRef,
+    genresMap,
+    cinemaKunye,
+    isDemo: Boolean(activeProfile?.isDemo),
+    pendingBackup,
+    setPendingBackup,
+    setSavedItems,
+    savedItemsRef,
+    lastForYouQueryKeyRef,
+    setForYouItems,
+    setPreferences,
+    setFavoriteActors,
+    setProfiles,
+    setProfileOpen,
+    confirmNextBulkSyncRef,
+    mergeIncomingCinemaKunye,
+    replaceCinemaKunye,
+    handleSaveProfileName,
+    showToast,
+  });
 
   const handleEmptyAction = (act: string) => {
     switch (act) {

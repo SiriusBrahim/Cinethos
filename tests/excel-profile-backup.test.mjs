@@ -233,13 +233,14 @@ test('1 & 2 & 3. Workbook has exact 5 sheets in order, routes list states accura
   // Original profile object must never be mutated
   assert.equal(JSON.stringify(profile), originalSnapshot);
 
-  // Exact 5 sheets in exact order
+  // Exact 6 sheets in exact order
   assert.deepEqual(built.sheetNames, [
     'Özet',
     'İzlenen',
     'İzlenecek',
     'İzleniyor',
     'İlgilenmiyorum',
+    'Durum Çakışmaları',
   ]);
   assert.deepEqual(built.sheetNames, [...EXCEL_SHEET_NAMES]);
 
@@ -346,7 +347,7 @@ test('4, 5, 6, 7, 10, 11 & 14. Generated .xlsx opens cleanly in ExcelJS with exa
 
   assert.deepEqual(
     wb.worksheets.map((s) => s.name),
-    ['Özet', 'İzlenen', 'İzlenecek', 'İzleniyor', 'İlgilenmiyorum']
+    ['Özet', 'İzlenen', 'İzlenecek', 'İzleniyor', 'İlgilenmiyorum', 'Durum Çakışmaları']
   );
 
   // Embedded media binary check (Test #7)
@@ -548,10 +549,10 @@ test('8. Poster HTTP errors, timeouts, and corrupt image bytes do not abort expo
   // Workbook still opens cleanly
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(built.buffer);
-  assert.equal(wb.worksheets.length, 5);
+  assert.equal(wb.worksheets.length, 6);
 });
 
-test('9. Empty profile generates a valid, openable 5-sheet .xlsx with zero counts', async (t) => {
+test('9. Empty profile generates a valid, openable 6-sheet .xlsx with zero counts', async (t) => {
   const tmpDir = createTempDir();
   t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
@@ -577,7 +578,7 @@ test('9. Empty profile generates a valid, openable 5-sheet .xlsx with zero count
   await wb.xlsx.load(built.buffer);
   assert.deepEqual(
     wb.worksheets.map((s) => s.name),
-    ['Özet', 'İzlenen', 'İzlenecek', 'İzleniyor', 'İlgilenmiyorum']
+    ['Özet', 'İzlenen', 'İzlenecek', 'İzleniyor', 'İlgilenmiyorum', 'Durum Çakışmaları']
   );
   assert.equal(wb.getWorksheet('Özet').getCell('B8').value, 0);
 });
@@ -596,10 +597,27 @@ test('Dual-state items (simultaneously in saved items and preferences.disliked) 
 
   const ds = await buildProfileBackupDataset({ profile });
   assert.deepEqual(ds.dualStateKeys, ['movie:10']);
+  assert.deepEqual(ds.stateConflicts, [{
+    canonicalKey: 'movie:10',
+    mediaType: 'movie',
+    title: 'Hem İzlenmiş Hem İlgilenmiyorum',
+    listStatus: 'İzlenen',
+    preferenceStatus: 'İlgilenmiyorum',
+  }]);
   assert.equal(ds.sheetCounts.İzlenen.total, 1);
   assert.equal(ds.sheetCounts.İlgilenmiyorum.total, 1);
   // Deduplicated statistical summary counts unique canonical keys once
   assert.equal(ds.decadeDistribution.length, 0);
+  const conflictPosterCache = createTempDir('cinethos-conflict-test-');
+  const workbookResult = await generateProfileExcelBuffer({ profile, posterCacheDir: conflictPosterCache });
+  fs.rmSync(conflictPosterCache, { recursive: true, force: true });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(workbookResult.buffer);
+  const conflicts = workbook.getWorksheet('Durum Çakışmaları');
+  assert.ok(conflicts, 'çakışma raporu ayrı çalışma sayfası olmalı');
+  assert.equal(conflicts.getCell('A5').value, 'movie:10');
+  assert.equal(conflicts.getCell('D5').value, 'İzlenen');
+  assert.equal(conflicts.getCell('E5').value, 'İlgilenmiyorum');
 });
 
 test('12. JSON + Excel error isolation & collision-safe timestamped filenames never overwrite existing exports', async (t) => {
@@ -1027,6 +1045,7 @@ test('15. ZIP/OpenXML package inspection, 10 KB HTML/JSON download rejection, bi
     'İzlenecek',
     'İzleniyor',
     'İlgilenmiyorum',
+    'Durum Çakışmaları',
   ]);
   assert.equal(zipInspection.worksheetDataRowCounts.İzlenen, 1);
   assert.equal(zipInspection.worksheetDataRowCounts.İzlenecek, 1);

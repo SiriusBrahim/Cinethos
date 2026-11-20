@@ -567,7 +567,7 @@ test('Spec v6 (Set I & Set J): Yeni Nesil İyileştirmeler & Doğrulamalar', asy
     assert.equal(typeof getCurrentStock, 'function');
   });
 
-  await t.test('IMP-14 · Excel Zevk İmzası + Zevk Kayması: varsayılan 5 sekme korunur, xlsx_only modunda 6. tasteDna sekmesi ve aylık kayma eklenir', async () => {
+  await t.test('IMP-14 · Excel Zevk İmzası + Zevk Kayması: varsayılan 6 sekme korunur, xlsx_only modunda 7. tasteDna sekmesi ve aylık kayma eklenir', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-v6-excel-'));
     try {
       const sampleProfile = {
@@ -613,7 +613,7 @@ test('Spec v6 (Set I & Set J): Yeni Nesil İyileştirmeler & Doğrulamalar', asy
       assert.equal(defaultInspection.validOpenXmlStructure, true);
       assert.deepEqual(defaultInspection.sheetNames, [...EXCEL_SHEET_NAMES]);
 
-      // 2) xlsx_only modu (includeTasteDnaSheet: true): 6. sekme 'tasteDna' eklenir
+      // 2) xlsx_only modu (includeTasteDnaSheet: true): 7. sekme 'tasteDna' eklenir
       const dnaExcel = await generateProfileExcelBuffer({
         profile: sampleProfile,
         posterCacheDir: path.join(tmpDir, 'posters'),

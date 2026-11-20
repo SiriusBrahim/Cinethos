@@ -1,4 +1,5 @@
 import { normalizeProfileId } from './profile-id.ts';
+import { backfillInteractionDates, resolveItemSignalDate } from './item-dates.ts';
 export { PROFILE_ID_PATTERN, normalizeProfileId } from './profile-id.ts';
 import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
 import { apiFetch } from '../services/api-client.ts';
@@ -96,6 +97,10 @@ export interface SavedItem {
   number_of_episodes?: number;
   season_progress?: Record<number, number>;
   season_episode_counts?: Record<number, number>;
+  /** Sezon → izlenmiş bölüm numaraları (sırasız izleme desteği). */
+  watched_episodes?: Record<number, number[]>;
+  /** Sezon ilerlemesinin son bilinçli değişim anı (geri alma ve çakışma çözümü). */
+  progress_updated_at?: Record<number, string>;
   next_episode_to_air?: NextEpisode | null;
   current_season?: number;
   episodes_watched?: number;
@@ -104,6 +109,8 @@ export interface SavedItem {
   personal_rating: number | '';
   personal_rating_cleared?: boolean;
   ratedAt?: string;
+  /** İzleme etkileşiminin (bölüm işaretleme dahil) son anı. `updatedAt` değildir. */
+  watchedAt?: string;
   completedAt?: string;
   addedAt?: string;
   firstAddedAt?: string;
@@ -318,6 +325,43 @@ export function sanitizeSeasonProgress(value: any): Record<number, number> {
   return sanitizeSeasonMap(value, { maxSeason: 300, maxValue: 10000, allowZero: true }) || {};
 }
 
+/** Sezon → izlenmiş bölüm numaraları (sırasız izleme) haritasını güvenli biçimde normalize eder. */
+export function sanitizeSeasonWatchedMarks(value: any): Record<number, number[]> {
+  const out: Record<number, number[]> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  for (const [rawSeason, rawEpisodes] of Object.entries(value as Record<string, any>)) {
+    const season = Number(rawSeason);
+    if (!Number.isSafeInteger(season) || season < 1 || season > 300) continue;
+    if (!Array.isArray(rawEpisodes)) continue;
+    const episodes = Array.from(
+      new Set(
+        rawEpisodes
+          .map((ep) => Number(ep))
+          .filter((ep) => Number.isSafeInteger(ep) && ep >= 1 && ep <= 10000)
+      )
+    ).sort((a, b) => a - b);
+    if (episodes.length > 0) out[season] = episodes;
+  }
+  return out;
+}
+
+/** Sezon → ISO damga haritasını güvenli biçimde normalize eder. */
+export function sanitizeSeasonProgressTimestamps(value: any): Record<number, string> {
+  const out: Record<number, string> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  for (const [rawSeason, rawIso] of Object.entries(value as Record<string, any>)) {
+    const season = Number(rawSeason);
+    if (!Number.isSafeInteger(season) || season < 1 || season > 300) continue;
+    if (typeof rawIso !== 'string' || !rawIso.trim()) continue;
+    if (!Number.isFinite(Date.parse(rawIso))) continue;
+    out[season] = rawIso.trim();
+  }
+  return out;
+}
+
+export type SeasonWatchedMarks = Record<number, number[]>;
+export type SeasonProgressTimestamps = Record<number, string>;
+
 export function sanitizeSeasonCounts(value: any): Record<number, number> {
   return sanitizeSeasonMap(value, { maxSeason: 300, maxValue: 10000, allowZero: true }) || {};
 }
@@ -384,6 +428,8 @@ export function normalizeSavedItem(item: any): SavedItem | null {
   }
   const totalWatched = Object.values(seasonProgress).reduce((sum, count) => sum + count, 0);
   const seasonCounts = sanitizeSeasonCounts(item.season_episode_counts);
+  const watchedEpisodes = sanitizeSeasonWatchedMarks(item.watched_episodes);
+  const progressUpdatedAt = sanitizeSeasonProgressTimestamps(item.progress_updated_at);
   const normalizedStatus: SavedItem['status'] = ['watching', 'watchlist', 'completed'].includes(
     item.status
   )
@@ -398,6 +444,10 @@ export function normalizeSavedItem(item: any): SavedItem | null {
     typeof item.completedAt === 'string' &&
     item.completedAt.trim()
       ? item.completedAt.trim()
+      : undefined;
+  const normalizedWatchedAt =
+    typeof item.watchedAt === 'string' && item.watchedAt.trim() && Number.isFinite(Date.parse(item.watchedAt))
+      ? item.watchedAt.trim()
       : undefined;
   const normalizedCast = Array.isArray(item.cast)
     ? normalizeCinemaKunyeActorList(item.cast, 12)
@@ -458,6 +508,10 @@ export function normalizeSavedItem(item: any): SavedItem | null {
     number_of_episodes: numeric(item.number_of_episodes, 0, 10000),
     season_progress: seasonProgress,
     season_episode_counts: seasonCounts,
+    ...(Object.keys(watchedEpisodes).length > 0 ? { watched_episodes: watchedEpisodes } : {}),
+    ...(Object.keys(progressUpdatedAt).length > 0
+      ? { progress_updated_at: progressUpdatedAt }
+      : {}),
     next_episode_to_air: sanitizeNextEpisode(item.next_episode_to_air),
     current_season: numeric(item.current_season, 0, 300) || defaultCurrentSeason(seasonProgress, seasonCounts),
     episodes_watched: totalWatched,
@@ -466,6 +520,7 @@ export function normalizeSavedItem(item: any): SavedItem | null {
     personal_rating: validRating || '',
     personal_rating_cleared: validRating ? false : item.personal_rating_cleared === true,
     ...(normalizedRatedAt ? { ratedAt: normalizedRatedAt } : {}),
+    ...(normalizedWatchedAt ? { watchedAt: normalizedWatchedAt } : {}),
     ...(normalizedCompletedAt ? { completedAt: normalizedCompletedAt } : {}),
     addedAt: typeof item.addedAt === 'string' ? item.addedAt : '',
     firstAddedAt:
@@ -610,6 +665,11 @@ export function dedupeItems(items: SavedItem[]): SavedItem[] {
       ...(mergedCompletedAt ? { completedAt: mergedCompletedAt } : {}),
       season_progress: { ...older.season_progress, ...newest.season_progress },
       season_episode_counts: { ...older.season_episode_counts, ...newest.season_episode_counts },
+      watched_episodes: { ...(older.watched_episodes || {}), ...(newest.watched_episodes || {}) },
+      progress_updated_at: {
+        ...(older.progress_updated_at || {}),
+        ...(newest.progress_updated_at || {}),
+      },
       next_episode_to_air:
         sanitizeNextEpisode(newest.next_episode_to_air) || sanitizeNextEpisode(older.next_episode_to_air),
       addedAt: [existing.addedAt, item.addedAt].filter(Boolean).sort()[0] || '',
@@ -867,6 +927,12 @@ export function normalizeDataDocument(
   for (const candidate of candidates) {
     const profile = normalizeProfile(candidate, { maxItems });
     if (!profile) continue;
+    // Faz 3 migration: eski kayıtları yeni etkileşim alanlarıyla (watchedAt/
+    // firstAddedAt) güvenli ve idempotent biçimde zenginleştir. Var olan değerler
+    // korunur; `updatedAt` izlenme tarihi olarak kullanılmaz.
+    if (Array.isArray(profile.items) && profile.items.length > 0) {
+      profile.items = backfillInteractionDates(profile.items).items;
+    }
     const existing = byCanonicalId.get(profile.id);
     if (existing) {
       existing.items = dedupeItems([...existing.items, ...profile.items]).slice(0, maxItems);
@@ -1052,9 +1118,12 @@ export function signalDecay(dateStr?: string, halfLifeDays = 365, now = Date.now
 
 export function getUserSignalV3(item: any, now = Date.now()): { signal: number; weight: number; decay: number } | null {
   if (!item || typeof item !== 'object') return null;
+  // Faz 3: sinyal yaşı yalnızca gerçek etkileşim tarihinden hesaplanır. Not veya
+  // metadata düzenlemesi `updatedAt`'i değiştirir; sinyali tazelememelidir.
+  const signalDate = resolveItemSignalDate(item);
 
   if (item.status === 'disliked' || item.isDisliked) {
-    const decay = signalDecay(item.updatedAt || item.addedAt, 730, now);
+    const decay = signalDecay(signalDate, 730, now);
     return { signal: -0.8, weight: 1.0, decay };
   }
 
@@ -1063,7 +1132,7 @@ export function getUserSignalV3(item: any, now = Date.now()): { signal: number; 
 
   if (hasRating) {
     const signal = normalizeUserRating(ratingNum);
-    const decay = signalDecay(item.updatedAt || item.addedAt, 730, now);
+    const decay = signalDecay(signalDate, 730, now);
     let weight = 1.0;
     if (item.status === 'completed') weight = 2.5;
     else if (item.status === 'watching') weight = 1.6;
@@ -1072,15 +1141,15 @@ export function getUserSignalV3(item: any, now = Date.now()): { signal: number; 
   }
 
   if (item.status === 'completed') {
-    const decay = signalDecay(item.updatedAt || item.addedAt, 365, now);
+    const decay = signalDecay(signalDate, 365, now);
     return { signal: 0.4, weight: 2.5, decay };
   }
   if (item.status === 'watching') {
-    const decay = signalDecay(item.updatedAt || item.addedAt, 365, now);
+    const decay = signalDecay(signalDate, 365, now);
     return { signal: 0.2, weight: 1.6, decay };
   }
   if (item.status === 'watchlist') {
-    const decay = signalDecay(item.updatedAt || item.addedAt, 365, now);
+    const decay = signalDecay(signalDate, 365, now);
     return { signal: 0.2, weight: 0.35, decay };
   }
 
