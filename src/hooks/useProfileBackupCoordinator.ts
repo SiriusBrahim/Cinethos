@@ -51,21 +51,29 @@ export interface UseProfileBackupCoordinatorOptions {
 
 /** Keeps local JSON backup import/export orchestration out of the App shell. */
 export function useProfileBackupCoordinator(options: UseProfileBackupCoordinatorOptions) {
+  const {
+    activeProfileId, profileName, savedItems, preferences, favoriteActors, favoriteActorsRef,
+    genresMap, cinemaKunye, isDemo, pendingBackup, setPendingBackup, setSavedItems,
+    savedItemsRef, lastForYouQueryKeyRef, setForYouItems, setPreferences, setFavoriteActors,
+    setProfiles, setProfileOpen, confirmNextBulkSyncRef, mergeIncomingCinemaKunye,
+    replaceCinemaKunye, handleSaveProfileName, showToast,
+  } = options;
+
   const handleExportBackup = useCallback(() => {
     const nowIso = new Date().toISOString();
     const exportedKunye = mergeCinemaKunyeDocumentsLossless(
-      options.cinemaKunye,
-      extractCinemaKunyeFromItems(options.savedItems, options.genresMap)
+      cinemaKunye,
+      extractCinemaKunyeFromItems(savedItems, genresMap)
     );
-    const enrichedExportItems = enrichSavedItemsFromCinemaKunye(options.savedItems, exportedKunye);
+    const enrichedExportItems = enrichSavedItemsFromCinemaKunye(savedItems, exportedKunye);
     const backup = buildLocalBackupDocument({
-      profileId: options.activeProfileId,
-      profileName: options.profileName,
+      profileId: activeProfileId,
+      profileName: profileName,
       items: enrichedExportItems,
       cinemaKunye: exportedKunye,
-      preferences: options.preferences,
-      favoriteActors: options.favoriteActorsRef.current,
-      isDemo: options.isDemo,
+      preferences: preferences,
+      favoriteActors: favoriteActorsRef.current,
+      isDemo: isDemo,
       nowIso,
     });
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -76,88 +84,88 @@ export function useProfileBackupCoordinator(options: UseProfileBackupCoordinator
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [
-    options.cinemaKunye,
-    options.savedItems,
-    options.genresMap,
-    options.activeProfileId,
-    options.profileName,
-    options.preferences,
-    options.favoriteActorsRef,
-    options.isDemo,
+    cinemaKunye,
+    savedItems,
+    genresMap,
+    activeProfileId,
+    profileName,
+    preferences,
+    favoriteActorsRef,
+    isDemo,
   ]);
 
   const handleImportBackupFile = useCallback(async (file: File) => {
     try {
       const text = await file.text();
-      options.setPendingBackup(parseBackupText(text));
+      setPendingBackup(parseBackupText(text));
     } catch (error) {
-      options.showToast(error instanceof Error ? error.message : 'Yedek dosyası okunamadı.');
+      showToast(error instanceof Error ? error.message : 'Yedek dosyası okunamadı.');
     }
-  }, [options.setPendingBackup, options.showToast]);
+  }, [setPendingBackup, showToast]);
 
   const handleConfirmImport = useCallback((mode: 'overwrite' | 'merge') => {
-    const pendingBackup = options.pendingBackup;
+    const pendingBackup = pendingBackup;
     if (!pendingBackup) return;
-    if (mode === 'overwrite') options.confirmNextBulkSyncRef.current = true;
+    if (mode === 'overwrite') confirmNextBulkSyncRef.current = true;
 
     const effectiveKunye = mode === 'merge'
-      ? options.mergeIncomingCinemaKunye(pendingBackup.cinemaKunye)
-      : options.replaceCinemaKunye(pendingBackup.cinemaKunye);
+      ? mergeIncomingCinemaKunye(pendingBackup.cinemaKunye)
+      : replaceCinemaKunye(pendingBackup.cinemaKunye);
     const rawImportedItems = mode === 'merge'
-      ? mergeSavedItemListsLossless(options.savedItems, pendingBackup.items, options.activeProfileId)
+      ? mergeSavedItemListsLossless(savedItems, pendingBackup.items, activeProfileId)
       : dedupeItems(pendingBackup.items);
     const importedItems = enrichSavedItemsFromCinemaKunye(rawImportedItems, effectiveKunye);
 
-    options.savedItemsRef.current = importedItems;
-    options.setSavedItems(importedItems);
-    options.lastForYouQueryKeyRef.current = '';
-    options.setForYouItems([]);
-    if (pendingBackup.profileName) options.handleSaveProfileName(pendingBackup.profileName);
+    savedItemsRef.current = importedItems;
+    setSavedItems(importedItems);
+    lastForYouQueryKeyRef.current = '';
+    setForYouItems([]);
+    if (pendingBackup.profileName) handleSaveProfileName(pendingBackup.profileName);
     if (pendingBackup.preferences) {
-      options.setPreferences((previous) =>
+      setPreferences((previous) =>
         resolveImportedPreferences(previous, pendingBackup.preferences, mode) ?? previous
       );
     }
     const importedActors = resolveImportedFavoriteActors(
-      options.favoriteActors,
+      favoriteActors,
       pendingBackup.favoriteActors,
       mode
     );
-    options.setFavoriteActors(importedActors);
+    setFavoriteActors(importedActors);
     try {
-      localStorage.setItem(favActorsStorageKey(options.activeProfileId), JSON.stringify(importedActors));
+      localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(importedActors));
     } catch {}
 
     if (pendingBackup.isDemo !== undefined) {
-      options.setProfiles((previous) =>
-        previous.map((profile) => profile.id === options.activeProfileId
+      setProfiles((previous) =>
+        previous.map((profile) => profile.id === activeProfileId
           ? { ...profile, isDemo: pendingBackup.isDemo }
           : profile)
       );
     }
 
-    options.setPendingBackup(null);
-    options.setProfileOpen(false);
-    options.showToast('Yedek başarıyla içe aktarıldı (' + importedItems.length + ' içerik)!');
+    setPendingBackup(null);
+    setProfileOpen(false);
+    showToast('Yedek başarıyla içe aktarıldı (' + importedItems.length + ' içerik)!');
   }, [
-    options.pendingBackup,
-    options.confirmNextBulkSyncRef,
-    options.mergeIncomingCinemaKunye,
-    options.replaceCinemaKunye,
-    options.savedItems,
-    options.activeProfileId,
-    options.savedItemsRef,
-    options.setSavedItems,
-    options.lastForYouQueryKeyRef,
-    options.setForYouItems,
-    options.handleSaveProfileName,
-    options.setPreferences,
-    options.favoriteActors,
-    options.setFavoriteActors,
-    options.setProfiles,
-    options.setPendingBackup,
-    options.setProfileOpen,
-    options.showToast,
+    pendingBackup,
+    confirmNextBulkSyncRef,
+    mergeIncomingCinemaKunye,
+    replaceCinemaKunye,
+    savedItems,
+    activeProfileId,
+    savedItemsRef,
+    setSavedItems,
+    lastForYouQueryKeyRef,
+    setForYouItems,
+    handleSaveProfileName,
+    setPreferences,
+    favoriteActors,
+    setFavoriteActors,
+    setProfiles,
+    setPendingBackup,
+    setProfileOpen,
+    showToast,
   ]);
 
   return { handleExportBackup, handleImportBackupFile, handleConfirmImport };
