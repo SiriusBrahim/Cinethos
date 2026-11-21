@@ -59,6 +59,28 @@ export interface BackupMetadata {
   itemsCount: number;
 }
 
+export interface RestoreBackupOptions {
+  expectedRevision?: number | null;
+  hasInvalidIfMatch?: boolean;
+  requirePrecondition?: boolean;
+  forceOverwrite?: boolean;
+}
+
+export type RestoreBackupResult =
+  | { ok: true; document: DataDocument }
+  | {
+      ok: false;
+      status: 400 | 404 | 409 | 412 | 428 | 500;
+      code:
+        | 'backup_not_found'
+        | 'revision_conflict'
+        | 'precondition_required'
+        | 'restore_failed';
+      message: string;
+      currentRevision?: number;
+      expectedRevision?: number;
+    };
+
 export interface SaveDataOptions {
   expectedRevision?: number | null;
   expectedProfileId?: string;
@@ -758,6 +780,116 @@ export function createDataStorage(options: StorageOptions) {
     return serialize(() => restoreBackupAsync(backupId));
   }
 
+  /**
+   * Aşama 1 (B-08) — revizyon korumalı, atomik snapshot geri yükleme.
+   *
+   * Sıra: yedek doğrula → güncel revizyonu oku → ön koşulu karşılaştır →
+   * güvenlik snapshot'ı → atomik yazım. Herhangi bir adım başarısızsa mevcut
+   * veri korunur (kısmi yazım yok).
+   */
+  async function restoreBackupGuardedAsync(
+    backupId: string,
+    restoreOptions: RestoreBackupOptions = {}
+  ): Promise<RestoreBackupResult> {
+    const id = String(backupId || '').trim();
+    if (!id || !SNAPSHOT_FILE_PATTERN.test(id)) {
+      return {
+        ok: false,
+        status: 404,
+        code: 'backup_not_found',
+        message: 'Belirtilen yedek dosyası bulunamadı veya bozuk.',
+      };
+    }
+    const fullPath = path.resolve(backupsDir, id);
+    if (!fullPath.startsWith(backupsDir + path.sep) || !existsSync(fullPath)) {
+      return {
+        ok: false,
+        status: 404,
+        code: 'backup_not_found',
+        message: 'Belirtilen yedek dosyası bulunamadı veya bozuk.',
+      };
+    }
+
+    const parsed = await tryParseValidJsonAsync<DataDocument>(fullPath, validateRawDocument);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        status: 404,
+        code: 'backup_not_found',
+        message: 'Belirtilen yedek dosyası bulunamadı veya bozuk.',
+      };
+    }
+
+    const current = await readDataAsync();
+    const currentRevision = current.revision ?? 0;
+    const expectedRevision = restoreOptions.expectedRevision;
+
+    if (restoreOptions.hasInvalidIfMatch) {
+      return {
+        ok: false,
+        status: 412,
+        code: 'revision_conflict',
+        message: `Geçersiz If-Match başlığı gönderildi (mevcut rev-${currentRevision}).`,
+        currentRevision,
+      };
+    }
+
+    if (typeof expectedRevision === 'number' && Number.isSafeInteger(expectedRevision)) {
+      if (expectedRevision !== currentRevision) {
+        return {
+          ok: false,
+          status: currentRevision === 0 ? 412 : 409,
+          code: 'revision_conflict',
+          message: `Geri yükleme reddedildi: sunucudaki veri revizyonu değişmiş (beklenen rev-${expectedRevision}, mevcut rev-${currentRevision}). Güncel veriyi okuyup tekrar deneyin.`,
+          currentRevision,
+          expectedRevision,
+        };
+      }
+    } else if (
+      restoreOptions.requirePrecondition &&
+      !restoreOptions.forceOverwrite &&
+      currentRevision > 0
+    ) {
+      return {
+        ok: false,
+        status: 428,
+        code: 'precondition_required',
+        message: `Mevcut sunucu verisinin (rev-${currentRevision}) üzerine koşulsuz geri yükleme engellendi. If-Match başlığı gönderin.`,
+        currentRevision,
+      };
+    }
+
+    const restoredDoc: DataDocument = {
+      ...parsed.data,
+      revision: currentRevision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      // `persistDocument` önce mevcut (sağlam) belgenin snapshot'ını yazar,
+      // sonra hedef dosyayı atomik olarak değiştirir.
+      await persistDocument(current, restoredDoc);
+    } catch (error: any) {
+      return {
+        ok: false,
+        status: 500,
+        code: 'restore_failed',
+        message: `Geri yükleme yazılamadı; mevcut veri korundu (${error?.message || 'bilinmeyen hata'}).`,
+        currentRevision,
+      };
+    }
+
+    unrecoverableCorruptionError = null;
+    return { ok: true, document: restoredDoc };
+  }
+
+  function restoreBackupGuarded(
+    backupId: string,
+    restoreOptions: RestoreBackupOptions = {}
+  ): Promise<RestoreBackupResult> {
+    return serialize(() => restoreBackupGuardedAsync(backupId, restoreOptions));
+  }
+
   function backupExistingDataAsync(): Promise<void> {
     return serialize(async () => {
       const current = await readDataAsync();
@@ -802,6 +934,7 @@ export function createDataStorage(options: StorageOptions) {
     listBackupsAsync,
     restoreBackup,
     restoreBackupSerialized,
+    restoreBackupGuarded,
     sqliteStatus: () => primaryStore.status(),
     closeSqliteStore: () => primaryStore.close(),
   };
