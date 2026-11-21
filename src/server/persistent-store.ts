@@ -138,6 +138,7 @@ export interface SyncFileStateRecord {
 export interface SyncStatus {
   configured: boolean;
   authFailed?: boolean;
+  githubSyncEnabled?: boolean;
   mode: 'github' | 'local_only';
   reason?: string;
   isPublicRepo: boolean;
@@ -2123,6 +2124,7 @@ export class PersistentDataStore {
     return {
       configured,
       authFailed,
+      githubSyncEnabled: this.githubSyncEnabled,
       mode: configured ? 'github' : 'local_only',
       reason: missingReason,
       isPublicRepo: effectiveConfiguredIsPublic,
