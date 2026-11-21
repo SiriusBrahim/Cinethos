@@ -29,7 +29,6 @@ interface HeaderProps {
   onSearchSubmit: (q: string) => void;
   onSearchClear: () => void;
   onOpenProfile: () => void;
-  onOpenAdd: () => void;
   onSelectItem: (item: TmdbItem) => void;
   getSaved: (item: TmdbItem) => SavedItem | undefined;
   tmdbSource?: string;
@@ -48,7 +47,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSearchSubmit,
   onSearchClear,
   onOpenProfile,
-  onOpenAdd,
   onSelectItem,
   getSaved,
   tmdbSource = 'live',
@@ -396,7 +394,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Actions Zone: Source tag, PWA, Profile, Add */}
+        {/* Right Actions Zone: Source tag, PWA, Profile */}
         <div className="topbar-actions">
           {tmdbSource && tmdbSource !== 'live' && (
             <span
@@ -464,19 +462,6 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
-          <button
-            id="addButton"
-            className="btn btn-primary add-custom-btn"
-            type="button"
-            onClick={onOpenAdd}
-            title="Özel film veya dizi ekle"
-            aria-label="Özel yapım ekle"
-          >
-            <svg className="icon" aria-hidden="true">
-              <use href="#icon-plus"></use>
-            </svg>
-            <span className="add-btn-text">Ekle</span>
-          </button>
         </div>
       </div>
     </header>
