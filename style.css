@@ -4291,3 +4291,16 @@
     line-height: 1;
   }
 }
+
+
+/* Final responsive corrections: keep the new shell authoritative. */
+@media (min-width: 960px) {
+  .app-header .topbar { min-height: 58px !important; }
+}
+@media (max-width: 959px) {
+  .app-header .topbar { min-height: 50px !important; }
+  .app-header .search-shortcut-hint,
+  .footer-shortcuts-hint { display: none !important; }
+  .app-header .search input { padding-right: 38px; }
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
