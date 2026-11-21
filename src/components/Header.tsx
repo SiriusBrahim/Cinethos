@@ -280,7 +280,7 @@ export const Header: React.FC<HeaderProps> = ({
             onKeyDown={handleKeyDown}
             onFocus={() => setIsSearchFocused(true)}
             onBlur={() => !dropdownOpen && setIsSearchFocused(false)}
-            placeholder="Film veya dizi ara… (Kısayol: k veya /)"
+            placeholder="Film veya dizi ara…"
             autoComplete="off"
             aria-label="Film veya dizi ara"
           />
