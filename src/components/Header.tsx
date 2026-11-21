@@ -284,6 +284,7 @@ export const Header: React.FC<HeaderProps> = ({
             autoComplete="off"
             aria-label="Film veya dizi ara"
           />
+          <span className="search-shortcut-hint" aria-hidden="true">K&nbsp; / &nbsp;/</span>
           {query && (
             <button
               id="searchClear"
