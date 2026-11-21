@@ -326,9 +326,7 @@ test('B-38: dosya kilidi sahiplik, serbest bırakma ve bayat devralma kuralları
     lease.release();
     assert.equal(fs.existsSync(lockPath), false);
 
-    // Yabancı token: release başka sürecin kilidini silmemeli.
-    acquireSyncFileLease(lockPath);
-    const info = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    // Yabancı token: renew/release başka sürecin kilidini değiştirmemeli.
     const foreignLease = acquireSyncFileLease(lockPath);
     const foreignInfo = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
     fs.writeFileSync(lockPath, JSON.stringify({ ...foreignInfo, token: 'baska-token' }));
