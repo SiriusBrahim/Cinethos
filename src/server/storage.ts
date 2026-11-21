@@ -40,6 +40,7 @@ import {
   resolveStorageDriver,
   type StorageDriver,
 } from './sqlite-primary-store.ts';
+import { assertSafeDataDir } from './test-data-guard.ts';
 export interface StorageOptions {
   dataDir?: string;
   maxDataBytes?: number;
@@ -123,6 +124,14 @@ function formatSnapshotFileName(revision: number): string {
 }
 
 export function createDataStorage(options: StorageOptions) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError(
+      "createDataStorage tek bir nesne parametresi bekler: createDataStorage({ dataDir }). " +
+        "Eski iki argümanlı çağrı (createDataStorage(dataFile, {...})) artık desteklenmiyor."
+    );
+  }
+  // Aşama 1 — test ortamı gerçek `data/` ağacına yazamaz; `dataDir` zorunludur (B-14).
+  assertSafeDataDir(options.dataDir, 'data-storage');
   const resolvedDataDir = path.resolve(options.dataDir || path.join(process.cwd(), 'data'));
   const dataFile = path.join(resolvedDataDir, 'cinetrack-data.json');
   const backupFile = `${dataFile}.bak`;
