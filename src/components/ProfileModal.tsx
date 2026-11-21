@@ -511,6 +511,53 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   Profil Adını Kaydet ve Kapat
                 </button>
               </form>
+
+              <section className="content-request-card" aria-labelledby="contentRequestTitle">
+                <div className="content-request-heading">
+                  <span className="content-request-icon" aria-hidden="true">
+                    <svg className="icon"><use href="#icon-message-square-plus"></use></svg>
+                  </span>
+                  <div>
+                    <span className="content-request-eyebrow">KATALOĞA KATKI</span>
+                    <h3 id="contentRequestTitle">İçerik İsteği</h3>
+                    <p>Aradığın film veya diziyi Cinethos kataloğunda göremiyor musun? Bize öner.</p>
+                  </div>
+                </div>
+                <div className="content-request-fields">
+                  <label className="content-request-title-field">
+                    İçerik adı
+                    <input className="field" type="text" placeholder="Örn. Severance" disabled />
+                  </label>
+                  <div className="content-request-meta-fields">
+                    <label>
+                      İçerik türü
+                      <select disabled defaultValue="movie">
+                        <option value="movie">Film</option>
+                        <option value="tv">Dizi</option>
+                      </select>
+                    </label>
+                    <label>
+                      Yayın yılı <span className="content-request-optional">(isteğe bağlı)</span>
+                      <input className="field" type="number" placeholder="2026" disabled />
+                    </label>
+                  </div>
+                  <label>
+                    Açıklama <span className="content-request-optional">(isteğe bağlı)</span>
+                    <textarea className="field content-request-note" rows={3} placeholder="İçerikle ilgili eklemek istediğin bir bilgi…" disabled />
+                  </label>
+                </div>
+                <div className="content-request-footer">
+                  <p>İstek gönderimi yakında kullanıma açılacak.</p>
+                  <button type="button" className="btn btn-primary" disabled>
+                    İstek gönder
+                    <svg className="icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
+                  </button>
+                </div>
+                <div className="content-request-empty">
+                  <span className="content-request-empty-dot" aria-hidden="true"></span>
+                  <span><strong>İsteklerin burada görünecek.</strong> Gönderdiğin önerilerin durumunu bu bölümden takip edebileceksin.</span>
+                </div>
+              </section>
             </div>
           )}
 
