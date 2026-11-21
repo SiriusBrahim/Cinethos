@@ -394,6 +394,77 @@ describe('Aşama 1 — B-09 profil kapsamlı kayıp koruması', () => {
     assert.equal(result.code, 'profile_metadata_drop');
   });
 
+  it('yalnızca hidden listesi dolu profilin silinmesi yakalanır', async () => {
+    const hiddenOnly = {
+      id: 'PROFILE-HIDDEN',
+      items: [],
+      preferences: {
+        disliked: [],
+        hidden: ['movie:550', 'tv:1396'],
+        providers: [],
+        mood: '',
+        reminders: false,
+        notified: [],
+      },
+    };
+    const revision = await seed([hiddenOnly, profile('PROFILE-BBB', [item(1)])]);
+    const result = await save([profile('PROFILE-BBB', [item(1)])], revision);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'profile_metadata_drop');
+    assert.match(result.message, /PROFILE-HIDDEN/);
+
+    const current = await storage.readDataAsync();
+    const hiddenProfile = current.profiles.find((entry) => entry.id === 'PROFILE-HIDDEN');
+    assert.equal(hiddenProfile.preferences.hidden.length, 2);
+  });
+
+  it('hidden listesi boş ve başka metaverisi olmayan profil gereksiz korunmaz', async () => {
+    const blank = {
+      id: 'PROFILE-BLANK',
+      items: [],
+      preferences: {
+        disliked: [],
+        hidden: [],
+        providers: [],
+        mood: '',
+        reminders: false,
+        notified: [],
+      },
+    };
+    const revision = await seed([blank, profile('PROFILE-BBB', [item(1)])]);
+    const result = await save([profile('PROFILE-BBB', [item(1)])], revision);
+    assert.equal(result.ok, true, result.ok ? '' : String(result.message));
+
+    const current = await storage.readDataAsync();
+    assert.equal(
+      current.profiles.some((entry) => entry.id === 'PROFILE-BLANK'),
+      false,
+      'anlamlı metaverisi olmayan boş profil korunmamalı'
+    );
+  });
+
+  it('yalnızca providers tercihi olan profil korunur', async () => {
+    const providersOnly = profile('PROFILE-PROVIDERS', [], undefined, {
+      name: undefined,
+      createdAt: undefined,
+      preferences: {
+        disliked: [],
+        hidden: [],
+        providers: ['8'],
+        mood: '',
+        reminders: false,
+        notified: [],
+      },
+    });
+    delete providersOnly.name;
+    delete providersOnly.createdAt;
+    const revision = await seed([providersOnly, profile('PROFILE-BBB', [item(1)])]);
+    const result = await save([profile('PROFILE-BBB', [item(1)])], revision);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'profile_metadata_drop');
+    assert.match(result.message, /PROFILE-PROVIDERS/);
+  });
+
   it('profildeki tek tombstone silinmesi yakalanır', async () => {
     const revision = await seed([
       profile('PROFILE-AAA', [item(1)], {

@@ -194,23 +194,50 @@ function tombstoneTimestamp(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Varsayılan profil adı kullanıcıya ait bilgi taşımaz; metaveri sayılmaz. */
+const DEFAULT_PROFILE_NAME = 'Profilim';
+
+/**
+ * Herhangi bir anlamlı (boş olmayan) değer var mı?
+ *
+ * `preferences` alanları tek tek sayılmaz: yeni bir tercih alanı eklendiğinde
+ * koruma sessizce dışarıda kalmasın. `preferences.hidden` (kullanıcının
+ * gizlediği içerikler) da bu genel kural sayesinde kapsanır.
+ */
+function hasMeaningfulValue(value: unknown, seen: Set<object> = new Set()): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  // 0 dâhil sonlu sayılar anlamlıdır: veri kaybı riski, gereksiz korumadan
+  // daha ağırdır.
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.some((entry) => hasMeaningfulValue(entry, seen));
+  if (typeof value === 'object') {
+    if (seen.has(value as object)) return false;
+    seen.add(value as object);
+    return Object.values(value as Record<string, unknown>).some((entry) =>
+      hasMeaningfulValue(entry, seen)
+    );
+  }
+  return false;
+}
+
 /** Bir profilin içerik dışı anlamlı metaverisi var mı? */
 function profileHasMetadata(profile: any): boolean {
   if (!profile || typeof profile !== 'object') return false;
-  if (typeof profile.name === 'string' && profile.name.trim()) return true;
-  if (typeof profile.createdAt === 'string' && profile.createdAt.trim()) return true;
-  if (Array.isArray(profile.favoriteActors) && profile.favoriteActors.length > 0) return true;
-  if (profile.cinemaKunye && typeof profile.cinemaKunye === 'object') return true;
-  if (profile.settings && typeof profile.settings === 'object') return true;
-  const preferences = profile.preferences;
-  if (preferences && typeof preferences === 'object') {
-    if (Array.isArray(preferences.disliked) && preferences.disliked.length > 0) return true;
-    if (Array.isArray(preferences.providers) && preferences.providers.length > 0) return true;
-    if (typeof preferences.mood === 'string' && preferences.mood.trim()) return true;
-    if (preferences.reminders === true) return true;
-    if (Array.isArray(preferences.notified) && preferences.notified.length > 0) return true;
+  if (typeof profile.name === 'string') {
+    const name = profile.name.trim();
+    if (name && name !== DEFAULT_PROFILE_NAME) return true;
   }
-  return false;
+  if (typeof profile.createdAt === 'string' && profile.createdAt.trim()) return true;
+  // Ad ve oluşturma zamanı dışındaki tüm profil metaverisi tek genel kurala
+  // tabidir (favori oyuncular, CinemaKünye, ayarlar ve tüm tercihler).
+  return (
+    hasMeaningfulValue(profile.favoriteActors) ||
+    hasMeaningfulValue(profile.cinemaKunye) ||
+    hasMeaningfulValue(profile.settings) ||
+    hasMeaningfulValue(profile.preferences)
+  );
 }
 
 /** Aşama 1 (B-09) — veri kaybı koruması için profil kapsamlı istatistikler. */
