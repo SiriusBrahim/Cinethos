@@ -4132,3 +4132,51 @@
   .mobile-more-item.is-active { color:#e2c58f; background:rgba(197,166,107,.12); }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar-nav-item { transition:none; } }
+
+/* Compact cinematic header refinement */
+@media (min-width: 960px) {
+  .app-header .topbar {
+    min-height: 58px;
+    gap: 14px;
+  }
+  .app-header .search input {
+    min-height: 36px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .app-header .topbar-actions {
+    gap: 8px;
+  }
+  .app-header .topbar-actions > .btn,
+  .app-header .topbar-actions > button {
+    min-height: 34px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+@media (max-width: 959px) {
+  .app-header .topbar {
+    min-height: 50px;
+    gap: 8px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .app-header .search input {
+    min-height: 34px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .app-header .topbar-actions {
+    gap: 5px;
+  }
+  .app-header .topbar-actions > .btn,
+  .app-header .topbar-actions > button {
+    min-height: 32px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .app-header .brand-icon {
+    width: 30px;
+    height: 30px;
+  }
+}
