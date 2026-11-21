@@ -718,6 +718,11 @@ test('Production yapılandırmasında GitHub senkronizasyon API uçları kapalı
         assert.equal(response.status, 404);
         const body = await response.json();
         assert.equal(body.code, 'github_dev_sync_disabled');
+        assert.equal(
+          fs.existsSync(path.join(tmpDir, 'locks', 'github-sync.lock')),
+          false,
+          'production yapılandırması GitHub sync lease dosyası oluşturmamalı'
+        );
       }
     );
   } finally {

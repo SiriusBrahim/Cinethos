@@ -72,6 +72,7 @@ export interface GitHubTokenCandidateInfo {
 export interface PersistentStoreOptions {
   dataDir: string;
   maxDataBytes?: number;
+  githubSyncEnabled?: boolean;
   githubToken?: string;
   githubTokenSource?: TokenSourceKind;
   githubTokenCandidates?: GitHubTokenCandidateInfo[];
@@ -335,6 +336,7 @@ export class PersistentDataStore {
   private fileStates: Record<string, SyncFileStateRecord> = {};
   private writeSerializer = new FileWriteSerializer();
   private maxDataBytes?: number;
+  private githubSyncEnabled: boolean;
   private attachedStorage!: ReturnType<typeof createDataStorage>;
   private bidirectionalManager!: GitHubBidirectionalSyncManager;
 
@@ -358,6 +360,7 @@ export class PersistentDataStore {
   constructor(options: PersistentStoreOptions) {
     this.dataDir = options.dataDir;
     this.maxDataBytes = options.maxDataBytes;
+    this.githubSyncEnabled = options.githubSyncEnabled !== false;
     this.catalogDir = path.join(this.dataDir, 'catalog');
     this.profilesDir = path.join(this.dataDir, 'profiles');
     this.moviesFile = path.join(this.catalogDir, 'movies.json');
@@ -397,7 +400,7 @@ export class PersistentDataStore {
     this.localEnvIsPublicRepo = options.localEnvIsPublicRepo ?? null;
 
     this.initDirectories();
-    this.loadPersistedSyncState();
+    if (this.githubSyncEnabled) this.loadPersistedSyncState();
   }
 
   public getEffectiveConfiguredIsPublicRepo(): boolean {
@@ -502,6 +505,7 @@ export class PersistentDataStore {
     return new GitHubBidirectionalSyncManager({
       dataDir: this.dataDir,
       maxDataBytes: this.maxDataBytes,
+      enableStartupRecovery: this.githubSyncEnabled,
       store: this,
       storage: this.attachedStorage,
       getGitHubConfig: () => ({

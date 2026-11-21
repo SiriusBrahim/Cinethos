@@ -580,6 +580,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     new PersistentDataStore({
       dataDir: resolvedDataDir,
       maxDataBytes,
+      githubSyncEnabled: options.githubDevSyncEnabled !== false,
       githubToken: options.githubToken,
       githubTokenSource: options.githubTokenSource,
       githubTokenCandidates: options.githubTokenCandidates,

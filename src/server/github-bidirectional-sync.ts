@@ -1736,6 +1736,7 @@ export function compareSyncSides(
 export interface BidirectionalSyncDependencies {
   dataDir: string;
   maxDataBytes?: number;
+  enableStartupRecovery?: boolean;
   store: PersistentDataStoreSyncPort;
   storage: ReturnType<typeof createDataStorage>;
   getGitHubConfig: () => {
@@ -1787,7 +1788,10 @@ export class GitHubBidirectionalSyncManager {
     this.queue = new SyncOperationQueue();
     this.journal = new SyncAttemptJournal({ dataDir: deps.dataDir });
     this.leasePath = path.join(deps.dataDir, 'locks', 'github-sync.lock');
-    this.recoveryPromise = this.recoverInterruptedJournalAtStartup().catch(() => undefined);
+    this.recoveryPromise =
+      deps.enableStartupRecovery === false
+        ? Promise.resolve()
+        : this.recoverInterruptedJournalAtStartup().catch(() => undefined);
   }
 
   private async recoverJournalWhileLeaseHeld(): Promise<void> {
