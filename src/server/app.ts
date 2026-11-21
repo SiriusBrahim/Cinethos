@@ -2200,6 +2200,16 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
+  app.use('/api/sync', (_req: Request, res: Response, next: NextFunction) => {
+    if (options.devMode === true) return next();
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({
+      ok: false,
+      code: 'github_dev_sync_disabled',
+      status_message: 'GitHub senkronizasyonu yalnızca geliştirme ortamında kullanılabilir.',
+    });
+  });
+
   app.get('/api/sync/status', syncStatusGuard, (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(persistentStore.getSyncStatus());
@@ -2694,6 +2704,14 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const includeJson = typeof req.body?.includeJson === 'boolean' ? req.body.includeJson : true;
       const includeXlsx = typeof req.body?.includeXlsx === 'boolean' ? req.body.includeXlsx : true;
       const uploadToGithub = Boolean(req.body?.uploadToGithub);
+      if (uploadToGithub && options.devMode !== true) {
+        res.status(403).json({
+          ok: false,
+          code: 'github_dev_sync_disabled',
+          status_message: 'GitHub yedek yükleme yalnızca geliştirme ortamında kullanılabilir.',
+        });
+        return;
+      }
       const allowPersonalDataInPublicRepo =
         typeof req.body?.allowPersonalDataInPublicRepo === 'boolean'
           ? req.body.allowPersonalDataInPublicRepo
