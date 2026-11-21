@@ -1060,6 +1060,61 @@ export function normalizeProfile(
   };
 }
 
+/**
+ * Aşama 1 (B-04) — Sessiz kırpmayı önleyen limit denetimi.
+ *
+ * `normalizeDataDocument` limit aşımında profil/kayıt düşürür; bu fonksiyon
+ * düşürmeden **önce** ihlalleri listeler. Boş dizi = ihlal yok.
+ */
+export function collectDataLimitViolations(
+  raw: unknown,
+  options: { maxProfiles?: number; maxItems?: number } = {}
+): string[] {
+  const maxProfiles = options.maxProfiles ?? DEFAULT_MAX_PROFILES;
+  const maxItems = options.maxItems ?? DEFAULT_MAX_ITEMS_PER_PROFILE;
+  const violations: string[] = [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return violations;
+  const obj = raw as Record<string, any>;
+
+  const candidates: any[] = Array.isArray(obj.profiles)
+    ? obj.profiles
+    : Array.isArray(obj.items)
+    ? [{ id: obj.profileId ?? 'PROFILE-DEFAULT', name: obj.profileName, items: obj.items }]
+    : [];
+
+  const validIds = new Set<string>();
+  for (const [index, candidate] of candidates.entries()) {
+    if (!isPlainRecord(candidate)) {
+      violations.push(`${index + 1}. profil nesne değil`);
+      continue;
+    }
+    const canonicalId = normalizeProfileId(candidate.id);
+    if (!canonicalId) {
+      violations.push(`geçersiz profil kimliği: '${String(candidate.id ?? '')}' (profil sessizce düşürülmez)`);
+      continue;
+    }
+    validIds.add(canonicalId);
+    const rawItems = candidate.items;
+    if (rawItems !== undefined && !Array.isArray(rawItems)) {
+      violations.push(`'${canonicalId}' profilinin kayıtları dizi değil`);
+      continue;
+    }
+    const itemCount = Array.isArray(rawItems) ? rawItems.length : 0;
+    if (itemCount > maxItems) {
+      violations.push(
+        `'${canonicalId}' profili ${itemCount} kayıt içeriyor (izin verilen en fazla ${maxItems})`
+      );
+    }
+  }
+
+  if (validIds.size > maxProfiles) {
+    violations.push(
+      `belge ${validIds.size} profil içeriyor (izin verilen en fazla ${maxProfiles})`
+    );
+  }
+  return violations;
+}
+
 export function normalizeDataDocument(
   raw: any,
   {

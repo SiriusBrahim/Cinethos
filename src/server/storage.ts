@@ -9,6 +9,9 @@ import path from 'node:path';
 import {
   normalizeDataDocument,
   buildTasteProfileV3,
+  collectDataLimitViolations,
+  makeMediaKey,
+  normalizeProfileId,
   CURRENT_SCHEMA_VERSION,
   ENGINE_VERSION,
   type DataDocument,
@@ -109,6 +112,9 @@ export type SaveDataResult =
         | 'profile_conflict'
         | 'precondition_required'
         | 'sudden_item_drop'
+        | 'profile_drop'
+        | 'tombstone_drop'
+        | 'limits_exceeded'
         | 'payload_too_large'
         | 'corrupt_storage';
       message: string;
@@ -138,6 +144,28 @@ function isWorthKeeping(doc: DataDocument): boolean {
 }
 
 const SNAPSHOT_FILE_PATTERN = /^cinetrack-[a-zA-Z0-9._-]+\.json$/;
+
+interface DocumentLossStats {
+  uniqueItems: number;
+  itemKeys: Set<string>;
+  tombstones: number;
+  profileItemCounts: Map<string, number>;
+}
+
+/** Aşama 1 (B-09) — veri kaybı koruması için belge istatistikleri. */
+function collectDocumentLossStats(doc: DataDocument | null | undefined): DocumentLossStats {
+  const itemKeys = new Set<string>();
+  const profileItemCounts = new Map<string, number>();
+  let tombstones = 0;
+  for (const profile of Array.isArray(doc?.profiles) ? doc.profiles : []) {
+    const id = normalizeProfileId(profile?.id) ?? String(profile?.id ?? '');
+    const items = Array.isArray(profile?.items) ? profile.items : [];
+    profileItemCounts.set(id, (profileItemCounts.get(id) || 0) + items.length);
+    for (const item of items) itemKeys.add(makeMediaKey(item));
+    tombstones += Object.keys(profile?.deleted_keys || {}).length;
+  }
+  return { uniqueItems: itemKeys.size, itemKeys, tombstones, profileItemCounts };
+}
 
 function formatSnapshotFileName(revision: number): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -173,6 +201,8 @@ export function createDataStorage(options: StorageOptions) {
 
   let unrecoverableCorruptionError: string | null = null;
   let writeQueue: Promise<unknown> = Promise.resolve();
+  // Aşama 1 (B-04) — diskteki belge limitleri aşıyorsa yazma engellenir.
+  let readLimitViolations: string[] = [];
 
   // Faz 7 — SQLite birincil kaynak (opt-in). JSON her zaman yedek olarak yazılır.
   const primaryStore = createSqlitePrimaryStore({
@@ -201,9 +231,28 @@ export function createDataStorage(options: StorageOptions) {
   function validateRawDocument(raw: unknown): DataDocument | null {
     if (!raw || typeof raw !== 'object') return null;
     const obj = raw as Record<string, unknown>;
-    const normalized = normalizeDataDocument(raw, {
+    // B-04: limit aşan belge okunurken kırpılmaz; yüksek limitlerle normalize
+    // edilir ve yazma, ihlal giderilene kadar engellenir (`readLimitViolations`).
+    const violations = collectDataLimitViolations(raw, {
       maxProfiles,
       maxItems: maxItemsPerProfile,
+    });
+    if (violations.length > 0) readLimitViolations = violations;
+
+    const rawProfiles = Array.isArray(obj.profiles)
+      ? (obj.profiles as unknown[])
+      : Array.isArray(obj.items)
+      ? [obj]
+      : [];
+    let rawMaxItems = 0;
+    for (const profile of rawProfiles) {
+      const items = (profile as Record<string, unknown> | null)?.items;
+      if (Array.isArray(items)) rawMaxItems = Math.max(rawMaxItems, items.length);
+    }
+
+    const normalized = normalizeDataDocument(raw, {
+      maxProfiles: Math.max(maxProfiles, rawProfiles.length),
+      maxItems: Math.max(maxItemsPerProfile, rawMaxItems),
     });
     if (!normalized) return null;
     const rawRev = Number(obj.revision);
@@ -397,6 +446,17 @@ export function createDataStorage(options: StorageOptions) {
       };
     }
 
+    if (readLimitViolations.length > 0) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'limits_exceeded',
+        message:
+          `Diskteki veri yapılandırılmış limitleri aşıyor; kırpılmış bir belge kaydedilmedi: ` +
+          `${readLimitViolations.join('; ')}. Veri kaybını önlemek için yazma engellendi.`,
+      };
+    }
+
     let rawBytes = 0;
     try {
       rawBytes = measureUtf8Bytes(JSON.stringify(rawPayload ?? null));
@@ -415,6 +475,20 @@ export function createDataStorage(options: StorageOptions) {
         status: 413,
         code: 'payload_too_large',
         message: `Gönderilen veri boyutu izin verilen sınırı (${formatMaxDataLimitMb(maxDataBytes)}) aşıyor.`,
+      };
+    }
+
+    // B-04: gönderilen belge limitleri aşıyorsa sessizce kırpma yerine reddet.
+    const incomingLimitViolations = collectDataLimitViolations(rawPayload, {
+      maxProfiles,
+      maxItems: maxItemsPerProfile,
+    });
+    if (incomingLimitViolations.length > 0) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'limits_exceeded',
+        message: `Gönderilen veri limitleri aşıyor ve sessizce kırpılmadı: ${incomingLimitViolations.join('; ')}.`,
       };
     }
 
@@ -545,22 +619,69 @@ export function createDataStorage(options: StorageOptions) {
 
     const existingItems = countTotalItems(current);
     const incomingItems = countTotalItems(normalized);
-    if (
-      !saveOptions.confirmBulkDelete &&
-      existingItems >= 5 &&
-      existingItems - incomingItems >= 3 &&
-      incomingItems < existingItems * 0.5
-    ) {
-      return {
-        ok: false,
-        status: 409,
-        code: 'sudden_item_drop',
-        message: `Ani veri kaybı koruması devreye girdi (${existingItems} kayıttan ${incomingItems} kayda düşüş). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
-        existingItems,
-        incomingItems,
-        currentRevision,
-        serverDocument: current,
-      };
+
+    if (!saveOptions.confirmBulkDelete) {
+      const before = collectDocumentLossStats(current);
+      const after = collectDocumentLossStats(normalized);
+      const removedKeys = [...before.itemKeys].filter((key) => !after.itemKeys.has(key));
+      const addedKeys = [...after.itemKeys].filter((key) => !before.itemKeys.has(key));
+      const droppedProfiles = [...before.profileItemCounts.entries()].filter(
+        ([id, count]) => count > 0 && !after.profileItemCounts.has(id)
+      );
+
+      // 1) İçinde kayıt bulunan bir profil belgeden tümüyle düşmüşse.
+      if (droppedProfiles.length > 0) {
+        const detail = droppedProfiles.map(([id, count]) => `${id} (${count} kayıt)`).join(', ');
+        return {
+          ok: false,
+          status: 409,
+          code: 'profile_drop',
+          message: `Profil kaybı koruması devreye girdi: ${detail} gelen belgede yok. Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          existingItems,
+          incomingItems,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
+
+      // 2) Tombstone'lar tümüyle kaybolmuşsa silmeler geri dirilebilir.
+      if (before.tombstones >= 3 && after.tombstones === 0) {
+        return {
+          ok: false,
+          status: 409,
+          code: 'tombstone_drop',
+          message: `Silme işaretleri (tombstone) kaybı koruması devreye girdi (${before.tombstones} işaretten 0'a düşüş). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          existingItems,
+          incomingItems,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
+
+      // 3) Toplam sayı yanıltıcı olsa bile kaybolan kayıt sayısı büyükse.
+      //    (B-09: 60 silme + 61 ekleme toplamı sabit tutabilir.)
+      //    Eklenen kayıtlar silinenleri dengeleyip toplam sayıyı sabit tutsa bile
+      //    (60 sil + 61 ekle) kütüphanenin yarısının kaybı sessizce kabul edilmez.
+      const suddenDrop =
+        removedKeys.length >= 3 &&
+        removedKeys.length >= before.uniqueItems * 0.5;
+      const legacyDrop =
+        existingItems >= 5 &&
+        existingItems - incomingItems >= 3 &&
+        incomingItems < existingItems * 0.5;
+
+      if (suddenDrop || legacyDrop) {
+        return {
+          ok: false,
+          status: 409,
+          code: 'sudden_item_drop',
+          message: `Ani veri kaybı koruması devreye girdi (${before.uniqueItems} kayıttan ${after.uniqueItems} kayda düşüş; ${removedKeys.length} silindi, ${addedKeys.length} eklendi). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          existingItems,
+          incomingItems: after.uniqueItems,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
     }
 
     const nextRevision = currentRevision + 1;
@@ -676,6 +797,7 @@ export function createDataStorage(options: StorageOptions) {
     }
     persistDocumentDiskSync(current, prepared.documentToPersist);
     unrecoverableCorruptionError = null;
+    readLimitViolations = [];
     return {
       ok: true,
       document: prepared.documentToPersist,
@@ -695,6 +817,7 @@ export function createDataStorage(options: StorageOptions) {
     }
     await persistDocument(current, prepared.documentToPersist);
     unrecoverableCorruptionError = null;
+    readLimitViolations = [];
     return {
       ok: true,
       document: prepared.documentToPersist,
@@ -922,6 +1045,7 @@ export function createDataStorage(options: StorageOptions) {
     backupsDir,
     maxDataBytes,
     hasUnrecoverableCorruption: () => Boolean(unrecoverableCorruptionError),
+    limitViolations: () => [...readLimitViolations],
     readData,
     readDataAsync,
     readIsolatedProfileAsync,
