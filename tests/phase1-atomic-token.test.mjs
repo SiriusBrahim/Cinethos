@@ -4,7 +4,7 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -95,6 +95,121 @@ describe('Aşama 1 — atomik .env yazımı', () => {
     mkdirSync(path.dirname(nested), { recursive: true });
     await writeFileAtomicSecure(nested, 'A=1\n');
     assert.equal(readFileSync(nested, 'utf8'), 'A=1\n');
+  });
+});
+
+describe('Aşama 1 — atomik yazma hata senaryoları (B-31)', () => {
+  let dir;
+  let envPath;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-fail-'));
+    envPath = path.join(dir, '.env');
+    writeFileSync(envPath, 'CINETRACK_GITHUB_PAT=eski-token\n', 'utf8');
+  });
+
+  afterEach(() => {
+    try {
+      chmodSync(dir, 0o700);
+    } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function tempFiles() {
+    return readdirSync(dir).filter((name) => name.includes('.tmp'));
+  }
+
+  it('rename aşamasındaki hata eski dosyayı korur ve geçici dosyayı temizler', async () => {
+    const before = readFileSync(envPath, 'utf8');
+    let tempPath = null;
+
+    await assert.rejects(
+      () =>
+        writeFileAtomicSecure(envPath, 'CINETRACK_GITHUB_PAT=yeni-token\n', {
+          beforeRename: (info) => {
+            tempPath = info.tempPath;
+            assert.equal(existsSync(info.tempPath), true, 'geçici dosya yazılmamış');
+            throw new Error('rename simülasyonu');
+          },
+        }),
+      /rename simülasyonu/
+    );
+
+    assert.ok(tempPath, 'geçici dosya yolu bildirilmedi');
+    assert.equal(existsSync(tempPath), false, 'geçici dosya temizlenmedi');
+    assert.equal(readFileSync(envPath, 'utf8'), before);
+    assert.deepEqual(tempFiles(), []);
+  });
+
+  it('hedef dosya yokken hata yarım dosya bırakmaz', async () => {
+    const target = path.join(dir, 'yeni.env');
+    await assert.rejects(
+      () =>
+        writeFileAtomicSecure(target, 'TOKEN=gizli\n', {
+          beforeRename: () => {
+            throw new Error('rename simülasyonu');
+          },
+        }),
+      /rename simülasyonu/
+    );
+    assert.equal(existsSync(target), false, 'yarım hedef dosya bırakıldı');
+    assert.deepEqual(tempFiles(), []);
+  });
+
+  it('gerçek dosya sistemi hatasında hedef dizin içeriği bozulmaz', async () => {
+    const targetDir = path.join(dir, 'hedef-dizin');
+    mkdirSync(targetDir);
+    writeFileSync(path.join(targetDir, 'ic.txt'), 'korunan', 'utf8');
+
+    await assert.rejects(() => writeFileAtomicSecure(targetDir, 'TOKEN=zararli\n'));
+    assert.equal(readFileSync(path.join(targetDir, 'ic.txt'), 'utf8'), 'korunan');
+    assert.deepEqual(tempFiles(), []);
+  });
+
+  it('hata mesajı token değerini sızdırmaz', async () => {
+    const token = 'ghp_cok-gizli-token-degeri';
+    let message = '';
+    try {
+      await writeFileAtomicSecure(envPath, `CINETRACK_GITHUB_PAT=${token}\n`, {
+        beforeRename: () => {
+          throw new Error('yazma hatası');
+        },
+      });
+    } catch (error) {
+      message = String(error?.message || '');
+    }
+    assert.ok(message, 'hata bekleniyordu');
+    assert.equal(message.includes(token), false, 'token hata mesajında göründü');
+    assert.equal(readFileSync(envPath, 'utf8').includes(token), false);
+  });
+
+  it('başarısız yazmadan sonra aynı yol tekrar yazılabilir (kuyruk kilitlenmez)', async () => {
+    const before = readFileSync(envPath, 'utf8');
+    let fail = true;
+    await assert.rejects(() =>
+      writeFileAtomicSecure(envPath, 'TOKEN=ilk\n', {
+        beforeRename: () => {
+          if (fail) throw new Error('ilk yazma hatası');
+        },
+      })
+    );
+    assert.equal(readFileSync(envPath, 'utf8'), before);
+
+    fail = false;
+    await writeFileAtomicSecure(envPath, 'TOKEN=ikinci\n');
+    assert.equal(readFileSync(envPath, 'utf8'), 'TOKEN=ikinci\n');
+    assert.deepEqual(tempFiles(), []);
+  });
+
+  it('farklı hedeflere eşzamanlı yazmalar birbirini bozmaz', async () => {
+    const targets = Array.from({ length: 6 }, (_, index) => path.join(dir, `env-${index}`));
+    await Promise.all(
+      targets.map((target, index) => writeFileAtomicSecure(target, `TOKEN=${index}\n`))
+    );
+    targets.forEach((target, index) => {
+      assert.equal(readFileSync(target, 'utf8'), `TOKEN=${index}\n`);
+    });
+    assert.deepEqual(tempFiles(), []);
   });
 });
 

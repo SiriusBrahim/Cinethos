@@ -35,7 +35,20 @@ function desiredMode(targetPath: string): number {
   return 0o600;
 }
 
-async function writeAtomicOnce(targetPath: string, contents: string): Promise<void> {
+/**
+ * Test/denetim kancaları. Üretimde kullanılmaz; hata koşullarını gerçek
+ * dosya sistemi üzerinde deterministik olarak doğrulamak için vardır.
+ */
+export interface AtomicWriteHooks {
+  /** Geçici dosya yazılıp fsync edildikten sonra, rename öncesinde çağrılır. */
+  beforeRename?: (info: { tempPath: string; targetPath: string }) => void | Promise<void>;
+}
+
+async function writeAtomicOnce(
+  targetPath: string,
+  contents: string,
+  hooks?: AtomicWriteHooks
+): Promise<void> {
   const dir = path.dirname(targetPath);
 
   let existing;
@@ -65,6 +78,10 @@ async function writeAtomicOnce(targetPath: string, contents: string): Promise<vo
     await handle.sync();
     await handle.close();
     handle = null;
+
+    if (hooks?.beforeRename) {
+      await hooks.beforeRename({ tempPath, targetPath });
+    }
 
     // Atomik değiştirme (aynı dosya sistemi üzerinde).
     await fsp.rename(tempPath, targetPath);
@@ -101,12 +118,16 @@ async function writeAtomicOnce(targetPath: string, contents: string): Promise<vo
  * Aynı yol için eşzamanlı çağrılar sıraya alınır; sıra bozulsa bile dosya
  * bütünlüğü korunur.
  */
-export function writeFileAtomicSecure(targetPath: string, contents: string): Promise<void> {
+export function writeFileAtomicSecure(
+  targetPath: string,
+  contents: string,
+  hooks?: AtomicWriteHooks
+): Promise<void> {
   const key = path.resolve(targetPath);
   const previous = writeQueues.get(key) ?? Promise.resolve();
   const run = previous.then(
-    () => writeAtomicOnce(targetPath, contents),
-    () => writeAtomicOnce(targetPath, contents)
+    () => writeAtomicOnce(targetPath, contents, hooks),
+    () => writeAtomicOnce(targetPath, contents, hooks)
   );
   // Kuyruğu canlı tut ama reddedilen promise'i sızdırma.
   writeQueues.set(
