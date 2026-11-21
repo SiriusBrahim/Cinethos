@@ -5,6 +5,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
+import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -210,6 +211,92 @@ describe('Aşama 1 — atomik yazma hata senaryoları (B-31)', () => {
       assert.equal(readFileSync(target, 'utf8'), `TOKEN=${index}\n`);
     });
     assert.deepEqual(tempFiles(), []);
+  });
+});
+
+describe('Aşama 1 — gerçek rename(2) hata senaryoları (B-31)', () => {
+  let dir;
+  let otherDir;
+  let envPath;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'ct-rename-fail-'));
+    otherDir = mkdtempSync(path.join(os.tmpdir(), 'ct-rename-fail-other-'));
+    envPath = path.join(dir, '.env');
+    writeFileSync(envPath, 'CINETRACK_GITHUB_PAT=eski-token\n', 'utf8');
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(otherDir, { recursive: true, force: true });
+  });
+
+  function tempFiles() {
+    return readdirSync(dir).filter((name) => name.includes('.tmp'));
+  }
+
+  const writeFailureCodes = ['EISDIR', 'ENOTEMPTY', 'EEXIST', 'EPERM', 'EACCES'];
+
+  it('hedef yol dizinle işgal edilirse gerçek rename başarısız olur; yarım dosya kalmaz', async () => {
+    const target = path.join(dir, 'yeni.env');
+
+    await assert.rejects(
+      () =>
+        writeFileAtomicSecure(target, 'CINETRACK_GITHUB_PAT=gizli-deger\n', {
+          beforeRename: () => {
+            // Gerçek rename(2) çağrısı EISDIR/ENOTEMPTY ile dönsün.
+            mkdirSync(target);
+            writeFileSync(path.join(target, 'ic.txt'), 'korunan', 'utf8');
+          },
+        }),
+      (error) => {
+        assert.ok(
+          writeFailureCodes.includes(error?.code),
+          `beklenmeyen hata kodu: ${error?.code}`
+        );
+        assert.equal(String(error?.message || '').includes('gizli-deger'), false);
+        return true;
+      }
+    );
+
+    assert.equal(statSync(target).isDirectory(), true);
+    assert.equal(readFileSync(path.join(target, 'ic.txt'), 'utf8'), 'korunan');
+    assert.deepEqual(tempFiles(), [], 'geçici dosya temizlenmedi');
+
+    // Yazma kuyruğu hata sonrasında çalışmaya devam eder.
+    rmSync(target, { recursive: true, force: true });
+    await writeFileAtomicSecure(target, 'CINETRACK_GITHUB_PAT=sonraki\n');
+    assert.equal(readFileSync(target, 'utf8'), 'CINETRACK_GITHUB_PAT=sonraki\n');
+  });
+
+  it('geçici dosya kaybolursa gerçek rename ENOENT verir; eski token aynen kalır', async () => {
+    const before = readFileSync(envPath, 'utf8');
+    let tempPath = null;
+
+    await assert.rejects(
+      () =>
+        writeFileAtomicSecure(envPath, 'CINETRACK_GITHUB_PAT=yeni-token\n', {
+          beforeRename: async (info) => {
+            tempPath = info.tempPath;
+            // Geçici dosyayı başka dizine taşı: rename(2) kaynağı bulamaz.
+            await fsp.rename(info.tempPath, path.join(otherDir, 'kayip-gecici'));
+          },
+        }),
+      (error) => {
+        assert.equal(error?.code, 'ENOENT');
+        assert.equal(String(error?.message || '').includes('yeni-token'), false);
+        return true;
+      }
+    );
+
+    assert.ok(tempPath, 'geçici dosya yolu bildirilmedi');
+    assert.equal(existsSync(tempPath), false);
+    assert.equal(readFileSync(envPath, 'utf8'), before, 'eski token değişti');
+    assert.deepEqual(tempFiles(), []);
+
+    // Kuyruk kilitlenmez ve sonraki yazma bütünlüklüdür.
+    await writeFileAtomicSecure(envPath, 'CINETRACK_GITHUB_PAT=sonraki\n');
+    assert.equal(readFileSync(envPath, 'utf8'), 'CINETRACK_GITHUB_PAT=sonraki\n');
   });
 });
 
