@@ -2,7 +2,7 @@
 
 **Tarih:** 21 Kasım 2026
 **Dal:** `remediation/full-project-remediation` (PR #65)
-**HEAD:** `83ce55f` (bu belge commit'lendiğinde)
+**HEAD:** kabul düzeltme commit'leri (bu belge dâhil)
 
 Bu belge Aşama 1'de eklenen/çalıştırılan testleri, komutları ve gerçek sonuçları
 kaydeder. Çalıştırılmayan test başarı sayılmadı.
@@ -15,10 +15,16 @@ kaydeder. Çalıştırılmayan test başarı sayılmadı.
 |---|---|---|
 | `npm run lint` (eslint + `tsc --noEmit` + test tsconfig) | 0 hata, 0 uyarı (`--max-warnings 0`) | ~60 sn |
 | `npm run cycles` | Bağımlılık döngüsü bulunmadı | ~3 sn |
-| `npm test` | **677/677 geçti**, 0 başarısız | ~90 sn |
-| `npm run test:taste` | **440/440 geçti**, 0 başarısız | ~9 sn |
-| `npm run build` | Başarılı (`dist/sw.js`, workbox üretildi) | ~40 sn |
-| `npm run test:e2e` | **Koşulamadı** — Playwright sistem bağımlılıkları yok | — |
+| `npm test` | **708/708 geçti**, 67 dosya, 0 başarısız | ~99 sn |
+| `npm run test:taste` | **440/440 geçti**, 27 dosya, 0 başarısız | ~16 sn |
+| `npm run build` | Başarılı (`dist/sw.js`, workbox üretildi) | ~5 sn |
+| `npx playwright test` (chromium, `--workers=1`) | **15/15 geçti** (9 + 6, iki grupta) | 21 sn + 13 sn |
+| `data/` hash (her koşu öncesi/sonrası) | Değişmedi (`c2c163f1…`) | — |
+
+Not: Kabul turunun ilk `test:taste` koşusunda, önceden var olan süre eşikli
+`Farklı profil kapsamları eşzamanlı tutulabilir` testi yüklü makinede 466 ms
+sürerek başarısız oldu; aynı test ve tüm suite ikinci koşuda **440/440** geçti.
+Test zayıflatılmadı; bu, bilinen zamanlama hassasiyeti olarak kaydedildi.
 
 `npm test` artık `scripts/run-tests.mjs` üzerinden çalışır:
 
@@ -33,15 +39,15 @@ kaydeder. Çalıştırılmayan test başarı sayılmadı.
 
 | Dosya | Test | Kapsam |
 |---|---|---|
-| `tests/phase1-test-isolation.test.mjs` | 10 | Guard, `dataDir` zorunluluğu, gerçek `data/` reddi, iki argümanlı çağrı reddi |
+| `tests/phase1-test-isolation.test.mjs` | 21 | Guard, `dataDir` zorunluluğu, gerçek `data/` reddi, symlink/iç içe symlink/TOCTOU, keşif |
 | `tests/phase1-merge-lossless.test.mjs` | 12 | S1–S7 senaryoları iki yön; puan silme, durum geri alma, eşit/eksik damga |
 | `tests/phase1-backup-roundtrip.test.mjs` | 15 | v1–v4 ayrıştırma, çoklu profil round-trip, v5 ret, bozuk JSON |
 | `tests/phase1-restore-conflict.test.mjs` | 5 | 409 / 428 / 200, eşzamanlı restore, hata sonrası veri korunumu |
-| `tests/phase1-data-loss-guard.test.mjs` | 13 | 60+11, 60+61, profil/tombstone kaybı, onaylı silme, limit ve geçersiz kimlik reddi |
-| `tests/phase1-atomic-token.test.mjs` | 8 | Atomiklik, 0600 izin, eşzamanlı yazma, hata korunumu, symlink, no-op |
+| `tests/phase1-data-loss-guard.test.mjs` | 27 | 60+11, 60+61, profil kapsamlı kayıt/tombstone/metaveri kaybı, onaylı silme, limit ve geçersiz kimlik reddi |
+| `tests/phase1-atomic-token.test.mjs` | 14 | Atomiklik, 0600 izin, eşzamanlı yazma, rename/yazma hataları, geçici dosya temizliği, token sızıntısı, symlink, no-op |
 | `tests/phase1-data-integrity-integration.test.mjs` | 6 | Senaryo A–G, gerçek HTTP uçları |
 
-**Toplam yeni test:** 69 (677 unit içinde).
+**Toplam yeni test:** 100 (708 unit içinde): 69 ilk tur + 31 kabul düzeltmesi.
 
 Güncellenen mevcut testler:
 
@@ -64,6 +70,11 @@ Güncellenen mevcut testler:
 | Restore eşzamanlı değişikliği ezemez | `phase1-restore-conflict`, integration E/F |
 | Çoklu profil yedeği kayıpsız | `phase1-backup-roundtrip`, integration D |
 | Token dosyası bozulmaz | `phase1-atomic-token` |
+| Symlink üzerinden gerçek `data/`'ya yazılamaz | `phase1-test-isolation` (symlink, iç içe symlink, sonradan hedef değişimi, TOCTOU) |
+| Profil bazlı kayıp global sayımla maskelenemez | `phase1-data-loss-guard` (iki profilde aynı içerik, profil kimliği değişimi, diğer profili etkilememe) |
+| Boş profil metaverisi korunur | `phase1-data-loss-guard` (tercih, favori oyuncu, boş profil) |
+| Tombstone sayısı sabitken farklı işaret kaybı | `phase1-data-loss-guard` (taşıma ve farklı anahtar kaybı) |
+| Rename hatasında eski token korunur | `phase1-atomic-token` (`beforeRename` kancası + gerçek FS) |
 
 ---
 
@@ -81,11 +92,13 @@ Aşama 1 başlangıcından bu yana:
 
 ## 5. Doğrulanmayanlar
 
-- **Playwright E2E:** sistem bağımlılıkları (`libnss3`, tarayıcı ikilileri)
-  kurulu değil; `npm run test:e2e` başlatılamadı. UI düzeyinde restore
-  çakışması ve yedek içe aktarma akışı tarayıcıda denenmedi.
 - **Canlı API entegrasyonları:** GitHub/TMDB/TVDB token ve API anahtarı yok;
   gerçek ağ çağrıları test edilmedi.
 - **Çok süreçli eşzamanlı yazma:** Aynı makinede iki Node sürecinin aynı veri
-  dizinine eşzamanlı yazması denenmedi; atomik yazım ve revizyon kontrolü süreç
-  içi serileştirme + dosya düzeyi rename ile korunuyor.
+  dizinine eşzamanlı yazması denenmedi ve **garanti edilmiyor**. Atomik yazım,
+  `0600` izin ve revizyon kontrolü süreç içi kuyruk + dosya düzeyi rename ile
+  korunuyor; dağıtık kilit Aşama 2 kapsamındadır.
+- **Windows symlink davranışı:** Testler POSIX'te gerçek sembolik bağlantıyla
+  koşar. Symlink oluşturulamayan platformlarda ilgili testler `skip` olarak
+  raporlanır (sessiz başarı sayılmaz); Windows'ta harf duyarsız karşılaştırma
+  kod düzeyinde uygulanır ancak bu ortamda E2E ile doğrulanmadı.

@@ -524,16 +524,45 @@ Yalnızca aşağıdaki işler; her biri ayrı commit + regresyon testi:
 
 - `npm run lint`: 0 hata / 0 uyarı
 - `npm run cycles`: döngü yok
-- `npm test`: **677/677** (69 yeni test)
+- `npm test`: **708/708** (100 yeni test; kabul düzeltmeleri dâhil)
 - `npm run test:taste`: **440/440**
 - `npm run build`: başarılı
 - `data/` hash'leri ve yedek sayısı Aşama 1 başından beri değişmedi
-- `npm run test:e2e`: **koşulamadı** (Playwright sistem bağımlılıkları eksik)
+- `npx playwright test`: **15/15** (Chromium; sistem kütüphaneleri `/tmp` altına çıkarılarak)
 
 ### 17.3 Aşama 2'ye devredilenler
 
 - B-08 kabul kriterinin UI kısmı: restore 409 durumunun kullanıcıya gösterimi (Aşama 4).
 - Çok süreçli eşzamanlı yazma senaryosu (Aşama 2, B-38 ile birlikte).
 - Aşama 1 kapsamı dışında kalan bulgular plana uygun şekilde sonraki aşamalarda.
+
+### 17.4 Aşama 1 kabul düzeltmeleri
+
+**B-14 — Symlink ve TOCTOU koruması.** `path.resolve()` tek başına yeterli
+değildi. `canonicalizePath` artık yolu bileşen bileşen çözer (40 atlama sınırı,
+döngüde açık hata), var olmayan kuyruğu en yakın var olan üst dizin üzerinden
+doğrular, Windows'ta harf duyarsız karşılaştırır. `assertSafeWritePath` her
+`persistDocument*`/`writeDiskSnapshot*` öncesi yolu yeniden doğrular; böylece
+doğrulamadan sonra dizin symlink'e çevrilse bile yazma reddedilir. `taste-store`
+aynı guard'ı kullanır. Kanıt: `phase1-test-isolation` 21 test (11 yeni).
+
+**B-09/B-04 — Profil kapsamlı kayıp.** `collectDocumentLossStats` artık
+`profileId` bazlı `items`/`tombstones` haritaları ve zaman damgaları üretir;
+aynı içerik başka profilde dursa da silme görünür. Tombstone'lar anahtar anahtar
+karşılaştırılır; sayı sabitken farklı işaret kaybı ve profile taşıma yakalanır.
+Boş profil silinmesi metaveri varsa `profile_metadata_drop` ile reddedilir.
+Meşru silme (tombstone'lu veya daha yeni etkileşimle yeniden eklenen kayıt) ve
+tek kaydın bilinçli silinmesi engellenmez. Yeni kodlar `api.ts` ve
+`primary-data-repository.ts` çakışma listelerine eklendi. Kanıt:
+`phase1-data-loss-guard` 27 test (14 yeni).
+
+**B-31 — Atomik yazma hata güvenliği.** `writeFileAtomicSecure` yalnızca
+test/denetim için `beforeRename` kancası aldı. Rename veya yazma hatasında eski
+hedef korunur, geçici dosya temizlenir, hedef yokken yarım dosya kalmaz, hata
+mesajı token içermez ve kuyruk kilitlenmez. Kanıt: `phase1-atomic-token` 14
+test (6 yeni, gerçek dosya sistemi dâhil).
+
+**Kalan risk:** Çok süreçli atomik yazma/dağıtık kilit garanti edilmez; tombstone
+yazmayan istemcide tek kayıplık profil boşalması meşru silmeden ayırt edilemez.
 
 **Aşama 1 burada durur; Aşama 2 başlatılmadı.**

@@ -23,10 +23,11 @@ karşılaştırılıyor.
 | B-09, B-04 | Tombstone duyarlı veri kaybı koruması, sessiz kırpma | **FIXED** | `30eb3cb` |
 | B-31 | Token dosyasının atomik ve güvenli yazımı | **FIXED** | `f4cac57` |
 | A–G | Uçtan uca entegrasyon kapsamı | **FIXED** | `83ce55f` |
+| B-14, B-09, B-04, B-31 | Kabul düzeltmeleri: symlink/TOCTOU, profil kapsamlı kayıp, atomik yazma hata güvenliği | **FIXED** | bu turdaki commit'ler |
 
-Doğrulama: `npm run lint` 0, `npm run cycles` 0, `npm test` **677/677**,
-`npm run test:taste` **440/440**, `npm run build` başarılı, `data/` hash'leri
-değişmedi.
+Doğrulama (kabul düzeltmeleri dâhil): `npm run lint` 0, `npm run cycles` 0,
+`npm test` **708/708**, `npm run test:taste` **440/440**, `npm run build`
+başarılı, Playwright E2E **15/15**, `data/` hash'i değişmedi.
 
 ---
 
@@ -50,7 +51,11 @@ mümkündü.
 - `scripts/check-data-integrity.mjs` her koşudan önce/sonra `data/` hash
   manifesti alır; değişiklik olursa test başarısız olur. CI'da da çalışır.
 
-**Kanıt:** `tests/phase1-test-isolation.test.mjs` (10 test); gerçek `data/`
+Kabul düzeltmesinde (bkz. 2.8) `path.resolve()` yeterli sayılmadı: sembolik
+bağlantılar bileşen bileşen çözümleniyor, gerçek hedef üzerinden karşılaştırma
+yapılıyor ve her yazmadan hemen önce yol yeniden doğrulanıyor.
+
+**Kanıt:** `tests/phase1-test-isolation.test.mjs` (21 test); gerçek `data/`
 sha256 `c2c163f1…` ve `473316ce…` Aşama 1 başından beri değişmedi.
 
 ### 2.2 B-01 / B-02 — Alan düzeyinde kayıpsız birleştirme
@@ -135,8 +140,9 @@ Tombstone kaybı, profil kaybı ve yarım belge hiç denetlenmiyordu.
   - Eski net-sayı sezgiseli ek tetikleyici olarak korunur.
 - Bilinçli toplu silme onayla geçer; onaysız silme diskteki veriyi değiştirmez.
 
-**Kanıt:** `tests/phase1-data-loss-guard.test.mjs` (13 test: 60+11, 60+61,
-profil kaybı, tombstone kaybı, boş belge, revizyon geri dönüşü, onaylı silme).
+**Kanıt:** `tests/phase1-data-loss-guard.test.mjs` (27 test: 60+11, 60+61,
+profil kaybı, tombstone kaybı, boş belge, revizyon geri dönüşü, onaylı silme ve
+kabul düzeltmesindeki profil kapsamlı senaryolar).
 
 ### 2.6 B-04 — Sessiz kırpmanın kaldırılması
 
@@ -173,8 +179,68 @@ eşzamanlı yenileme yarım dosya ve geniş izin bırakabiliyordu.
 - `refreshEnvGitHubPat` yazma başarısızsa `null` döner, eski token kalır; token
   hiçbir yerde loglanmaz.
 
-**Kanıt:** `tests/phase1-atomic-token.test.mjs` (8 test: atomiklik, izinler,
-eşzamanlı yazma, hata sonrası korunum, symlink, kalıcı token no-op).
+**Kanıt:** `tests/phase1-atomic-token.test.mjs` (14 test: atomiklik, izinler,
+eşzamanlı yazma, hata sonrası korunum, symlink, kalıcı token no-op ve kabul
+düzeltmesindeki rename/yazma hata senaryoları).
+
+### 2.8 Aşama 1 kabul düzeltmeleri (B-14, B-09/B-04, B-31)
+
+#### 2.8.1 Sembolik bağlantı ve TOCTOU koruması (`src/server/test-data-guard.ts`)
+
+- `canonicalizePath` yolu **bileşen bileşen** çözer (`resolveSymlinks`);
+  `realpath` çağrısına bağımlı değildir, iç içe bağlantıları ve bağlantı
+  hedefinin kalan bileşenlerini de çözer. 40 atlamalık sınır aşılırsa
+  (döngüsel zincir) sessizce geçilmez, açık hata verilir.
+- Hedef henüz yoksa en yakın **var olan üst dizin** çözümlenir; kalan bileşenler
+  sözlüksel olarak eklenir. Böylece henüz oluşturulmamış bir dizin de güvenli
+  doğrulanır.
+- `assertSafeDataDir` önce sözlüksel yolu, sonra kanonik gerçek hedefi gerçek
+  `data/` ağacıyla karşılaştırır. Windows'ta karşılaştırma büyük/küçük harf
+  duyarsızdır.
+- `assertSafeWritePath` her `persistDocument*` / `writeDiskSnapshot*`
+  çağrısından hemen önce üst dizini yeniden doğrular; doğrulamadan sonra bir
+  dizin bağlantıya çevrilirse yazma reddedilir (TOCTOU).
+- `createDataStorage` ve `taste-store` aynı `assertSafeDataDir` yolunu kullanır.
+- Koruma test ortamında etkindir; üretimde no-op'tur (davranış değişmez).
+
+#### 2.8.2 Profil kapsamlı kayıp ve tombstone karşılaştırması (`src/server/storage.ts`)
+
+- `collectDocumentLossStats` artık `profileId` bazlı `items` ve `tombstones`
+  haritaları üretir; her kayıt için en yeni etkileşim zamanı, her tombstone için
+  silme zamanı saklanır.
+- Aynı içerik başka profilde dursa bile bir profilden silinen kayıt **o profil
+  için** kayıp sayılır; global `Set` maskesi kaldırıldı.
+- Tombstone'lar profil bazında anahtar anahtar karşılaştırılır. Sayı sabit kalsa
+  bile farklı bir işaret kaybolursa `tombstone_drop`; başka profile taşınan işaret
+  de kayıp sayılır.
+- Profil tamamen yoksa: kaydı varsa `profile_drop`, kaydı yok ama ad/tercih/
+  favori oyuncu/CinemaKünye/ayar metaverisi varsa `profile_metadata_drop`.
+- Meşru silme korunur: kaldırılan kaydın tombstone'u varsa veya kayıt silme
+  zamanından yeni bir etkileşimle yeniden eklendiyse kayıp sayılmaz. Tek kayıplık
+  profil boşalması yalnızca profil ≥2 kayıtla boşaldıysa ya da aynı içerik başka
+  profilde durup kaybı maskeliyorsa reddedilir; tek kaydın bilinçli silinmesi
+  engellenmez.
+- Yeni kodlar (`item_drop`, `profile_metadata_drop`) istemci ve repository
+  çakışma listelerine eklendi; şüpheli kayıpta belge **değiştirilmez**.
+
+#### 2.8.3 Atomik token yazımında hata güvenliği (`src/server/atomic-env-file.ts`)
+
+- `writeFileAtomicSecure(target, contents, hooks?)` yalnızca test/denetim için
+  `hooks.beforeRename` kancası alır; üretim yolu değişmez.
+- Geçici dosya yazılıp `fsync` edildikten sonra rename başarısız olursa hedef
+  dosya eski hâliyle kalır, geçici dosya `finally` bloğunda silinir.
+- Hedef yokken oluşan hata yarım/bozuk dosya bırakmaz; hata mesajı token
+  değerini içermez; başarısız yazmadan sonra kuyruk kilitlenmez.
+- `0600` izni korunur, mevcut daha kısıtlayıcı izin genişletilmez, symlink
+  hedefi yazılmaz.
+
+#### 2.8.4 Kanıt
+
+| Konu | Test dosyası | Test |
+|---|---|---|
+| Symlink, iç içe symlink, TOCTOU, keşif | `tests/phase1-test-isolation.test.mjs` | 21 (11 yeni) |
+| Profil kapsamlı kayıt/tombstone/metaveri kaybı | `tests/phase1-data-loss-guard.test.mjs` | 27 (14 yeni) |
+| Rename/yazma hataları, geçici dosya temizliği, sızıntı | `tests/phase1-atomic-token.test.mjs` | 14 (6 yeni) |
 
 ---
 
@@ -196,8 +262,14 @@ HTTP uçları üzerinden çalışır:
 
 ## 4. Bilinen sınırlar
 
-- `npm run test:e2e` (Playwright) bu ortamda koşulamadı: sistem bağımlılıkları
-  kurulu değil. Tarayıcı düzeyinde restore/çakışma UI akışı doğrulanmadı.
+- Playwright E2E, kabul düzeltmesi turunda çalıştırıldı (15/15). Koşum için
+  Chromium sistem kütüphaneleri `/tmp` altına çıkarıldı; bu kurulum depoya dâhil
+  değildir ve yeni bir ortamda yeniden yapılmalıdır.
+- Çok süreçli atomik yazma ve dağıtık kilit **garanti edilmez**: atomiklik ve
+  yazma kuyruğu tek süreç içindedir. İki Node sürecinin aynı veri dizinine
+  eşzamanlı yazması Aşama 2 kapsamındadır.
+- Tombstone yazmayan bir istemcide tek kayıplık profil boşalması, meşru
+  silmeden ayırt edilemez; bu durum bilinçli olarak meşru kabul edilir.
 - Canlı GitHub/TMDB/TVDB entegrasyon testleri token/API anahtarı gerektirdiği
   için koşulmadı.
 - Restore çakışmasında UI'ın 409 durumunu nasıl gösterdiği (B-08 kabul
