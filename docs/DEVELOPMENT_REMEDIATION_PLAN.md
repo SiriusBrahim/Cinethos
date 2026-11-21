@@ -159,6 +159,7 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 ## 4. Aşama 2 — Senkronizasyon güvenilirliği ve işlem tutarlılığı
 
 **Öncelik:** P1/P2/P3  
+**Durum:** ✅ Tamamlandı (2026-11-21) — ayrıntı: [`docs/audits/PHASE_02_SYNC_RELIABILITY.md`](audits/PHASE_02_SYNC_RELIABILITY.md)  
 **Amaç:** Kuyruk, retry, restore ve senkronizasyon raporlarının gerçek durumu yansıtmasını sağlamak.
 
 ### Yapılacak işler
@@ -179,6 +180,27 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 - Retry sayısı ve toplam bekleme sınırlandırılmıştır; kullanıcı iptal edebilir.
 - Raporlanan sayaçlar test fixture'larıyla doğrulanır.
 - Restore ve senkronizasyon aynı revizyon/serileştirme kurallarına uyar.
+
+### Uygulama sonucu
+
+1. **B-10 ✅** — `SyncOperationQueue` (`idle/queued/running/failed`, depth, lastOutcome),
+   `sync-attempt.json` deneme günlüğü, açılışta `syncing` → `pending` kurtarma,
+   `sync-state.json` v2 (v1 geriye dönük). `/api/sync/status` kuyruk anlık görüntüsünü döner.
+2. **B-38 ✅** — Tüm senkronizasyon yolları tek FIFO kuyruk + `data/locks/github-sync.lock`
+   advisory kilidinden geçer; çakışma 409. `saveDataAsync` serileştirildi, senkron
+   `saveData` eşzamanlı yazmada fail-closed.
+3. **B-39 ✅** — Sayaçlar `sync-counters.ts` ile işlem öncesi/sonrası belgelerden türetilir;
+   türetilmiş profil önbelleği sayılmaz, anahtar düzeyinde çift sayım yok.
+4. **Kesinti/kurtarma ✅** — Deneme günlüğü + dosya durumu kurtarma; uzak PUT'lar `sha`
+   önkoşuluyla idempotent kalır.
+5. **B-30 ✅** — İstemci `http-retry.ts` (Retry-After/reset, sınırlı exponential backoff +
+   jitter, yalnızca idempotent metotlar); sunucu `githubFetch` politikası korundu.
+6. **İstek eşzamanlılığı ✅** — Kuyruk kapasitesi ve bekleme süresi sınırlı; aynı işlem
+   `dedupeKey` ile birleştirilir.
+7. **Hata sınıflandırması ✅** — `sync_queue_*`, `sync_lease_busy`, `sync_aborted` makine
+   okunur kodlar; API 409/500 ayrımı; mevcut `SyncErrorCategory` korunur.
+8. **Gözlemlenebilirlik ✅** — Sonuç/süre/işlem adı kuyruk anlık görüntüsünde; token ve
+   kişisel veri loglanmaz (mevcut `redactSecrets` kullanılır).
 
 ## 5. Aşama 3 — Öneri motoru doğruluğu ve performansı
 
@@ -391,7 +413,7 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 | B-07 | P2 | 1 | Yedek sürümü doğrulama ve anlaşılır hata |
 | B-08 | P2 | 1 | Restore If-Match/409 |
 | B-09 | P2 | 1 | Tombstone duyarlı veri kaybı koruması |
-| B-10 | P3 | 2 | Kuyruk durumunun doğru modellenmesi |
+| B-10 | P3 | 2 | ✅ Kuyruk durumunun doğru modellenmesi |
 | B-11 | P2 | 3 | Film/dizi zevk kapsamlarının ayrıştırılması |
 | B-12 | P2 | 3 | Top-up yolunda tüm aday filtreleri |
 | B-13 | P3 | 3 | Ölü serverTaste sinyalini düzeltme |
@@ -411,7 +433,7 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 | B-27 | P3 | 4 | Poster/kart/filtre görsel düzeni |
 | B-28 | P3 | 4 | Modal erişilebilirliği |
 | B-29 | P3 | 4 | Klavye handler yeniden bağlama |
-| B-30 | P2 | 2 | API 429/5xx retry/backoff |
+| B-30 | P2 | 2 | ✅ API 429/5xx retry/backoff |
 | B-31 | P2 | 1 | Token dosyası atomik yazım ve izin |
 | B-32 | P3 | 7 | Public repo onayı / kişisel veri paylaşımı |
 | B-33 | P4 | 7 | CSP daraltma |
@@ -419,8 +441,8 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 | B-35 | P4 | 8 | İlişki ağırlıkları kalibrasyonu |
 | B-36 | P3 | 9 | Restore sonrası geri alma |
 | B-37 | P3 | 6 ve 9 | Export retention ve bellek |
-| B-38 | P3 | 2 | Serileştirilmemiş saveData yolunu kapatma |
-| B-39 | P4 | 2 | Senkron sayaçlarının doğruluğu |
+| B-38 | P3 | 2 | ✅ Serileştirilmemiş saveData yolunu kapatma |
+| B-39 | P4 | 2 | ✅ Senkron sayaçlarının doğruluğu |
 
 ## 14. PR başına zorunlu teslim şablonu
 
@@ -586,4 +608,28 @@ TOCTOU korumasında son doğrulama ile `rename(2)` arasındaki pencere Node'un
 `openat`/`renameat` sunmaması nedeniyle kapatılamaz; kapatılan şey uzun asenkron
 beklemelerdir.
 
-**Aşama 1 burada durur; Aşama 2 başlatılmadı.**
+### 17.5 Aşama 2 — uygulama ve doğrulama
+
+Aşama 2, Aşama 1'in veri güvenliği temelini bozmadan tamamlandı. Ayrıntılı mimari
+kararlar, test kanıtı ve sınırlar için [`docs/audits/PHASE_02_SYNC_RELIABILITY.md`](audits/PHASE_02_SYNC_RELIABILITY.md).
+
+| Bulgu | Çözüm | Ana dosyalar |
+|---|---|---|
+| B-10 | FIFO kuyruk durum modeli, deneme günlüğü, çökme kurtarma, `sync-state` v2 | `core/sync-operation-queue.ts`, `server/sync-attempt-journal.ts`, `server/persistent-store.ts` |
+| B-38 | Kuyruk + süreçler arası dosya kilidi, 409 çakışma, fail-closed senkron yazma | `server/sync-file-lease.ts`, `server/github-bidirectional-sync.ts`, `server/storage.ts`, `server/app.ts` |
+| B-39 | Öncesi/sonrası belgelerden türetilen sayaçlar, `recordsSkipped` | `core/sync-counters.ts`, `core/sync-display.ts` |
+| B-30 | İstemci retry/backoff + Retry-After, yalnızca idempotent metotlar | `services/http-retry.ts`, `services/api-client.ts` |
+
+**Doğrulama:** lint 0/0, cycles 0, `npm test` **754/754** (72 dosya), `test:taste`
+**440/440**, build başarılı, Playwright **15/15**, `data/` sha256 değişmedi.
+
+**Şema/migration:** Kullanıcı veri şeması değişmedi. Yalnızca yardımcı
+`data/sync-state.json` biçimine `syncStateVersion: 2` eklendi; v1 dosyaları okunur,
+gelecek sürümler yok sayılır. Kilit (`data/locks/`) ve deneme günlüğü
+(`data/sync-attempt.json`) yardımcı dosyalardır; silinmeleri veri kaybına yol açmaz.
+
+**Bilinçli sınırlar:** kuyruk süreç içidir; çoklu instance için yalnızca advisory dosya
+kilidi vardır. Bekleyen istekler çökme sonrası otomatik yeniden oluşturulmaz; istemci
+yeniden dener. Canlı GitHub/TMDB/TVDB doğrulaması kimlik bilgisi yokluğunda koşulmadı.
+
+**Aşama 1 ve Aşama 2 tamamlandı; Aşama 3 başlatılmadı.**
