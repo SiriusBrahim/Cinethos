@@ -42,7 +42,9 @@ import {
 import { t } from '../src/i18n/index.ts';
 
 async function withServer(options, fn) {
-  const { app } = createCineTrackApp(options);
+  // HTTP route tests explicitly run in development mode; production-disable
+  // behavior is covered separately with githubDevSyncEnabled:false.
+  const { app } = createCineTrackApp({ githubDevSyncEnabled: true, ...options });
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const addr = server.address();
