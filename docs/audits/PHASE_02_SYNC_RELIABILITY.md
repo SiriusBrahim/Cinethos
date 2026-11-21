@@ -168,3 +168,15 @@ gecikmeyi referanslı bırakır; hem Node 22 hem Node 26'da 754/754 geçer.
   tüm doğrulama yerel sahte GitHub sunucusu ve stub `fetch` ile yapıldı.
 - Bu aşamada UI'da kuyruk derinliğinin görsel sunumu yapılmadı; durum API'si hazırdır
   (Aşama 4).
+
+
+## 6. Phase 2.1 — Eşzamanlılık, lease ve journal güvenliği
+
+- İç içe senkronizasyon çağrıları global boolean ile değil `AsyncLocalStorage`
+  işlem bağlamıyla tanınır. Bağımsız HTTP istekleri FIFO kuyruğunu atlayamaz.
+- Aynı makinedeki canlı PID, lock mtime değeri stale eşiğini aşsa dahi kilidini
+  kaybetmez. Lease sahibi inode doğrulamalı heartbeat ile kilidi yeniler.
+- Journal lease token'ını saklar. Başlangıç kurtarması önce süreçler-arası lease
+  alır; başka süreç kilidi tutuyorsa journal'a dokunmaz. Her yeni işlem kendi
+  lease'i altında eski journal'ı kurtarır ve yalnızca kendi token'ıyla tamamlar.
+- Ağ dosya sistemleri ve farklı makineler için dağıtık kilit garantisi verilmez.

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { normalizeProfileId } from '../core/profile-id.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -44,7 +45,7 @@ import {
   type SyncQueueTaskContext,
 } from '../core/sync-operation-queue.ts';
 import { SyncAttemptJournal, type SyncAttemptRecord } from './sync-attempt-journal.ts';
-import { acquireSyncFileLease } from './sync-file-lease.ts';
+import { acquireSyncFileLease, tryAcquireSyncFileLease } from './sync-file-lease.ts';
 import type {
   BidirectionalSyncReport,
   PullConflictSummary,
@@ -1775,24 +1776,36 @@ export class GitHubBidirectionalSyncManager {
   private readonly leasePath: string;
   private recoveredInterrupted: SyncAttemptRecord | null = null;
   private initialReconcileCompleted = false;
-  private exclusiveActive = false;
+  private readonly operationContext = new AsyncLocalStorage<{
+    manager: GitHubBidirectionalSyncManager;
+    signal: AbortSignal;
+  }>();
+  private readonly recoveryPromise: Promise<void>;
 
   constructor(deps: BidirectionalSyncDependencies) {
     this.deps = deps;
     this.queue = new SyncOperationQueue();
     this.journal = new SyncAttemptJournal({ dataDir: deps.dataDir });
     this.leasePath = path.join(deps.dataDir, 'locks', 'github-sync.lock');
-    // Süreç çökmesinden kalan "uçuşta" kaydı açılışta tespit et ve temizle.
-    // Kuyruk bellekte olduğu için iş yeniden başlatılmaz; durum açıkça raporlanır.
+    this.recoveryPromise = this.recoverInterruptedJournalAtStartup().catch(() => undefined);
+  }
+
+  private async recoverJournalWhileLeaseHeld(): Promise<void> {
     const interrupted = this.journal.read();
-    if (interrupted) {
-      this.recoveredInterrupted = interrupted;
-      this.queue.markRecoveredInterrupted(1);
-      try {
-        rmSync(this.journal.getFilePath(), { force: true });
-      } catch {
-        // Silinemezse sonraki açılışta tekrar denenir; durum yine raporlanır.
-      }
+    if (!interrupted) return;
+    const removed = await this.journal.complete(interrupted.leaseToken);
+    if (!removed) return;
+    this.recoveredInterrupted = interrupted;
+    this.queue.markRecoveredInterrupted(1);
+  }
+
+  private async recoverInterruptedJournalAtStartup(): Promise<void> {
+    const lease = tryAcquireSyncFileLease(this.leasePath);
+    if (!lease) return;
+    try {
+      await this.recoverJournalWhileLeaseHeld();
+    } finally {
+      lease.release();
     }
   }
 
@@ -1808,9 +1821,9 @@ export class GitHubBidirectionalSyncManager {
     return this.recoveredInterrupted;
   }
 
-  /** Senkronizasyon kuyruğunda bir işlem yürüyor mu (iç içe çağrı tespiti)? */
+  /** Senkronizasyon kuyruğunda fiilen çalışan bir işlem var mı? */
   public isExclusiveActive(): boolean {
-    return this.exclusiveActive;
+    return this.queue.getSnapshot().running;
   }
 
   /**
@@ -1819,7 +1832,7 @@ export class GitHubBidirectionalSyncManager {
    * çağrılırsa yeniden kilitlemeye çalışmaz (deadlock yok).
    */
   public async runExclusive<T>(operation: string, fn: () => Promise<T>): Promise<T> {
-    if (this.exclusiveActive) return fn();
+    if (this.operationContext.getStore()?.manager === this) return fn();
     return this.runSerialized(operation, async () => fn(), operation);
   }
 
@@ -1837,31 +1850,42 @@ export class GitHubBidirectionalSyncManager {
     fn: (context: SyncQueueTaskContext) => Promise<T>,
     dedupeKey?: string
   ): Promise<T> {
-    // İç içe çağrı (ör. aşamalı senkronizasyon → reconcile): dış işlem zaten
-    // kuyruğu ve süreçler arası kilidi tutuyor. Yeniden sıraya girmek kendini
-    // bekleyen deadlock üretir; bu yüzden doğrudan çalıştırılır.
-    if (this.exclusiveActive) {
-      return fn({ signal: new AbortController().signal });
+    // Yalnızca aynı async çağrı zincirindeki iç içe işlem kuyruğu atlayabilir.
+    const activeContext = this.operationContext.getStore();
+    if (activeContext?.manager === this) {
+      return fn({ signal: activeContext.signal });
     }
     return this.queue.enqueue(
       operation,
-      async () => {
+      async (queueContext) => {
+        await this.recoveryPromise;
         const lease = acquireSyncFileLease(this.leasePath);
-        try {
-          await this.journal.begin(operation);
-          this.exclusiveActive = true;
-          try {
-            return await fn({ signal: new AbortController().signal });
-          } finally {
-            this.exclusiveActive = false;
-            try {
-              await this.journal.complete();
-            } catch {
-              // Günlük temizliği başarısız olsa da ana işlem sonucu korunur;
-              // sonraki açılış kaydı "interrupted" olarak raporlar.
-            }
+        const leaseAbort = new AbortController();
+        const operationSignal = AbortSignal.any([queueContext.signal, leaseAbort.signal]);
+        const heartbeat = setInterval(() => {
+          if (!lease.renew()) {
+            leaseAbort.abort(new Error('Senkronizasyon lease yenilemesi başarısız; işlem güvenli biçimde durdurulmalı.'));
           }
+        }, Math.max(100, Math.floor(lease.staleMs / 3)));
+        heartbeat.unref?.();
+        try {
+          await this.recoverJournalWhileLeaseHeld();
+          await this.journal.begin(operation, lease.token);
+          const result = await this.operationContext.run(
+            { manager: this, signal: operationSignal },
+            () => fn({ signal: operationSignal })
+          );
+          if (leaseAbort.signal.aborted) {
+            throw leaseAbort.signal.reason ?? new Error('Senkronizasyon lease kaybedildi.');
+          }
+          return result;
         } finally {
+          clearInterval(heartbeat);
+          try {
+            await this.journal.complete(lease.token);
+          } catch {
+            // Günlük temizliği başarısızsa sonraki lease sahibi güvenli kurtarma yapar.
+          }
           lease.release();
         }
       },

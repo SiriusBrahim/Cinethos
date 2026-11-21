@@ -136,6 +136,102 @@ test('B-38/B-10: yönetici işlemi kuyruk, günlük ve süreçler arası kilidi 
   }
 });
 
+test('B-38: bağımsız istek, aktif işlem beklerken kuyruğu atlayamaz', async () => {
+  const dir = tmpDir('phase2-independent-');
+  try {
+    const manager = makeManager(dir);
+    let markStarted;
+    let releaseFirst;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const gate = new Promise((resolve) => { releaseFirst = resolve; });
+    let secondStarted = false;
+    const first = manager.runExclusive('outer', async () => {
+      markStarted();
+      await gate;
+      return 'first';
+    });
+    await started;
+    const second = manager.runExclusive('independent', async () => {
+      secondStarted = true;
+      return 'second';
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(secondStarted, false, 'bağımsız istek A bitmeden başlamamalı');
+    releaseFirst();
+    assert.equal(await first, 'first');
+    assert.equal(await second, 'second');
+    assert.equal(secondStarted, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('B-38/B-10: ikinci yönetici aktif sürecin journal kaydını silemez', async () => {
+  const dir = tmpDir('phase2-active-journal-');
+  try {
+    const firstManager = makeManager(dir);
+    let markStarted;
+    let releaseFirst;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const gate = new Promise((resolve) => { releaseFirst = resolve; });
+    const first = firstManager.runExclusive('active', async () => {
+      markStarted();
+      await gate;
+      return 'done';
+    });
+    await started;
+    const journalPath = path.join(dir, 'sync-attempt.json');
+    assert.equal(fs.existsSync(journalPath), true);
+    const secondManager = makeManager(dir);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(fs.existsSync(journalPath), true, 'B açılışı A journal kaydını silmemeli');
+    assert.equal(secondManager.getRecoveredInterruption(), null);
+    releaseFirst();
+    assert.equal(await first, 'done');
+    assert.equal(fs.existsSync(journalPath), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('B-38: aynı makinede canlı PID stale süresini aşsa da kilit devralınamaz', () => {
+  const dir = tmpDir('phase2-live-stale-');
+  try {
+    const lockPath = path.join(dir, 'locks', 'sync.lock');
+    const lease = acquireSyncFileLease(lockPath, { staleMs: 1_000 });
+    const old = new Date(Date.now() - 60 * 60_000);
+    fs.utimesSync(lockPath, old, old);
+    assert.equal(tryAcquireSyncFileLease(lockPath, { staleMs: 1_000, isProcessAlive: () => true }), null);
+    assert.equal(lease.renew(), true);
+    assert.equal(tryAcquireSyncFileLease(lockPath, { staleMs: 1_000, isProcessAlive: () => true }), null);
+    lease.release();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('B-10: ölü sahibin journal kaydı lease alındıktan sonra kurtarılır', async () => {
+  const dir = tmpDir('phase2-dead-owner-journal-');
+  try {
+    const journal = createSyncAttemptJournal({ dataDir: dir });
+    await journal.begin('crashed-operation', 'dead-lease-token');
+    const lockPath = path.join(dir, 'locks', 'github-sync.lock');
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({
+      token: 'dead-lease-token',
+      pid: 99999999,
+      hostname: os.hostname(),
+      acquiredAt: '2020-01-01T00:00:00.000Z',
+    }));
+    const manager = makeManager(dir);
+    await manager.runExclusive('after-recovery', async () => 'ok');
+    assert.equal(manager.getRecoveredInterruption()?.operation, 'crashed-operation');
+    assert.equal(fs.existsSync(journal.getFilePath()), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('B-38: kuyruk içinden runExclusive çağrısı deadlock üretmez', async () => {
   const dir = tmpDir('phase2-nested-');
   try {
