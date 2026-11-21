@@ -37,6 +37,10 @@ import type {
 } from '../core/sync-display.ts';
 import { BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
 import { GitHubBidirectionalSyncManager } from './github-bidirectional-sync.ts';
+import type { SyncQueueSnapshot } from '../core/sync-operation-queue.ts';
+
+/** Aşama 2: kalıcı senkronizasyon durumu şema sürümü. v1 alanları geriye dönük okunur. */
+export const SYNC_STATE_VERSION = 2;
 import type { createDataStorage } from './storage.ts';
 
 export type TokenSourceKind =
@@ -185,6 +189,15 @@ export interface SyncStatus {
     failed: number;
   };
   fileStates: Record<string, SyncFileStateRecord>;
+  /** Aşama 2 (B-10): çalışan/bekleyen işlemler ve son sonuç. */
+  syncQueue?: SyncQueueSnapshot;
+  /** Aşama 2 (B-10): önceki süreçte yarım kalan işlem. */
+  interruptedSync?: {
+    operation: string;
+    startedAt: string;
+    recoveredAt: string;
+  } | null;
+  syncStateVersion?: number;
   remoteTarget?: {
     owner: string;
     repo: string;
@@ -506,6 +519,38 @@ export class PersistentDataStore {
     });
   }
 
+  /**
+   * Aşama 2 (B-38): Kuyruk dışı senkronizasyon yazma yollarını aynı FIFO
+   * kuyruğu + süreçler arası kilitten geçirir. Zaten kuyruk içindeysek
+   * (ör. aşamalı senkronizasyonun çağırdığı prob) yeniden kilitlenmez.
+   */
+  private async withExclusiveSync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+    if (!this.bidirectionalManager || this.bidirectionalManager.isExclusiveActive()) {
+      return fn();
+    }
+    return this.bidirectionalManager.runExclusive(operation, fn);
+  }
+
+  public async runExclusiveSyncToGitHub(
+    options: Parameters<PersistentDataStore['syncToGitHub']>[0] = {}
+  ): Promise<SyncResult> {
+    return this.withExclusiveSync('push-files', () => this.syncToGitHub(options));
+  }
+
+  public async runExclusiveSafeConnectionProbe(
+    options: Parameters<PersistentDataStore['testSafeConnectionAndProbeManifest']>[0] = {}
+  ): Promise<Awaited<ReturnType<PersistentDataStore['testSafeConnectionAndProbeManifest']>>> {
+    return this.withExclusiveSync('connection-probe', () =>
+      this.testSafeConnectionAndProbeManifest(options)
+    );
+  }
+
+  public async runExclusiveStagedFullSync(
+    options: Parameters<PersistentDataStore['runStagedFullSync']>[0] = {}
+  ): Promise<StagedSyncReport> {
+    return this.withExclusiveSync('staged-sync', () => this.runStagedFullSync(options));
+  }
+
   public attachDataStorage(
     storage: ReturnType<typeof createDataStorage>,
     maxDataBytes?: number
@@ -734,8 +779,17 @@ export class PersistentDataStore {
       lastComparison?: SyncComparisonSummary | null;
       lastSyncReport?: Omit<BidirectionalSyncReport, 'updatedDataDocument'> | null;
       fileStates?: Record<string, SyncFileStateRecord>;
+      syncStateVersion?: number;
     }>(this.syncStateFile, (raw) => (isPlainRecordObject(raw) ? raw : null));
     if (parsed.ok) {
+      // Gelecek şema sürümü bu sürüm tarafından yorumlanamaz; sessizce yanlış
+      // okumak yerine dosya yok sayılır (veri dosyalarına dokunulmaz).
+      if (
+        typeof parsed.data.syncStateVersion === 'number' &&
+        parsed.data.syncStateVersion > SYNC_STATE_VERSION
+      ) {
+        return;
+      }
       this.lastSyncAt = parsed.data.lastSyncAt ?? null;
       this.lastError = parsed.data.lastError ?? null;
       this.repoVisibilityWarning = parsed.data.repoVisibilityWarning;
@@ -757,12 +811,43 @@ export class PersistentDataStore {
       if (isPlainRecordObject(parsed.data.fileStates)) {
         this.fileStates = { ...parsed.data.fileStates };
       }
+      this.recoverStaleSyncingFileStates();
+    }
+  }
+
+  /**
+   * Aşama 2 (B-10): Önceki süreç `syncing` durumunda çöktüyse dosya durumu
+   * sonsuza dek "gönderiliyor" görünmemeli. Kayıt `pending`e çevrilir ve
+   * kesinti açıkça raporlanır; hiçbir iş başarılı sayılmaz.
+   */
+  private recoverStaleSyncingFileStates(): void {
+    const recovered: string[] = [];
+    for (const [repoPath, state] of Object.entries(this.fileStates)) {
+      if (!state || state.status !== 'syncing') continue;
+      this.fileStates[repoPath] = {
+        ...state,
+        status: 'pending',
+        statusLabel: STAGE_LABELS.pending,
+        noop: false,
+        error: 'Kesinti: önceki süreçte yarıda kaldı; sonraki senkronizasyonda yeniden denenecek.',
+        errorCategory: 'network_error',
+        updatedAt: new Date().toISOString(),
+      };
+      recovered.push(repoPath);
+    }
+    if (recovered.length === 0) return;
+    this.lastError = `Kesinti sonrası kurtarma: ${recovered.length} dosya yarıda kalmıştı (${recovered.join(', ')}).`;
+    try {
+      this.persistSyncState();
+    } catch {
+      // Kalıcılaştırma başarısız olsa da bellek durumu doğru kalır.
     }
   }
 
   private persistSyncState() {
     try {
       const payload = {
+        syncStateVersion: SYNC_STATE_VERSION,
         lastSyncAt: this.lastSyncAt,
         lastError: this.lastError,
         persistedInitialReconcile: this.persistedInitialReconcile,
@@ -2070,6 +2155,14 @@ export class PersistentDataStore {
       ...(corruptionWarnings.length > 0 ? { corruptionWarnings } : {}),
       lastSyncAt: this.lastSyncAt,
       syncInProgress: this.isSyncBusy(),
+      syncQueue: this.bidirectionalManager.getQueueStatus(),
+      interruptedSync: this.bidirectionalManager.getRecoveredInterruption()
+        ? {
+            ...this.bidirectionalManager.getRecoveredInterruption()!,
+            recoveredAt: new Date().toISOString(),
+          }
+        : null,
+      syncStateVersion: SYNC_STATE_VERSION,
       initialReconcileCompleted: this.hasCompletedInitialReconcile(),
       lastError: this.lastError,
       catalogCounts: {

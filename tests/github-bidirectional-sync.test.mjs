@@ -2546,3 +2546,52 @@ test('Kayıpsız Birleştirme Temeli 4: process.env icindeki suresi dolmus PAT 4
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('B-39: senkron raporu sayaçları gerçek öncesi/sonrası belgelerden türetir (eklenen/güncellenen/değişmeyen)', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-bidir-b39-'));
+  const gh = createMockGitHubHarness();
+  try {
+    const { store, storage } = createIsolatedSyncEnv(tmpDir);
+    const movies = {};
+    for (let i = 1; i <= 3; i++) movies[`movie:${i}`] = makeMovieRecord(i);
+    store.upsertCatalogItems(Object.values(movies));
+    gh.seedFile('data/catalog/movies.json', movies);
+    gh.seedFile('data/catalog/tv.json', {});
+    gh.seedFile('data/catalog/manifest.json', buildValidManifest(movies, {}));
+
+    const profile = {
+      id: 'profile-main',
+      name: 'Ana',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      preferences: { disliked: [], hidden: [], providers: [], mood: '', reminders: false, notified: [] },
+      items: [
+        { id: 1, media_type: 'movie', title: 'Film 1', status: 'watchlist', personal_rating: '8', genre_ids: [18] },
+      ],
+    };
+    const saved = storage.saveData(makeUserDataDoc([profile]));
+    assert.equal(saved.ok, true);
+
+    gh.seedFile(
+      'data/cinetrack-data.json',
+      makeUserDataDoc([
+        {
+          ...profile,
+          items: [
+            ...profile.items,
+            { id: 2, media_type: 'movie', title: 'Film 2', status: 'completed', personal_rating: '9', genre_ids: [18] },
+          ],
+        },
+      ])
+    );
+
+    await gh.installAndRun(async () => {
+      const report = await store.reconcileWithGitHub();
+      assert.equal(report.ok, true);
+      assert.equal(report.recordsAdded, 1, 'yalnızca gerçekten yeni olan kayıt eklenmiş sayılmalı');
+      assert.equal(report.recordsUpdated, 0, 'değişmeyen kayıt güncellenmiş sayılmamalı');
+      assert.equal(report.recordsSkipped, 4, '3 katalog + 1 mevcut kullanıcı kaydı değişmedi');
+    });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

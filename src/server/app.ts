@@ -460,6 +460,53 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   };
 }
 
+/**
+ * Aşama 2 (B-38): kuyruk dolu / süreçler arası kilit dolu / iptal gibi
+ * çakışmalar 500 değil 409 olarak raporlanır; istemci yeniden denemeyi
+ * ayırt edebilir. Diğer hatalar 500 kalır.
+ */
+function buildSyncFailure(
+  error: unknown,
+  operation: string,
+  fallback: string,
+  secrets: Array<string | undefined>
+): { status: 409 | 500; body: Record<string, unknown> } {
+  const code =
+    error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
+      ? String((error as { code?: string }).code)
+      : '';
+  const contention =
+    code === 'sync_lease_busy' ||
+    code === 'sync_queue_full' ||
+    code === 'sync_queue_timeout' ||
+    code === 'sync_aborted';
+  const message = redactSecrets(
+    error instanceof Error && error.message ? error.message : fallback,
+    secrets
+  );
+  if (contention) {
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        operation,
+        code,
+        verifiedEqual: false,
+        errors: [{ category: 'sync_in_progress', message }],
+      },
+    };
+  }
+  return {
+    status: 500,
+    body: {
+      ok: false,
+      operation,
+      verifiedEqual: false,
+      errors: [{ category: 'http_error', message }],
+    },
+  };
+}
+
 export function createCineTrackApp(options: CineTrackAppOptions): {
   app: Express;
   storage: ReturnType<typeof createDataStorage>;
@@ -2179,19 +2226,10 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const report = await persistentStore.inspectGitHub();
       res.json(report);
     } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'inspect',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'GitHub durum denetimi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
+      const failure = buildSyncFailure(e, 'inspect', 'GitHub durum denetimi başarısız oldu.', [
+        options.githubToken,
+      ]);
+      res.status(failure.status).json(failure.body);
     }
   });
 
@@ -2222,19 +2260,10 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       }
       res.json(report);
     } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'pull',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'GitHub indirme işlemi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
+      const failure = buildSyncFailure(e, 'pull', 'GitHub indirme işlemi başarısız oldu.', [
+        options.githubToken,
+      ]);
+      res.status(failure.status).json(failure.body);
     }
   });
 
@@ -2259,19 +2288,10 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const report = await persistentStore.pushToGitHub();
       res.json(report);
     } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'push',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'GitHub yükleme işlemi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
+      const failure = buildSyncFailure(e, 'push', 'GitHub yükleme işlemi başarısız oldu.', [
+        options.githubToken,
+      ]);
+      res.status(failure.status).json(failure.body);
     }
   });
 
@@ -2299,26 +2319,20 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       }
       res.json(report);
     } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'reconcile',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'İki yönlü eşitleme işlemi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
+      const failure = buildSyncFailure(
+        e,
+        'reconcile',
+        'İki yönlü eşitleme işlemi başarısız oldu.',
+        [options.githubToken]
+      );
+      res.status(failure.status).json(failure.body);
     }
   });
 
   app.post('/api/sync/trigger', originGuard, tokenGuard, async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const syncResult = await persistentStore.syncToGitHub();
+      const syncResult = await persistentStore.runExclusiveSyncToGitHub();
       res.json(syncResult);
     } catch (e: any) {
       res.status(500).json({
@@ -2332,7 +2346,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     res.setHeader('Cache-Control', 'no-store');
     try {
       const forceWriteProbe = Boolean(req.body?.forceWriteProbe);
-      const probeResult = await persistentStore.testSafeConnectionAndProbeManifest({
+      const probeResult = await persistentStore.runExclusiveSafeConnectionProbe({
         forceWriteProbe,
       });
       res.json(probeResult);
@@ -2438,7 +2452,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         typeof req.body?.allowCatalogInPublicRepo === 'boolean'
           ? req.body.allowCatalogInPublicRepo
           : undefined;
-      const stagedReport = await persistentStore.runStagedFullSync({
+      const stagedReport = await persistentStore.runExclusiveStagedFullSync({
         forceWriteProbe,
         ...(allowOverride !== undefined ? { allowPersonalDataInPublicRepo: allowOverride } : {}),
         ...(allowCatalogOverride !== undefined ? { allowCatalogInPublicRepo: allowCatalogOverride } : {}),
@@ -2448,8 +2462,14 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       }
       res.json(stagedReport);
     } catch (e: any) {
-      res.status(500).json({
+      const code =
+        e && typeof e === 'object' && typeof (e as { code?: unknown }).code === 'string'
+          ? String((e as { code?: string }).code)
+          : '';
+      const status = code.startsWith('sync_') ? 409 : 500;
+      res.status(status).json({
         ok: false,
+        ...(code ? { code } : {}),
         error: redactSecrets(e?.message || 'Aşamalı senkronizasyon başarısız oldu.', [
           options.githubToken,
         ]),

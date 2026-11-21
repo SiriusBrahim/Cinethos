@@ -155,6 +155,8 @@ export interface BidirectionalSyncReport {
   filesBlockedPublic: string[];
   recordsAdded: number;
   recordsUpdated: number;
+  /** Değişmeyen, iki tarafta da mevcut kayıtlar (Aşama 2, B-39). */
+  recordsSkipped?: number;
   recordsConflicted: number;
   conflicts: UserDataConflictItem[];
   warnings: string[];

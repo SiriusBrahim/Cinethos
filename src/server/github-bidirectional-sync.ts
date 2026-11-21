@@ -1,5 +1,5 @@
 import { normalizeProfileId } from '../core/profile-id.ts';
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {
   ALGORITHM_VERSION,
@@ -37,6 +37,14 @@ import {
   normalizeDerivedProfileItem,
 } from '../core/derived-profile-cache.ts';
 import { githubFetch } from './github-request.ts';
+import { buildBidirectionalSyncCounters } from '../core/sync-counters.ts';
+import {
+  SyncOperationQueue,
+  type SyncQueueSnapshot,
+  type SyncQueueTaskContext,
+} from '../core/sync-operation-queue.ts';
+import { SyncAttemptJournal, type SyncAttemptRecord } from './sync-attempt-journal.ts';
+import { acquireSyncFileLease } from './sync-file-lease.ts';
 import type {
   BidirectionalSyncReport,
   PullConflictSummary,
@@ -1762,36 +1770,103 @@ function buildBlockedPublicPaths(includeCatalog: boolean, includePersonal: boole
 
 export class GitHubBidirectionalSyncManager {
   private deps: BidirectionalSyncDependencies;
-  private activeOperationPromise: Promise<any> | null = null;
-  private syncInProgress = false;
+  private readonly queue: SyncOperationQueue;
+  private readonly journal: SyncAttemptJournal;
+  private readonly leasePath: string;
+  private recoveredInterrupted: SyncAttemptRecord | null = null;
   private initialReconcileCompleted = false;
+  private exclusiveActive = false;
 
   constructor(deps: BidirectionalSyncDependencies) {
     this.deps = deps;
+    this.queue = new SyncOperationQueue();
+    this.journal = new SyncAttemptJournal({ dataDir: deps.dataDir });
+    this.leasePath = path.join(deps.dataDir, 'locks', 'github-sync.lock');
+    // Süreç çökmesinden kalan "uçuşta" kaydı açılışta tespit et ve temizle.
+    // Kuyruk bellekte olduğu için iş yeniden başlatılmaz; durum açıkça raporlanır.
+    const interrupted = this.journal.read();
+    if (interrupted) {
+      this.recoveredInterrupted = interrupted;
+      this.queue.markRecoveredInterrupted(1);
+      try {
+        rmSync(this.journal.getFilePath(), { force: true });
+      } catch {
+        // Silinemezse sonraki açılışta tekrar denenir; durum yine raporlanır.
+      }
+    }
   }
 
   public isBusy(): boolean {
-    return this.syncInProgress;
+    return this.queue.isBusy();
+  }
+
+  public getQueueStatus(): SyncQueueSnapshot {
+    return this.queue.getSnapshot();
+  }
+
+  public getRecoveredInterruption(): SyncAttemptRecord | null {
+    return this.recoveredInterrupted;
+  }
+
+  /** Senkronizasyon kuyruğunda bir işlem yürüyor mu (iç içe çağrı tespiti)? */
+  public isExclusiveActive(): boolean {
+    return this.exclusiveActive;
+  }
+
+  /**
+   * Kuyruk dışındaki yazma yollarını (ör. aşamalı yükleme, bağlantı probu)
+   * aynı FIFO kuyruğu + süreçler arası kilitten geçirir. Kuyruk içinden
+   * çağrılırsa yeniden kilitlemeye çalışmaz (deadlock yok).
+   */
+  public async runExclusive<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+    if (this.exclusiveActive) return fn();
+    return this.runSerialized(operation, async () => fn(), operation);
   }
 
   public hasCompletedInitialReconcile(): boolean {
     return this.initialReconcileCompleted;
   }
 
-  private async runSerialized<T>(fn: () => Promise<T>): Promise<T> {
-    const previous = this.activeOperationPromise ?? Promise.resolve();
-    const next = previous
-      .catch(() => undefined)
-      .then(async () => {
-        this.syncInProgress = true;
+  /**
+   * B-10 / B-38: Süreç içi FIFO kuyruk + süreçler arası dosya kilidi + kalıcı
+   * deneme günlüğü. Kilit `finally` ile her durumda (başarı, hata, abort)
+   * serbest bırakılır; deadlock oluşmaz.
+   */
+  private async runSerialized<T>(
+    operation: string,
+    fn: (context: SyncQueueTaskContext) => Promise<T>,
+    dedupeKey?: string
+  ): Promise<T> {
+    // İç içe çağrı (ör. aşamalı senkronizasyon → reconcile): dış işlem zaten
+    // kuyruğu ve süreçler arası kilidi tutuyor. Yeniden sıraya girmek kendini
+    // bekleyen deadlock üretir; bu yüzden doğrudan çalıştırılır.
+    if (this.exclusiveActive) {
+      return fn({ signal: new AbortController().signal });
+    }
+    return this.queue.enqueue(
+      operation,
+      async () => {
+        const lease = acquireSyncFileLease(this.leasePath);
         try {
-          return await fn();
+          await this.journal.begin(operation);
+          this.exclusiveActive = true;
+          try {
+            return await fn({ signal: new AbortController().signal });
+          } finally {
+            this.exclusiveActive = false;
+            try {
+              await this.journal.complete();
+            } catch {
+              // Günlük temizliği başarısız olsa da ana işlem sonucu korunur;
+              // sonraki açılış kaydı "interrupted" olarak raporlar.
+            }
+          }
         } finally {
-          this.syncInProgress = false;
+          lease.release();
         }
-      });
-    this.activeOperationPromise = next;
-    return next;
+      },
+      { dedupeKey: dedupeKey ?? operation }
+    );
   }
 
   private get maxBytes(): number {
@@ -3052,7 +3127,7 @@ export class GitHubBidirectionalSyncManager {
    * kayıt sayılarını, ham dosya ve semantik içerik hash'lerini karşılaştırır.
    */
   public async inspect(): Promise<BidirectionalSyncReport> {
-    return this.runSerialized(async () => {
+    return this.runSerialized('inspect', async () => {
       const startedAt = new Date().toISOString();
       const cfg = this.deps.getGitHubConfig();
       const localBefore = await this.inspectLocalSide();
@@ -3211,7 +3286,9 @@ export class GitHubBidirectionalSyncManager {
   public async pull(
     options: { conflictStrategy?: 'ask' | 'merge' | 'overwrite_with_remote' } = {}
   ): Promise<BidirectionalSyncReport> {
-    return this.runSerialized(async () => {
+    return this.runSerialized(
+      'pull',
+      async () => {
       const conflictStrategy = options.conflictStrategy || 'ask';
       const startedAt = new Date().toISOString();
       const cfg = this.deps.getGitHubConfig();
@@ -3416,8 +3493,6 @@ export class GitHubBidirectionalSyncManager {
       const warnings: string[] = [];
       const errors: SyncErrorRecord[] = [];
       const conflicts: UserDataConflictItem[] = [];
-      let recordsAdded = 0;
-      let recordsUpdated = 0;
       let updatedDataDocument: DataDocument | undefined;
       let serverRevision: number | undefined;
 
@@ -3462,8 +3537,6 @@ export class GitHubBidirectionalSyncManager {
               validateParsed: isPlainObject,
             });
             filesDownloaded.push('data/catalog/movies.json');
-            recordsAdded += mergedMovies.addedToLocal;
-            recordsUpdated += mergedMovies.updatedLocal;
           }
         }
       }
@@ -3504,8 +3577,6 @@ export class GitHubBidirectionalSyncManager {
               validateParsed: isPlainObject,
             });
             filesDownloaded.push('data/catalog/tv.json');
-            recordsAdded += mergedTv.addedToLocal;
-            recordsUpdated += mergedTv.updatedLocal;
           }
         }
       }
@@ -3579,13 +3650,10 @@ export class GitHubBidirectionalSyncManager {
                 remoteInspect.bundle.userData
               );
               docToWrite = mergedUser.mergedDoc;
-              recordsAdded += mergedUser.addedToLocal;
-              recordsUpdated += mergedUser.updatedItems;
               conflicts.push(...mergedUser.conflicts);
               filesMerged.push('data/cinetrack-data.json');
             } else {
               docToWrite = remoteInspect.bundle.userData;
-              recordsAdded += remoteInspect.bundle.summary.userUniqueSavedItemsCount;
             }
 
             const saveRes = await this.deps.storage.applySyncedDocumentSerialized(docToWrite);
@@ -3672,9 +3740,6 @@ export class GitHubBidirectionalSyncManager {
               conflictStrategy === 'overwrite_with_remote' || !localKunye
                 ? remoteKunye
                 : mergeCinemaKunyeDocumentsLossless(localKunye, remoteKunye);
-            const prevCount = localKunye ? Object.keys(localKunye.entries).length : 0;
-            const nextCount = Object.keys(nextKunye.entries).length;
-            recordsAdded += Math.max(0, nextCount - prevCount);
             writeJsonFileAtomic(kunyeTargetPath, stringifyDeterministic(nextKunye), {
               backupPath: `${kunyeTargetPath}.bak`,
               validateParsed: isPlainObject,
@@ -3743,7 +3808,6 @@ export class GitHubBidirectionalSyncManager {
             validateParsed: isPlainObject,
           });
           filesDownloaded.push(repoPath);
-          recordsAdded += Object.keys(remoteProfDoc.items || {}).length;
         }
       }
 
@@ -3758,6 +3822,15 @@ export class GitHubBidirectionalSyncManager {
       const partialFailure =
         !ok && (filesDownloaded.length > 0 || filesUnchanged.length > 0) && filesFailed.length > 0;
       const verifiedEqual = ok && postComparison.semanticEqual;
+
+      // B-39: sayaçlar ad hoc artışlardan değil, işlem öncesi/sonrası gerçek
+      // belgelerden türetilir. Türetilmiş profil önbelleği sayılmaz.
+      const recordCounts = buildBidirectionalSyncCounters({
+        localBefore,
+        localAfter,
+        remoteBefore: remoteInspect.bundle,
+        remoteAfter: remoteInspect.bundle,
+      });
 
       const report: BidirectionalSyncReport = {
         ok,
@@ -3780,8 +3853,9 @@ export class GitHubBidirectionalSyncManager {
         filesFailed,
         filesPending: postComparison.differingFiles.map((d) => d.repoPath),
         filesBlockedPublic: buildBlockedPublicPaths(includeCatalog, includePersonal),
-        recordsAdded,
-        recordsUpdated,
+        recordsAdded: recordCounts.added,
+        recordsUpdated: recordCounts.updated,
+        recordsSkipped: recordCounts.skipped,
         recordsConflicted: conflicts.length,
         conflicts,
         warnings,
@@ -3798,7 +3872,8 @@ export class GitHubBidirectionalSyncManager {
       });
 
       return report;
-    });
+      }
+    );
   }
 
   /**
@@ -3806,7 +3881,9 @@ export class GitHubBidirectionalSyncManager {
    * ardından uzak dosyaları yeniden okuyarak hash ve kayıt sayılarını doğrular (`verifiedEqual`).
    */
   public async push(): Promise<BidirectionalSyncReport> {
-    return this.runSerialized(async () => {
+    return this.runSerialized(
+      'push',
+      async () => {
       const startedAt = new Date().toISOString();
       const cfg = this.deps.getGitHubConfig();
       const localBefore = await this.inspectLocalSide();
@@ -3926,8 +4003,6 @@ export class GitHubBidirectionalSyncManager {
       const pushConflicts: UserDataConflictItem[] = [];
       let pushUpdatedDataDocument: DataDocument | undefined;
       let pushServerRevision: number | undefined;
-      let pushRecordsUpdated = 0;
-      let pushAddedToLocal = 0;
 
       if (
         includePersonal &&
@@ -3952,8 +4027,6 @@ export class GitHubBidirectionalSyncManager {
             if (saveRes.ok) {
               pushUpdatedDataDocument = saveRes.document;
               pushServerRevision = saveRes.document.revision;
-              pushAddedToLocal = mergedUser.addedToLocal;
-              pushRecordsUpdated += mergedUser.updatedItems;
               pushConflicts.push(...mergedUser.conflicts);
               if (mergedUser.addedToLocal > 0 || mergedUser.updatedItems > 0) {
                 pushFilesMerged.push('data/cinetrack-data.json');
@@ -3970,7 +4043,6 @@ export class GitHubBidirectionalSyncManager {
           if (saveRes.ok) {
             pushUpdatedDataDocument = saveRes.document;
             pushServerRevision = saveRes.document.revision;
-            pushAddedToLocal = remoteBeforeInspect.bundle.summary.userUniqueSavedItemsCount;
             localReady = await this.inspectLocalSide();
             localProfilePaths = Object.keys(localReady.derivedProfiles);
           }
@@ -3994,13 +4066,10 @@ export class GitHubBidirectionalSyncManager {
               localReady.cinemaKunye,
               remoteBeforeInspect.bundle.cinemaKunye
             );
-            const prevCount = Object.keys(localReady.cinemaKunye.entries).length;
-            const nextCount = Object.keys(mergedKunye.entries).length;
             writeJsonFileAtomic(kunyeTargetPath, stringifyDeterministic(mergedKunye), {
               backupPath: `${kunyeTargetPath}.bak`,
               validateParsed: isPlainObject,
             });
-            pushAddedToLocal += Math.max(0, nextCount - prevCount);
             pushFilesMerged.push('data/sinema-kunyesi.json');
             localReady = await this.inspectLocalSide();
           }
@@ -4013,7 +4082,6 @@ export class GitHubBidirectionalSyncManager {
               validateParsed: isPlainObject,
             }
           );
-          pushAddedToLocal += Object.keys(remoteBeforeInspect.bundle.cinemaKunye.entries).length;
           localReady = await this.inspectLocalSide();
         }
       }
@@ -4079,21 +4147,13 @@ export class GitHubBidirectionalSyncManager {
         pushErrors.length === 0;
       const verifiedEqual = ok && postComparison.semanticEqual;
 
-      const addedMovies = Math.max(
-        0,
-        remoteAfterInspect.bundle.summary.catalogMovieCount -
-          remoteBeforeInspect.bundle.summary.catalogMovieCount
-      );
-      const addedTv = Math.max(
-        0,
-        remoteAfterInspect.bundle.summary.catalogTvCount -
-          remoteBeforeInspect.bundle.summary.catalogTvCount
-      );
-      const addedUser = Math.max(
-        0,
-        remoteAfterInspect.bundle.summary.userUniqueSavedItemsCount -
-          remoteBeforeInspect.bundle.summary.userUniqueSavedItemsCount
-      );
+      // B-39: pull/push/reconcile aynı otoriteyi kullanır (bkz. sync-counters.ts).
+      const recordCounts = buildBidirectionalSyncCounters({
+        localBefore,
+        localAfter: localReady,
+        remoteBefore: remoteBeforeInspect.bundle,
+        remoteAfter: remoteAfterInspect.transportFailed ? null : remoteAfterInspect.bundle,
+      });
 
       const report: BidirectionalSyncReport = {
         ok,
@@ -4118,8 +4178,9 @@ export class GitHubBidirectionalSyncManager {
           ? []
           : postComparison.differingFiles.map((d) => d.repoPath),
         filesBlockedPublic: syncRes.filesBlockedPublic,
-        recordsAdded: addedMovies + addedTv + addedUser + pushAddedToLocal,
-        recordsUpdated: pushRecordsUpdated,
+        recordsAdded: recordCounts.added,
+        recordsUpdated: recordCounts.updated,
+        recordsSkipped: recordCounts.skipped,
         recordsConflicted: pushConflicts.length,
         conflicts: pushConflicts,
         warnings,
@@ -4138,7 +4199,8 @@ export class GitHubBidirectionalSyncManager {
       });
 
       return report;
-    });
+      }
+    );
   }
 
   /**
@@ -4150,7 +4212,9 @@ export class GitHubBidirectionalSyncManager {
   public async reconcile(
     options: { includePersonalOverride?: boolean; includeCatalogOverride?: boolean } = {}
   ): Promise<BidirectionalSyncReport> {
-    return this.runSerialized(async () => {
+    return this.runSerialized(
+      'reconcile',
+      async () => {
       const startedAt = new Date().toISOString();
       const cfg = this.deps.getGitHubConfig();
       const localBefore = await this.inspectLocalSide();
@@ -4303,8 +4367,6 @@ export class GitHubBidirectionalSyncManager {
       const filesFailed: string[] = [];
       const errors: SyncErrorRecord[] = [];
       const conflicts: UserDataConflictItem[] = [];
-      let recordsAdded = 0;
-      let recordsUpdated = 0;
       let updatedDataDocument: DataDocument | undefined;
       let serverRevision: number | undefined;
 
@@ -4341,8 +4403,6 @@ export class GitHubBidirectionalSyncManager {
             'movie'
           );
           reconciledMovies = movieMerge.merged;
-          recordsAdded += movieMerge.addedToLocal + movieMerge.addedToRemote;
-          recordsUpdated += Math.max(movieMerge.updatedLocal, movieMerge.updatedRemote);
 
           const serializedMergedMovies = stringifyDeterministic(reconciledMovies);
           const moviesPath = path.join(this.deps.dataDir, 'catalog', 'movies.json');
@@ -4398,8 +4458,6 @@ export class GitHubBidirectionalSyncManager {
             'tv'
           );
           reconciledTv = tvMerge.merged;
-          recordsAdded += tvMerge.addedToLocal + tvMerge.addedToRemote;
-          recordsUpdated += Math.max(tvMerge.updatedLocal, tvMerge.updatedRemote);
 
           const serializedMergedTv = stringifyDeterministic(reconciledTv);
           const tvPath = path.join(this.deps.dataDir, 'catalog', 'tv.json');
@@ -4523,8 +4581,6 @@ export class GitHubBidirectionalSyncManager {
               localBefore.userData,
               remoteBeforeInspect.bundle.userData
             );
-            recordsAdded += mergedUser.addedToLocal + mergedUser.addedToRemote;
-            recordsUpdated += mergedUser.updatedItems;
             conflicts.push(...mergedUser.conflicts);
 
             const saveRes = await this.deps.storage.applySyncedDocumentSerialized(
@@ -4547,7 +4603,6 @@ export class GitHubBidirectionalSyncManager {
           }
         } else if (!localBefore.userData && remoteBeforeInspect.bundle.userData) {
           const remoteDoc = remoteBeforeInspect.bundle.userData;
-          recordsAdded += remoteBeforeInspect.bundle.summary.userUniqueSavedItemsCount;
           const saveRes = await this.deps.storage.applySyncedDocumentSerialized(remoteDoc);
           if (saveRes.ok) {
             reconciledUserData = saveRes.document;
@@ -4776,11 +4831,6 @@ export class GitHubBidirectionalSyncManager {
               localBefore.cinemaKunye,
               remoteBeforeInspect.bundle.cinemaKunye
             );
-            const localCount = Object.keys(localBefore.cinemaKunye.entries).length;
-            const remoteCount = Object.keys(remoteBeforeInspect.bundle.cinemaKunye.entries).length;
-            const mergedCount = Object.keys(mergedKunye.entries).length;
-            recordsAdded +=
-              Math.max(0, mergedCount - localCount) + Math.max(0, mergedCount - remoteCount);
             const kunyeTargetPath = path.join(this.deps.dataDir, 'sinema-kunyesi.json');
             writeJsonFileAtomic(kunyeTargetPath, stringifyDeterministic(mergedKunye), {
               backupPath: `${kunyeTargetPath}.bak`,
@@ -4790,7 +4840,6 @@ export class GitHubBidirectionalSyncManager {
           }
         } else if (!localBefore.cinemaKunye && remoteBeforeInspect.bundle.cinemaKunye) {
           const remoteKunye = remoteBeforeInspect.bundle.cinemaKunye;
-          recordsAdded += Object.keys(remoteKunye.entries).length;
           const kunyeTargetPath = path.join(this.deps.dataDir, 'sinema-kunyesi.json');
           writeJsonFileAtomic(kunyeTargetPath, stringifyDeterministic(remoteKunye), {
             backupPath: `${kunyeTargetPath}.bak`,
@@ -4982,6 +5031,14 @@ export class GitHubBidirectionalSyncManager {
         this.initialReconcileCompleted = true;
       }
 
+      // B-39: aynı otorite — gerçek öncesi/sonrası belgeler.
+      const recordCounts = buildBidirectionalSyncCounters({
+        localBefore,
+        localAfter,
+        remoteBefore: remoteBeforeInspect.bundle,
+        remoteAfter: remoteAfterInspect.transportFailed ? null : remoteAfterInspect.bundle,
+      });
+
       const report: BidirectionalSyncReport = {
         ok,
         partialFailure,
@@ -5005,8 +5062,9 @@ export class GitHubBidirectionalSyncManager {
           ? []
           : postComparison.differingFiles.map((d) => d.repoPath),
         filesBlockedPublic: buildBlockedPublicPaths(includeCatalog, includePersonal),
-        recordsAdded,
-        recordsUpdated,
+        recordsAdded: recordCounts.added,
+        recordsUpdated: recordCounts.updated,
+        recordsSkipped: recordCounts.skipped,
         recordsConflicted: conflicts.length,
         conflicts,
         warnings,
@@ -5025,6 +5083,7 @@ export class GitHubBidirectionalSyncManager {
       });
 
       return report;
-    });
+      }
+    );
   }
 }
