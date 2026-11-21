@@ -179,8 +179,12 @@ gecikmeyi referanslı bırakır; hem Node 22 hem Node 26'da 754/754 geçer.
 - Journal lease token'ını saklar. Başlangıç kurtarması önce süreçler-arası lease
   alır; başka süreç kilidi tutuyorsa journal'a dokunmaz. Her yeni işlem kendi
   lease'i altında eski journal'ı kurtarır ve yalnızca kendi token'ıyla tamamlar.
-- GitHub senkronizasyonu yalnızca `--dev` geliştirme sunucusunda etkinleşir;
-  production modunda uzak kimlik bilgileri store'a verilmez, otomatik eşitleme
-  zamanlayıcıları kurulmaz ve GitHub sync API'leri kapalıdır.
+- GitHub senkronizasyonu yalnızca `--dev` geliştirme sunucusunda etkinleşir.
+  Production modunda uzak kimlik bilgileri store'a verilmez; sync-state dosyası
+  yüklenmez, journal başlangıç kurtarması/lease oluşturma çalışmaz ve otomatik
+  eşitleme ile token yenileme zamanlayıcıları kurulmaz.
+- Production'da `GET /api/sync/status` yalnızca kimlik/durum kontrolü için açık
+  kalır ve `mode: local_only` döner. GitHub'a veri aktaran/indiren diğer
+  `/api/sync/*` uçları ile GitHub profil yedek yükleme kapalıdır.
 - Geliştirme modunda `CINETHOS_ENABLE_GITHUB_DEV_SYNC=false` ile ayrıca kapatılabilir.
 - Ağ dosya sistemleri ve farklı makineler için dağıtık kilit garantisi verilmez.
