@@ -114,7 +114,6 @@ import { SeriesSection } from './modules/series/SeriesSection.tsx';
 import { OperationsSection } from './modules/operations/OperationsSection.tsx';
 import type { ModuleId } from './app/module-registry.ts';
 import { useHashNavigation } from './app/useHashNavigation.ts';
-import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useServerSyncCoordinator } from './hooks/useServerSyncCoordinator.ts';
@@ -2216,14 +2215,6 @@ export function App() {
           </div>
         </div>
       </footer>
-
-      {/* Mobil 56px sticky alt tab bar — kayıt defterinden türetilir (Faz 7) */}
-      <MobileBottomNav
-        tab={tab}
-        myListCount={allListCount}
-        onSelectTab={setTab}
-        onOpenProfile={() => setProfileOpen(true)}
-      />
 
       {/* Modals & Drawers */}
       <DetailModal
