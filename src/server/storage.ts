@@ -327,6 +327,11 @@ export function createDataStorage(options: StorageOptions) {
 
   let unrecoverableCorruptionError: string | null = null;
   let writeQueue: Promise<unknown> = Promise.resolve();
+  // Aşama 2 (B-38): bekleyen/çalışan asenkron yazma sayısı ve senkron yazma
+  // işareti. Senkron `saveData` bu sırada çağrılırsa sıraya giremez; sessizce
+  // yarışmak yerine fail-closed davranır.
+  let queuedWriteCount = 0;
+  let syncWriteActive = false;
   // Aşama 1 (B-04) — diskteki belge limitleri aşıyorsa yazma engellenir.
   let readLimitViolations: string[] = [];
 
@@ -338,7 +343,14 @@ export function createDataStorage(options: StorageOptions) {
   });
 
   function serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = writeQueue.then(task);
+    queuedWriteCount += 1;
+    const run = writeQueue.then(async () => {
+      try {
+        return await task();
+      } finally {
+        queuedWriteCount = Math.max(0, queuedWriteCount - 1);
+      }
+    });
     writeQueue = run.catch(() => undefined);
     return run;
   }
@@ -1075,23 +1087,34 @@ export function createDataStorage(options: StorageOptions) {
   }
 
   function saveData(rawPayload: unknown, saveOptions: SaveDataOptions = {}): SaveDataResult {
-    const current = readData();
-    const prepared = validateAndPrepareSave(current, rawPayload, saveOptions);
-    if (!prepared.ok) {
-      return prepared;
+    if (queuedWriteCount > 0 || syncWriteActive) {
+      throw new Error(
+        'saveData() eşzamanlı bir yazma sürerken çağrılamaz; üretim yolları saveDataSerialized() kullanmalıdır.'
+      );
     }
-    persistDocumentDiskSync(current, prepared.documentToPersist);
-    unrecoverableCorruptionError = null;
-    readLimitViolations = [];
-    return {
-      ok: true,
-      document: prepared.documentToPersist,
-      totalItems: prepared.incomingItems,
-      merged: prepared.merged,
-    };
+    syncWriteActive = true;
+    try {
+      const current = readData();
+      const prepared = validateAndPrepareSave(current, rawPayload, saveOptions);
+      if (!prepared.ok) {
+        return prepared;
+      }
+      persistDocumentDiskSync(current, prepared.documentToPersist);
+      unrecoverableCorruptionError = null;
+      readLimitViolations = [];
+      return {
+        ok: true,
+        document: prepared.documentToPersist,
+        totalItems: prepared.incomingItems,
+        merged: prepared.merged,
+      };
+    } finally {
+      syncWriteActive = false;
+    }
   }
 
-  async function saveDataAsync(
+  /** Serializable kuyruğa girmeyen gerçek yazma gövdesi (yalnızca serialize içinden çağrılır). */
+  async function saveDataAsyncUnlocked(
     rawPayload: unknown,
     saveOptions: SaveDataOptions = {}
   ): Promise<SaveDataResult> {
@@ -1111,11 +1134,18 @@ export function createDataStorage(options: StorageOptions) {
     };
   }
 
+  function saveDataAsync(
+    rawPayload: unknown,
+    saveOptions: SaveDataOptions = {}
+  ): Promise<SaveDataResult> {
+    return serialize(() => saveDataAsyncUnlocked(rawPayload, saveOptions));
+  }
+
   function saveDataSerialized(
     rawPayload: unknown,
     saveOptions: SaveDataOptions = {}
   ): Promise<SaveDataResult> {
-    return serialize(() => saveDataAsync(rawPayload, saveOptions));
+    return serialize(() => saveDataAsyncUnlocked(rawPayload, saveOptions));
   }
 
   async function listBackupsAsync(): Promise<BackupMetadata[]> {
@@ -1316,7 +1346,7 @@ export function createDataStorage(options: StorageOptions) {
 
   function applySyncedDocumentSerialized(rawPayload: unknown): Promise<SaveDataResult> {
     return serialize(() =>
-      saveDataAsync(rawPayload, {
+      saveDataAsyncUnlocked(rawPayload, {
         expectedRevision: null,
         confirmBulkDelete: true,
         forceOverwrite: true,
@@ -1336,6 +1366,7 @@ export function createDataStorage(options: StorageOptions) {
     readIsolatedProfileAsync,
     readIsolatedUserListsAsync,
     saveData,
+    saveDataAsync,
     saveDataSerialized,
     backupExistingDataAsync,
     createSafetySnapshotSerialized,
