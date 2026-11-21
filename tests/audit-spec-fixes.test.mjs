@@ -706,3 +706,21 @@ test('MOOD-PHRASE: çok kelimeli mood ifadeleri eşleşir', async () => {
     'slow burn ifadesi karşıt ton olarak yakalanmalı'
   );
 });
+
+
+test('Production yapılandırmasında GitHub senkronizasyon API uçları kapalıdır', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-github-prod-disabled-'));
+  try {
+    await withServer(
+      { dataDir: tmpDir, githubDevSyncEnabled: false },
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/sync/status`);
+        assert.equal(response.status, 404);
+        const body = await response.json();
+        assert.equal(body.code, 'github_dev_sync_disabled');
+      }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
