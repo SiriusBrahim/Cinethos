@@ -28,7 +28,15 @@ export interface ServerBackupMetadata {
 }
 
 export interface ServerConflictDetail {
-  code: 'revision_conflict' | 'precondition_required' | 'sudden_item_drop' | 'profile_conflict';
+  code:
+    | 'revision_conflict'
+    | 'precondition_required'
+    | 'sudden_item_drop'
+    | 'item_drop'
+    | 'profile_drop'
+    | 'profile_metadata_drop'
+    | 'tombstone_drop'
+    | 'profile_conflict';
   message: string;
   currentRevision?: number;
   expectedRevision?: number;
@@ -464,6 +472,10 @@ export async function pushServerDataDetailed(
         bodyJson?.code === 'profile_conflict' ||
         bodyJson?.code === 'precondition_required' ||
         bodyJson?.code === 'sudden_item_drop' ||
+        bodyJson?.code === 'item_drop' ||
+        bodyJson?.code === 'profile_drop' ||
+        bodyJson?.code === 'profile_metadata_drop' ||
+        bodyJson?.code === 'tombstone_drop' ||
         response.status === 412 ||
         response.status === 428)
     ) {

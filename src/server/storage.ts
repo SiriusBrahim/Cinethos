@@ -43,7 +43,7 @@ import {
   resolveStorageDriver,
   type StorageDriver,
 } from './sqlite-primary-store.ts';
-import { assertSafeDataDir } from './test-data-guard.ts';
+import { assertSafeDataDir, assertSafeWritePath } from './test-data-guard.ts';
 export interface StorageOptions {
   dataDir?: string;
   maxDataBytes?: number;
@@ -112,7 +112,9 @@ export type SaveDataResult =
         | 'profile_conflict'
         | 'precondition_required'
         | 'sudden_item_drop'
+        | 'item_drop'
         | 'profile_drop'
+        | 'profile_metadata_drop'
         | 'tombstone_drop'
         | 'limits_exceeded'
         | 'payload_too_large'
@@ -145,26 +147,116 @@ function isWorthKeeping(doc: DataDocument): boolean {
 
 const SNAPSHOT_FILE_PATTERN = /^cinetrack-[a-zA-Z0-9._-]+\.json$/;
 
+/**
+ * Aşama 1 (B-09) — profil kapsamlı veri kaybı istatistikleri.
+ *
+ * Anahtarlar `profileId` ile kapsamlandırılır (`profileId\u0000mediaKey`).
+ * Global bir `Set` kullanılırsa aynı içerik başka bir profilde durduğu sürece
+ * bir profilden silinen kayıt görünmez olur; bu kabul edilemez.
+ */
+interface ProfileLossStats {
+  /** mediaKey -> en yeni etkileşim zamanı (ms). */
+  items: Map<string, number>;
+  /** mediaKey -> silme (tombstone) zamanı (ms). */
+  tombstones: Map<string, number>;
+  itemCount: number;
+  hasMetadata: boolean;
+}
+
 interface DocumentLossStats {
+  profiles: Map<string, ProfileLossStats>;
   uniqueItems: number;
   itemKeys: Set<string>;
   tombstones: number;
-  profileItemCounts: Map<string, number>;
 }
 
-/** Aşama 1 (B-09) — veri kaybı koruması için belge istatistikleri. */
+/** Bir kaydın bilinen en yeni etkileşim zamanı; yoksa 0. */
+function itemInteractionTimestamp(item: any): number {
+  const candidates = [item?.watchedAt, item?.updatedAt, item?.addedAt, item?.firstAddedAt];
+  let newest = 0;
+  for (const value of candidates) {
+    if (typeof value !== 'string' || !value) continue;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed > newest) newest = parsed;
+  }
+  return newest;
+}
+
+function tombstoneTimestamp(value: unknown): number {
+  if (typeof value !== 'string' || !value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Bir profilin içerik dışı anlamlı metaverisi var mı? */
+function profileHasMetadata(profile: any): boolean {
+  if (!profile || typeof profile !== 'object') return false;
+  if (typeof profile.name === 'string' && profile.name.trim()) return true;
+  if (typeof profile.createdAt === 'string' && profile.createdAt.trim()) return true;
+  if (Array.isArray(profile.favoriteActors) && profile.favoriteActors.length > 0) return true;
+  if (profile.cinemaKunye && typeof profile.cinemaKunye === 'object') return true;
+  if (profile.settings && typeof profile.settings === 'object') return true;
+  const preferences = profile.preferences;
+  if (preferences && typeof preferences === 'object') {
+    if (Array.isArray(preferences.disliked) && preferences.disliked.length > 0) return true;
+    if (Array.isArray(preferences.providers) && preferences.providers.length > 0) return true;
+    if (typeof preferences.mood === 'string' && preferences.mood.trim()) return true;
+    if (preferences.reminders === true) return true;
+    if (Array.isArray(preferences.notified) && preferences.notified.length > 0) return true;
+  }
+  return false;
+}
+
+/** Aşama 1 (B-09) — veri kaybı koruması için profil kapsamlı istatistikler. */
 function collectDocumentLossStats(doc: DataDocument | null | undefined): DocumentLossStats {
+  const profiles = new Map<string, ProfileLossStats>();
   const itemKeys = new Set<string>();
-  const profileItemCounts = new Map<string, number>();
   let tombstones = 0;
+
   for (const profile of Array.isArray(doc?.profiles) ? doc.profiles : []) {
     const id = normalizeProfileId(profile?.id) ?? String(profile?.id ?? '');
     const items = Array.isArray(profile?.items) ? profile.items : [];
-    profileItemCounts.set(id, (profileItemCounts.get(id) || 0) + items.length);
-    for (const item of items) itemKeys.add(makeMediaKey(item));
-    tombstones += Object.keys(profile?.deleted_keys || {}).length;
+    const deletedKeys =
+      profile?.deleted_keys && typeof profile.deleted_keys === 'object'
+        ? (profile.deleted_keys as Record<string, unknown>)
+        : {};
+
+    const scopedItems = new Map<string, number>();
+    for (const item of items) {
+      const key = makeMediaKey(item);
+      itemKeys.add(key);
+      scopedItems.set(key, Math.max(scopedItems.get(key) ?? 0, itemInteractionTimestamp(item)));
+    }
+    const scopedTombstones = new Map<string, number>();
+    for (const [key, value] of Object.entries(deletedKeys)) {
+      scopedTombstones.set(key, Math.max(scopedTombstones.get(key) ?? 0, tombstoneTimestamp(value)));
+    }
+    tombstones += Object.keys(deletedKeys).length;
+
+    // Aynı profil kimliği birden fazla kez görünürse (bozuk/legacy belge)
+    // istatistikler birleştirilir; hiçbir kayıt sessizce düşürülmez.
+    const existing = profiles.get(id);
+    if (existing) {
+      for (const [key, ts] of scopedItems) {
+        existing.items.set(key, Math.max(existing.items.get(key) ?? 0, ts));
+      }
+      for (const [key, ts] of scopedTombstones) {
+        existing.tombstones.set(key, Math.max(existing.tombstones.get(key) ?? 0, ts));
+      }
+      existing.itemCount += items.length;
+      existing.hasMetadata = existing.hasMetadata || profileHasMetadata(profile);
+      continue;
+    }
+
+    profiles.set(id, {
+      items: scopedItems,
+      tombstones: scopedTombstones,
+      itemCount: items.length,
+      hasMetadata: profileHasMetadata(profile),
+    });
   }
-  return { uniqueItems: itemKeys.size, itemKeys, tombstones, profileItemCounts };
+
+  return { profiles, uniqueItems: itemKeys.size, itemKeys, tombstones };
 }
 
 function formatSnapshotFileName(revision: number): string {
@@ -623,20 +715,29 @@ export function createDataStorage(options: StorageOptions) {
     if (!saveOptions.confirmBulkDelete) {
       const before = collectDocumentLossStats(current);
       const after = collectDocumentLossStats(normalized);
-      const removedKeys = [...before.itemKeys].filter((key) => !after.itemKeys.has(key));
-      const addedKeys = [...after.itemKeys].filter((key) => !before.itemKeys.has(key));
-      const droppedProfiles = [...before.profileItemCounts.entries()].filter(
-        ([id, count]) => count > 0 && !after.profileItemCounts.has(id)
-      );
 
-      // 1) İçinde kayıt bulunan bir profil belgeden tümüyle düşmüşse.
-      if (droppedProfiles.length > 0) {
-        const detail = droppedProfiles.map(([id, count]) => `${id} (${count} kayıt)`).join(', ');
+      // 1) Profil kaybı ve profil metaverisi kaybı (profil kimliği bazlı).
+      //    Boş bir profilin silinmesi bile kayıptır: ad, tercihler, favori
+      //    oyuncular ve CinemaKünye verisi kayıt sayısından bağımsızdır.
+      const droppedProfilesWithItems: string[] = [];
+      const droppedProfilesMetadataOnly: string[] = [];
+      for (const [id, stats] of before.profiles) {
+        if (after.profiles.has(id)) continue;
+        if (stats.itemCount > 0) {
+          droppedProfilesWithItems.push(`${id} (${stats.itemCount} kayıt)`);
+        } else if (stats.hasMetadata) {
+          droppedProfilesMetadataOnly.push(id);
+        }
+      }
+
+      if (droppedProfilesWithItems.length > 0) {
         return {
           ok: false,
           status: 409,
           code: 'profile_drop',
-          message: `Profil kaybı koruması devreye girdi: ${detail} gelen belgede yok. Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          message: `Profil kaybı koruması devreye girdi: ${droppedProfilesWithItems.join(
+            ', '
+          )} gelen belgede yok. Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
           existingItems,
           incomingItems,
           currentRevision,
@@ -644,13 +745,51 @@ export function createDataStorage(options: StorageOptions) {
         };
       }
 
-      // 2) Tombstone'lar tümüyle kaybolmuşsa silmeler geri dirilebilir.
-      if (before.tombstones >= 3 && after.tombstones === 0) {
+      if (droppedProfilesMetadataOnly.length > 0) {
+        return {
+          ok: false,
+          status: 409,
+          code: 'profile_metadata_drop',
+          message: `Profil metaverisi kaybı koruması devreye girdi: ${droppedProfilesMetadataOnly.join(
+            ', '
+          )} profili gelen belgede yok (kayıt sayısı sıfır olsa bile profil bilgisi kaybı kabul edilmez). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          existingItems,
+          incomingItems,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
+
+      // 2) Tombstone kaybı: profil bazında anahtar karşılaştırması.
+      //    Toplam sayının aynı kalması yeterli değildir; hangi işaretin
+      //    kaybolduğu ve başka bir profile taşınıp taşınmadığı önemlidir.
+      const lostTombstonesByProfile: string[] = [];
+      let lostTombstoneCount = 0;
+      for (const [id, stats] of before.profiles) {
+        const afterStats = after.profiles.get(id);
+        if (!afterStats) continue; // profil kaybı yukarıda reddedildi
+        const lost: string[] = [];
+        for (const [key, deletedAt] of stats.tombstones) {
+          if (afterStats.tombstones.has(key)) continue;
+          const readdedAt = afterStats.items.get(key);
+          // Meşru yeniden ekleme: kayıt, silme zamanından daha yeni bir
+          // etkileşimle geri getirilmişse tombstone temizlenebilir.
+          if (readdedAt !== undefined && readdedAt > deletedAt) continue;
+          lost.push(key);
+        }
+        if (lost.length === 0) continue;
+        lostTombstoneCount += lost.length;
+        lostTombstonesByProfile.push(`${id} (${lost.length} işaret)`);
+      }
+
+      if (lostTombstoneCount > 0) {
         return {
           ok: false,
           status: 409,
           code: 'tombstone_drop',
-          message: `Silme işaretleri (tombstone) kaybı koruması devreye girdi (${before.tombstones} işaretten 0'a düşüş). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          message: `Silme işaretleri (tombstone) kaybı koruması devreye girdi: ${lostTombstonesByProfile.join(
+            ', '
+          )} kayboldu (${before.tombstones} işaretten ${after.tombstones} işarete düşüş). Silinen kayıtlar geri dirilebilir; toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
           existingItems,
           incomingItems,
           currentRevision,
@@ -658,24 +797,102 @@ export function createDataStorage(options: StorageOptions) {
         };
       }
 
-      // 3) Toplam sayı yanıltıcı olsa bile kaybolan kayıt sayısı büyükse.
-      //    (B-09: 60 silme + 61 ekleme toplamı sabit tutabilir.)
-      //    Eklenen kayıtlar silinenleri dengeleyip toplam sayıyı sabit tutsa bile
-      //    (60 sil + 61 ekle) kütüphanenin yarısının kaybı sessizce kabul edilmez.
-      const suddenDrop =
-        removedKeys.length >= 3 &&
-        removedKeys.length >= before.uniqueItems * 0.5;
+      // 3) Profil bazında kayıt kaybı. Global toplam, başka bir profildeki
+      //    aynı içerikle maskelenemez (B-09).
+      const suspiciousProfiles: Array<{
+        id: string;
+        removed: number;
+        beforeCount: number;
+        emptied: boolean;
+      }> = [];
+      let removedTotal = 0;
+      let addedTotal = 0;
+
+      for (const [id, stats] of before.profiles) {
+        const afterStats = after.profiles.get(id);
+        if (!afterStats) continue;
+        const removed = [...stats.items.keys()].filter((key) => !afterStats.items.has(key));
+        const added = [...afterStats.items.keys()].filter((key) => !stats.items.has(key));
+        removedTotal += removed.length;
+        addedTotal += added.length;
+        if (removed.length === 0) continue;
+
+        // Meşru silme: kaldırılan kaydın tombstone'u aynı profilde kayıtlıysa
+        // kullanıcı bilinçli silmiştir; bu kayıp olarak sayılmaz.
+        const uncovered = removed.filter((key) => !afterStats.tombstones.has(key));
+        if (uncovered.length === 0) continue;
+
+        const beforeCount = stats.items.size;
+        const emptied = uncovered.length === beforeCount && beforeCount > 0;
+        const largeDrop = uncovered.length >= 3 && uncovered.length >= beforeCount * 0.5;
+        // Tek kaydın bilinçli silinmesi meşru bir kullanıcı işlemidir ve
+        // tombstone yazmayan istemcilerde kayıptan ayırt edilemez. Bu yüzden
+        // tek kayıplık boşalma yalnızca aynı içerik başka bir profilde durup
+        // kaybı maskeliyorsa (B-09) ya da profil en az iki kayıtla tamamen
+        // boşaltıldıysa kayıp sayılır.
+        const sharedWithOtherProfile = uncovered.some((key) => {
+          for (const [otherId, otherStats] of before.profiles) {
+            if (otherId === id) continue;
+            if (otherStats.items.has(key)) return true;
+          }
+          return false;
+        });
+        const suspicious =
+          largeDrop || (emptied && beforeCount >= 2) || (emptied && sharedWithOtherProfile);
+        if (!suspicious) continue;
+        suspiciousProfiles.push({ id, removed: uncovered.length, beforeCount, emptied });
+      }
+
+      const largeItemDrops = suspiciousProfiles.filter((entry) => entry.removed >= 3);
+      if (largeItemDrops.length > 0) {
+        const detail = largeItemDrops
+          .map((entry) => `${entry.id} (${entry.removed}/${entry.beforeCount} kayıt silindi)`)
+          .join(', ');
+        return {
+          ok: false,
+          status: 409,
+          code: 'sudden_item_drop',
+          message: `Ani veri kaybı koruması devreye girdi: ${detail}. ${removedTotal} silindi, ${addedTotal} eklendi. Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          existingItems,
+          incomingItems: after.uniqueItems,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
+
+      if (suspiciousProfiles.length > 0) {
+        const detail = suspiciousProfiles
+          .map(
+            (entry) =>
+              `${entry.id} (${entry.removed}/${entry.beforeCount} kayıt silindi${
+                entry.emptied ? ', profil boşaldı' : ''
+              })`
+          )
+          .join(', ');
+        return {
+          ok: false,
+          status: 409,
+          code: 'item_drop',
+          message: `Kayıt kaybı koruması devreye girdi: ${detail}. Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          existingItems,
+          incomingItems: after.uniqueItems,
+          currentRevision,
+          serverDocument: current,
+        };
+      }
+
+      // 4) Yedek kontrol: toplam sayıya dayalı ani düşüş.
       const legacyDrop =
         existingItems >= 5 &&
         existingItems - incomingItems >= 3 &&
         incomingItems < existingItems * 0.5;
 
-      if (suddenDrop || legacyDrop) {
+      if (legacyDrop) {
         return {
           ok: false,
           status: 409,
           code: 'sudden_item_drop',
-          message: `Ani veri kaybı koruması devreye girdi (${before.uniqueItems} kayıttan ${after.uniqueItems} kayda düşüş; ${removedKeys.length} silindi, ${addedKeys.length} eklendi). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
+          message: `Ani veri kaybı koruması devreye girdi (${before.uniqueItems} kayıttan ${after.uniqueItems} kayda düşüş; ${removedTotal} silindi, ${addedTotal} eklendi). Toplu silmeyi onaylayın veya sunucu verisini yükleyin.`,
           existingItems,
           incomingItems: after.uniqueItems,
           currentRevision,
@@ -709,6 +926,7 @@ export function createDataStorage(options: StorageOptions) {
     mkdirSync(backupsDir, { recursive: true });
     const snapName = formatSnapshotFileName(doc.revision ?? 0);
     const snapPath = path.join(backupsDir, snapName);
+    assertSafeWritePath(snapPath, 'data-storage');
     writeJsonFileAtomic(snapPath, JSON.stringify(doc, null, 2), {
       validateParsed: (p) => validateRawDocument(p) !== null,
     });
@@ -726,6 +944,7 @@ export function createDataStorage(options: StorageOptions) {
     await fsPromises.mkdir(backupsDir, { recursive: true });
     const snapName = formatSnapshotFileName(doc.revision ?? 0);
     const snapPath = path.join(backupsDir, snapName);
+    assertSafeWritePath(snapPath, 'data-storage');
     await writeJsonFileAtomicAsync(snapPath, JSON.stringify(doc, null, 2), {
       validateParsed: (p) => validateRawDocument(p) !== null,
     });
@@ -740,6 +959,10 @@ export function createDataStorage(options: StorageOptions) {
   }
 
   function persistDocumentDiskSync(current: DataDocument, next: DataDocument): void {
+    // Aşama 1 (B-14) — yazma anında yeniden doğrulama: doğrulamadan sonra bir
+    // dizin sembolik bağlantıya çevrilmişse gerçek data/ ağacına yazılamaz.
+    assertSafeWritePath(dataFile, 'data-storage');
+    assertSafeDataDir(backupsDir, 'data-storage');
     if (isWorthKeeping(current)) {
       writeDiskSnapshotSync(current);
     }
@@ -765,6 +988,9 @@ export function createDataStorage(options: StorageOptions) {
   }
 
   async function persistDocument(current: DataDocument, next: DataDocument): Promise<void> {
+    // Aşama 1 (B-14) — yazma anında yeniden doğrulama (TOCTOU).
+    assertSafeWritePath(dataFile, 'data-storage');
+    assertSafeDataDir(backupsDir, 'data-storage');
     if (isWorthKeeping(current)) {
       await writeDiskSnapshotAsync(current);
     }

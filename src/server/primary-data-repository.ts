@@ -147,7 +147,11 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
       res.code === 'revision_conflict' ||
       res.code === 'profile_conflict' ||
       res.code === 'precondition_required' ||
-      res.code === 'sudden_item_drop';
+      res.code === 'sudden_item_drop' ||
+      res.code === 'item_drop' ||
+      res.code === 'profile_drop' ||
+      res.code === 'profile_metadata_drop' ||
+      res.code === 'tombstone_drop';
 
     return {
       ok: false,
@@ -192,7 +196,11 @@ export class ServerPrimaryDataRepository implements PrimaryDataRepository<DataDo
       if (
         res.code === 'revision_conflict' ||
         res.code === 'precondition_required' ||
-        res.code === 'sudden_item_drop'
+        res.code === 'sudden_item_drop' ||
+        res.code === 'item_drop' ||
+        res.code === 'profile_drop' ||
+        res.code === 'profile_metadata_drop' ||
+        res.code === 'tombstone_drop'
       ) {
         throw new StaleRevisionError(ref.revision, res.currentRevision ?? null);
       }
