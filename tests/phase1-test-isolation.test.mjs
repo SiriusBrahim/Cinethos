@@ -166,7 +166,9 @@ describe('Aşama 1 — sembolik bağlantı koruması (B-14)', () => {
   it('yazma anında bağlantı hedefi değişirse yazma reddedilir (TOCTOU)', { skip: !POSIX }, async () => {
     const userDataDir = realUserDataDir();
     const realDataFile = path.join(userDataDir, 'cinetrack-data.json');
-    const before = readFileSync(realDataFile, 'utf8');
+    // Gerçek kullanıcı dosyası varsa içeriği korunmalı. CI'da bu dosya hiç
+    // bulunmayabilir (gitignore'lu); o durumda da yazma onu oluşturmamalı.
+    const before = existsSync(realDataFile) ? readFileSync(realDataFile, 'utf8') : null;
 
     const dir = makeTempDataDir('ct-symlink-swap-');
     const storage = createDataStorage({ dataDir: dir });
@@ -185,7 +187,11 @@ describe('Aşama 1 — sembolik bağlantı koruması (B-14)', () => {
       () => assertSafeWritePath(path.join(dir, 'cinetrack-data.json'), 'data-storage'),
       /sembolik bağlantı|gerçek kullanıcı veri dizinine/
     );
-    assert.equal(readFileSync(realDataFile, 'utf8'), before);
+    if (before === null) {
+      assert.equal(existsSync(realDataFile), false, 'gerçek data dosyası oluşturulmamalı');
+    } else {
+      assert.equal(readFileSync(realDataFile, 'utf8'), before);
+    }
   });
 
   it('taste store aynı sembolik bağlantı kuralına uyar', { skip: !POSIX }, async () => {
