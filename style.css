@@ -4253,3 +4253,31 @@
   .content-request-footer { align-items:flex-start; flex-direction:column; }
   .content-request-footer .btn { width:100%; justify-content:center; }
 }
+
+
+/* Profile avatar connection state: live=green, demo=red, cached=amber */
+.app-header .profile-avatar-circle {
+  border: 2px solid transparent;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.app-header .profile-connection-live .profile-avatar-circle,
+.app-header .profile-avatar-circle.profile-connection-live {
+  border-color: #36c779;
+  box-shadow: 0 0 0 2px rgba(54, 199, 121, 0.16), 0 0 12px rgba(54, 199, 121, 0.2);
+}
+.app-header .profile-connection-demo .profile-avatar-circle,
+.app-header .profile-avatar-circle.profile-connection-demo {
+  border-color: #ef5350;
+  box-shadow: 0 0 0 2px rgba(239, 83, 80, 0.16), 0 0 12px rgba(239, 83, 80, 0.2);
+}
+.app-header .profile-connection-stale .profile-avatar-circle,
+.app-header .profile-avatar-circle.profile-connection-stale {
+  border-color: #e5a63b;
+  box-shadow: 0 0 0 2px rgba(229, 166, 59, 0.15);
+}
+.app-header .topbar-source-badge.source-demo {
+  border-color: rgba(239, 83, 80, 0.48);
+  color: #ff7773;
+  background: rgba(239, 83, 80, 0.12);
+  letter-spacing: 0.045em;
+}
