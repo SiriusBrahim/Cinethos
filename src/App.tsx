@@ -1905,6 +1905,7 @@ export function App() {
         onSelectItem={(item) => setDetailItem(item)}
         getSaved={(item) => findSavedItem(savedItems, item)}
         tmdbSource={tmdbSourceMeta.source}
+        isDemoMode={Boolean(activeProfile?.isDemo)}
         tmdbStaleReason={tmdbSourceMeta.staleReason}
         onOpenTvdbStock={() => setTvdbModalOpen(true)}
         tvdbCount={tvdbCount}
