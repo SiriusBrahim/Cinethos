@@ -124,7 +124,6 @@ async function waitFor(ms: number, signal: AbortSignal | undefined, sleep?: (ms:
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    (timer as { unref?: () => void }).unref?.();
     function onAbort(): void {
       clearTimeout(timer);
       reject(abortError());
