@@ -1902,7 +1902,6 @@ export function App() {
         onSearchSubmit={handleSearchSubmit}
         onSearchClear={handleSearchClear}
         onOpenProfile={() => setProfileOpen(true)}
-        onOpenAdd={() => setAddCustomOpen(true)}
         onSelectItem={(item) => setDetailItem(item)}
         getSaved={(item) => findSavedItem(savedItems, item)}
         tmdbSource={tmdbSourceMeta.source}
