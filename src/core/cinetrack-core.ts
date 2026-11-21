@@ -108,6 +108,16 @@ export interface SavedItem {
   status: 'watching' | 'watchlist' | 'completed';
   personal_rating: number | '';
   personal_rating_cleared?: boolean;
+  /**
+   * Aşama 1 — Durum alanının en son kullanıcı tarafından değiştirildiği an.
+   * Alan bazlı birleştirmede `updatedAt`'ten (not düzenlemesi) ayrı tutulur.
+   */
+  status_changed_at?: string;
+  /**
+   * Aşama 1 — Puan alanının (puan verme, değiştirme veya temizleme) en son
+   * değiştirildiği an. `ratedAt` yalnızca dolu puanı temsil eder.
+   */
+  rating_changed_at?: string;
   ratedAt?: string;
   /** İzleme etkileşiminin (bölüm işaretleme dahil) son anı. `updatedAt` değildir. */
   watchedAt?: string;
@@ -449,6 +459,18 @@ export function normalizeSavedItem(item: any): SavedItem | null {
     typeof item.watchedAt === 'string' && item.watchedAt.trim() && Number.isFinite(Date.parse(item.watchedAt))
       ? item.watchedAt.trim()
       : undefined;
+  const normalizedStatusChangedAt =
+    typeof item.status_changed_at === 'string' &&
+    item.status_changed_at.trim() &&
+    Number.isFinite(Date.parse(item.status_changed_at))
+      ? item.status_changed_at.trim()
+      : undefined;
+  const normalizedRatingChangedAt =
+    typeof item.rating_changed_at === 'string' &&
+    item.rating_changed_at.trim() &&
+    Number.isFinite(Date.parse(item.rating_changed_at))
+      ? item.rating_changed_at.trim()
+      : undefined;
   const normalizedCast = Array.isArray(item.cast)
     ? normalizeCinemaKunyeActorList(item.cast, 12)
     : [];
@@ -519,6 +541,8 @@ export function normalizeSavedItem(item: any): SavedItem | null {
     status: normalizedStatus,
     personal_rating: validRating || '',
     personal_rating_cleared: validRating ? false : item.personal_rating_cleared === true,
+    ...(normalizedStatusChangedAt ? { status_changed_at: normalizedStatusChangedAt } : {}),
+    ...(normalizedRatingChangedAt ? { rating_changed_at: normalizedRatingChangedAt } : {}),
     ...(normalizedRatedAt ? { ratedAt: normalizedRatedAt } : {}),
     ...(normalizedWatchedAt ? { watchedAt: normalizedWatchedAt } : {}),
     ...(normalizedCompletedAt ? { completedAt: normalizedCompletedAt } : {}),
