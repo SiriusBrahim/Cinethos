@@ -32,6 +32,7 @@ interface HeaderProps {
   onSelectItem: (item: TmdbItem) => void;
   getSaved: (item: TmdbItem) => SavedItem | undefined;
   tmdbSource?: string;
+  isDemoMode?: boolean;
   tmdbStaleReason?: string;
   onOpenTvdbStock?: () => void;
   tvdbCount?: number;
@@ -50,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectItem,
   getSaved,
   tmdbSource = 'live',
+  isDemoMode = false,
   tmdbStaleReason,
   onOpenTvdbStock,
   tvdbCount,
@@ -220,6 +222,8 @@ export const Header: React.FC<HeaderProps> = ({
       : undefined;
 
   const avatarInitial = (profileName || 'P').trim().charAt(0).toUpperCase();
+  const effectiveDemoMode = isDemoMode || tmdbSource === 'demo';
+  const connectionState = effectiveDemoMode ? 'demo' : tmdbSource === 'stale-cache' ? 'stale' : 'live';
 
   return (
     <header className="app-header">
@@ -396,18 +400,18 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Actions Zone: Source tag, PWA, Profile */}
         <div className="topbar-actions">
-          {tmdbSource && tmdbSource !== 'live' && (
+          {(effectiveDemoMode || tmdbSource === 'stale-cache') && (
             <span
               className={`topbar-source-badge ${
-                tmdbSource === 'stale-cache' ? 'source-stale' : 'source-demo'
+                effectiveDemoMode ? 'source-demo' : 'source-stale'
               }`}
               title={
-                tmdbSource === 'stale-cache'
-                  ? `TMDB canlı servisi kapalı; önbellek sunuluyor${tmdbStaleReason ? ` (${tmdbStaleReason})` : ''}`
-                  : 'Örnek katalog aktif'
+                effectiveDemoMode
+                  ? 'Demo mod aktif; örnek katalog kullanılıyor'
+                  : `TMDB canlı servisi kullanılamıyor; önbellek sunuluyor${tmdbStaleReason ? ` (${tmdbStaleReason})` : ''}`
               }
             >
-              <span>{tmdbSource === 'stale-cache' ? 'Önbellek' : 'Demo'}</span>
+              <span>{effectiveDemoMode ? 'DEMO MOD' : 'Önbellek'}</span>
             </span>
           )}
 
@@ -447,14 +451,14 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Profile Switcher Button with Avatar Initial */}
           <button
             id="profileButton"
-            className="btn profile-btn"
+            className={`btn profile-btn profile-connection-${connectionState}`}
             type="button"
             onClick={onOpenProfile}
             aria-haspopup="dialog"
             aria-label={`Profil: ${profileName || 'Profilim'}`}
             title="Profil yönetimi ve ayarlar"
           >
-            <span className="profile-avatar-circle" aria-hidden="true">
+            <span className={`profile-avatar-circle profile-connection-${connectionState}`} aria-hidden="true">
               {avatarInitial}
             </span>
             <span id="profileButtonLabel" className="profile-name-text">
