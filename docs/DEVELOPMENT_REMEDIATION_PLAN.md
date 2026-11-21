@@ -75,6 +75,12 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 
 ## 3. Aşama 1 — Veri güvenliği, test izolasyonu ve kayıpsız veri modeli
 
+> **Durum: TAMAMLANDI (21 Kasım 2026).** Tüm maddeler ve kabul kriterleri
+> karşılandı; kanıt ve sonuçlar §17'de, ayrıntılar
+> [PHASE_01_DATA_INTEGRITY.md](audits/PHASE_01_DATA_INTEGRITY.md) ve
+> [PHASE_01_DATA_INTEGRITY_TESTS.md](audits/PHASE_01_DATA_INTEGRITY_TESTS.md)
+> belgelerinde.
+
 **Öncelik:** P1 / Kritik  
 **Amaç:** Testlerin gerçek kullanıcı verisine dokunmasını önlemek; birleştirme, yedek ve geri yükleme akışlarında sessiz veri kaybını ortadan kaldırmak.
 
@@ -496,3 +502,38 @@ Yalnızca aşağıdaki işler; her biri ayrı commit + regresyon testi:
 - Tek PR modeli plana işlendi (N-01).
 - `master`'a doğrudan commit gönderilmedi; tüm çalışma `remediation/full-project-remediation` dalında.
 - Uygulama kodu, veri şeması ve kullanıcı verisi değiştirilmedi; test koşusunun `data/` üzerindeki etkisi ölçüldü ve yedek alındı.
+
+## 17. Aşama 1 sonuçları
+
+**Tarih:** 21 Kasım 2026 · **Dal:** `remediation/full-project-remediation` · **PR:** #65
+**Taban:** `master` @ `c58ec49` (değişmedi) · **Ayrıntı:** [PHASE_01_DATA_INTEGRITY.md](audits/PHASE_01_DATA_INTEGRITY.md), [PHASE_01_DATA_INTEGRITY_TESTS.md](audits/PHASE_01_DATA_INTEGRITY_TESTS.md)
+
+### 17.1 Kapanan bulgular
+
+| Bulgu | Çözüm özeti | Commit |
+|---|---|---|
+| B-14, N-02, N-04 | Test veri guard'ı (`dataDir` zorunlu), glob tabanlı test keşfi, `--test-concurrency=1`, `data/` hash kapısı | `3b2df4e` |
+| B-01, B-02 | Alan bazlı `status_changed_at`/`rating_changed_at` + kayıpsız merge, boş puan "görüş yok" | `3945592` |
+| B-05, B-06, B-07 | Yedek v4 tam belge (tüm profiller, tombstone, revizyon); v5+ açık hata; sessiz düşürme yok | `be36d94` |
+| B-08 | Restore `If-Match`/`expectedRevision`, 409/412/428, güvenlik snapshot'ı, atomik yazım | `5e54f7b` |
+| B-09, B-04 | Tombstone/profil duyarlı kayıp koruması; limit aşımında sessiz kırpma yerine 409 | `30eb3cb` |
+| B-31 | Token dosyası: tmp + fsync + rename, `0600`, symlink reddi, sıralı yazma | `f4cac57` |
+| A–G | Uçtan uca entegrasyon testleri (çoklu cihaz, silme, yedek, restore çakışması) | `83ce55f` |
+
+### 17.2 Doğrulama
+
+- `npm run lint`: 0 hata / 0 uyarı
+- `npm run cycles`: döngü yok
+- `npm test`: **677/677** (69 yeni test)
+- `npm run test:taste`: **440/440**
+- `npm run build`: başarılı
+- `data/` hash'leri ve yedek sayısı Aşama 1 başından beri değişmedi
+- `npm run test:e2e`: **koşulamadı** (Playwright sistem bağımlılıkları eksik)
+
+### 17.3 Aşama 2'ye devredilenler
+
+- B-08 kabul kriterinin UI kısmı: restore 409 durumunun kullanıcıya gösterimi (Aşama 4).
+- Çok süreçli eşzamanlı yazma senaryosu (Aşama 2, B-38 ile birlikte).
+- Aşama 1 kapsamı dışında kalan bulgular plana uygun şekilde sonraki aşamalarda.
+
+**Aşama 1 burada durur; Aşama 2 başlatılmadı.**
