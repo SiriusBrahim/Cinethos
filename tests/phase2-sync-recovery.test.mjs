@@ -49,6 +49,7 @@ test('B-10: yarım kalmış deneme günlüğü açılışta tespit edilir ve tem
 
     // "Süreç çöktü" — yeni yönetici aynı dizinle açılır.
     const manager = makeManager(dir);
+    await manager.runExclusive('recovery-barrier', async () => null);
     const recovered = manager.getRecoveredInterruption();
     assert.equal(recovered?.operation, 'reconcile');
     assert.equal(manager.getQueueStatus().recoveredInterrupted, 1);

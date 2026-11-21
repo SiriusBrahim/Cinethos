@@ -204,6 +204,7 @@ export interface CineTrackAppOptions extends StorageOptions, SecurityOptions, Tm
   persistentStore?: PersistentDataStore;
   security?: SecurityOptions;
   devMode?: boolean;
+  githubDevSyncEnabled?: boolean;
   maxDataBytes?: number;
   githubToken?: string;
   githubTokenSource?: TokenSourceKind;
@@ -2201,7 +2202,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
   });
 
   app.use('/api/sync', (_req: Request, res: Response, next: NextFunction) => {
-    if (options.devMode === true) return next();
+    if (options.githubDevSyncEnabled === true) return next();
     res.setHeader('Cache-Control', 'no-store');
     res.status(404).json({
       ok: false,
@@ -2704,7 +2705,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const includeJson = typeof req.body?.includeJson === 'boolean' ? req.body.includeJson : true;
       const includeXlsx = typeof req.body?.includeXlsx === 'boolean' ? req.body.includeXlsx : true;
       const uploadToGithub = Boolean(req.body?.uploadToGithub);
-      if (uploadToGithub && options.devMode !== true) {
+      if (uploadToGithub && options.githubDevSyncEnabled !== true) {
         res.status(403).json({
           ok: false,
           code: 'github_dev_sync_disabled',

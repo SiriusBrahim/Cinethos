@@ -49,6 +49,7 @@ const { app, storage, persistentStore, startRuntimeModules, stopRuntimeModules }
   maxItemsPerProfile,
   bindHost,
   devMode: isDevMode,
+  githubDevSyncEnabled,
   trustProxy: resolved.trustProxy,
   ...(resolved.tmdbRateLimit !== undefined ? { rateLimitMaxRequests: resolved.tmdbRateLimit } : {}),
   ...(resolved.tmdbRateWindowMs !== undefined ? { rateLimitWindowMs: resolved.tmdbRateWindowMs } : {}),
