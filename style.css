@@ -4180,3 +4180,21 @@
     height: 30px;
   }
 }
+/* Desktop-only keyboard shortcut hint; deliberately omitted on touch layouts. */
+.search-shortcut-hint {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (max-width: 959px) {
+  .search-shortcut-hint { display: none !important; }
+}
+@media (min-width: 960px) {
+  .app-header .search input { padding-right: 62px; }
+}
