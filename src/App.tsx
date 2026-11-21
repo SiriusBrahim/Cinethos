@@ -22,6 +22,8 @@ import { normalizeProfileId } from './core/profile-id.ts';
 import { mergeRemoteDocument } from './app/server-sync.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
+import { AppSidebar } from './components/AppSidebar.tsx';
+import { MobileDock } from './components/MobileDock.tsx';
 import { Hero } from './components/Hero.tsx';
 import { Stats } from './components/Stats.tsx';
 import { Controls } from './components/Controls.tsx';
@@ -1884,6 +1886,7 @@ export function App() {
 
   return (
     <>
+      <AppSidebar tab={tab} onTabChange={setTab} profileName={profileName} myListCount={allListCount} onOpenProfile={() => setProfileOpen(true)} />
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
@@ -1907,6 +1910,7 @@ export function App() {
         onOpenTvdbStock={() => setTvdbModalOpen(true)}
         tvdbCount={tvdbCount}
       />
+      <MobileDock tab={tab} onTabChange={setTab} myListCount={allListCount} onOpenProfile={() => setProfileOpen(true)} />
       <ConflictBanner
         conflict={serverConflict}
         onMergeBoth={handleMergeBothOnConflict}
