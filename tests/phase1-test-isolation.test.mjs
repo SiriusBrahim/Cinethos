@@ -8,16 +8,30 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import {
   assertSafeDataDir,
   assertSafeWritePath,
+  beginGuardedWrite,
   canonicalizePath,
+  completeGuardedWrite,
   isRealUserDataPath,
   isTestEnvironment,
   realUserDataDir,
+  runGuardedWrite,
 } from '../src/server/test-data-guard.ts';
 import { createDataStorage } from '../src/server/storage.ts';
 import { writeTasteObjections } from '../src/server/taste-store.ts';
@@ -213,6 +227,153 @@ describe('Aşama 1 — sembolik bağlantı koruması (B-14)', () => {
     const dir = makeTempDataDir('ct-canonical-');
     assert.equal(canonicalizePath(dir), canonicalizePath(dir));
     assert.equal(isRealUserDataPath(dir), false);
+  });
+});
+
+describe('Aşama 1 — dosya sistemi hataları ve asenkron TOCTOU', () => {
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+  function sandbox() {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'ct-guard-root-'));
+    const protectedDir = path.join(root, 'data');
+    const work = path.join(root, 'calisma');
+    mkdirSync(protectedDir);
+    mkdirSync(work);
+    return { root, protectedDir, work };
+  }
+
+  async function withCwd(root, task) {
+    const previous = process.cwd();
+    process.chdir(root);
+    try {
+      return await task();
+    } finally {
+      process.chdir(previous);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('ENOENT dışındaki hata (ENOTDIR) doğrulamayı durdurur', { skip: !POSIX }, () => {
+    const dir = makeTempDataDir('ct-enotdir-');
+    const filePath = path.join(dir, 'dosya.json');
+    writeFileSync(filePath, '{}', 'utf8');
+
+    assert.throws(() => canonicalizePath(path.join(filePath, 'alt')), /test-guard/);
+    assert.throws(
+      () => assertSafeDataDir(path.join(filePath, 'alt'), 'data-storage'),
+      /test-guard/
+    );
+    // Güvenli tarafta kalan sorgu da "gerçek veri" demez; ama yazma engellenir.
+    assert.throws(
+      () => assertSafeWritePath(path.join(filePath, 'alt', 'x.json'), 'data-storage'),
+      /test-guard/
+    );
+  });
+
+  it('EACCES doğrulamayı durdurur (root değilken)', {
+    skip: !POSIX || isRoot,
+  }, () => {
+    const dir = makeTempDataDir('ct-eacces-');
+    const locked = path.join(dir, 'kilitli');
+    mkdirSync(locked);
+    chmodSync(locked, 0o000);
+    try {
+      assert.throws(() => canonicalizePath(path.join(locked, 'alt')), /test-guard/);
+      assert.throws(
+        () => assertSafeDataDir(path.join(locked, 'alt'), 'data-storage'),
+        /test-guard/
+      );
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
+
+  it('var olmayan bileşen ENOENT olarak güvenli biçimde çözümlenir (regresyon)', () => {
+    const dir = makeTempDataDir('ct-enoent-');
+    const missing = path.join(dir, 'henuz-yok', 'dosya.json');
+    assert.equal(existsSync(missing), false);
+    assert.equal(canonicalizePath(missing).startsWith(canonicalizePath(dir)), true);
+  });
+
+  it('doğrulama ile yazma arasındaki asenkron boşlukta dizin symlink olursa yazma reddedilir', {
+    skip: !POSIX,
+  }, async () => {
+    const { root, protectedDir, work } = sandbox();
+    await withCwd(root, async () => {
+      const target = path.join(work, 'cinetrack-data.json');
+      const handle = beginGuardedWrite(target, 'data-storage');
+      assert.ok(handle, 'guard etkin olmalı');
+
+      // Gerçek asenkron boşluk: bu sırada dizin symlink'e çevrilir.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      rmSync(work, { recursive: true, force: true });
+      symlinkSync(protectedDir, work, 'dir');
+
+      assert.throws(
+        () => completeGuardedWrite(handle, 'data-storage'),
+        /test-guard|gerçek kullanıcı veri dizinine|sembolik bağlantı/
+      );
+      assert.equal(
+        existsSync(path.join(protectedDir, 'cinetrack-data.json')),
+        false,
+        'korunan dizine yazılmamalı'
+      );
+    });
+  });
+
+  it('dizin aynı yolda başka bir dizinle değiştirilirse kimlik farkı yakalanır', async () => {
+    const { root, work } = sandbox();
+    await withCwd(root, async () => {
+      const handle = beginGuardedWrite(path.join(work, 'veri.json'), 'data-storage');
+      assert.ok(handle);
+
+      // Aynı yol, farklı inode: symlink yok ama doğrulanan dizin değişti.
+      renameSync(work, path.join(root, 'calisma-eski'));
+      mkdirSync(work);
+
+      assert.throws(
+        () => completeGuardedWrite(handle, 'data-storage'),
+        /değişti|test-guard/
+      );
+    });
+  });
+
+  it('değişiklik yoksa iki fazlı kapı yazmaya izin verir', async () => {
+    const { root, work } = sandbox();
+    await withCwd(root, async () => {
+      const target = path.join(work, 'guvenli.json');
+      const result = await runGuardedWrite(target, 'data-storage', () => {
+        writeFileSync(target, '{"ok":true}', 'utf8');
+        return 'yazildi';
+      });
+      assert.equal(result, 'yazildi');
+      assert.equal(readFileSync(target, 'utf8'), '{"ok":true}');
+    });
+  });
+
+  it('sürmekte olan yazma sırasında dizin symlink olursa gerçek veri korunur', {
+    skip: !POSIX,
+  }, async () => {
+    const userDataDir = realUserDataDir();
+    const realDataFile = path.join(userDataDir, 'cinetrack-data.json');
+    const before = existsSync(realDataFile) ? readFileSync(realDataFile, 'utf8') : null;
+
+    const dir = makeTempDataDir('ct-inflight-swap-');
+    const storage = createDataStorage({ dataDir: dir });
+    const firstWrite = await storage.saveDataSerialized(emptyDoc(0), { forceOverwrite: true });
+    assert.equal(firstWrite.ok, true);
+
+    // Yazma başladıktan sonra (asenkron okuma sürerken) dizin bağlantıya çevrilir.
+    const pending = storage.saveDataSerialized(emptyDoc(1), { forceOverwrite: true });
+    rmSync(dir, { recursive: true, force: true });
+    symlinkSync(userDataDir, dir, 'dir');
+
+    await assert.rejects(pending, /test-guard/);
+    if (before === null) {
+      assert.equal(existsSync(realDataFile), false, 'gerçek data dosyası oluşturulmamalı');
+    } else {
+      assert.equal(readFileSync(realDataFile, 'utf8'), before);
+    }
   });
 });
 

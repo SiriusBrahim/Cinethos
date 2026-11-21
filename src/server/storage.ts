@@ -43,7 +43,13 @@ import {
   resolveStorageDriver,
   type StorageDriver,
 } from './sqlite-primary-store.ts';
-import { assertSafeDataDir, assertSafeWritePath } from './test-data-guard.ts';
+import {
+  assertSafeDataDir,
+  assertSafeWritePath,
+  isTestDataGuardError,
+  runGuardedWrite,
+  runGuardedWriteSync,
+} from './test-data-guard.ts';
 export interface StorageOptions {
   dataDir?: string;
   maxDataBytes?: number;
@@ -279,6 +285,7 @@ export function createDataStorage(options: StorageOptions) {
   const backupFile = `${dataFile}.bak`;
   const isolatedProfileFile = path.join(resolvedDataDir, 'profile.json');
   const isolatedUserListsFile = path.join(resolvedDataDir, 'user-lists.json');
+  const primaryStoreFile = path.join(resolvedDataDir, 'cinetrack.db');
   const backupsDir = path.join(resolvedDataDir, 'backups');
 
   const maxDataBytes = options.maxDataBytes ?? DEFAULT_MAX_DATA_BYTES;
@@ -297,6 +304,7 @@ export function createDataStorage(options: StorageOptions) {
   let readLimitViolations: string[] = [];
 
   // Faz 7 — SQLite birincil kaynak (opt-in). JSON her zaman yedek olarak yazılır.
+  assertSafeWritePath(primaryStoreFile, 'data-storage');
   const primaryStore = createSqlitePrimaryStore({
     dataDir: resolvedDataDir,
     enabled: (options.storageDriver ?? resolveStorageDriver()) === 'sqlite',
@@ -926,15 +934,18 @@ export function createDataStorage(options: StorageOptions) {
     mkdirSync(backupsDir, { recursive: true });
     const snapName = formatSnapshotFileName(doc.revision ?? 0);
     const snapPath = path.join(backupsDir, snapName);
-    assertSafeWritePath(snapPath, 'data-storage');
-    writeJsonFileAtomic(snapPath, JSON.stringify(doc, null, 2), {
-      validateParsed: (p) => validateRawDocument(p) !== null,
+    runGuardedWriteSync(snapPath, 'data-storage', () => {
+      writeJsonFileAtomic(snapPath, JSON.stringify(doc, null, 2), {
+        validateParsed: (p) => validateRawDocument(p) !== null,
+      });
     });
     const allSnaps = listDiskSnapshotFilesNewestFirstSync();
     for (const staleName of allSnaps.slice(maxSnapshots)) {
+      const stalePath = path.join(backupsDir, staleName);
       try {
-        unlinkSync(path.join(backupsDir, staleName));
-      } catch {
+        runGuardedWriteSync(stalePath, 'data-storage', () => unlinkSync(stalePath));
+      } catch (error) {
+        if (isTestDataGuardError(error)) throw error;
         // Ignore cleanup errors
       }
     }
@@ -944,15 +955,18 @@ export function createDataStorage(options: StorageOptions) {
     await fsPromises.mkdir(backupsDir, { recursive: true });
     const snapName = formatSnapshotFileName(doc.revision ?? 0);
     const snapPath = path.join(backupsDir, snapName);
-    assertSafeWritePath(snapPath, 'data-storage');
-    await writeJsonFileAtomicAsync(snapPath, JSON.stringify(doc, null, 2), {
-      validateParsed: (p) => validateRawDocument(p) !== null,
-    });
+    await runGuardedWrite(snapPath, 'data-storage', () =>
+      writeJsonFileAtomicAsync(snapPath, JSON.stringify(doc, null, 2), {
+        validateParsed: (p) => validateRawDocument(p) !== null,
+      })
+    );
     const allSnaps = await listDiskSnapshotFilesNewestFirstAsync();
     for (const staleName of allSnaps.slice(maxSnapshots)) {
+      const stalePath = path.join(backupsDir, staleName);
       try {
-        await fsPromises.unlink(path.join(backupsDir, staleName));
-      } catch {
+        await runGuardedWrite(stalePath, 'data-storage', () => fsPromises.unlink(stalePath));
+      } catch (error) {
+        if (isTestDataGuardError(error)) throw error;
         // Ignore cleanup errors
       }
     }
@@ -966,23 +980,32 @@ export function createDataStorage(options: StorageOptions) {
     if (isWorthKeeping(current)) {
       writeDiskSnapshotSync(current);
     }
-    writeJsonFileAtomic(dataFile, JSON.stringify(next, null, 2), {
-      backupPath: backupFile,
-      validateParsed: (p) => validateRawDocument(p) !== null,
+    runGuardedWriteSync(dataFile, 'data-storage', () => {
+      writeJsonFileAtomic(dataFile, JSON.stringify(next, null, 2), {
+        backupPath: backupFile,
+        validateParsed: (p) => validateRawDocument(p) !== null,
+      });
     });
     if (primaryStore.enabled) {
-      primaryStore.write(next, next.revision ?? 0);
+      runGuardedWriteSync(primaryStoreFile, 'data-storage', () =>
+        primaryStore.write(next, next.revision ?? 0)
+      );
     }
     try {
-      writeJsonFileAtomic(
-        isolatedProfileFile,
-        JSON.stringify(buildIsolatedProfilePayload(next), null, 2)
-      );
-      writeJsonFileAtomic(
-        isolatedUserListsFile,
-        JSON.stringify(buildIsolatedUserListsPayload(next), null, 2)
-      );
-    } catch {
+      runGuardedWriteSync(isolatedProfileFile, 'data-storage', () => {
+        writeJsonFileAtomic(
+          isolatedProfileFile,
+          JSON.stringify(buildIsolatedProfilePayload(next), null, 2)
+        );
+      });
+      runGuardedWriteSync(isolatedUserListsFile, 'data-storage', () => {
+        writeJsonFileAtomic(
+          isolatedUserListsFile,
+          JSON.stringify(buildIsolatedUserListsPayload(next), null, 2)
+        );
+      });
+    } catch (error) {
+      if (isTestDataGuardError(error)) throw error;
       // Isolated mirror files are best-effort
     }
   }
@@ -994,23 +1017,32 @@ export function createDataStorage(options: StorageOptions) {
     if (isWorthKeeping(current)) {
       await writeDiskSnapshotAsync(current);
     }
-    await writeJsonFileAtomicAsync(dataFile, JSON.stringify(next, null, 2), {
-      backupPath: backupFile,
-      validateParsed: (p) => validateRawDocument(p) !== null,
-    });
+    await runGuardedWrite(dataFile, 'data-storage', () =>
+      writeJsonFileAtomicAsync(dataFile, JSON.stringify(next, null, 2), {
+        backupPath: backupFile,
+        validateParsed: (p) => validateRawDocument(p) !== null,
+      })
+    );
     if (primaryStore.enabled) {
-      primaryStore.write(next, next.revision ?? 0);
+      runGuardedWriteSync(primaryStoreFile, 'data-storage', () =>
+        primaryStore.write(next, next.revision ?? 0)
+      );
     }
     try {
-      await writeJsonFileAtomicAsync(
-        isolatedProfileFile,
-        JSON.stringify(buildIsolatedProfilePayload(next), null, 2)
+      await runGuardedWrite(isolatedProfileFile, 'data-storage', () =>
+        writeJsonFileAtomicAsync(
+          isolatedProfileFile,
+          JSON.stringify(buildIsolatedProfilePayload(next), null, 2)
+        )
       );
-      await writeJsonFileAtomicAsync(
-        isolatedUserListsFile,
-        JSON.stringify(buildIsolatedUserListsPayload(next), null, 2)
+      await runGuardedWrite(isolatedUserListsFile, 'data-storage', () =>
+        writeJsonFileAtomicAsync(
+          isolatedUserListsFile,
+          JSON.stringify(buildIsolatedUserListsPayload(next), null, 2)
+        )
       );
-    } catch {
+    } catch (error) {
+      if (isTestDataGuardError(error)) throw error;
       // Isolated mirror files are best-effort
     }
   }

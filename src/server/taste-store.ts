@@ -9,6 +9,7 @@ import {
   CorruptJsonFileError,
   writeJsonFileAtomicAsync,
   readJsonFileWithRecoveryAsync,
+  type AtomicWriteOptions,
 } from "./atomic-json.ts";
 import {
   TASTE_LOCK_DATA_SCOPE,
@@ -18,7 +19,26 @@ import {
   withScopedTasteLock,
 } from "./taste-profile-scope.ts";
 import type { TasteProfileStorePaths } from "./taste-profile-scope.ts";
-import { assertSafeDataDir, resolveDefaultDataDir } from "./test-data-guard.ts";
+import {
+  assertSafeDataDir,
+  resolveDefaultDataDir,
+  runGuardedWrite,
+} from "./test-data-guard.ts";
+
+/**
+ * Aşama 1 (B-14) — taste yazımları da iki fazlı veri kapısından geçer.
+ * Kilit/bekleme sonrası hedef dizin symlink'e çevrilmiş veya başka bir
+ * dizinle değiştirilmişse yazma reddedilir.
+ */
+function writeTasteJson(
+  targetPath: string,
+  serializedJson: string,
+  options: AtomicWriteOptions = {}
+): Promise<void> {
+  return runGuardedWrite(targetPath, 'taste-store', () =>
+    writeJsonFileAtomicAsync(targetPath, serializedJson, options)
+  );
+}
 
 // R2-A1 profil kapsamı yüzeyi (kanonik kimlik, kodlama, eşleme manifesti,
 // kapsam kilidi). A2 çağıranları tek giriş noktası olarak buradan kullanabilir.
@@ -226,7 +246,7 @@ async function writeManifestForPathsUnlocked(
     },
     eventWatermark: eventWatermark ?? previous?.eventWatermark ?? "",
   };
-  await writeJsonFileAtomicAsync(paths.manifest, JSON.stringify(manifest, null, 2), {
+  await writeTasteJson(paths.manifest, JSON.stringify(manifest, null, 2), {
     backupPath: backupPathFor(paths.manifest),
     validateParsed: (raw) => isValidJsonRecord<TasteManifest>(raw) !== null,
   });
@@ -348,7 +368,7 @@ export async function appendTasteEventIdempotent(
       return { added: false, total: events.length };
     }
     events.push(event);
-    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2), {
+    await writeTasteJson(paths.events, JSON.stringify(events, null, 2), {
       backupPath: backupPathFor(paths.events),
       validateParsed: (raw) => isValidTasteEventsArray(raw) !== null,
     });
@@ -382,7 +402,7 @@ export async function writeTasteEvents(
 ): Promise<void> {
   return serializeTasteWrite(dataDir, async () => {
     const paths = resolveTastePaths(dataDir);
-    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2), {
+    await writeTasteJson(paths.events, JSON.stringify(events, null, 2), {
       backupPath: backupPathFor(paths.events),
       validateParsed: (raw) => isValidTasteEventsArray(raw) !== null,
     });
@@ -401,7 +421,7 @@ export async function writeTasteProfile(
 ): Promise<void> {
   return serializeTasteWrite(dataDir, async () => {
     const paths = resolveTastePaths(dataDir);
-    await writeJsonFileAtomicAsync(paths.profile, JSON.stringify(profile, null, 2), {
+    await writeTasteJson(paths.profile, JSON.stringify(profile, null, 2), {
       backupPath: backupPathFor(paths.profile),
       validateParsed: (raw) => isValidJsonRecord<TasteProfile>(raw) !== null,
     });
@@ -429,7 +449,7 @@ export async function writeTasteIndex(
 ): Promise<void> {
   return serializeTasteWrite(dataDir, async () => {
     const paths = resolveTastePaths(dataDir);
-    await writeJsonFileAtomicAsync(paths.index, JSON.stringify(index, null, 2), {
+    await writeTasteJson(paths.index, JSON.stringify(index, null, 2), {
       backupPath: backupPathFor(paths.index),
       validateParsed: (raw) => isValidJsonRecord<ContentTasteIndex>(raw) !== null,
     });
@@ -488,7 +508,7 @@ export async function writeTasteObjections(
 ): Promise<void> {
   return serializeTasteWrite(dataDir, async () => {
     const paths = resolveTastePaths(dataDir);
-    await writeJsonFileAtomicAsync(
+    await writeTasteJson(
       paths.objections,
       JSON.stringify(objections, null, 2),
       {
@@ -513,7 +533,7 @@ export async function appendTasteEventIdempotentForProfile(
       return { added: false, total: events.length };
     }
     events.push(event);
-    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2), {
+    await writeTasteJson(paths.events, JSON.stringify(events, null, 2), {
       backupPath: backupPathFor(paths.events),
       validateParsed: (raw) => isValidTasteEventsArray(raw) !== null,
     });
@@ -544,7 +564,7 @@ export async function writeTasteEventsForProfile(
 ): Promise<void> {
   const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
   return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
-    await writeJsonFileAtomicAsync(paths.events, JSON.stringify(events, null, 2), {
+    await writeTasteJson(paths.events, JSON.stringify(events, null, 2), {
       backupPath: backupPathFor(paths.events),
       validateParsed: (raw) => isValidTasteEventsArray(raw) !== null,
     });
@@ -561,7 +581,7 @@ export async function writeTasteProfileForProfile(
 ): Promise<void> {
   const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
   return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
-    await writeJsonFileAtomicAsync(paths.profile, JSON.stringify(profile, null, 2), {
+    await writeTasteJson(paths.profile, JSON.stringify(profile, null, 2), {
       backupPath: backupPathFor(paths.profile),
       validateParsed: (raw) => isValidJsonRecord<TasteProfile>(raw) !== null,
     });
@@ -586,7 +606,7 @@ export async function writeTasteIndexForProfile(
 ): Promise<void> {
   const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
   return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
-    await writeJsonFileAtomicAsync(paths.index, JSON.stringify(index, null, 2), {
+    await writeTasteJson(paths.index, JSON.stringify(index, null, 2), {
       backupPath: backupPathFor(paths.index),
       validateParsed: (raw) => isValidJsonRecord<ContentTasteIndex>(raw) !== null,
     });
@@ -629,7 +649,7 @@ export async function writeTasteObjectionsForProfile(
 ): Promise<void> {
   const { profileDir, paths } = await ensureProfileTasteStoreEntry(profileId, dataDir);
   return serializeTasteWriteForProfile(dataDir, profileDir, async () => {
-    await writeJsonFileAtomicAsync(
+    await writeTasteJson(
       paths.objections,
       JSON.stringify(objections, null, 2),
       {
