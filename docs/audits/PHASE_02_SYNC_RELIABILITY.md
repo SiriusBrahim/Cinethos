@@ -136,10 +136,18 @@ Komut sonuçları (son koşum):
 | `npm run build` | ✅ başarılı |
 | `npx playwright test --workers=1` | ✅ **15/15** |
 | `data/` sha256 | ✅ 15 dosya, önce/sonra aynı |
+| GitHub Actions `c0a93e2` | ❌ Unit Tests (Node 22.18.0) |
+| GitHub Actions `94c4dca` | ✅ Lint/Test/Build/Smoke + Playwright E2E + bakım analizi + Vercel |
 
-Ortam: Linux (Ubuntu 24.04 tabanlı VM), Node v26.13.1, npm 11.20.0, root olmayan
-kullanıcı. Playwright Chromium ve sistem kütüphaneleri bu makinede `/tmp/pwlibs`
-altına çıkarıldı; depoya eklenmedi.
+Ortam: Linux (Ubuntu 24.04 tabanlı VM), yerel Node v26.13.1, npm 11.20.0, root
+olmayan kullanıcı. CI `.nvmrc` gereği **Node 22.18.0** kullanır; nihai ağaç bu
+sürümde de tam suite ile doğrulandı. Playwright Chromium ve sistem kütüphaneleri
+bu makinede `/tmp/pwlibs` altına çıkarıldı; depoya eklenmedi.
+
+CI'ın yakaladığı gerçek hata: retry gecikmesi `setTimeout(...).unref()` ile
+kurulduğu için Node 22'de bekleyen istek sürerken event loop boşalıyor ve promise
+hiç sonuçlanmıyordu (mevcut `api-error-policy` testleri bunu gösterdi). `94c4dca`
+gecikmeyi referanslı bırakır; hem Node 22 hem Node 26'da 754/754 geçer.
 
 ## 4. Geri alma
 
