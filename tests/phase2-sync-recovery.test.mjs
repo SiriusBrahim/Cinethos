@@ -63,6 +63,20 @@ test('B-10: yarım kalmış deneme günlüğü açılışta tespit edilir ve tem
   }
 });
 
+test('B-10: journal yalnızca beklenen lease token ile tamamlanabilir', async () => {
+  const dir = tmpDir('phase2-journal-token-');
+  try {
+    const journal = createSyncAttemptJournal({ dataDir: dir });
+    await journal.begin('owned-operation', 'lease-owner-a');
+    assert.equal(await journal.complete('lease-owner-b'), false);
+    assert.equal(journal.read()?.operation, 'owned-operation');
+    assert.equal(await journal.complete('lease-owner-a'), true);
+    assert.equal(journal.read(), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('B-10: sync-state içindeki yarım "syncing" dosya durumu pending olarak kurtarılır', () => {
   const dir = tmpDir('phase2-syncstate-');
   try {
@@ -183,13 +197,63 @@ test('B-38/B-10: ikinci yönetici aktif sürecin journal kaydını silemez', asy
     await started;
     const journalPath = path.join(dir, 'sync-attempt.json');
     assert.equal(fs.existsSync(journalPath), true);
-    const secondManager = makeManager(dir);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(fs.existsSync(journalPath), true, 'B açılışı A journal kaydını silmemeli');
-    assert.equal(secondManager.getRecoveredInterruption(), null);
+    const managerModuleUrl = new URL('../src/server/github-bidirectional-sync.ts', import.meta.url).href;
+    const childScript = `
+      import fs from 'node:fs';
+      import path from 'node:path';
+      import { GitHubBidirectionalSyncManager } from ${JSON.stringify(managerModuleUrl)};
+      const dataDir = process.argv[1];
+      new GitHubBidirectionalSyncManager({
+        dataDir,
+        store: {},
+        storage: { readDataAsync: async () => ({ version: 3, schemaVersion: 3, engineVersion: 'test', activeProfileId: '', profiles: [], revision: 0, updatedAt: new Date(0).toISOString() }) },
+        getGitHubConfig: () => ({ branch: 'main', isPublicRepo: false }),
+        onSyncCompleted: () => {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      if (!fs.existsSync(path.join(dataDir, 'sync-attempt.json'))) process.exit(4);
+      console.log('PRESERVED');
+    `;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', childScript, dir], {
+      encoding: 'utf8',
+      env: process.env,
+    });
+    assert.equal(child.status, 0, `ikinci süreç aktif journal kaydını korumalı: ${child.stdout}${child.stderr}`);
+    assert.match(child.stdout, /PRESERVED/);
+    assert.equal(fs.existsSync(journalPath), true, 'ikinci süreç A journal kaydını silmemeli');
     releaseFirst();
     assert.equal(await first, 'done');
     assert.equal(fs.existsSync(journalPath), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('B-38: PersistentDataStore dış istekleri manager kuyruğunu atlayamaz', async () => {
+  const dir = tmpDir('phase2-store-queue-');
+  try {
+    const store = new PersistentDataStore({ dataDir: dir });
+    store.attachDataStorage(createDataStorage({ dataDir: dir }));
+    let markStarted;
+    let releaseFirst;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const gate = new Promise((resolve) => { releaseFirst = resolve; });
+    let secondStarted = false;
+    const first = store.withExclusiveSync('store-first', async () => {
+      markStarted();
+      await gate;
+      return 'first';
+    });
+    await started;
+    const second = store.withExclusiveSync('store-second', async () => {
+      secondStarted = true;
+      return 'second';
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(secondStarted, false, 'store wrapper bağımsız isteği kuyruklamalı');
+    releaseFirst();
+    assert.equal(await first, 'first');
+    assert.equal(await second, 'second');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -202,9 +266,9 @@ test('B-38: aynı makinede canlı PID stale süresini aşsa da kilit devralınam
     const lease = acquireSyncFileLease(lockPath, { staleMs: 1_000 });
     const old = new Date(Date.now() - 60 * 60_000);
     fs.utimesSync(lockPath, old, old);
-    assert.equal(tryAcquireSyncFileLease(lockPath, { staleMs: 1_000, isProcessAlive: () => true }), null);
+    assert.equal(tryAcquireSyncFileLease(lockPath, { staleMs: 1_000 }), null);
     assert.equal(lease.renew(), true);
-    assert.equal(tryAcquireSyncFileLease(lockPath, { staleMs: 1_000, isProcessAlive: () => true }), null);
+    assert.equal(tryAcquireSyncFileLease(lockPath, { staleMs: 1_000 }), null);
     lease.release();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -265,8 +329,11 @@ test('B-38: dosya kilidi sahiplik, serbest bırakma ve bayat devralma kuralları
     // Yabancı token: release başka sürecin kilidini silmemeli.
     acquireSyncFileLease(lockPath);
     const info = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-    fs.writeFileSync(lockPath, JSON.stringify({ ...info, token: 'baska-token' }));
-    lease.release();
+    const foreignLease = acquireSyncFileLease(lockPath);
+    const foreignInfo = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    fs.writeFileSync(lockPath, JSON.stringify({ ...foreignInfo, token: 'baska-token' }));
+    assert.equal(foreignLease.renew(), false, 'başka token ile lease yenilenememeli');
+    foreignLease.release();
     assert.equal(fs.existsSync(lockPath), true, 'yabancı kilit korunmalı');
     fs.rmSync(lockPath, { force: true });
 

@@ -8,11 +8,11 @@
  * Tasarım:
  * - `open(lockPath, 'wx', 0o600)` ile atomik oluşturma; içerik `{token, pid,
  *   hostname, acquiredAt}`.
- * - Kilit doluysa: aynı makinede PID yaşamıyorsa veya `staleMs` geçtiyse
- *   **bayat** kabul edilir. Bayat kilit önce `rename` ile kenara alınır
- *   (yarışta taze kilidi silmemek için), sonra açılır.
- * - `release()` yalnızca kendi token'ı dosyada yazıyorsa siler; başka sürecin
- *   kilidini asla kaldırmaz.
+ * - Aynı makinede canlı PID'nin kilidi yalnızca mtime yaşlandı diye bayat
+ *   sayılmaz; ölü PID devralınabilir. Farklı hostta PID doğrulanamadığından
+ *   heartbeat mtime değeri `staleMs` eşiğiyle değerlendirilir.
+ * - Lease sahibi `renew()` ile heartbeat'i yeniler; yenileme token ve inode
+ *   sahipliğini doğrular. `release()` yabancı token'ı silmez.
  *
  * SINIR: Bu bir *advisory* kilittir. Kilidi tanımayan üçüncü taraf yazımlarını
  * engellemez; NFS/geneş ağ dosya sistemlerinde `O_EXCL` semantiği garanti
@@ -157,7 +157,8 @@ export interface SyncFileLease {
 
 /**
  * Kilidi almayı dener; başka canlı süreç tutuyorsa `null` döner.
- * `staleMs` geçmiş veya sahibi ölmüş kilit devralınır.
+ * Aynı hosttaki ölü PID kilidi devralınır; uzak host kilidi yalnızca heartbeat
+ * `staleMs` eşiğini aşınca devralınabilir.
  */
 export function tryAcquireSyncFileLease(
   lockPath: string,

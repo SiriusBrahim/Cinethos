@@ -525,9 +525,10 @@ export class PersistentDataStore {
    * (ör. aşamalı senkronizasyonun çağırdığı prob) yeniden kilitlenmez.
    */
   private async withExclusiveSync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
-    if (!this.bidirectionalManager || this.bidirectionalManager.isExclusiveActive()) {
-      return fn();
-    }
+    if (!this.bidirectionalManager) return fn();
+    // runExclusive kendi AsyncLocalStorage bağlamıyla yalnızca gerçek iç içe
+    // çağrıları tanır. Queue'nun global "running" durumu bağımsız istekleri
+    // doğrudan çalıştırmak için kullanılmamalıdır.
     return this.bidirectionalManager.runExclusive(operation, fn);
   }
 

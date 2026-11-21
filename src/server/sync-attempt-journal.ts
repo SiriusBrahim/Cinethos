@@ -3,8 +3,9 @@
  *
  * GitHub senkronizasyonu başladığında `data/sync-attempt.json` dosyasına
  * "uçuşta" kaydı yazılır; işlem bittiğinde (başarı veya hata) kayıt silinir.
- * Süreç çökerse kayıt kalır ve bir sonraki açılışta **kesin olarak belirsiz**
- * işlem "interrupted" olarak raporlanır ve temizlenir.
+ * Süreç çökerse kayıt kalır. Bir sonraki süreç önce süreçler-arası lease'i
+ * alabilirse kayıt "interrupted" olarak raporlanır ve temizlenir; aktif bir
+ * lease sahibi varsa journal'a dokunulmaz.
  *
  * Amaç: "çalışıyor" durumunda çöküp yeniden açıldığında durumun sonsuza dek
  * `running` görünmesini engellemek. Kuyruk bellekte olduğu için işlem yeniden
