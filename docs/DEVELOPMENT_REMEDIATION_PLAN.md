@@ -451,7 +451,7 @@ Her aşama PR'ında aşağıdaki başlıklar doldurulmalıdır:
 - **Aşama 5–9** mimari, performans, güvenlik, grafik ve kurtarma işlerini tamamlar.
 - **Aşama 10** tüm değişikliklerin birlikte doğrulanmasıdır.
 
-Her PR merge edildikten sonra sonraki dal yeni `master` HEAD'inden açılır. Çakışma çözümünde eski dalı zorla `master` üzerine yazma; güncel `master` ile rebase/merge edip testleri tekrar çalıştır. P1 veri kaybı bulguları kapanmadan çok cihazlı senkronizasyon veya tam yedekleme güvenilir kabul edilmemelidir.
+Yürürlükteki model **tek uzun ömürlü dal + tek PR**'dır: aşamalar `remediation/full-project-remediation` dalında ve PR #65 içinde ayrı commit grupları olarak ilerler; her aşama için yeni dal veya yeni PR açılmaz. Çakışma çözümünde dalı zorla `master` üzerine yazma; güncel `master` ile merge edip testleri tekrar çalıştır. Bir aşama, kendi kabul kriterleri ve tüm kalite kapıları yeşil olmadan tamamlanmış sayılmaz. P1 veri kaybı bulguları kapanmadan çok cihazlı senkronizasyon veya tam yedekleme güvenilir kabul edilmemelidir.
 
 ---
 
@@ -478,7 +478,7 @@ Her PR merge edildikten sonra sonraki dal yeni `master` HEAD'inden açılır. Ç
 | ID | P | Başlık | Aşama |
 |---|---|---|---|
 | N-01 | P2 | Plan ↔ tek-PR talimatı çelişkisi | 0 (bu güncellemeyle çözüldü) |
-| N-02 | P3 | `npm test` dosya listesi elle yazılmış | 5 |
+| N-02 | P3 | `npm test` dosya listesi elle yazılmış | 1 (bu turda tamamlandı — Aşama 5 ataması kaldırıldı) |
 | N-03 | P3 | Kurulumda install-script'ler engelli | 10 |
 | N-04 | P3 | Test concurrency belirsiz (B-14 ile birleşik) | 1 |
 | N-05 | P4 | Kökte denetim belgesi birikmesi | 0/5 |
@@ -506,7 +506,7 @@ Yalnızca aşağıdaki işler; her biri ayrı commit + regresyon testi:
 ## 17. Aşama 1 sonuçları
 
 **Tarih:** 21 Kasım 2026 · **Dal:** `remediation/full-project-remediation` · **PR:** #65
-**Taban:** `master` @ `c58ec49` (değişmedi) · **Ayrıntı:** [PHASE_01_DATA_INTEGRITY.md](audits/PHASE_01_DATA_INTEGRITY.md), [PHASE_01_DATA_INTEGRITY_TESTS.md](audits/PHASE_01_DATA_INTEGRITY_TESTS.md)
+**Taban:** Aşama 0 `master` @ `c58ec49`; PR #65'in güncel tabanı `master` @ `9be501` · **Ayrıntı:** [PHASE_01_DATA_INTEGRITY.md](audits/PHASE_01_DATA_INTEGRITY.md), [PHASE_01_DATA_INTEGRITY_TESTS.md](audits/PHASE_01_DATA_INTEGRITY_TESTS.md)
 
 ### 17.1 Kapanan bulgular
 
@@ -519,12 +519,18 @@ Yalnızca aşağıdaki işler; her biri ayrı commit + regresyon testi:
 | B-09, B-04 | Tombstone/profil duyarlı kayıp koruması; limit aşımında sessiz kırpma yerine 409 | `30eb3cb` |
 | B-31 | Token dosyası: tmp + fsync + rename, `0600`, symlink reddi, sıralı yazma | `f4cac57` |
 | A–G | Uçtan uca entegrasyon testleri (çoklu cihaz, silme, yedek, restore çakışması) | `83ce55f` |
+| B-14 | Sembolik bağlantıları bileşen bazında çözme, ilk kabul düzeltmesi | `78ee260` |
+| B-09, B-04 | Profil kapsamlı kayıp/tombstone karşılaştırması | `29420de` |
+| B-31 | Atomik token yazımında hata güvenliği (`beforeRename` kancası) | `fb4f1a5` |
+| B-14 | İki fazlı TOCTOU kapısı, `ENOENT` dışındaki hatalarda fail-closed, dir kimliği denetimi | `e948072` |
+| B-09 | `preferences.hidden` dâhil genel profil metaverisi koruması | `95db902` |
+| B-31 | Gerçek `rename(2)` hata testleri (`EISDIR`/`ENOTEMPTY`, `ENOENT`) | `eb95605` |
 
 ### 17.2 Doğrulama
 
 - `npm run lint`: 0 hata / 0 uyarı
 - `npm run cycles`: döngü yok
-- `npm test`: **708/708** (100 yeni test; kabul düzeltmeleri dâhil)
+- `npm test`: **720/720** (112 yeni test; kabul düzeltmeleri dâhil), 67 dosya, 0 başarısız
 - `npm run test:taste`: **440/440**
 - `npm run build`: başarılı
 - `data/` hash'leri ve yedek sayısı Aşama 1 başından beri değişmedi
@@ -541,28 +547,43 @@ Yalnızca aşağıdaki işler; her biri ayrı commit + regresyon testi:
 **B-14 — Symlink ve TOCTOU koruması.** `path.resolve()` tek başına yeterli
 değildi. `canonicalizePath` artık yolu bileşen bileşen çözer (40 atlama sınırı,
 döngüde açık hata), var olmayan kuyruğu en yakın var olan üst dizin üzerinden
-doğrular, Windows'ta harf duyarsız karşılaştırır. `assertSafeWritePath` her
-`persistDocument*`/`writeDiskSnapshot*` öncesi yolu yeniden doğrular; böylece
-doğrulamadan sonra dizin symlink'e çevrilse bile yazma reddedilir. `taste-store`
-aynı guard'ı kullanır. Kanıt: `phase1-test-isolation` 21 test (11 yeni).
+doğrular, Windows'ta harf duyarsız karşılaştırır. Yalnızca `ENOENT` "yol yok"
+sayılır; `EACCES`/`EIO`/`ENOTDIR`/`ELOOP` doğrulamayı durdurur. Her yazma iki
+fazlı kapıdan geçer: `beginGuardedWrite` yolu doğrular ve dizin zincirinin
+`dev`+`inode` kimliğini alır, `completeGuardedWrite` asenkron snapshot/kilit
+beklemesinden hemen sonra yolu ve kimliği yeniden doğrular. Bu kapı
+`persistDocument*`, `writeDiskSnapshot*`, izole yansılar, SQLite birincil yazımı
+ve `taste-store` yazımlarının tamamında uygulanır. Node'da `openat`/`renameat`
+olmadığı için son doğrulama ile `rename(2)` arasındaki mikrosaniyelik pencere
+kapatılamaz; bu sınır belgelenmiştir. Kanıt: `phase1-test-isolation` 28 test
+(18 yeni: asenkron boşlukta symlink değişimi, aynı yolda farklı inode,
+`ENOTDIR`/`EACCES`, yazma sürerken değişim).
 
 **B-09/B-04 — Profil kapsamlı kayıp.** `collectDocumentLossStats` artık
 `profileId` bazlı `items`/`tombstones` haritaları ve zaman damgaları üretir;
 aynı içerik başka profilde dursa da silme görünür. Tombstone'lar anahtar anahtar
 karşılaştırılır; sayı sabitken farklı işaret kaybı ve profile taşıma yakalanır.
-Boş profil silinmesi metaveri varsa `profile_metadata_drop` ile reddedilir.
+Boş profil silinmesi metaveri varsa `profile_metadata_drop` ile reddedilir;
+metaveri kontrolü alan adlarını saymaz, tüm `preferences` (daha önce atlanan
+`hidden` dâhil), `settings` ve `cinemaKunye` için boş olmayan değer arar. Varsayılan
+`Profilim` adı metaveri sayılmaz, böylece boş profilin meşru silmesi engellenmez.
 Meşru silme (tombstone'lu veya daha yeni etkileşimle yeniden eklenen kayıt) ve
 tek kaydın bilinçli silinmesi engellenmez. Yeni kodlar `api.ts` ve
 `primary-data-repository.ts` çakışma listelerine eklendi. Kanıt:
-`phase1-data-loss-guard` 27 test (14 yeni).
+`phase1-data-loss-guard` 30 test (17 yeni; `hidden` dolu/boş ve providers dahil).
 
 **B-31 — Atomik yazma hata güvenliği.** `writeFileAtomicSecure` yalnızca
 test/denetim için `beforeRename` kancası aldı. Rename veya yazma hatasında eski
 hedef korunur, geçici dosya temizlenir, hedef yokken yarım dosya kalmaz, hata
-mesajı token içermez ve kuyruk kilitlenmez. Kanıt: `phase1-atomic-token` 14
-test (6 yeni, gerçek dosya sistemi dâhil).
+mesajı token içermez ve kuyruk kilitlenmez. Yalnızca kancanın fırlattığı yapay
+hata değil, **gerçek `rename(2)` hataları** da test edilir: hedef dizinle işgal
+edilirse `EISDIR`/`ENOTEMPTY`, geçici dosya kaybolursa `ENOENT`. Kanıt:
+`phase1-atomic-token` 16 test (8 yeni, gerçek dosya sistemi dâhil).
 
 **Kalan risk:** Çok süreçli atomik yazma/dağıtık kilit garanti edilmez; tombstone
 yazmayan istemcide tek kayıplık profil boşalması meşru silmeden ayırt edilemez.
+TOCTOU korumasında son doğrulama ile `rename(2)` arasındaki pencere Node'un
+`openat`/`renameat` sunmaması nedeniyle kapatılamaz; kapatılan şey uzun asenkron
+beklemelerdir.
 
 **Aşama 1 burada durur; Aşama 2 başlatılmadı.**

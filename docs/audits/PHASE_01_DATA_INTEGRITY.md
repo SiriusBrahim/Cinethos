@@ -2,7 +2,7 @@
 
 **Tarih:** 21 Kasım 2026
 **Dal:** `remediation/full-project-remediation` (PR #65)
-**Taban:** `master` @ `c58ec49` (değişmedi)
+**Taban:** `master` @ `9be501` (PR #65'in güncel tabanı)
 **Kapsam:** B-01, B-02, B-04, B-05, B-06, B-07, B-08, B-09, B-14, B-31, N-02, N-04
 
 ---
@@ -17,6 +17,7 @@ karşılaştırılıyor.
 | Bulgu | Konu | Durum | Commit |
 |---|---|---|---|
 | B-14, N-02, N-04 | Test izolasyonu, test keşfi, concurrency, `data/` hash kapısı | **FIXED** | `3b2df4e` |
+| B-14, B-09, B-31 (kabul düzeltmesi) | İki fazlı TOCTOU kapısı, `hidden` dâhil genel profil metaverisi, gerçek `rename(2)` hata testleri | **FIXED** | `e948072`, `95db902`, `eb95605` |
 | B-01, B-02 | Alan düzeyinde kayıpsız birleştirme ve eylem zamanı | **FIXED** | `3945592` |
 | B-05, B-06, B-07 | Yedek şeması v4, çoklu profil, sessiz düşürme yok | **FIXED** | `be36d94` |
 | B-08 | Restore revizyon koruması (409/412/428) | **FIXED** | `5e54f7b` |
@@ -26,7 +27,7 @@ karşılaştırılıyor.
 | B-14, B-09, B-04, B-31 | Kabul düzeltmeleri: symlink/TOCTOU, profil kapsamlı kayıp, atomik yazma hata güvenliği | **FIXED** | bu turdaki commit'ler |
 
 Doğrulama (kabul düzeltmeleri dâhil): `npm run lint` 0, `npm run cycles` 0,
-`npm test` **708/708**, `npm run test:taste` **440/440**, `npm run build`
+`npm test` **720/720** (67 dosya), `npm run test:taste` **440/440**, `npm run build`
 başarılı, Playwright E2E **15/15**, `data/` hash'i değişmedi.
 
 ---
@@ -55,7 +56,8 @@ Kabul düzeltmesinde (bkz. 2.8) `path.resolve()` yeterli sayılmadı: sembolik
 bağlantılar bileşen bileşen çözümleniyor, gerçek hedef üzerinden karşılaştırma
 yapılıyor ve her yazmadan hemen önce yol yeniden doğrulanıyor.
 
-**Kanıt:** `tests/phase1-test-isolation.test.mjs` (21 test); gerçek `data/`
+**Kanıt:** `tests/phase1-test-isolation.test.mjs` (28 test, asenkron TOCTOU ve
+errno senaryoları dâhil); gerçek `data/`
 sha256 `c2c163f1…` ve `473316ce…` Aşama 1 başından beri değişmedi.
 
 ### 2.2 B-01 / B-02 — Alan düzeyinde kayıpsız birleştirme
@@ -140,7 +142,7 @@ Tombstone kaybı, profil kaybı ve yarım belge hiç denetlenmiyordu.
   - Eski net-sayı sezgiseli ek tetikleyici olarak korunur.
 - Bilinçli toplu silme onayla geçer; onaysız silme diskteki veriyi değiştirmez.
 
-**Kanıt:** `tests/phase1-data-loss-guard.test.mjs` (27 test: 60+11, 60+61,
+**Kanıt:** `tests/phase1-data-loss-guard.test.mjs` (30 test: 60+11, 60+61,
 profil kaybı, tombstone kaybı, boş belge, revizyon geri dönüşü, onaylı silme ve
 kabul düzeltmesindeki profil kapsamlı senaryolar).
 
@@ -179,9 +181,10 @@ eşzamanlı yenileme yarım dosya ve geniş izin bırakabiliyordu.
 - `refreshEnvGitHubPat` yazma başarısızsa `null` döner, eski token kalır; token
   hiçbir yerde loglanmaz.
 
-**Kanıt:** `tests/phase1-atomic-token.test.mjs` (14 test: atomiklik, izinler,
+**Kanıt:** `tests/phase1-atomic-token.test.mjs` (16 test: atomiklik, izinler,
 eşzamanlı yazma, hata sonrası korunum, symlink, kalıcı token no-op ve kabul
-düzeltmesindeki rename/yazma hata senaryoları).
+düzeltmelerindeki yazma/rename hata senaryoları ile gerçek `rename(2)`
+(`EISDIR`/`ENOTEMPTY`, `ENOENT`) testleri).
 
 ### 2.8 Aşama 1 kabul düzeltmeleri (B-14, B-09/B-04, B-31)
 
@@ -197,11 +200,35 @@ düzeltmesindeki rename/yazma hata senaryoları).
 - `assertSafeDataDir` önce sözlüksel yolu, sonra kanonik gerçek hedefi gerçek
   `data/` ağacıyla karşılaştırır. Windows'ta karşılaştırma büyük/küçük harf
   duyarsızdır.
-- `assertSafeWritePath` her `persistDocument*` / `writeDiskSnapshot*`
-  çağrısından hemen önce üst dizini yeniden doğrular; doğrulamadan sonra bir
-  dizin bağlantıya çevrilirse yazma reddedilir (TOCTOU).
+- **Yalnızca `ENOENT` "yol yok" sayılır.** `lstat`/`readlink` hatalarının
+  tümünü "bulunamadı" kabul etmek, `EACCES`, `EIO`, `ENOTDIR` veya `ELOOP`
+  durumunda doğrulanmamış bir yolla yazmaya izin veriyordu. Artık bu hatalar
+  `TestDataGuardError` ile doğrulamayı durdurur (fail-closed); güvenli
+  varsayılan yol üretilmez.
+- **İki fazlı yazma kapısı (TOCTOU).** Her gerçek yazma `beginGuardedWrite` →
+  `completeGuardedWrite` → yazma → yazma sonrası kontrol sırasından geçer:
+  1. `beginGuardedWrite` yolu doğrular ve en yakın var olan dizinden köke kadar
+     her dizinin `dev`+`inode` kimliğini fotoğraflar.
+  2. `completeGuardedWrite` asenkron beklemeden (snapshot, okuma, kilit) hemen
+     sonra yolu **yeniden çözer** ve kimlikleri karşılaştırır. Dizin symlink'e
+     çevrildiyse `assertSafeDataDir`; aynı yolda başka bir dizinle (farklı
+     inode) değiştirildiyse kimlik karşılaştırması reddeder.
+  3. Yazma sonrası kontrol, zincirin yazma sırasında bozulup bozulmadığını
+     raporlar.
+- Bu kapı `persistDocument`, `persistDocumentDiskSync`, `writeDiskSnapshotSync`,
+  `writeDiskSnapshotAsync`, izole `profile.json`/`user-lists.json` yansıları,
+  SQLite birincil yazımı ve `taste-store` yazımlarının **tamamında** uygulanır.
 - `createDataStorage` ve `taste-store` aynı `assertSafeDataDir` yolunu kullanır.
 - Koruma test ortamında etkindir; üretimde no-op'tur (davranış değişmez).
+
+**Bu düzeltmenin kapsadığı ve kapsamadığı yarış durumları:**
+
+| Senaryo | Sonuç |
+|---|---|
+| Doğrulama → uzun asenkron snapshot → yazma arasında dizin symlink'e çevrilir | **Reddedilir** (yazma öncesi yeniden doğrulama) |
+| Doğrulama → bekleme → dizin aynı yolda farklı bir dizinle değiştirilir (rename) | **Reddedilir** (dev+inode kimliği) |
+| Yazma sürerken dizin zinciri değişir | **Saptanır ve hata verilir**; ancak `rename(2)` tamamlanmış olabileceği için veri geri alınamaz |
+| Son doğrulama ile `rename(2)` arasındaki birkaç mikrosaniyelik pencere | **Kapatılamaz.** Node çekirdeği `openat`/`renameat` sunmadığı için dosya tanıtıcısı (dirfd) üzerinden göreli yazma mümkün değildir. Windows'ta symlink oluşturma ayrıcalığı da yoktur; karşılaştırma harf duyarsızdır. |
 
 #### 2.8.2 Profil kapsamlı kayıp ve tombstone karşılaştırması (`src/server/storage.ts`)
 
@@ -213,8 +240,17 @@ düzeltmesindeki rename/yazma hata senaryoları).
 - Tombstone'lar profil bazında anahtar anahtar karşılaştırılır. Sayı sabit kalsa
   bile farklı bir işaret kaybolursa `tombstone_drop`; başka profile taşınan işaret
   de kayıp sayılır.
-- Profil tamamen yoksa: kaydı varsa `profile_drop`, kaydı yok ama ad/tercih/
-  favori oyuncu/CinemaKünye/ayar metaverisi varsa `profile_metadata_drop`.
+- Profil tamamen yoksa: kaydı varsa `profile_drop`, kaydı yok ama anlamlı
+  metaverisi varsa `profile_metadata_drop`.
+- Metaveri kontrolü alan adlarını tek tek saymaz; `favoriteActors`,
+  `cinemaKunye`, `settings` ve **tüm** `preferences` alanlarında boş olmayan bir
+  değer arar. Böylece daha önce atlanan **`preferences.hidden`** (kullanıcının
+  gizlediği içerikler) ve ileride eklenecek tercih alanları sessizce koruma
+  dışında kalmaz. Yalnızca `hidden` listesi dolu bir profil silinmek istendiğinde
+  `profile_metadata_drop` döner; `hidden` boş ve başka metaverisi olmayan profil
+  gereksiz yere korunmaz.
+- Otomatik üretilen varsayılan profil adı (`Profilim`) metaveri sayılmaz;
+  böylece gerçekten boş bir profil meşru şekilde silinebilir.
 - Meşru silme korunur: kaldırılan kaydın tombstone'u varsa veya kayıt silme
   zamanından yeni bir etkileşimle yeniden eklendiyse kayıp sayılmaz. Tek kayıplık
   profil boşalması yalnızca profil ≥2 kayıtla boşaldıysa ya da aynı içerik başka
@@ -231,6 +267,14 @@ düzeltmesindeki rename/yazma hata senaryoları).
   dosya eski hâliyle kalır, geçici dosya `finally` bloğunda silinir.
 - Hedef yokken oluşan hata yarım/bozuk dosya bırakmaz; hata mesajı token
   değerini içermez; başarısız yazmadan sonra kuyruk kilitlenmez.
+- **Gerçek `rename(2)` hataları test edilir**, kancanın fırlattığı yapay hata
+  değil: (a) hedef yol bir dizinle işgal edilirse `rename` `EISDIR`/`ENOTEMPTY`
+  ile döner, eski token korunur, geçici dosya silinir, yarım dosya oluşmaz;
+  (b) geçici dosya rename öncesi kaybolursa `rename` `ENOENT` ile döner, eski
+  token aynen kalır ve kuyruk sonraki yazmayı tamamlar. Hata mesajı token
+  değerini içermez.
+- `beforeRename` kancası yalnızca test/denetim içindir ve üretim davranışını
+  değiştirmez; üretimde hiçbir kanca geçilmez.
 - `0600` izni korunur, mevcut daha kısıtlayıcı izin genişletilmez, symlink
   hedefi yazılmaz.
 
@@ -238,9 +282,9 @@ düzeltmesindeki rename/yazma hata senaryoları).
 
 | Konu | Test dosyası | Test |
 |---|---|---|
-| Symlink, iç içe symlink, TOCTOU, keşif | `tests/phase1-test-isolation.test.mjs` | 21 (11 yeni) |
-| Profil kapsamlı kayıt/tombstone/metaveri kaybı | `tests/phase1-data-loss-guard.test.mjs` | 27 (14 yeni) |
-| Rename/yazma hataları, geçici dosya temizliği, sızıntı | `tests/phase1-atomic-token.test.mjs` | 14 (6 yeni) |
+| Symlink, iç içe symlink, asenkron TOCTOU, errno (`ENOTDIR`/`EACCES`), keşif | `tests/phase1-test-isolation.test.mjs` | 28 (18 yeni) |
+| Profil kapsamlı kayıt/tombstone/metaveri (`hidden` dâhil) kaybı | `tests/phase1-data-loss-guard.test.mjs` | 30 (17 yeni) |
+| Rename/yazma hataları, gerçek `rename(2)` hataları, geçici dosya temizliği, sızıntı | `tests/phase1-atomic-token.test.mjs` | 16 (8 yeni) |
 
 ---
 
@@ -262,6 +306,15 @@ HTTP uçları üzerinden çalışır:
 
 ## 4. Bilinen sınırlar
 
+- **TOCTOU'nun son mikrosaniyelik penceresi kapatılamadı.** Node çekirdeği
+  `openat`/`renameat` (dirfd üzerinden göreli yazma) sunmaz; bu yüzden son
+  doğrulama ile `rename(2)` arasındaki pencere platform düzeyinde değil, yalnızca
+  kod düzeyinde daraltılabilir. Uygulanan koruma: uzun asenkron beklemelerin
+  (snapshot, kilit, okuma) tamamı doğrulamanın **öncesine** alındı; her yazma
+  kendi doğrulamasını yapar ve yazma sonrası dizin kimliği denetlenir.
+- `EACCES` testi yalnızca root olmayan POSIX kullanıcısında koşar; root
+  ortamında `skip` olarak raporlanır (sessiz başarı sayılmaz). Symlink testleri
+  symlink oluşturulamayan platformlarda aynı şekilde `skip` bildirir.
 - Playwright E2E, kabul düzeltmesi turunda çalıştırıldı (15/15). Koşum için
   Chromium sistem kütüphaneleri `/tmp` altına çıkarıldı; bu kurulum depoya dâhil
   değildir ve yeni bir ortamda yeniden yapılmalıdır.

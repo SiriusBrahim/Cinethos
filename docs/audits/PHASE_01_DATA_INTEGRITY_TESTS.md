@@ -15,8 +15,8 @@ kaydeder. Çalıştırılmayan test başarı sayılmadı.
 |---|---|---|
 | `npm run lint` (eslint + `tsc --noEmit` + test tsconfig) | 0 hata, 0 uyarı (`--max-warnings 0`) | ~60 sn |
 | `npm run cycles` | Bağımlılık döngüsü bulunmadı | ~3 sn |
-| `npm test` | **708/708 geçti**, 67 dosya, 0 başarısız | ~99 sn |
-| `npm run test:taste` | **440/440 geçti**, 27 dosya, 0 başarısız | ~16 sn |
+| `npm test` | **720/720 geçti**, 67 dosya, 0 başarısız | ~91 sn |
+| `npm run test:taste` | **440/440 geçti**, 27 dosya, 0 başarısız | ~9 sn |
 | `npm run build` | Başarılı (`dist/sw.js`, workbox üretildi) | ~5 sn |
 | `npx playwright test` (chromium, `--workers=1`) | **15/15 geçti** (9 + 6, iki grupta) | 21 sn + 13 sn |
 | `data/` hash (her koşu öncesi/sonrası) | Değişmedi (`c2c163f1…`) | — |
@@ -39,15 +39,20 @@ Test zayıflatılmadı; bu, bilinen zamanlama hassasiyeti olarak kaydedildi.
 
 | Dosya | Test | Kapsam |
 |---|---|---|
-| `tests/phase1-test-isolation.test.mjs` | 21 | Guard, `dataDir` zorunluluğu, gerçek `data/` reddi, symlink/iç içe symlink/TOCTOU, keşif |
+| `tests/phase1-test-isolation.test.mjs` | 28 | Guard, `dataDir` zorunluluğu, gerçek `data/` reddi, symlink/iç içe symlink, asenkron TOCTOU, `ENOTDIR`/`EACCES`, keşif |
 | `tests/phase1-merge-lossless.test.mjs` | 12 | S1–S7 senaryoları iki yön; puan silme, durum geri alma, eşit/eksik damga |
 | `tests/phase1-backup-roundtrip.test.mjs` | 15 | v1–v4 ayrıştırma, çoklu profil round-trip, v5 ret, bozuk JSON |
 | `tests/phase1-restore-conflict.test.mjs` | 5 | 409 / 428 / 200, eşzamanlı restore, hata sonrası veri korunumu |
-| `tests/phase1-data-loss-guard.test.mjs` | 27 | 60+11, 60+61, profil kapsamlı kayıt/tombstone/metaveri kaybı, onaylı silme, limit ve geçersiz kimlik reddi |
-| `tests/phase1-atomic-token.test.mjs` | 14 | Atomiklik, 0600 izin, eşzamanlı yazma, rename/yazma hataları, geçici dosya temizliği, token sızıntısı, symlink, no-op |
+| `tests/phase1-data-loss-guard.test.mjs` | 30 | 60+11, 60+61, profil kapsamlı kayıt/tombstone/metaveri (`hidden` dâhil) kaybı, onaylı silme, limit ve geçersiz kimlik reddi |
+| `tests/phase1-atomic-token.test.mjs` | 16 | Atomiklik, 0600 izin, eşzamanlı yazma, yazma/rename hataları, **gerçek `rename(2)` hataları**, geçici dosya temizliği, token sızıntısı, symlink, no-op |
 | `tests/phase1-data-integrity-integration.test.mjs` | 6 | Senaryo A–G, gerçek HTTP uçları |
 
-**Toplam yeni test:** 100 (708 unit içinde): 69 ilk tur + 31 kabul düzeltmesi.
+**Toplam yeni test:** 112 (720 unit içinde): 69 ilk tur + 31 kabul düzeltmesi +
+12 son kabul düzeltmesi (7 guard/TOCTOU, 3 profil metaverisi, 2 gerçek rename).
+
+Ortam: Node **v26.13.0**, npm **11.20.0**, Linux (uid root değil). `npm test`
+koşusu keşfedilen 67 test dosyasını `--test-concurrency=1` ile çalıştırır;
+`data/` hash kapısı koşu öncesi/sonrası **değişmedi** bildirdi.
 
 Güncellenen mevcut testler:
 
@@ -70,11 +75,13 @@ Güncellenen mevcut testler:
 | Restore eşzamanlı değişikliği ezemez | `phase1-restore-conflict`, integration E/F |
 | Çoklu profil yedeği kayıpsız | `phase1-backup-roundtrip`, integration D |
 | Token dosyası bozulmaz | `phase1-atomic-token` |
-| Symlink üzerinden gerçek `data/`'ya yazılamaz | `phase1-test-isolation` (symlink, iç içe symlink, sonradan hedef değişimi, TOCTOU) |
+| Symlink üzerinden gerçek `data/`'ya yazılamaz | `phase1-test-isolation` (symlink, iç içe symlink, sonradan hedef değişimi, asenkron TOCTOU, dizin kimliği değişimi, yazma sürerken değişim) |
+| `ENOENT` dışındaki dosya sistemi hataları yazmayı durdurur | `phase1-test-isolation` (`ENOTDIR`, root olmayan POSIX'te `EACCES`) |
 | Profil bazlı kayıp global sayımla maskelenemez | `phase1-data-loss-guard` (iki profilde aynı içerik, profil kimliği değişimi, diğer profili etkilememe) |
 | Boş profil metaverisi korunur | `phase1-data-loss-guard` (tercih, favori oyuncu, boş profil) |
+| Yalnızca `hidden` listesi olan profil korunur; boş `hidden` gereksiz korumaz | `phase1-data-loss-guard` (hidden dolu/boş, providers) |
 | Tombstone sayısı sabitken farklı işaret kaybı | `phase1-data-loss-guard` (taşıma ve farklı anahtar kaybı) |
-| Rename hatasında eski token korunur | `phase1-atomic-token` (`beforeRename` kancası + gerçek FS) |
+| Rename hatasında eski token korunur | `phase1-atomic-token` (`beforeRename` kancası + **gerçek `rename(2)` hataları**: `EISDIR`/`ENOTEMPTY`, `ENOENT`) |
 
 ---
 
