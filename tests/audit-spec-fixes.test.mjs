@@ -714,10 +714,15 @@ test('Production yapılandırmasında GitHub senkronizasyon API uçları kapalı
     await withServer(
       { dataDir: tmpDir, githubDevSyncEnabled: false },
       async (baseUrl) => {
-        const response = await fetch(`${baseUrl}/api/sync/status`);
-        assert.equal(response.status, 404);
-        const body = await response.json();
-        assert.equal(body.code, 'github_dev_sync_disabled');
+        const statusResponse = await fetch(`${baseUrl}/api/sync/status`);
+        assert.equal(statusResponse.status, 200, 'durum uç noktası token doğrulaması için erişilebilir kalmalı');
+        const statusBody = await statusResponse.json();
+        assert.equal(statusBody.mode, 'local_only');
+
+        const syncResponse = await fetch(`${baseUrl}/api/sync/inspect`, { method: 'POST' });
+        assert.equal(syncResponse.status, 404);
+        const syncBody = await syncResponse.json();
+        assert.equal(syncBody.code, 'github_dev_sync_disabled');
         assert.equal(
           fs.existsSync(path.join(tmpDir, 'locks', 'github-sync.lock')),
           false,

@@ -2202,6 +2202,11 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
+  app.get('/api/sync/status', syncStatusGuard, (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(persistentStore.getSyncStatus());
+  });
+
   app.use('/api/sync', (_req: Request, res: Response, next: NextFunction) => {
     if (options.githubDevSyncEnabled === true) return next();
     res.setHeader('Cache-Control', 'no-store');
@@ -2210,11 +2215,6 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       code: 'github_dev_sync_disabled',
       status_message: 'GitHub senkronizasyonu yalnızca geliştirme ortamında kullanılabilir.',
     });
-  });
-
-  app.get('/api/sync/status', syncStatusGuard, (_req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.json(persistentStore.getSyncStatus());
   });
 
   app.post('/api/sync/inspect', originGuard, tokenGuard, async (req: Request, res: Response) => {
