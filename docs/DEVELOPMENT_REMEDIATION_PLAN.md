@@ -243,14 +243,14 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 
 ### Yapılacak işler
 
-1. **Sekme şeridi — B-24:** 1024–1440 px aralığında tüm sekmelere erişim sağla. Yatay kaydırma ipucu, fade/ok, taşma menüsü veya ikon-only çözümü tasarla; klavye ve fare ile erişim doğrulansın.
-2. **Mobil sticky header — B-25:** Mobilde üst alanı sadeleştir; gereksiz satırları menüye taşı. Sticky alan içerik yüksekliğini gereksiz tüketmesin.
-3. **İşlem Merkezi — B-26:** Retry/iptal/yeniden başlat düğmeleri görev durumuna ve hata türüne göre etkinleştirilsin. 409 gibi tekrar denenemeyen durumlarda retry kapalı ve açıklamalı olsun.
-4. **Kart ve poster düzeni — B-27:** Rozet/poster çakışmaları, son kart kırpılması ve filtre çubuğu taşması giderilsin.
-5. **Modal erişilebilirliği — B-28:** Modal açıkken odak tuzağı, Escape, geri odak, arka plan inert/aria-hidden ve ekran okuyucu duyuruları doğru çalışsın.
-6. **Klavye handler performansı — B-29:** Handler referanslarının gereksiz yeniden bağlanması önlensin; kısayollar modal/form odaklarıyla çakışmasın.
-7. **Responsive kapsam:** 360, 390, 768, 1024, 1280, 1440 ve 1920 px ölçülerinde ekran görüntüsü/otomatik kontrol.
-8. **Erişilebilirlik:** Kontrast, görünür focus, semantik başlıklar, buton adları, reduced-motion ve klavye ile tam kullanım testleri.
+1. **Sekme şeridi — B-24 ✅:** Tek satır header'da 7 modül sekmesi; 1440 px altında etiketler ikona çekilir (`aria-label` + `title` korunur), aktif sekme `aria-current` + altın alt çizgi. 1024/1280/1440/1920 px'te kesilme yok.
+2. **Mobil sticky header — B-25 ✅:** Mobil üst alan 56 px tek satır (marka, arama, profil, ekle, "Diğer"); 5 öğeli sabit alt gezinme + "Daha fazla" sheet'i (Escape, odak dönüşü, scroll lock). Safe-area inset'leri kullanılır.
+3. **İşlem Merkezi — B-26 ✅:** Tek politika kaynağı `modules/operations/task-actions.ts`; retry/iptal görev durumuna bağlı, 409/403/404 kalıcı hatada kapalı + gerekçe, teknik detay `<details>` içinde.
+4. **Kart ve poster düzeni — B-27 ✅:** `aspect-ratio` poster, rozetler başlık hizasında, `auto-fill` grid, uzun başlık clamp, yatay kaydırılabilir filtre çubuğu, yükleme sırasında CLS yok.
+5. **Modal erişilebilirliği — B-28 ✅:** Tek kanonik dialog hook'u; odak tuzağı, Escape, odak dönüşü, scroll lock, kabuk bölgelerinde `inert`, dialog yığını.
+6. **Klavye handler performansı — B-29 ✅:** Ref'li tek dinleyici, `utils/overlay-guard.ts` ile overlay/metin girişi koruması, `/` kısayolu arama alanına odaklanır.
+7. **Responsive kapsam ✅:** 360, 390, 768, 1024, 1280, 1440 ve 1920 px ölçüldü; yatay taşma yok, header 57/65 px, arama 142–538 px.
+8. **Erişilebilirlik ✅:** axe WCAG 2.1 AA taraması 1440/768/360 px'te 0 kritik, 0 ciddi; kontrast, focus halkası, buton adları ve reduced-motion doğrulandı.
 
 ### Kabul kriterleri
 
@@ -259,6 +259,10 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 - Geçersiz görev eylemleri devre dışıdır.
 - Modal açma/kapatma ve odak yönetimi otomatik testlerle doğrulanır.
 - axe veya eşdeğer erişilebilirlik taramasında kritik hata kalmaz; istisnalar belgelenir.
+
+**Aşama 4 tamamlandı.** Ayrıntılı tasarım kararları, bulgu kanıtları, responsive matris,
+axe sonuçları ve sınırlar:
+[`docs/audits/PHASE_04_UI_UX.md`](audits/PHASE_04_UI_UX.md).
 
 ## 7. Aşama 5 — Mimari sadeleştirme ve kod kalitesi
 
@@ -430,12 +434,12 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 | B-21 | P2 | 6 | localStorage performansı ve sessiz kırpma |
 | B-22 | P3 | 3 | ✅ Öneri cache sınırı |
 | B-23 | P4 | 6 | Excel/önizleme bellek yönetimi |
-| B-24 | P2 | 4 | Masaüstü sekme şeridi erişilebilirliği |
-| B-25 | P2 | 4 | Mobil sticky header yüksekliği |
-| B-26 | P3 | 4 | İşlem Merkezi görev eylemleri |
-| B-27 | P3 | 4 | Poster/kart/filtre görsel düzeni |
-| B-28 | P3 | 4 | Modal erişilebilirliği |
-| B-29 | P3 | 4 | Klavye handler yeniden bağlama |
+| B-24 | P2 | 4 | ✅ Masaüstü sekme şeridi erişilebilirliği |
+| B-25 | P2 | 4 | ✅ Mobil sticky header yüksekliği |
+| B-26 | P3 | 4 | ✅ İşlem Merkezi görev eylemleri |
+| B-27 | P3 | 4 | ✅ Poster/kart/filtre görsel düzeni |
+| B-28 | P3 | 4 | ✅ Modal erişilebilirliği |
+| B-29 | P3 | 4 | ✅ Klavye handler yeniden bağlama |
 | B-30 | P2 | 2 | ✅ API 429/5xx retry/backoff |
 | B-31 | P2 | 1 | Token dosyası atomik yazım ve izin |
 | B-32 | P3 | 7 | Public repo onayı / kişisel veri paylaşımı |
@@ -666,3 +670,30 @@ türetilmiş ve isteğe bağlı bir alandır; kalıcı veriye yazılmaz. Eski t�
 ve Zevk Haritası dosyaları okunmaya devam eder.
 
 **Aşama 1, Aşama 2 ve Aşama 3 tamamlandı; Aşama 4 başlatılmadı.**
+
+### 17.7 Aşama 4 — uygulama ve doğrulama
+
+Aşama 4, iş mantığı ve veri sözleşmesi değiştirilmeden tamamlandı: yalnızca sunum
+katmanı (tasarım token'ları, kabuk, kart/filtre düzeni, dialog ve kısayol altyapısı,
+İşlem Merkezi eylem politikası) yenilendi. Ayrıntılı tasarım envanteri, bulgu bazlı
+kanıt ve responsive matris: [`docs/audits/PHASE_04_UI_UX.md`](audits/PHASE_04_UI_UX.md).
+
+| Bulgu | Çözüm | Ana dosyalar |
+|---|---|---|
+| B-24 | Tek satır kabuk + 7 sekme; <1440 px ikon modu, `aria-current`, mobil 5 öğeli dock + sheet | `src/components/Header.tsx`, `src/app/navigation.ts`, `src/presentation/layouts/MobileLayout.tsx` |
+| B-25 | 64/56 px header, kompakt ikincil eylemler, safe-area, içerik padding'i token'a bağlı | `style.css`, `src/styles/tokens.css` |
+| B-26 | Görev durumu → eylem politikası tek kaynak; kalıcı hata gerekçesi; `allSettled` yükleme | `src/modules/operations/task-actions.ts`, `OperationsSection.tsx` |
+| B-27 | Poster oranı, rozet yerleşimi, `auto-fill` grid, kaydırılabilir filtre, CLS önlemi | `style.css`, `src/styles/workspace.css` |
+| B-28 | Tek dialog hook'u: odak tuzağı, Escape, odak dönüşü, scroll lock, `inert`, yığın | `src/hooks/useDialogAccessibility.ts` |
+| B-29 | Ref'li tek klavye dinleyicisi + overlay/metin girişi guard'ı | `src/hooks/useKeyboardShortcuts.ts`, `src/utils/overlay-guard.ts` |
+
+**Doğrulama:** lint 0/0, cycles 0, `npm test` **816/816** (803 → +13), `test:taste`
+**440/440**, build başarılı, `data/` sha256 değişmedi (15 dosya). Responsive matris
+360–1920 px: yatay taşma yok, nav kesilmesi 0. axe WCAG 2.1 AA: 1440/768/360 px'te
+0 kritik / 0 ciddi. Playwright E2E yerelde sistem kütüphaneleri (`libnspr4.so`) eksik
+olduğu için koşulamadı; 11 yeni senaryo CI'da koşulmalı.
+
+**Şema/migration:** Kullanıcı veri şeması değişmedi; yeni alan veya migration yok.
+`data/` biçimi ve `schemaVersion` aynı kaldı.
+
+**Aşama 1–4 tamamlandı; Aşama 5 başlatılmadı.**
