@@ -42,7 +42,9 @@ import {
 import { t } from '../src/i18n/index.ts';
 
 async function withServer(options, fn) {
-  const { app } = createCineTrackApp(options);
+  // HTTP route tests explicitly run in development mode; production-disable
+  // behavior is covered separately with githubDevSyncEnabled:false.
+  const { app } = createCineTrackApp({ githubDevSyncEnabled: true, ...options });
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const addr = server.address();
@@ -703,4 +705,32 @@ test('MOOD-PHRASE: çok kelimeli mood ifadeleri eşleşir', async () => {
     slowBurn.opposingFeatures.some((f) => f.toLowerCase().includes('slow burn')),
     'slow burn ifadesi karşıt ton olarak yakalanmalı'
   );
+});
+
+
+test('Production yapılandırmasında GitHub senkronizasyon API uçları kapalıdır', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-github-prod-disabled-'));
+  try {
+    await withServer(
+      { dataDir: tmpDir, githubDevSyncEnabled: false },
+      async (baseUrl) => {
+        const statusResponse = await fetch(`${baseUrl}/api/sync/status`);
+        assert.equal(statusResponse.status, 200, 'durum uç noktası token doğrulaması için erişilebilir kalmalı');
+        const statusBody = await statusResponse.json();
+        assert.equal(statusBody.mode, 'local_only');
+
+        const syncResponse = await fetch(`${baseUrl}/api/sync/inspect`, { method: 'POST' });
+        assert.equal(syncResponse.status, 404);
+        const syncBody = await syncResponse.json();
+        assert.equal(syncBody.code, 'github_dev_sync_disabled');
+        assert.equal(
+          fs.existsSync(path.join(tmpDir, 'locks', 'github-sync.lock')),
+          false,
+          'production yapılandırması GitHub sync lease dosyası oluşturmamalı'
+        );
+      }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

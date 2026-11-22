@@ -10,7 +10,11 @@ import {
   stringifyDeterministic,
 } from '../src/server/persistent-store.ts';
 import { createDataStorage } from '../src/server/storage.ts';
-import { createCineTrackApp } from '../src/server/app.ts';
+import { createCineTrackApp as createCineTrackAppBase } from '../src/server/app.ts';
+
+// These tests exercise the development-only GitHub sync endpoints explicitly.
+const createCineTrackApp = (options = {}) =>
+  createCineTrackAppBase({ githubDevSyncEnabled: true, ...options });
 import { resolveConfig } from '../src/server/config.ts';
 import { deriveSyncUiBanner } from '../src/core/sync-display.ts';
 import {

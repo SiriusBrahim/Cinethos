@@ -8,11 +8,11 @@
  * Tasarım:
  * - `open(lockPath, 'wx', 0o600)` ile atomik oluşturma; içerik `{token, pid,
  *   hostname, acquiredAt}`.
- * - Kilit doluysa: aynı makinede PID yaşamıyorsa veya `staleMs` geçtiyse
- *   **bayat** kabul edilir. Bayat kilit önce `rename` ile kenara alınır
- *   (yarışta taze kilidi silmemek için), sonra açılır.
- * - `release()` yalnızca kendi token'ı dosyada yazıyorsa siler; başka sürecin
- *   kilidini asla kaldırmaz.
+ * - Aynı makinede canlı PID'nin kilidi yalnızca mtime yaşlandı diye bayat
+ *   sayılmaz; ölü PID devralınabilir. Farklı hostta PID doğrulanamadığından
+ *   heartbeat mtime değeri `staleMs` eşiğiyle değerlendirilir.
+ * - Lease sahibi `renew()` ile heartbeat'i yeniler; yenileme token ve inode
+ *   sahipliğini doğrular. `release()` yabancı token'ı silmez.
  *
  * SINIR: Bu bir *advisory* kilittir. Kilidi tanımayan üçüncü taraf yazımlarını
  * engellemez; NFS/geneş ağ dosya sistemlerinde `O_EXCL` semantiği garanti
@@ -107,13 +107,16 @@ function isStale(
   options: Required<Pick<SyncFileLeaseOptions, 'staleMs' | 'now' | 'hostname' | 'isProcessAlive'>>
 ): boolean {
   const age = fileAgeMs(lockPath, options.now());
-  if (age !== null && age >= options.staleMs) return true;
   if (!info) {
-    // Bozuk/okunamayan kilit: yaşı bilinemiyorsa temkinli davran (bayat sayma).
+    // Bozuk/okunamayan kilit: yalnızca yaşı doğrulanabiliyorsa bayat kabul et.
     return age !== null && age >= options.staleMs;
   }
-  if (info.hostname !== options.hostname) return false;
-  return !options.isProcessAlive(info.pid);
+  if (info.hostname === options.hostname) {
+    // Aynı makinedeki canlı PID, mtime eski olsa bile aktif sahibidir.
+    return !options.isProcessAlive(info.pid);
+  }
+  // Farklı makinedeki PID yerel olarak doğrulanamaz; heartbeat yaşı esas alınır.
+  return age !== null && age >= options.staleMs;
 }
 
 function takeoverStaleLock(lockPath: string, nowMs: number): void {
@@ -147,13 +150,15 @@ export interface SyncFileLease {
   readonly token: string;
   readonly path: string;
   readonly info: SyncFileLeaseInfo;
+  readonly staleMs: number;
   release(): void;
   renew(): boolean;
 }
 
 /**
  * Kilidi almayı dener; başka canlı süreç tutuyorsa `null` döner.
- * `staleMs` geçmiş veya sahibi ölmüş kilit devralınır.
+ * Aynı hosttaki ölü PID kilidi devralınır; uzak host kilidi yalnızca heartbeat
+ * `staleMs` eşiğini aşınca devralınabilir.
  */
 export function tryAcquireSyncFileLease(
   lockPath: string,
@@ -178,7 +183,7 @@ export function tryAcquireSyncFileLease(
     };
     try {
       writeLease(resolved, info);
-      return buildLease(resolved, info);
+      return buildLease(resolved, info, resolvedOptions.staleMs, resolvedOptions.now);
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
     }
@@ -201,12 +206,18 @@ export function acquireSyncFileLease(
   throw new SyncLeaseBusyError(path.resolve(lockPath), readLeaseInfo(path.resolve(lockPath)));
 }
 
-function buildLease(lockPath: string, info: SyncFileLeaseInfo): SyncFileLease {
+function buildLease(
+  lockPath: string,
+  info: SyncFileLeaseInfo,
+  staleMs: number,
+  nowMs: () => number
+): SyncFileLease {
   const owns = (): boolean => readLeaseInfo(lockPath)?.token === info.token;
   return {
     token: info.token,
     path: lockPath,
     info,
+    staleMs,
     release(): void {
       if (!owns()) return;
       try {
@@ -216,13 +227,23 @@ function buildLease(lockPath: string, info: SyncFileLeaseInfo): SyncFileLease {
       }
     },
     renew(): boolean {
-      if (!owns()) return false;
+      let fd: number | null = null;
       try {
-        const now = new Date();
-        fs.utimesSync(lockPath, now, now);
-        return true;
+        fd = fs.openSync(lockPath, 'r+');
+        const current = JSON.parse(fs.readFileSync(fd, 'utf8')) as Partial<SyncFileLeaseInfo>;
+        if (current.token !== info.token) return false;
+        const openedStat = fs.fstatSync(fd);
+        const currentStat = fs.statSync(lockPath);
+        if (openedStat.dev !== currentStat.dev || openedStat.ino !== currentStat.ino) return false;
+        const now = new Date(nowMs());
+        fs.futimesSync(fd, now, now);
+        return owns();
       } catch {
         return false;
+      } finally {
+        if (fd !== null) {
+          try { fs.closeSync(fd); } catch { /* ignore close errors */ }
+        }
       }
     },
   };

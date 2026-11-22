@@ -24,6 +24,7 @@ import {
 
 export interface RemoteSyncStatusPayload {
   configured?: boolean;
+  githubSyncEnabled?: boolean;
   syncInProgress?: boolean;
   isPublicRepo?: boolean;
   allowPublicPersonalSync?: boolean;

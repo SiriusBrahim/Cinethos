@@ -72,6 +72,7 @@ export interface GitHubTokenCandidateInfo {
 export interface PersistentStoreOptions {
   dataDir: string;
   maxDataBytes?: number;
+  githubSyncEnabled?: boolean;
   githubToken?: string;
   githubTokenSource?: TokenSourceKind;
   githubTokenCandidates?: GitHubTokenCandidateInfo[];
@@ -137,6 +138,7 @@ export interface SyncFileStateRecord {
 export interface SyncStatus {
   configured: boolean;
   authFailed?: boolean;
+  githubSyncEnabled?: boolean;
   mode: 'github' | 'local_only';
   reason?: string;
   isPublicRepo: boolean;
@@ -335,6 +337,7 @@ export class PersistentDataStore {
   private fileStates: Record<string, SyncFileStateRecord> = {};
   private writeSerializer = new FileWriteSerializer();
   private maxDataBytes?: number;
+  private githubSyncEnabled: boolean;
   private attachedStorage!: ReturnType<typeof createDataStorage>;
   private bidirectionalManager!: GitHubBidirectionalSyncManager;
 
@@ -358,6 +361,7 @@ export class PersistentDataStore {
   constructor(options: PersistentStoreOptions) {
     this.dataDir = options.dataDir;
     this.maxDataBytes = options.maxDataBytes;
+    this.githubSyncEnabled = options.githubSyncEnabled !== false;
     this.catalogDir = path.join(this.dataDir, 'catalog');
     this.profilesDir = path.join(this.dataDir, 'profiles');
     this.moviesFile = path.join(this.catalogDir, 'movies.json');
@@ -397,7 +401,7 @@ export class PersistentDataStore {
     this.localEnvIsPublicRepo = options.localEnvIsPublicRepo ?? null;
 
     this.initDirectories();
-    this.loadPersistedSyncState();
+    if (this.githubSyncEnabled) this.loadPersistedSyncState();
   }
 
   public getEffectiveConfiguredIsPublicRepo(): boolean {
@@ -502,6 +506,7 @@ export class PersistentDataStore {
     return new GitHubBidirectionalSyncManager({
       dataDir: this.dataDir,
       maxDataBytes: this.maxDataBytes,
+      enableStartupRecovery: this.githubSyncEnabled,
       store: this,
       storage: this.attachedStorage,
       getGitHubConfig: () => ({
@@ -525,9 +530,10 @@ export class PersistentDataStore {
    * (ör. aşamalı senkronizasyonun çağırdığı prob) yeniden kilitlenmez.
    */
   private async withExclusiveSync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
-    if (!this.bidirectionalManager || this.bidirectionalManager.isExclusiveActive()) {
-      return fn();
-    }
+    if (!this.bidirectionalManager) return fn();
+    // runExclusive kendi AsyncLocalStorage bağlamıyla yalnızca gerçek iç içe
+    // çağrıları tanır. Queue'nun global "running" durumu bağımsız istekleri
+    // doğrudan çalıştırmak için kullanılmamalıdır.
     return this.bidirectionalManager.runExclusive(operation, fn);
   }
 
@@ -2118,6 +2124,7 @@ export class PersistentDataStore {
     return {
       configured,
       authFailed,
+      githubSyncEnabled: this.githubSyncEnabled,
       mode: configured ? 'github' : 'local_only',
       reason: missingReason,
       isPublicRepo: effectiveConfiguredIsPublic,

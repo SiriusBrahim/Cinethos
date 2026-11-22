@@ -204,6 +204,7 @@ export interface CineTrackAppOptions extends StorageOptions, SecurityOptions, Tm
   persistentStore?: PersistentDataStore;
   security?: SecurityOptions;
   devMode?: boolean;
+  githubDevSyncEnabled?: boolean;
   maxDataBytes?: number;
   githubToken?: string;
   githubTokenSource?: TokenSourceKind;
@@ -579,6 +580,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     new PersistentDataStore({
       dataDir: resolvedDataDir,
       maxDataBytes,
+      githubSyncEnabled: options.githubDevSyncEnabled !== false,
       githubToken: options.githubToken,
       githubTokenSource: options.githubTokenSource,
       githubTokenCandidates: options.githubTokenCandidates,
@@ -2205,6 +2207,16 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     res.json(persistentStore.getSyncStatus());
   });
 
+  app.use('/api/sync', (_req: Request, res: Response, next: NextFunction) => {
+    if (options.githubDevSyncEnabled === true) return next();
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({
+      ok: false,
+      code: 'github_dev_sync_disabled',
+      status_message: 'GitHub senkronizasyonu yalnızca geliştirme ortamında kullanılabilir.',
+    });
+  });
+
   app.post('/api/sync/inspect', originGuard, tokenGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.body?.rejectIfBusy === true && persistentStore.isSyncBusy()) {
@@ -2694,6 +2706,14 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const includeJson = typeof req.body?.includeJson === 'boolean' ? req.body.includeJson : true;
       const includeXlsx = typeof req.body?.includeXlsx === 'boolean' ? req.body.includeXlsx : true;
       const uploadToGithub = Boolean(req.body?.uploadToGithub);
+      if (uploadToGithub && options.githubDevSyncEnabled !== true) {
+        res.status(403).json({
+          ok: false,
+          code: 'github_dev_sync_disabled',
+          status_message: 'GitHub yedek yükleme yalnızca geliştirme ortamında kullanılabilir.',
+        });
+        return;
+      }
       const allowPersonalDataInPublicRepo =
         typeof req.body?.allowPersonalDataInPublicRepo === 'boolean'
           ? req.body.allowPersonalDataInPublicRepo

@@ -542,17 +542,26 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
           {activeTab === 'sync' && (
             <div className="profile-tab-panel">
-              {/* GitHub Çift Yönlü Senkronizasyon Paneli */}
-              <ProfileGitHubSyncSection
-                remoteSyncInfo={remoteSyncInfo}
-                onRemoteSyncInfoChange={setRemoteSyncInfo}
-                profiles={profiles}
-                savedItems={savedItems}
-                onBeforeSyncFlush={onBeforeSyncFlush}
-                onMergeSyncedDocument={onMergeSyncedDocument}
-                onApplyRestoredDocument={onApplyRestoredDocument}
-                onCinemaKunyeSynced={onCinemaKunyeSynced}
-              />
+              {remoteSyncInfo?.githubSyncEnabled === false ? (
+                <div className="profile-tools-section">
+                  <strong className="profile-tools-heading">GitHub senkronizasyonu kapalı</strong>
+                  <p className="cache-reset-note">
+                    Yayın sürümünde veriler bu cihazda yerel olarak saklanır. GitHub üzerinden
+                    veri yükleme ve indirme yalnızca geliştirme ortamında kullanılabilir.
+                  </p>
+                </div>
+              ) : (
+                <ProfileGitHubSyncSection
+                  remoteSyncInfo={remoteSyncInfo}
+                  onRemoteSyncInfoChange={setRemoteSyncInfo}
+                  profiles={profiles}
+                  savedItems={savedItems}
+                  onBeforeSyncFlush={onBeforeSyncFlush}
+                  onMergeSyncedDocument={onMergeSyncedDocument}
+                  onApplyRestoredDocument={onApplyRestoredDocument}
+                  onCinemaKunyeSynced={onCinemaKunyeSynced}
+                />
+              )}
 
               {/* IMP-15: Çift Kayıt Temizliği */}
               <DuplicateMergePanel items={savedItems} onMergePair={onMergeDuplicates} />
