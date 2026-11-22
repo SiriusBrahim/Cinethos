@@ -13,7 +13,7 @@ import { getItemSeriesInfo, indexMovieCollection } from '../services/series-serv
 import { subscribeSeriesIndex } from '../services/storage-idb.ts';
 import { enrichStockItemsTopCast } from '../services/stock-engine.ts';
 import { formatMatchBadge } from '../i18n/index.ts';
-import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility.ts';
 
 interface DetailModalProps {
   item: any | null;

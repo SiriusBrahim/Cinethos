@@ -17,7 +17,7 @@ import {
 import { recordManualBackupSuccess } from '../services/auto-backup-service.ts';
 import { resetDerivedCachesPreserveProfileAndStock } from '../services/idb-schema-version.ts';
 import { PROVIDER_OPTIONS } from '../utils/helpers.ts';
-import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility.ts';
 import { ProfileStatsTab } from './ProfileStatsTab.tsx';
 import { ProfileBackupTab } from './ProfileBackupTab.tsx';
 import {

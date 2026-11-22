@@ -9,7 +9,7 @@ import {
 } from '../core/cinetrack-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { loadStockIdb } from '../services/storage-idb.ts';
-import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility.ts';
 import {
   computePersonTasteCompatibility,
   mergePersonFilmography,
