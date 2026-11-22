@@ -193,6 +193,8 @@ import {
   migratePersistentTasteMapData,
 } from './keys.ts';
 
+import { canonicalGenreKeys } from './genre-matching.ts';
+
 import {
   type LovedItemFeatures,
   type LovedSimBreakdown,
@@ -204,12 +206,17 @@ import {
   calculateEraSim,
   computeItemToItemLovedSim,
   computeLovedSimilarityScore,
+  clearLovedSimilarityIndexCache,
+  getLovedSimilarityStats,
+  resetLovedSimilarityStats,
+  type LovedSimilarityStatsSnapshot,
 } from './loved-similarity.ts';
 
 export {
   type LovedItemFeatures,
   type LovedSimBreakdown,
   type LovedSimMatchResult,
+  type LovedSimilarityStatsSnapshot,
   calculateGenreSim,
   calculateStorySim,
   calculateCastSim,
@@ -217,6 +224,9 @@ export {
   calculateEraSim,
   computeItemToItemLovedSim,
   computeLovedSimilarityScore,
+  clearLovedSimilarityIndexCache,
+  getLovedSimilarityStats,
+  resetLovedSimilarityStats,
 };
 
 export {
@@ -1559,6 +1569,9 @@ export function buildTasteProfileV3(
         media_type: item.media_type || (item.title ? 'movie' : 'tv'),
         title: String(item.title || item.name || '').trim(),
         genre_ids: itemGenres,
+        // B-03: kanonik tür anahtarları profil kurulurken bir kez hesaplanır;
+        // benzerlik karşılaştırmasında yeniden üretilmez.
+        genreKeys: Array.from(canonicalGenreKeys(itemGenres)),
         overviewTokens: new Set(itemTokens),
         castIds: itemCastIds,
         directorIds: itemDirectorIds,
