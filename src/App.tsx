@@ -22,6 +22,8 @@ import { normalizeProfileId } from './core/profile-id.ts';
 import { mergeRemoteDocument } from './app/server-sync.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
+import { AppSidebar } from './components/AppSidebar.tsx';
+import { MobileDock } from './components/MobileDock.tsx';
 import { Hero } from './components/Hero.tsx';
 import { Stats } from './components/Stats.tsx';
 import { Controls } from './components/Controls.tsx';
@@ -112,7 +114,6 @@ import { SeriesSection } from './modules/series/SeriesSection.tsx';
 import { OperationsSection } from './modules/operations/OperationsSection.tsx';
 import type { ModuleId } from './app/module-registry.ts';
 import { useHashNavigation } from './app/useHashNavigation.ts';
-import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
 import { useOfflineSync } from './hooks/useOfflineSync.ts';
 import { useServerSyncCoordinator } from './hooks/useServerSyncCoordinator.ts';
@@ -1884,6 +1885,7 @@ export function App() {
 
   return (
     <>
+      <AppSidebar tab={tab} onTabChange={setTab} profileName={profileName} myListCount={allListCount} onOpenProfile={() => setProfileOpen(true)} />
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
@@ -1899,14 +1901,15 @@ export function App() {
         onSearchSubmit={handleSearchSubmit}
         onSearchClear={handleSearchClear}
         onOpenProfile={() => setProfileOpen(true)}
-        onOpenAdd={() => setAddCustomOpen(true)}
         onSelectItem={(item) => setDetailItem(item)}
         getSaved={(item) => findSavedItem(savedItems, item)}
         tmdbSource={tmdbSourceMeta.source}
+        isDemoMode={Boolean(activeProfile?.isDemo)}
         tmdbStaleReason={tmdbSourceMeta.staleReason}
         onOpenTvdbStock={() => setTvdbModalOpen(true)}
         tvdbCount={tvdbCount}
       />
+      <MobileDock tab={tab} onTabChange={setTab} myListCount={allListCount} onOpenProfile={() => setProfileOpen(true)} />
       <ConflictBanner
         conflict={serverConflict}
         onMergeBoth={handleMergeBothOnConflict}
@@ -2212,14 +2215,6 @@ export function App() {
           </div>
         </div>
       </footer>
-
-      {/* Mobil 56px sticky alt tab bar — kayıt defterinden türetilir (Faz 7) */}
-      <MobileBottomNav
-        tab={tab}
-        myListCount={allListCount}
-        onSelectTab={setTab}
-        onOpenProfile={() => setProfileOpen(true)}
-      />
 
       {/* Modals & Drawers */}
       <DetailModal
