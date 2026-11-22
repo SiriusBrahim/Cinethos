@@ -12,7 +12,12 @@
  */
 
 export {
-  createRecommendationService, RecommendationService, type RecommendationServiceOptions, type RecommendationSnapshot } from './RecommendationService.ts';
+  createRecommendationService, RecommendationService,
+  type RecommendationRequestOptions,
+  type RecommendationScope,
+  type RecommendationServiceOptions,
+  type RecommendationSnapshot,
+} from './RecommendationService.ts';
 
 export {
   buildServerTasteSignal,
@@ -23,6 +28,7 @@ export {
 } from './taste-signal.ts';
 
 export {
+  filterEligibleSelectionEntries,
   rescoreShortlist,
   scoreRecommendationPool,
   selectRecommendationBatch,
