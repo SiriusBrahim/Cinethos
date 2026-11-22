@@ -18,7 +18,7 @@ import {
   TARGET_RECOMMENDATION_COUNT,
   replenishCandidatePool,
   buildTasteProfileSummary,
-  buildTasteProfileV3,
+  buildScopedTasteProfiles,
   computeTasteProfileSignature,
   filterDislikedByType,
   filterHiddenUserRegisteredItems,
@@ -892,7 +892,10 @@ export function createCatalogLoader(ctx: CatalogLoaderContext) {
             historyCredits.map((entry) => [makeMediaKey(entry), entry])
           );
 
-          const generalTasteProfile = buildTasteProfileV3(
+          // B-11: Film ve dizi zevk kapsamları tek bir politika fonksiyonundan
+          // ayrıştırılır (yalnızca kendi türünün geçmişi, nötr medya tercihi,
+          // türü boşsa işaretli soğuk başlangıç). Yerel kopya mantık kaldırıldı.
+          const scopedTasteProfiles = buildScopedTasteProfiles(
             [
               ...rawSaved.map((item) => creditsByKey.get(makeMediaKey(item)) || item),
               ...dislikedSeeds.map((item) => creditsByKey.get(makeMediaKey(item)) || item),
@@ -902,37 +905,9 @@ export function createCatalogLoader(ctx: CatalogLoaderContext) {
               dislikedKeys: allDislikedKeys,
             }
           );
-
-          const movieDislikedSeeds = dislikedSeeds.filter((it) => it.media_type === 'movie');
-          const tvDislikedSeeds = dislikedSeeds.filter((it) => it.media_type === 'tv');
-
-          const movieTasteProfile =
-            rawMovieSaved.length > 0
-              ? buildTasteProfileV3(
-                  [
-                    ...rawMovieSaved.map((item) => creditsByKey.get(makeMediaKey(item)) || item),
-                    ...movieDislikedSeeds.map((item) => creditsByKey.get(makeMediaKey(item)) || item),
-                  ],
-                  {
-                    lambda: 1,
-                    dislikedKeys: filterDislikedByType(currentPrefs.disliked, 'movie'),
-                  }
-                )
-              : generalTasteProfile;
-
-          const tvTasteProfile =
-            rawTvSaved.length > 0
-              ? buildTasteProfileV3(
-                  [
-                    ...rawTvSaved.map((item) => creditsByKey.get(makeMediaKey(item)) || item),
-                    ...tvDislikedSeeds.map((item) => creditsByKey.get(makeMediaKey(item)) || item),
-                  ],
-                  {
-                    lambda: 1,
-                    dislikedKeys: filterDislikedByType(currentPrefs.disliked, 'tv'),
-                  }
-                )
-              : generalTasteProfile;
+          const generalTasteProfile = scopedTasteProfiles.general;
+          const movieTasteProfile = scopedTasteProfiles.movie;
+          const tvTasteProfile = scopedTasteProfiles.tv;
 
           // FEAT-02 #5: Önce birincil istemci deposu ct:stock'tan aday havuzlarını besle (sıfır ağ maliyeti)
           await Promise.all([

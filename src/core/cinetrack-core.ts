@@ -655,6 +655,15 @@ export function filterDislikedByType(
 
 export const TARGET_RECOMMENDATION_COUNT = 20;
 
+/**
+ * B-13: Sunucu zevk sinyalinin skordaki ağırlığı ve açıklama eşiği.
+ * Ağırlık yalnızca sinyal gerçekten hesaplanabildiğinde ağırlık kümesine eklenir;
+ * sinyal yokken puanlar birebir değişmez.
+ */
+export const SERVER_TASTE_WEIGHT = 0.06;
+/** `parts.serverTaste` bu değerin altındaysa açıklamada katkı iddia edilmez. */
+export const SERVER_TASTE_EXPLANATION_PART_THRESHOLD = 0.62;
+
 
 export function dedupeItems(items: SavedItem[]): SavedItem[] {
   const unique = new Map<string, SavedItem>();
@@ -1757,6 +1766,99 @@ export function buildTasteProfileV3(
     positiveGenres,
     coOccurredPairs,
     lovedItemFeatures,
+  };
+}
+
+/**
+ * B-11 — Film ve dizi zevk kapsamlarının ayrıştırılması.
+ *
+ * Politika (tek kaynak, kod ve testlerle sabitlenmiştir):
+ * - Film profili YALNIZCA film geçmişinden, dizi profili YALNIZCA dizi geçmişinden
+ *   kurulur; bir türdeki kayıt sayısı diğer türün profilini ağırlıklandırmaz.
+ * - Türler arası otomatik sinyal paylaşımı YOKTUR: favori oyuncular zaten ayrı bir
+ *   ürün sinyalidir (`favoriteActors`), puanlar/favoriler ise türüne aittir.
+ * - Kapsamlı profillerde medya tipi tercihi nötrlenir: seçim zaten film/dizi
+ *   dengesini ayrı yönettiği için "500 film izleyen kullanıcı" film adaylarına
+ *   yapay bir tip bonusu vermez.
+ * - Bir türde hiç geçmiş yoksa o kapsam soğuk başlangıç olarak genel profilden
+ *   türetilir (yine nötr medya tercihiyle) ve `*ColdStart` ile işaretlenir; böylece
+ *   yeni kullanıcı boş öneri listesi görmez.
+ */
+export interface ScopedTasteProfiles {
+  readonly general: TasteProfileV3;
+  readonly movie: TasteProfileV3;
+  readonly tv: TasteProfileV3;
+  readonly movieColdStart: boolean;
+  readonly tvColdStart: boolean;
+  readonly movieItemCount: number;
+  readonly tvItemCount: number;
+}
+
+export function neutralizeMediaPreference(profile: TasteProfileV3): TasteProfileV3 {
+  return { ...profile, mediaPreference: { movie: 0.5, tv: 0.5 } };
+}
+
+export function buildScopedTasteProfiles(
+  items: any[],
+  {
+    lambda = 1,
+    now = Date.now(),
+    dislikedKeys = [] as string[],
+    filterDemoIfLiveExists = true,
+  }: {
+    lambda?: number;
+    now?: number;
+    dislikedKeys?: string[];
+    filterDemoIfLiveExists?: boolean;
+  } = {}
+): ScopedTasteProfiles {
+  const list = Array.isArray(items) ? items : [];
+  const canonicalDisliked = canonicalizeMediaKeyList(dislikedKeys);
+  const movieDisliked = canonicalDisliked.filter((key) => key.startsWith('movie:'));
+  const tvDisliked = canonicalDisliked.filter((key) => key.startsWith('tv:'));
+
+  const general = buildTasteProfileV3(list, {
+    lambda,
+    now,
+    dislikedKeys: canonicalDisliked,
+    filterDemoIfLiveExists,
+  });
+
+  const movieItems = list.filter((item) => item?.media_type === 'movie');
+  const tvItems = list.filter((item) => item?.media_type === 'tv');
+
+  const movieColdStart = movieItems.length === 0;
+  const tvColdStart = tvItems.length === 0;
+
+  const movie = neutralizeMediaPreference(
+    movieColdStart
+      ? general
+      : buildTasteProfileV3(movieItems, {
+          lambda,
+          now,
+          dislikedKeys: movieDisliked,
+          filterDemoIfLiveExists,
+        })
+  );
+  const tv = neutralizeMediaPreference(
+    tvColdStart
+      ? general
+      : buildTasteProfileV3(tvItems, {
+          lambda,
+          now,
+          dislikedKeys: tvDisliked,
+          filterDemoIfLiveExists,
+        })
+  );
+
+  return {
+    general,
+    movie,
+    tv,
+    movieColdStart,
+    tvColdStart,
+    movieItemCount: movieItems.length,
+    tvItemCount: tvItems.length,
   };
 }
 
@@ -3516,14 +3618,17 @@ export function scoreCandidatesV3(
     const knownGenreScores = genreIds
       .map((gid: string) => profile.genres?.[gid])
       .filter((s: unknown): s is number => typeof s === 'number');
-    let genreScore = knownGenreScores.length
+    const genreScore = knownGenreScores.length
       ? clamp01(knownGenreScores.reduce((sum: number, s: number) => sum + (s + 1) / 2, 0) / knownGenreScores.length)
       : 0.5;
 
-    // 1b. Sunucu zevk profili (Faz 1/2 metrik motoru). Yalnızca yeterli güvene
-    // sahipse ve hesaplanabilirse tür puanına sınırlı ağırlıkla karışır; aksi
-    // halde sıralama yerel profille birebir aynı kalır (geri dönüş güvenli).
-    let serverTasteScore: number | null = null;
+    // 1b. Sunucu zevk profili (Faz 1/2 metrik motoru).
+    // B-13: Bu sinyal artık `parts` içinde KENDİ AĞIRLIĞIYLA yer alır. Daha önce
+    // yalnızca tür puanına gizlice karışıyor, kırılımdaki `serverTaste` anahtarı ise
+    // hiçbir ağırlığa bağlı olmadığı için açıklamada "katkı varmış gibi" görünüyordu.
+    // Şimdi katkı tek yerde (kendi ağırlığıyla) hesaplanır; açıklama etiketi de bu
+    // gerçek katkıdan üretilir. Sinyal yoksa/düşük güvenliyse davranış birebir eskidir.
+    let serverTastePart: number | null = null;
     if (serverTaste && serverTaste.confidence >= 0.35 && serverTaste.metricIdFor) {
       const affinities = genreIds
         .map((gid: string) => {
@@ -3533,9 +3638,9 @@ export function scoreCandidatesV3(
         .filter((val: unknown): val is number => typeof val === 'number');
       if (affinities.length > 0) {
         const avg = affinities.reduce((sum: number, val: number) => sum + val, 0) / affinities.length;
-        const weight = 0.25 * Math.max(0, Math.min(1, serverTaste.confidence));
-        serverTasteScore = avg;
-        genreScore = clamp01(genreScore * (1 - weight) + ((avg + 1) / 2) * weight);
+        const confidence = Math.max(0, Math.min(1, serverTaste.confidence));
+        // 0.5 nötr; güven arttıkça afiniteye doğru açılır.
+        serverTastePart = clamp01(0.5 + (avg / 2) * confidence);
       }
     }
 
@@ -3718,12 +3823,16 @@ export function scoreCandidatesV3(
       context: contextScore,
       franchise: franchiseScore,
       sourceSignal: sourceSignalScore,
-      ...(serverTasteScore !== null ? { serverTaste: (serverTasteScore + 1) / 2 } : {}),
+      ...(serverTastePart !== null ? { serverTaste: serverTastePart } : {}),
     };
 
     // Raw score formula: S_ham = 100 * (sum(w_j * s_j) / sum(w_j))
-    const totalWeight = Object.values(weights).reduce((sum, w) => sum + (Number(w) || 0), 0);
-    const weightedSum = Object.entries(weights).reduce(
+    // Sunucu sinyali varsa kendi ağırlığıyla eklenir; yoksa ağırlık kümesi ve
+    // dolayısıyla puanlar birebir eskisi gibi kalır (geriye dönük uyum).
+    const effectiveWeights =
+      serverTastePart !== null ? { ...weights, serverTaste: SERVER_TASTE_WEIGHT } : weights;
+    const totalWeight = Object.values(effectiveWeights).reduce((sum, w) => sum + (Number(w) || 0), 0);
+    const weightedSum = Object.entries(effectiveWeights).reduce(
       (sum, [key, w]) => sum + (parts[key] ?? 0.5) * (Number(w) || 0),
       0
     );
@@ -3764,7 +3873,7 @@ export function scoreCandidatesV3(
     if (explorationScore >= 0.75 && tags.length < 3) {
       tags.push('Yeni keşif için');
     }
-    if (serverTasteScore !== null && serverTasteScore >= 0.25 && tags.length < 5) {
+    if (serverTastePart !== null && serverTastePart >= SERVER_TASTE_EXPLANATION_PART_THRESHOLD && tags.length < 5) {
       tags.push('Sunucu zevk profilinle uyumlu');
     }
 
