@@ -121,6 +121,11 @@ export interface ApiMockControls {
 export interface ApiMockOptions {
   doc?: Record<string, unknown>;
   putResponder?: (callIndex: number) => PutResponse;
+  /** İşlem Merkezi retry/iptal yanıtını test başına değiştirmek için. */
+  taskActionResponder?: (
+    taskId: string,
+    action: 'retry' | 'cancel'
+  ) => PutResponse | null;
 }
 
 function json(route: Route, body: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -266,7 +271,9 @@ export async function mockApi(page: Page, options: ApiMockOptions = {}): Promise
 
     if (/^\/api\/background\/tasks\/[^/]+\/(retry|cancel)$/.test(path) && request.method() === 'POST') {
       const taskId = path.split('/')[4];
-      const action = path.split('/')[5];
+      const action = path.split('/')[5] as 'retry' | 'cancel';
+      const custom = options.taskActionResponder?.(taskId, action);
+      if (custom) return json(route, custom.body, custom.status);
       return json(route, {
         ok: true,
         task: {
