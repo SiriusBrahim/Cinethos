@@ -110,7 +110,7 @@ import {
 import { HomeSection } from './modules/home/HomeSection.tsx';
 import { SeriesSection } from './modules/series/SeriesSection.tsx';
 import { OperationsSection } from './modules/operations/OperationsSection.tsx';
-import type { ModuleId } from './app/module-registry.ts';
+import { getModule, type ModuleId } from './app/module-registry.ts';
 import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
@@ -1882,8 +1882,13 @@ export function App() {
     }
   };
 
+  const activeModuleLabel = getModule(tab)?.label ?? '';
+
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        İçeriğe geç
+      </a>
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
@@ -1915,7 +1920,10 @@ export function App() {
         onDismiss={() => setServerConflict(null)}
       />
 
-      <main className="shell">
+      <main className="shell" id="main-content" tabIndex={-1}>
+        <p className="sr-only" role="status" aria-live="polite">
+          {activeModuleLabel} bölümü açıldı
+        </p>
         {tab === 'discover' && !query && (
           <Hero
             heroItem={currentHeroItem}

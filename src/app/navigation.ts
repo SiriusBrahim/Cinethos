@@ -19,6 +19,7 @@ export interface SidebarNavItem {
 export interface HeaderNavItem {
   readonly id: ModuleId;
   readonly label: string;
+  readonly iconRef: string;
   readonly counter?: 'myList';
 }
 
@@ -78,6 +79,7 @@ export const SIDEBAR_NAV_ITEMS: readonly SidebarNavItem[] = SIDEBAR_NAV_GROUPS.f
 export const HEADER_NAV_ITEMS: readonly HeaderNavItem[] = MODULES.map((module) => ({
   id: module.id,
   label: module.label,
+  iconRef: module.iconRef,
   ...(module.counter ? { counter: module.counter } : {}),
 }));
 
@@ -86,7 +88,7 @@ export const HEADER_NAV_ITEMS: readonly HeaderNavItem[] = MODULES.map((module) =
  * Kalan modüller dock'taki "Daha fazla" sayfasından erişilir.
  */
 const DOCK_ITEM_ORDER: ReadonlyArray<{ id: ModuleId; label: string }> = [
-  { id: 'home', label: 'Ana Sayfa' },
+  { id: 'home', label: 'Ana' },
   { id: 'discover', label: 'Keşfet' },
   { id: 'list', label: 'Kütüphane' },
   { id: 'taste-map', label: 'Zevkim' },

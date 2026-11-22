@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { MODULES, type ModuleId } from '../../app/module-registry.ts';
 import { DOCK_NAV_ITEMS, MOBILE_OVERFLOW_ITEMS } from '../../app/navigation.ts';
+import { useDialogAccessibility } from '../../hooks/useDialogAccessibility.ts';
 
 /**
  * MIA Faz 7 — Mobil yerleşim (Yönetici 2 · `src/presentation/`).
@@ -57,27 +58,21 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const [moreOpen, setMoreOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Escape ile kapanma + açıkken arka plan kaydırmasını kilitleme.
-  useEffect(() => {
-    if (!moreOpen) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        setMoreOpen(false);
-        moreButtonRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKey, true);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const firstItem = sheetRef.current?.querySelector<HTMLButtonElement>('button');
-    firstItem?.focus();
-    return () => {
-      document.removeEventListener('keydown', handleKey, true);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [moreOpen]);
+  const closeSheet = useCallback(() => {
+    setMoreOpen(false);
+    moreButtonRef.current?.focus();
+  }, []);
+
+  // Aşama 4 (B-28): odak tuzağı, Escape, kaydırma kilidi ve odak dönüşü
+  // paylaşılan dialog hook'undan gelir — burada ikinci bir kopya yok.
+  useDialogAccessibility({
+    open: moreOpen,
+    containerRef: sheetRef,
+    initialFocusRef: closeButtonRef,
+    onClose: closeSheet,
+  });
 
   const selectFromSheet = (id: ModuleId) => {
     onSelectTab(id);
@@ -97,6 +92,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               className={`mobile-tab-btn ${isActive ? 'active' : ''}`}
               onClick={() => onSelectTab(item.id)}
               aria-label={item.label}
+              aria-description={
+                item.counter === 'myList' && myListCount > 0
+                  ? `${myListCount} kayıt`
+                  : undefined
+              }
               aria-current={isActive ? 'page' : undefined}
             >
               {item.counter === 'myList' ? (
@@ -105,9 +105,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                     <use href={item.iconRef} />
                   </svg>
                   {myListCount > 0 && (
-                    <span className="mobile-tab-badge tabular-nums">
-                      {myListCount > 99 ? '99+' : myListCount}
-                    </span>
+                    <span
+                      className="mobile-tab-badge tabular-nums"
+                      data-count={myListCount > 99 ? '99+' : String(myListCount)}
+                      aria-hidden="true"
+                    />
                   )}
                 </span>
               ) : (
@@ -141,7 +143,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <div
           className="mobile-more-backdrop"
           onClick={(event) => {
-            if (event.target === event.currentTarget) setMoreOpen(false);
+            if (event.target === event.currentTarget) closeSheet();
           }}
         >
           <div
@@ -149,15 +151,16 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             id="mobile-more-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="Tüm bölümler"
+            aria-labelledby="mobile-more-title"
             ref={sheetRef}
           >
             <div className="mobile-more-head">
-              <span>Tüm bölümler</span>
+              <h2 id="mobile-more-title">Tüm bölümler</h2>
               <button
+                ref={closeButtonRef}
                 type="button"
                 className="mobile-more-close"
-                onClick={() => setMoreOpen(false)}
+                onClick={closeSheet}
                 aria-label="Menüyü kapat"
               >
                 <svg className="icon" aria-hidden="true">
