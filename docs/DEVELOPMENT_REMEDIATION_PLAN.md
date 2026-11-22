@@ -209,14 +209,14 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 
 ### Yapılacak işler
 
-1. **Karesel benzerlik maliyeti — B-03:** Sevilen içerik özelliklerini her aday için yeniden üretmek yerine önceden hesapla; tür/kişi/anahtar kelime ters indekslerini değerlendir. Aday başına tam geçmiş taramasını azalt.
-2. **Üst-N ve sınırlandırma:** Ön eleme, üst-N aday seçimi ve gerektiğinde Worker/dilimleme uygula. Sonuç kalitesini düşürmeden işlem miktarını sınırla.
-3. **Film/dizi tercih ayrımı — B-11:** Film ve dizi zevk profillerinin hangi sinyalleri paylaşacağı, hangilerinin ayrı hesaplanacağı açıkça tanımlansın. Film ağırlıklı geçmişin dizi önerisini veya tersini bozmadığı test edilsin.
-4. **Top-up filtreleri — B-12:** Ana seçim yolundaki uygunluk, tekrar gösterim, gizlenen/izlenen içerik ve ring filtreleri top-up/overflow yolunda da aynen uygulansın.
-5. **Ölü sinyal — B-13:** `serverTaste` ya gerçekten skor katkısı yapmalı ya da açıklamalardan ve hesaplamadan kaldırılmalı. UI'da katkı gibi görünen ama ağırlığı olmayan sinyal kalmasın.
-6. **Önbellek sınırı — B-22:** Recommendation cache için LRU/TTL veya revizyon bazlı sınırlama uygula. Eski revizyon girdileri temizlensin.
-7. **Skor açıklaması:** Performans optimizasyonu sonrası kullanıcıya gösterilen sinyal katkıları gerçek hesapla tutarlı olmalı.
-8. **Kalite karşılaştırması:** Eski ve yeni motor aynı veri setinde karşılaştırılsın; öneri sıralaması farkları açıklanabilir olsun.
+1. **Karesel benzerlik maliyeti — B-03 ✅:** Sevilen içerik özelliklerini her aday için yeniden üretmek yerine önceden hesapla; tür/kişi/anahtar kelime ters indekslerini değerlendir. Aday başına tam geçmiş taramasını azalt.
+2. **Üst-N ve sınırlandırma ✅:** Ön eleme, üst-N aday seçimi ve gerektiğinde Worker/dilimleme uygula. Sonuç kalitesini düşürmeden işlem miktarını sınırla. (Ölçüm: üretim boyutu ~80 ms; Worker gerekçesiz karmaşıklık olduğu için eklenmedi.)
+3. **Film/dizi tercih ayrımı — B-11 ✅:** Film ve dizi zevk profillerinin hangi sinyalleri paylaşacağı, hangilerinin ayrı hesaplanacağı açıkça tanımlansın. Film ağırlıklı geçmişin dizi önerisini veya tersini bozmadığı test edilsin.
+4. **Top-up filtreleri — B-12 ✅:** Ana seçim yolundaki uygunluk, tekrar gösterim, gizlenen/izlenen içerik ve ring filtreleri top-up/overflow yolunda da aynen uygulansın.
+5. **Ölü sinyal — B-13 ✅:** `serverTaste` ya gerçekten skor katkısı yapmalı ya da açıklamalardan ve hesaplamadan kaldırılmalı. UI'da katkı gibi görünen ama ağırlığı olmayan sinyal kalmasın. (Seçenek A: açık ağırlıkla gerçek katkı.)
+6. **Önbellek sınırı — B-22 ✅:** Recommendation cache için LRU/TTL veya revizyon bazlı sınırlama uygula. Eski revizyon girdileri temizlensin.
+7. **Skor açıklaması ✅:** Performans optimizasyonu sonrası kullanıcıya gösterilen sinyal katkıları gerçek hesapla tutarlı olmalı.
+8. **Kalite karşılaştırması ✅:** Eski ve yeni motor aynı veri setinde karşılaştırılsın; öneri sıralaması farkları açıklanabilir olsun.
 
 ### Performans test matrisi
 
@@ -228,10 +228,13 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 
 ### Kabul kriterleri
 
-- 5.000×5.000 senaryosu denetimde ölçülen 13–29 saniyelik aralığın belirgin biçimde altına iner; hedef ve cihaz sınıfı aşama 0 ölçümlerinden sonra kesinleştirilir.
-- Film-only kapsamı TV içeriklerini döndürmez; TV sonuçları film hedef sayısını azaltmaz.
-- Top-up yolu ana yol ile aynı eleme kurallarını uygular.
-- Cache büyüklüğü sınırlıdır ve skor açıklamaları gerçek skorla tutarlıdır.
+- 5.000×5.000 senaryosu denetimde ölçülen 13–29 saniyelik aralığın belirgin biçimde altına iner; hedef ve cihaz sınıfı aşama 0 ölçümlerinden sonra kesinleştirilir. → **3,5 s (16,5×)**
+- Film-only kapsamı TV içeriklerini döndürmez; TV sonuçları film hedef sayısını azaltmaz. → ✅ test edildi
+- Top-up yolu ana yol ile aynı eleme kurallarını uygular. → ✅ test edildi
+- Cache büyüklüğü sınırlıdır ve skor açıklamaları gerçek skorla tutarlıdır. → ✅ test edildi
+
+**Aşama 3 tamamlandı.** Ayrıntılı mimari, ölçüm, test ve sınırlar:
+[`docs/audits/PHASE_03_RECOMMENDATION_ENGINE.md`](audits/PHASE_03_RECOMMENDATION_ENGINE.md).
 
 ## 6. Aşama 4 — UI/UX, responsive düzen ve erişilebilirlik
 
@@ -406,7 +409,7 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 |---|---:|---:|---|
 | B-01 | P1 | 1 | Alan düzeyinde eylem zamanı ve kayıpsız merge |
 | B-02 | P2 | 1 | Merge fonksiyonu doğrudan regresyon testleri |
-| B-03 | P1 | 3 | Öneri benzerlik algoritması performansı |
+| B-03 | P1 | 3 | ✅ Öneri benzerlik algoritması performansı |
 | B-04 | P2 | 1 | Profil/kayıt limitlerinde sessiz kırpmayı önleme |
 | B-05 | P1 | 1 | Yedekte tombstone ve silme bilgisini koruma |
 | B-06 | P1 | 1 | Çok profilli tam belge yedeği |
@@ -414,9 +417,9 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 | B-08 | P2 | 1 | Restore If-Match/409 |
 | B-09 | P2 | 1 | Tombstone duyarlı veri kaybı koruması |
 | B-10 | P3 | 2 | ✅ Kuyruk durumunun doğru modellenmesi |
-| B-11 | P2 | 3 | Film/dizi zevk kapsamlarının ayrıştırılması |
-| B-12 | P2 | 3 | Top-up yolunda tüm aday filtreleri |
-| B-13 | P3 | 3 | Ölü serverTaste sinyalini düzeltme |
+| B-11 | P2 | 3 | ✅ Film/dizi zevk kapsamlarının ayrıştırılması |
+| B-12 | P2 | 3 | ✅ Top-up yolunda tüm aday filtreleri |
+| B-13 | P3 | 3 | ✅ Ölü serverTaste sinyalini düzeltme |
 | B-14 | P1 | 1 | Test izolasyonu ve gerçek data/ koruması |
 | B-15 | P3 | 5 | Kaynak metni yerine davranışsal test |
 | B-16 | P2 | 5 | Büyük dosya, any, kopya helper ve App ayrıştırma |
@@ -425,7 +428,7 @@ Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayr
 | B-19 | P2 | 7 | Üretim bağımlılık açıkları |
 | B-20 | P2 | 6 | Bundle/chunk/lazy loading |
 | B-21 | P2 | 6 | localStorage performansı ve sessiz kırpma |
-| B-22 | P3 | 3 | Öneri cache sınırı |
+| B-22 | P3 | 3 | ✅ Öneri cache sınırı |
 | B-23 | P4 | 6 | Excel/önizleme bellek yönetimi |
 | B-24 | P2 | 4 | Masaüstü sekme şeridi erişilebilirliği |
 | B-25 | P2 | 4 | Mobil sticky header yüksekliği |
@@ -489,8 +492,11 @@ Yürürlükteki model **tek uzun ömürlü dal + tek PR**'dır: aşamalar `remed
 |---|---|---|---|
 | B-01 | "`addedAt` önceliği" | PARTIALLY_FIXED — kod `ratedAt → completedAt → watchedAt → addedAt → updatedAt` sırasına geçmiş; kalan kusur **yalnızca `updatedAt`'in `addedAt` altında kalması** (puan silme / durum geri alma tek başına kaybediliyor) | Aşama 1 (değişmedi), kabul kriteri S1/S3 senaryolarıyla netleşti |
 | B-02 | Doğrudan test yok | PARTIALLY_FIXED — `reconcileUserDataDocumentsLossless` üzerinden dolaylı kapsama var | Aşama 1 (değişmedi) |
-| B-13 | Ölü sinyal | PARTIALLY_FIXED — `serverTaste` artık `genreScore` içine karışıyor; yalnızca `parts` kırılımı ağırlıksız görünüyor | Aşama 3 (değişmedi) |
-| B-22 | Sınırsız cache | PARTIALLY_FIXED — `invalidateProfile` var, boyut sınırı yok | Aşama 3 (değişmedi) |
+| B-03 | Karesel benzerlik | **FIXED** — ters indeks + önceden hesaplanmış özellikler; 5.000×5.000 skorlaması 57,6 s → 3,5 s | Aşama 3'ten çıkarıldı; benchmark ve `phase3-loved-similarity-index` testleri kalır |
+| B-11 | Tek/karışık profil | **FIXED** — `buildScopedTasteProfiles`: tür kapsamı ayrı, medya tercihi nötr, soğuk başlangıç işaretli | Aşama 3'ten çıkarıldı; `phase3-taste-scope` testleri kalır |
+| B-12 | Top-up filtreleri | **FIXED** — tek `filterEligibleSelectionEntries`; overflow da aynı kuralları uygular | Aşama 3'ten çıkarıldı; `phase3-selection-filters` testleri kalır |
+| B-13 | Ölü sinyal | **FIXED** — `serverTaste` kendi ağırlığıyla (`0.06`) skora katılır; açıklama gerçek katkıdan üretilir | Aşama 3'ten çıkarıldı; `phase3-server-taste-attribution` testleri kalır |
+| B-22 | Sınırsız cache | **FIXED** — LRU + TTL + revizyon/katalog/kapsam anahtarı + nesil (geç yazma koruması) | Aşama 3'ten çıkarıldı; `phase3-recommendation-cache` testleri kalır |
 | B-26 | Retry düğmesi etkin | **FIXED** (durum koşuluna bağlanmış) | Aşama 4'ten çıkarıldı; yalnızca regresyon testi kalır |
 | B-27 | Görsel taşmalar | NEEDS_INVESTIGATION — bu aşamada görsel koşum yapılmadı | Aşama 4'te ölçümle yeniden açılacak |
 | B-34 | Ham anahtar | **FIXED** (`relationshipNodeKey` → `makeMediaKey`, tercihler kanonik) | Aşama 8'den çıkarıldı; regresyon testi kalır |
@@ -632,4 +638,31 @@ gelecek sürümler yok sayılır. Kilit (`data/locks/`) ve deneme günlüğü
 kilidi vardır. Bekleyen istekler çökme sonrası otomatik yeniden oluşturulmaz; istemci
 yeniden dener. Canlı GitHub/TMDB/TVDB doğrulaması kimlik bilgisi yokluğunda koşulmadı.
 
-**Aşama 1 ve Aşama 2 tamamlandı; Aşama 3 başlatılmadı.**
+### 17.6 Aşama 3 — uygulama ve doğrulama
+
+Aşama 3, tek öneri hattını ve Aşama 1–2 kazanımlarını bozmadan tamamlandı.
+Ayrıntılı mimari kararlar, ölçüm tablosu, test kanıtı ve sınırlar için
+[`docs/audits/PHASE_03_RECOMMENDATION_ENGINE.md`](audits/PHASE_03_RECOMMENDATION_ENGINE.md).
+
+| Bulgu | Çözüm | Ana dosyalar |
+|---|---|---|
+| B-03 | Önceden hesaplanmış sevilen yapım özellikleri + tür/oyuncu/yönetmen/koleksiyon/kelime ters indeksi + kanıtlı hızlı yol, birebir sonuç | `core/loved-similarity.ts`, `core/cinetrack-core.ts`, `scripts/bench-recommendations.mjs` |
+| B-11 | `buildScopedTasteProfiles`: film/dizi kapsamı ayrı, nötr medya tercihi, işaretli soğuk başlangıç | `core/cinetrack-core.ts`, `app/catalog-loader.ts` |
+| B-12 | Tek uygunluk fonksiyonu; ana seçim + overflow aynı filtreleri uygular | `modules/recommendations/pipeline.ts` |
+| B-13 | `serverTaste` açık ağırlıkla gerçek katkı; açıklama gerçek katkıdan | `core/cinetrack-core.ts` |
+| B-22 | LRU + TTL + revizyon/katalog/kapsam anahtarı + nesil koruması | `modules/recommendations/RecommendationService.ts` |
+
+**Performans:** 1.000×500 skorlaması 1.115 ms → 158 ms (7,1×); 5.000×5.000
+57.636 ms → 3.491 ms (16,5×); skor uyuşmazlığı 0, ilk-20 örtüşmesi 20/20.
+Üretim boyutu (~1.000 aday, ~500 sevilen) ~80 ms olduğu için Worker eklenmedi.
+
+**Doğrulama:** lint 0/0, cycles 0, `npm test` **793/793** (72 dosya; +39 yeni),
+`test:taste` **440/440**, build başarılı, `data/` sha256 değişmedi (15 dosya).
+Playwright E2E bu sandbox'ta Chromium/Skia font katmanı hatası nedeniyle koşulamadı;
+aynı hata değişiklik öncesi commit'te de oluştu (ortam kaynaklı), CI'da koşulmalı.
+
+**Şema/migration:** Kullanıcı veri şeması değişmedi. `LovedItemFeatures.genreKeys`
+türetilmiş ve isteğe bağlı bir alandır; kalıcı veriye yazılmaz. Eski türetilmiş önbellek
+ve Zevk Haritası dosyaları okunmaya devam eder.
+
+**Aşama 1, Aşama 2 ve Aşama 3 tamamlandı; Aşama 4 başlatılmadı.**
