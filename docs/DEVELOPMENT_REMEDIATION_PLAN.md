@@ -288,6 +288,28 @@ axe sonuçları ve sınırlar:
 - Tip hataları/gevşek sınırlar azaltılmış; public API sözleşmeleri belgelenmiş.
 - Büyük refactor tek dev PR yerine mantıksal, geri alınabilir PR'lara bölünmüş.
 
+### 7.1 Uygulama durumu — KISMEN TAMAMLANDI (24 Kasım 2026)
+
+Aşama 5 **tamamlanmış sayılmaz**; maddeler gerçek durumlarıyla listelenmiştir.
+Ayrıntı: [audits/PHASE_05_IMPLEMENTATION_RESULTS.md](audits/PHASE_05_IMPLEMENTATION_RESULTS.md),
+yeni mimari: [../PHASE_05_ARCHITECTURE.md](../PHASE_05_ARCHITECTURE.md).
+
+| # | İş | Durum | Kanıt |
+|---|---|---|---|
+| 1 | Test kalitesi (B-15) | ⚠️ Kısmen | `api-auth-coverage` + `discover-state-boundary` AST/davranışsal; 3 dosyada iş sürüyor |
+| 2 | Büyük dosyalar (B-16) | ⚠️ Kısmen | cinetrack-core 6.445→5.335, persistent-store 4.129→3.876; App.tsx ve bidi değişmedi |
+| 3 | Tek kaynak politikaları | ⚠️ Kısmen | `hasSufficientDetail`, seri tipleri, yedek ayrıştırma tek kaynağa alındı; çift tip modeli duruyor |
+| 4 | Core purity (B-17) | ✅ Tamamlandı | 7→0 ihlal, `src/core/ports/` + adaptörler, allowlist boş |
+| 5 | Tip güvenliği (B-16) | ⚠️ Kısmen | `external-json` guard'ları + TMDB sınırı; `any` ve `noUnusedLocals` açılmadı |
+| 6 | App kabuğu | ❌ Yapılmadı | `src/App.tsx` 2.391 satır |
+| 7 | Bağımlılık temizliği (B-18) | ✅ Tamamlandı | `@respan/respan` + konfigürasyon tamamen kaldırıldı |
+| 8 | Kod sınırları CI'da | ✅ Tamamlandı | AST tarayıcı, 6 kural, döngü 0 |
+
+Kapılar: 818/818 unit, 440/440 taste, lint 0/0, 0 döngü, 0 mimari ihlal, build başarılı,
+data guard 15 dosya değişmedi. E2E bu oturumda koşulmadı; CI'da çalışır.
+
+**Aşama 6 başlatılmamıştır.**
+
 ## 8. Aşama 6 — İstemci performansı, depolama ve bellek
 
 **Öncelik:** P2/P3/P4  

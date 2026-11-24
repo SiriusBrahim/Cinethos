@@ -585,3 +585,43 @@ kendi içinde 2–3 küçük commit'e bölünür). Her gruptan önce ve sonra §
    korunacak mı? (Mevcut büyük dosyalar bu kuralın dışında.)
 
 Bu kararlar verilmeden Bölüm B'ye (uygulama) başlanmayacaktır.
+
+---
+
+## 16. Uygulama sonuçları (Bölüm B — 24 Kasım 2026)
+
+Bu envanter **uygulama öncesi** durumu kaydeder ve tarihsel referans olarak değiştirilmedi.
+Uygulama sonrası gerçek durum ayrı belgede tutulur:
+
+- **Ayrıntılı sonuç:** [PHASE_05_IMPLEMENTATION_RESULTS.md](PHASE_05_IMPLEMENTATION_RESULTS.md)
+- **Yeni mimari:** [../../PHASE_05_ARCHITECTURE.md](../../PHASE_05_ARCHITECTURE.md)
+
+### 16.1 Özet
+
+| Madde | Envanterdeki durum | Uygulama sonrası |
+|---|---|---|
+| F5-01 test kalitesi | Kaynak metni eşleyen testler | 2 dosya AST/davranışsal; 3 dosyada iş sürüyor (kısmi) |
+| F5-02 AST tarayıcı | Regex, 5/7 ihlal görüyor | **AST; 310 dosya, 6 kural, 0 ihlal, boş allowlist** |
+| F5-03 ölü kod | 7 dosya listelendi | 3 dosya kaldırıldı, 5'i zaten yoktu; `voteCount` farkı yok |
+| F5-04 core purity | 7 ihlal | **0 ihlal; `src/core/ports/` + adaptörler** |
+| F5-05 cinetrack-core | 6.445 satır | 5.335 satır + 3 saf modül (kısmi) |
+| F5-06 App.tsx | 2.391 satır | 2.391 satır (yapılmadı) |
+| F5-07 persistent-store | 4.129 satır | 3.876 satır + sözleşme modülü (kısmi) |
+| F5-08 bidi sync | 5.117 satır | 5.118 satır (denendi, geri alındı) |
+| F5-09 tip güvenliği | 679 `any` | Dış JSON guard'ları + TMDB sınırı (kısmi) |
+| F5-10 Respan | Değerlendirildi | **Tamamen kaldırıldı** |
+| F5-11 kalan borç | — | Yeniden tarandı, dokümante edildi (kısmi) |
+
+### 16.2 Kapılar
+
+818/818 unit · 440/440 taste · lint 0/0 · 0 döngü · 0 mimari ihlal · build başarılı ·
+data guard 15 dosya değişmedi. E2E bu oturumda koşulmadı (CI'da çalışır).
+
+### 16.3 §15'teki onay bekleyen kararların sonucu
+
+1. Uygulama sırası: kullanıcı talimatı F5-02 → F5-01 → … olarak verildi; uygulandı.
+2. `@respan/respan`: **kaldırıldı** (kullanıcı kararı).
+3. Core portları: **`src/core/ports/`** kullanıldı; `contracts/` uygulama katmanı sözleşmeleri
+   için korundu.
+4. Bölünmelerde barrel/uyumluluk: **korundu** (yeniden dışa aktarım + tek satırlık shim).
+5. `< 1.000 satır` hedefi yeni modüllerde **sürdürüldü**; mevcut büyük dosyalar kapsam dışı.
