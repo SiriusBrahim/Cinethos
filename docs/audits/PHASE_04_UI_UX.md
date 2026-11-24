@@ -252,6 +252,8 @@ modal/overlay, İşlem Merkezi, profil modalı, yatay taşma.
 | Kural | Etki | Düğüm | Düzeltme |
 |---|---|---|---|
 | `aria-required-children` | critical | `.ws-hero-stats` (`role="list"`) | `role="group"` + `aria-label` |
+| `aria-required-children` | critical | `.ws-stats`, `.ws-mini-grid` (İşlem Merkezi) | `role="group"`; sayaç kutuları liste öğesi değil |
+| `label-content-name-mismatch` | serious | "Yeniden dene" / "İptal" düğmeleri | erişilebilir ad görünen etiketle başlar: `Yeniden dene: <işleyici>` / `İptal: <işleyici>` |
 | `color-contrast` | serious | `.footer-kbd` | `--text-1` + yüzey token'ı |
 | `color-contrast` | serious | `.card-genres` (48 düğüm) | kontrast oranı AA üstüne çıkarıldı |
 | `label-content-name-mismatch` | serious | Kütüphanem sekmesi sayacı | sayaç CSS `content: attr(data-count)` ile çizilir, ad = etiket, ad `aria-description`'da |
@@ -267,6 +269,13 @@ modal/overlay, İşlem Merkezi, profil modalı, yatay taşma.
 | 768 px | 4 | 0 | 0 | ✅ |
 | 360 px | 5 | 0 | 0 | ✅ |
 
+### 7.2.1 Playwright + `@axe-core/playwright` (fixture'lı veri, üretim derlemesi)
+
+Bulut tarayıcı taraması İşlem Merkezi'ni boş veriyle gördüğü için iki ihlal orada
+çıkmadı; E2E fixture'larıyla dolu tablo üzerinde koşan tarama bunları yakaladı ve
+düzeltildi (yukarıdaki iki yeni satır). Düzeltme sonrası `phase4-a11y` spec'i 8/8,
+tam E2E paketi 31/31 geçti.
+
 **İstisna:** yok. Kalan ihlal bildirilmedi.
 
 ### 7.3 Elle doğrulanan maddeler
@@ -279,11 +288,11 @@ düğme/link adları, form label ilişkileri (`aria-labelledby`), poster `alt` m
 
 ## 8. Eklenen ve değiştirilen testler
 
-### 8.1 Birim/regresyon testleri (yeni, 13)
+### 8.1 Birim/regresyon testleri (yeni, 14)
 
 | Dosya | Test | Kapsam |
 |---|---|---|
-| `tests/phase4-task-actions.test.mjs` | 8 | B-26 politika matrisi, 409/403/404, bilinmeyen durum |
+| `tests/phase4-task-actions.test.mjs` | 9 | B-26 politika matrisi, 409/403/404, bilinmeyen durum, hata metni tekrarı |
 | `tests/phase4-shell-contracts.test.mjs` | 5 | B-24/B-25 kabuk sözleşmeleri (modül listesi, token varlığı, overlay guard) |
 
 ### 8.2 Playwright E2E (yeni, 11)
@@ -307,14 +316,14 @@ Yok. Hiçbir test silinmedi, atlanmadı veya beklentisi düşürülmedi.
 |---|---|---|
 | Lint + tip kontrolü | `npm run lint` (eslint + `tsc --noEmit` ×2) | **0 hata, 0 uyarı** |
 | Döngüsel bağımlılık | `npm run cycles` | **0** |
-| Birim testleri | `npm test` | **816/816** (803 → +13) |
+| Birim testleri | `npm test` | **817/817** (803 → +14) |
 | Öneri motoru testleri | `npm run test:taste` | **440/440** |
 | Üretim derlemesi | `npm run build` | **başarılı** |
 | Veri bütünlüğü | `node scripts/check-data-integrity.mjs verify .audit/data-before-phase4.json` | **OK — 15 dosya değişmedi** |
 | Responsive matris | Chromium (bulut tarayıcı) ölçümleri | **7/7 viewport temiz** |
 | axe taraması | axe-core WCAG 2.1 AA | **0 kritik / 0 ciddi** |
 | Modal + klavye testleri | tarayıcı + E2E spec | odak tuzağı 0 kaçış, Escape, odak dönüşü ✅ |
-| Playwright E2E (yerel) | `npx playwright test` | **çalıştırılamadı** (aşağıda) |
+| Playwright E2E (yerel) | `npx playwright test` | **31/31 geçti** (aşağıda) |
 
 ---
 
@@ -322,15 +331,19 @@ Yok. Hiçbir test silinmedi, atlanmadı veya beklentisi düşürülmedi.
 
 ### 10.1 Yerel (bu çalışma ortamı)
 
-- `npm run lint` ✅ · `npm run cycles` ✅ · `npm test` 816/816 ✅ ·
-  `npm run test:taste` 440/440 ✅ · `npm run build` ✅
+- `npm run lint` (0 hata/0 uyarı) ✅ · `npm run cycles` 0 ✅ · `npm test` 817/817 ✅ ·
+  `npm run test:taste` 440/440 ✅ · `npm run build` ✅ · `data/` sha256 doğrulaması ✅
 - Tarayıcı doğrulaması: gerçek Chromium (bulut tarayıcı) üzerinde responsive matris,
   axe taraması, modal/odak/kısayol senaryoları ve ekran görüntüleri ✅
-- **Playwright CLI (yerel):** tarayıcı ikilisi sistem kütüphaneleri olmadan başlatılamıyor:
-  `chrome-headless-shell: error while loading shared libraries: libnspr4.so`
-  (ayrıca `libnss3`, `libatk*`, `libX*` yok). `playwright install-deps` ve `sudo`
-  bu ortamda kapalı ("no new privileges"); paket listeleri bulunmadığı için
-  `apt-get download` da başarısız. **Bu nedenle yerel E2E sonucu "geçti" sayılmadı.**
+- **Playwright CLI (yerel):** ilk denemede `libnspr4.so`/`libnss3`/`libatk*`/`libX*`
+  eksikliği nedeniyle tarayıcı açılmadı (`sudo` ve `playwright install-deps` bu
+  ortamda kapalı). Eksik kütüphaneler kullanıcı alanına (`.audit/libs/root`)
+  indirilip `LD_LIBRARY_PATH`, `FONTCONFIG_FILE` ve `PLAYWRIGHT_EXECUTABLE_PATH`
+  ile Chromium çalıştırıldı. Üretim derlemesi + `vite preview` üzerinde tam suite:
+  **31/31 geçti** (44 sn). Bu koşu iki gerçek kusur ortaya çıkardı ve ikisi de
+  kaynak kodda düzeltildi (bkz. §7.1, §7.2.1). 4 worker ile koşu denemesi
+  `pthread_create: Resource temporarily unavailable` verdi (2 vCPU ortam sınırı);
+  sonuçlar 1 worker ile alındı, bu bir ürün kusuru değildir.
 
 ### 10.2 CI (GitHub Actions)
 
@@ -355,7 +368,7 @@ workflow imajında Playwright bağımlılıkları kurulur.
 
 | Aşama | Korunan davranış | Doğrulama |
 |---|---|---|
-| 1 — Veri güvenliği | Kayıpsız birleştirme, yedek/restore, eşikler | `npm test` 816/816, `data/` hash |
+| 1 — Veri güvenliği | Kayıpsız birleştirme, yedek/restore, eşikler | `npm test` 817/817, `data/` hash |
 | 2 — Senkronizasyon | FIFO kuyruk, dosya kilidi, 409, fail-closed | `npm test`, `npm run cycles` |
 | 3 — Öneri motoru | Tek hat, film/dizi kapsamı, top-up filtreleri, cache | `npm run test:taste` 440/440 |
 | Production local-only | API yokken UI tam çalışır | Tarayıcıda yerel mod doğrulandı |
@@ -367,8 +380,10 @@ Sunum katmanı dışında iş mantığı dosyası değişmedi; `OperationsSectio
 
 ## 13. Ertelenen işler ve kalan riskler
 
-1. **Yerel E2E çalıştırılamıyor** (sistem kütüphaneleri). Yeni 11 E2E testi CI'da
-   ilk kez koşacak; ilk koşuda kırılgan seçici çıkarsa düzeltme Aşama 4 kapsamında kalır.
+1. **Yerel E2E ortamı kırılgan:** tarayıcı yalnızca kullanıcı alanına indirilen
+   sistem kütüphaneleri ve `FONTCONFIG_FILE` ile açılıyor; 2 vCPU sınırı nedeniyle
+   paralel worker sayısı 1–2 ile sınırlı. Bu bir kurulum kısıtıdır, ürün kusuru değil;
+   CI imajında aynı kısıt yok. Tam suite yerelde 31/31 geçti.
 2. **1440 px altında ikon-only sekmeler**: etiketler gizli, ad `aria-label` + `title` ile
    veriliyor. Kullanıcı testinde ikon tanınırlığı ölçülmedi (kapsam dışı: ürün araştırması).
 3. **Katalog kaynağı etiketi masaüstünde** alt bilgiye taşındı; üst çubukta yalnızca
@@ -390,7 +405,9 @@ Sunum katmanı dışında iş mantığı dosyası değişmedi; `OperationsSectio
 | Branch | `remediation/full-project-remediation` |
 | PR | #65 (açık, merge edilmedi) |
 | Başlangıç HEAD | `977b701` |
-| Commit'ler | aşağıdaki tablo (push sonrası PR head SHA'sı doğrulanır) |
+| Erken commit'ler | `db38276`, `4605491`, `1413754`, `f2cbcc6`, `f74ffb6` |
+| Erişilebilirlik/E2E düzeltmesi | `905db21` |
+| Son HEAD | bu doküman commit'i (push sonrası PR #65 head SHA'sı ile doğrulandı) |
 
 Commit grupları:
 
@@ -403,6 +420,9 @@ Commit grupları:
 4. `testler` — `tests/phase4-*.test.mjs`, `e2e/phase4-*.spec.ts`, `fixtures.ts`,
    `@axe-core/playwright` bağımlılığı.
 5. `denetim dokümanı` — bu dosya, `DEVELOPMENT_REMEDIATION_PLAN.md`, ekran görüntüleri.
+6. `erişilebilirlik + E2E düzeltmesi` — `905db21`: `.ws-stats`/`.ws-mini-grid` rolü,
+   retry/iptal erişilebilir adları, hata metni tekrarının kaldırılması, E2E seçicileri,
+   yeni birim testi.
 
 > CI durumu ve nihai SHA, push sonrası PR #65 üzerinden doğrulanır; bu tablo
 > doğrulama sonucuyla güncellenir.

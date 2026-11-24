@@ -687,11 +687,14 @@ kanıt ve responsive matris: [`docs/audits/PHASE_04_UI_UX.md`](audits/PHASE_04_U
 | B-28 | Tek dialog hook'u: odak tuzağı, Escape, odak dönüşü, scroll lock, `inert`, yığın | `src/hooks/useDialogAccessibility.ts` |
 | B-29 | Ref'li tek klavye dinleyicisi + overlay/metin girişi guard'ı | `src/hooks/useKeyboardShortcuts.ts`, `src/utils/overlay-guard.ts` |
 
-**Doğrulama:** lint 0/0, cycles 0, `npm test` **816/816** (803 → +13), `test:taste`
-**440/440**, build başarılı, `data/` sha256 değişmedi (15 dosya). Responsive matris
-360–1920 px: yatay taşma yok, nav kesilmesi 0. axe WCAG 2.1 AA: 1440/768/360 px'te
-0 kritik / 0 ciddi. Playwright E2E yerelde sistem kütüphaneleri (`libnspr4.so`) eksik
-olduğu için koşulamadı; 11 yeni senaryo CI'da koşulmalı.
+**Doğrulama:** lint 0 hata/0 uyarı, cycles 0, `npm test` **817/817** (803 → +14),
+`test:taste` **440/440**, build başarılı, `data/` sha256 değişmedi (15 dosya).
+Responsive matris 360–1920 px: yatay taşma yok, nav kesilmesi 0. axe WCAG 2.1 AA:
+1440/768/360 px'te 0 kritik / 0 ciddi. Playwright tam suite yerelde **31/31 geçti**
+(eksik sistem kütüphaneleri kullanıcı alanına indirilerek çalıştırıldı); koşu iki
+gerçek kusur buldu — `.ws-stats`/`.ws-mini-grid` `aria-required-children` ve
+"Yeniden dene"/"İptal" düğmelerinde `label-content-name-mismatch` — ikisi de
+düzeltildi. Tek satırlık hata metni artık özet ile teknik ayrıntıda tekrarlanmıyor.
 
 **Şema/migration:** Kullanıcı veri şeması değişmedi; yeni alan veya migration yok.
 `data/` biçimi ve `schemaVersion` aynı kaldı.
