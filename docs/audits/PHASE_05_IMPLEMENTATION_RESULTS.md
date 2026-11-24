@@ -98,3 +98,95 @@ backup-parse}.ts`, `src/core/series-types.ts`, `src/core/relationship-ports.ts`,
    bırakıldı; açılması geniş ve ilgisiz bir diff üretir.
 5. **Çift tip modeli** (`media/types.ts` ↔ `document-types.ts`) tek kaynağa indirilmeli.
 6. **Shim'ler** geçici; tüketici sıfırlandığında kaldırılmalı.
+
+
+---
+
+## 6. Aşama 5.1 — Sonuçlar (24 Kas 2026, bu oturum)
+
+**Başlangıç HEAD:** `31251eb` · **Sonuç HEAD:** `f34144c`+ · **PR:** #65 (açık, merge edilmedi)
+
+> Sınırlama: bu oturumda yerel Node/npm/git ortamı yoktu. Typecheck, unit/taste testleri,
+> lint, build ve data guard yerelde ÇALIŞTIRILAMADI; yalnızca dosya/commit dizinlemesi ve
+> kaynak okuma yapıldı. Aşağıdaki her değişiklik CI kapılarıyla doğrulanmalıdır; bu
+> oturumda yerelde "başarılı" gösterilen hiçbir test sonucu yoktur.
+
+### F5.1-05 — Çift tip modeli (✅ Bu oturumda tamamlandı)
+
+- **Önceki durum:** `media/types.ts` ile `media/document-types.ts` SavedItem, NextEpisode,
+  FavoriteActorInfo ve belge modelini iki kez tanımlıyordu; types.ts kopyası
+  `status_changed_at`/`rating_changed_at` alanlarını içermiyordu (sürüm kayması riski).
+- **Yapılan:**`8489472`, `b40fb83`: kanonik tanımlar ve belge sabitleri yaprak dosya
+  `types.ts`'ye taşındı; `document-types.ts` birebir yeniden dışa aktaran uyumluluk
+  yüzeyine dönüştü. `ParsedBackupProfile/ParsedBackupDocument.preferences` alanları
+  `any` → `unknown`. `types.ts` yaprak kaldığı için yeni döngü kenarı oluşmaz;
+  `cinetrack-core` yeniden dışa aktarımı korunur, eski import yolları geçerli.
+- **Test:** yerelde koşulamadı; typecheck + unit/taste CI'da doğrulanmalı. Davranış
+  değişikliği yoktur (yalnız tip yüzeyi).
+- **Kalan risk:** `cinetrack-core.ts` içindeki eski `SavedItem` tanımı bu dosyalardan
+  biri tarafından besleniyorsa ikili tanım riski devam eder; CI typecheck bunu
+  yakalar (çift tanım aynı isimde export edilseydi hata verirdi).
+
+### F5.1-06 — Dış veri sınırı doğrulaması (⚠️ Kısmen)
+
+- **Önceki durum:** TMDB sınırı external-json ile kapalıydı; TVDB sınırı hâlâ
+  doğrulanmayan `any` alanları kullanıyordu.
+- **Yapılan:** `d6d0532`, `f34144c`: `tvdb-proxy.ts` dış JSON ayrımı `external-json`
+  guard'larıyla daraltıldı (hata mesajı, token charset/uzunluk, JWT exp, gövde apiKey);
+  `catch(err: any)` → `unknown`; `executeUpstream/parsed/responseCache` tipleri
+  `any` → `unknown`. Yanıt formatı ve hata yolları korunur.
+- **Test:** yerelde koşulamadı; CI typecheck/eslint doğrular.
+- **Kalan:** GitHub yanıt sınırı (`github-bidirectional-sync.ts`, `github-request.ts`,
+  `persistent-store` girişleri) ve yedek parse'ın kalan `any` yüzeyleri. `any`
+  sayısı ölçülemedi (kod araması bu depoda güvenilmez sonuç veriyor; ölçüm CI'da
+  `grep -cE ': any|any\[\]|<any>' -r src` ile alınmalıdır).
+
+### F5.1-07 — Ölü kod ve adapter akışı (⚠️ Kısmen, kanıt güncellendi)
+
+- **Önceki durum:** Aşama 5 raporu `store-catalog/store-profile/sync-compare/sync-manifest/
+  store-types` için "önceki aşamalarda kaldırıldı; tekrar doğrulandı" diyordu.
+- **Bu oturumda saptanan:** bu beş dosya `f34144c` ağacında **hâlâ mevcut**.
+  Önceki raporun bu kalemi ağaç durumuyla çelişiyor; GitHub kod araması bu depoda
+  güvenilmeyen sonuçlar ürettiği için içe aktaran olmadığı yönünde kanıt üretilemedi.
+  Bu nedenle **silme yapılmadı** (yanlış pozitif silme = CI/işlev riski).
+- **Sonuç:** dosyalar korundu; silme kararı, dependent şikayet bulunabilecek yerel
+  ortamda `analyze.mjs`/import taramasıyla verilmelidir. Bu madde kapanmadı.
+- Adapter akışı (`core-adapters.ts`) bu oturumda değiştirilmedi; Aşama 5 kaydı
+  (tek giriş, testlerin açıkça yüklemesi) yerinde duruyor.
+
+### F5.1-01 / F5.1-02 / F5.1-03 (❌ Bu oturumda yapılmadı — gerekçe)
+
+- `App.tsx` (2.391 satır), `persistent-store.ts` (3.876 satır) ve
+  `github-bidirectional-sync.ts` (5.118 satır) bu oturumda bölünmedi.
+- **Teknik engel:** yerelde typecheck/test koşulu yok; Aşama 5'te bidi-sync bölme
+  denemesi 100+ tip hatası üretip geri alınmıştı. Küçük bir taşımanın dahi tip
+  hatası üretip üretmediğini doğrulama olasılığı olmadan büyük dosyayı bölmek,
+  PR'ı kırmak ve senkron davranışını riske atmak demektir. Kural gereği
+  ("güvenli biçimde ayrılamıyorsa zorla bölme") borç bilinçli olarak korundu.
+- **Önerilen yol (r2 oturumu için):** (1) `github-bidirectional-sync.ts`'ta tip
+  sınırlarını önce `persistent-store/contracts.ts`'e taşı; (2) saf yardımcıları
+  (normalize/merge/hash) tek tek taşı, her adımda `tsc + npm test`; (3) sınıf
+  metodlarını sona bırak. `App.tsx` için: katalog orkestrasyonu ve release-reminder
+  effect'leri en bağımsız adaylar.
+
+### Kabul kriterleri durumu (Aşama 5.1)
+
+| # | Kriter | Durum |
+|---|---|---|
+| 1 | App.tsx ayrıştırma | ❌ |
+| 2 | persistent-store modülerleştirme | ❌ (contracts öncesi zaten yapılmıştı) |
+| 3 | bidi sync modülerleştirme | ❌ (gerekçeli borç) |
+| 4 | lock/lease/atomic/sync davranış testleri | ✅ (Aşama 5'te korunuyor) |
+| 5 | metin tabanlı test dönüşümü | ❌ |
+| 6 | çift tip modeli netliği | ✅ |
+| 7 | GitHub/TVDB runtime validation | ⚠️ (TVDB ✅, GitHub ❌) |
+| 8 | any ölçüm + anlamlı azaltma | ⚠️ (ölçülemedi; tvdb + document-types azaltıldı) |
+| 9 | core adapter production akışı | ⚠️ (değiştirilmedi, Aşama 5 kaydı geçerli) |
+| 10-12 | döngü/mimari/core-purity 0 | yerelde ölçülemedi; değişiklikler döngü eklememeli |
+| 13 | unit/taste/lint/typecheck/build | yerelde koşulamadı (CI zorunlu) |
+| 14 | e2e + prod smoke | koşulamadı |
+| 15 | data guard | koşulamadı (değişiklikler veri formatına dokunmuyor) |
+| 16 | dokümantasyon | ✅ (bu bölüm; diğer iki belge sonraki oturum) |
+| 17 | PR #65 açık + merge edilmemiş | ✅ |
+
+**Nihai durum: AŞAMA 5.1 KISMEN TAMAMLANDI. Aşama 6 başlatılmadı.**
