@@ -9,6 +9,13 @@
  *
  * Uyumluluk: `cinetrack-core.ts` bu tipleri yeniden export etmeye
  * devam eder; mevcut import yolları bozulmaz.
+ *
+ * Aşama 5.1 (F5.1-05) — Çift tip modelinin birleştirilmesi:
+ * `document-types.ts` ile $%%bu$%% dosyada kopya halinde yaşayan SavedItem,
+ * NextEpisode, FavoriteActorInfo, Preferences, Profile, DataDocument
+ * tanımları ve belge sabitleri TEK kaynağa indirildi. Kanonik tanımlar
+ * artık bu yaprak dosyadadır; `document-types.ts` bunları yeniden
+ * dışa aktarır (hiçbir yeni import döngüsü oluşmaz, public API korunur).
  */
 
 import type { LovedSimBreakdown } from '../loved-similarity.ts';
@@ -19,7 +26,7 @@ import type { MoodAffinityResult } from '../mood-affinity.ts';
 export type LifecycleRing = 'ring0' | 'ring1' | 'ring2';
 export type TasteRing = LifecycleRing | 'core' | 'inner' | 'outer' | 'orbit';
 
-// --- Kütüphane veri modeli ---
+// --- Kütüphane veri modeli (kanonik) ---
 
 export interface NextEpisode {
   air_date: string;
@@ -52,7 +59,9 @@ export interface SavedItem {
   number_of_episodes?: number;
   season_progress?: Record<number, number>;
   season_episode_counts?: Record<number, number>;
+  /** Sezon → izlenmiş bölüm numaraları (sırasız izleme desteği). */
   watched_episodes?: Record<number, number[]>;
+  /** Sezon ilerlemesinin son bilinçli değişim anı (geri alma ve çakışma çözümü). */
   progress_updated_at?: Record<number, string>;
   next_episode_to_air?: NextEpisode | null;
   current_season?: number;
@@ -61,7 +70,18 @@ export interface SavedItem {
   status: 'watching' | 'watchlist' | 'completed';
   personal_rating: number | '';
   personal_rating_cleared?: boolean;
+  /**
+   * Aşama 1 — Durum alanının en son kullanıcı tarafından değiştirildiği an.
+   * Alan bazlı birleştirmede `updatedAt`'ten (not düzenlemesi) ayrı tutulur.
+   */
+  status_changed_at?: string;
+  /**
+   * Aşama 1 — Puan alanının (puan verme, değiştirme veya temizleme) en son
+   * değiştirildiği an. `ratedAt` yalnızca dolu puanı temsil eder.
+   */
+  rating_changed_at?: string;
   ratedAt?: string;
+  /** İzleme etkileşiminin (bölüm işaretleme dahil) son anı. `updatedAt` değildir. */
   watchedAt?: string;
   completedAt?: string;
   addedAt?: string;
@@ -99,6 +119,56 @@ export interface FavoriteActorInfo {
   character?: string;
   [key: string]: any;
 }
+
+export interface Preferences {
+  disliked: string[];
+  hidden?: string[];
+  providers: string[];
+  mood: string;
+  reminders: boolean;
+  notified: string[];
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  createdAt: string;
+  preferences: Preferences;
+  items: SavedItem[];
+  favoriteActors?: FavoriteActorInfo[];
+  deleted_keys?: Record<string, string>;
+  isDemo?: boolean;
+}
+
+export interface DataDocument {
+  version: 3;
+  schemaVersion: number;
+  engineVersion?: string;
+  activeProfileId: string;
+  profiles: Profile[];
+  revision?: number;
+  updatedAt?: string;
+}
+
+// --- Belge sabitleri (kanonik) ---
+
+export const REMINDER_WINDOW_DAYS = 3;
+export const CURRENT_SCHEMA_VERSION = 3;
+export const ENGINE_VERSION = 'v3.2.0';
+export const TOMBSTONE_RETENTION_DAYS = 30;
+export const TARGET_RECOMMENDATION_COUNT = 20;
+
+/**
+ * B-13: Sunucu zevk sinyalinin skordaki ağırlığı ve açıklama eşiği.
+ * Ağırlık yalnızca sinyal gerçekten hesaplanabildiğinde ağırlık kümesine eklenir;
+ * sinyal yokken puanlar birebir değişmez.
+ */
+export const SERVER_TASTE_WEIGHT = 0.06;
+/** `parts.serverTaste` bu değerin altındaysa açıklamada katkı iddia edilmez. */
+export const SERVER_TASTE_EXPLANATION_PART_THRESHOLD = 0.62;
+
+export const LATEST_BACKUP_VERSION = 4;
+export const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2, 3, 4];
 
 // --- Zevk Haritası veri modeli ---
 
@@ -203,7 +273,7 @@ export interface PersistentTasteMapData {
   archivedEntries?: Record<string, TasteMapEntry>;
   lastRecommendedKeys: string[];
   lastBatchTimestamp: string | null;
-  cachedBalancedItems?: any[];
+  cachedBalancedItems?: unknown[];
   lastTargetType?: string;
   lastExplanation?: string;
   summary?: TasteProfileSummary;
@@ -246,8 +316,8 @@ export interface PoolCandidateItem {
   popularityTier: 'high' | 'medium' | 'low' | 'indie';
   cast?: { id: number; name: string; popularity?: number; profile_path?: string; character?: string }[];
   crew?: { id: number; name: string; job: string; department?: string }[];
-  belongs_to_collection?: any;
-  production_companies?: any[];
+  belongs_to_collection?: unknown;
+  production_companies?: unknown[];
 
   // Sorun D: Kullanıcıya özel kalıcı öneri ve Zevk Haritası alanları
   matchScore?: number;
