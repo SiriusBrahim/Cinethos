@@ -11,7 +11,7 @@
  * devam eder; mevcut import yolları bozulmaz.
  *
  * Aşama 5.1 (F5.1-05) — Çift tip modelinin birleştirilmesi:
- * `document-types.ts` ile $%%bu$%% dosyada kopya halinde yaşayan SavedItem,
+ * `document-types.ts` ile bu dosyada kopya halinde yaşayan SavedItem,
  * NextEpisode, FavoriteActorInfo, Preferences, Profile, DataDocument
  * tanımları ve belge sabitleri TEK kaynağa indirildi. Kanonik tanımlar
  * artık bu yaprak dosyadadır; `document-types.ts` bunları yeniden
