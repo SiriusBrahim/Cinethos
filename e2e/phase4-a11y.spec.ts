@@ -84,13 +84,13 @@ test('B-27 dar ekranda filtre çubuğu sayfayı taşırmaz', async ({ browser })
 test('B-26 işlem merkezi eylemleri görev durumuna göre etkin', async ({ page }) => {
   await boot(page, '/#/operations');
 
-  const retryButtons = page.getByRole('button', { name: /görevini yeniden dene/ });
+  const retryButtons = page.getByRole('button', { name: /^Yeniden dene: / });
   await expect(retryButtons).toHaveCount(2);
   await expect(retryButtons.nth(0)).toBeEnabled(); // failed
   await expect(retryButtons.nth(1)).toBeDisabled(); // pending
   await expect(page.getByText('Görev zaten kuyrukta bekliyor.')).toBeVisible();
 
-  const cancelButtons = page.getByRole('button', { name: /görevini iptal et/ });
+  const cancelButtons = page.getByRole('button', { name: /^İptal: / });
   await expect(cancelButtons.nth(1)).toBeEnabled();
 });
 
@@ -106,7 +106,7 @@ test('B-26 409 yanıtı retry düğmesini kapatır ve neden gösterir', async ({
   });
   await page.goto('/#/operations');
 
-  const retry = page.getByRole('button', { name: /görevini yeniden dene/ }).first();
+  const retry = page.getByRole('button', { name: /^Yeniden dene: / }).first();
   await expect(retry).toBeEnabled();
   await retry.click();
 

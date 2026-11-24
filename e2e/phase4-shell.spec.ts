@@ -115,19 +115,24 @@ test('B-29 kısayollar metin girişinde ve modal açıkken çalışmaz', async (
   await expect(page.getByRole('tab', { name: 'Keşfet' })).toHaveAttribute('aria-current', 'page');
 
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /Profil ve ayarlar:/ }).click();
+  await page.getByRole('button', { name: /^Profil:/ }).click();
   const dialog = page.getByRole('dialog').first();
   await expect(dialog).toBeVisible();
   await page.keyboard.press('2');
-  await expect(page.getByRole('tab', { name: 'Keşfet' })).toHaveAttribute('aria-current', 'page');
+  // Kabuk `inert` olduğu için sekmeler erişilebilirlik ağacında görünmez;
+  // bu yüzden aktif sekme DOM üzerinden doğrulanır.
+  await expect(page.locator('[role="tab"][aria-label="Keşfet"]')).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
 });
 
 test('B-28 modal odak tuzağı, Escape ve odak dönüşü', async ({ page }) => {
   await boot(page);
 
-  const poster = page.locator('.poster-trigger').first();
-  await poster.focus();
-  await poster.press('Enter');
+  const opener = page.getByRole('button', { name: /^Profil:/ });
+  await opener.focus();
+  await opener.press('Enter');
 
   const dialog = page.getByRole('dialog').first();
   await expect(dialog).toBeVisible();
@@ -148,5 +153,5 @@ test('B-28 modal odak tuzağı, Escape ve odak dönüşü', async ({ page }) => 
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(page.locator('main.shell')).not.toHaveAttribute('inert');
-  await expect(poster).toBeFocused();
+  await expect(opener).toBeFocused();
 });

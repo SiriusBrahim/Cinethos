@@ -235,7 +235,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
         />
 
         {counts && (
-          <div className="ws-stats" role="list" aria-label="Görev durum sayaçları">
+          <div className="ws-stats" role="group" aria-label="Görev durum sayaçları">
             <StatTile label="Bekleyen" value={counts.pending} />
             <StatTile label="Çalışan" value={counts.processing} tone="info" />
             <StatTile label="Yeniden deneme" value={counts.retry_wait} tone="warn" />
@@ -375,7 +375,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
                         <ActionButton
                           onClick={() => void runAction(task, 'retry')}
                           disabled={!availability.retry}
-                          ariaLabel={`${handlerLabel(task.handlerId)} görevini yeniden dene`}
+                          ariaLabel={`Yeniden dene: ${handlerLabel(task.handlerId)}`}
                         >
                           Yeniden dene
                         </ActionButton>
@@ -383,7 +383,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
                           variant="danger"
                           onClick={() => void runAction(task, 'cancel')}
                           disabled={!availability.cancel}
-                          ariaLabel={`${handlerLabel(task.handlerId)} görevini iptal et`}
+                          ariaLabel={`İptal: ${handlerLabel(task.handlerId)}`}
                         >
                           İptal
                         </ActionButton>
@@ -419,7 +419,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
             }
           />
           {intel ? (
-            <div className="ws-mini-grid" role="list" aria-label="İçerik zekâsı özeti">
+            <div className="ws-mini-grid" role="group" aria-label="İçerik zekâsı özeti">
               <span>İndekslenen</span>
               <strong className="tabular-nums">{intel.completed}</strong>
               <span>Bekleyen</span>

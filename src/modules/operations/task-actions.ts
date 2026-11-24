@@ -147,5 +147,8 @@ export function describeTaskFailure(lastError: string | null): {
   const withoutPrefix = firstLine.replace(/^(error|typeerror|error:)\s*:?\s*/i, '');
   const summary =
     withoutPrefix.length > 140 ? `${withoutPrefix.slice(0, 137)}…` : withoutPrefix || 'Bilinmeyen hata';
-  return { summary, technical: lastError };
+  // Tek satırlık hatalarda özet ile teknik metin aynıdır; aynı cümleyi iki kez
+  // göstermemek için teknik ayrıntı yalnızca ek bilgi taşıdığında döner.
+  const technical = lastError.trim() === summary ? null : lastError;
+  return { summary, technical };
 }

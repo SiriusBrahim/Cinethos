@@ -89,6 +89,12 @@ test('uzun son hata mesajı kısaltılır, teknik metin korunur', () => {
   assert.deepEqual(describeTaskFailure(null), { summary: '', technical: null });
 });
 
+test('özet ile aynı olan tek satırlık hata teknik ayrıntı olarak tekrarlanmaz', () => {
+  const failure = describeTaskFailure('geçici ağ hatası');
+  assert.equal(failure.summary, 'geçici ağ hatası');
+  assert.equal(failure.technical, null);
+});
+
 test('her durum için Türkçe etiket tanımlı', () => {
   for (const status of ['pending', 'processing', 'completed', 'retry_wait', 'failed', 'cancelled']) {
     assert.equal(typeof TASK_STATUS_HUMAN[status], 'string');
