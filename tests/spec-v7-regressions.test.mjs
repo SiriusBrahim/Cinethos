@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import '../src/services/core-adapters.ts'; // F5-04: çekirdek portlarının adaptörleri
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';

@@ -1,8 +1,8 @@
 import { normalizeProfileId } from './profile-id.ts';
 import { backfillInteractionDates, resolveItemSignalDate } from './item-dates.ts';
 export { PROFILE_ID_PATTERN, normalizeProfileId } from './profile-id.ts';
-import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
-import { apiFetch } from '../services/api-client.ts';
+import { getKvStoreFactory, type CoreKvStore } from './ports/kv-store-port.ts';
+import { coreApiFetch } from './ports/api-port.ts';
 import { getCandidatePoolStorePort } from './candidate-pool-store-port.ts';
 import {
   DEFAULT_MAX_DATA_BYTES,
@@ -20,24 +20,29 @@ import {
   type CinemaKunyeDocument,
 } from './cinema-kunye.ts';
 
-let discoveryHistoryIdbStore: UseStore | undefined;
-let candidatePoolIdbStore: UseStore | undefined;
+let discoveryHistoryIdbStore: CoreKvStore | undefined;
+let candidatePoolIdbStore: CoreKvStore | undefined;
 const idbHydratedTasteMaps = new Map<string, any>();
 const idbHydratedPools = new Map<string, any>();
 const pendingCoreIdbWrites = new Set<Promise<void>>();
 
-function getDiscoveryHistoryIdbStore(): UseStore | undefined {
+function getDiscoveryHistoryIdbStore(): CoreKvStore | undefined {
+  // Depo fabrikası uygulama katmanından kaydedilir (F5-04); yoksa IDB kullanılmaz.
   if (typeof indexedDB === 'undefined') return undefined;
+  const factory = getKvStoreFactory();
+  if (!factory) return undefined;
   if (!discoveryHistoryIdbStore) {
-    discoveryHistoryIdbStore = createIdbStore('cinetrack-discovery-history-db', 'ct_discovery_history');
+    discoveryHistoryIdbStore = factory('cinetrack-discovery-history-db', 'ct_discovery_history');
   }
   return discoveryHistoryIdbStore;
 }
 
-function getCandidatePoolIdbStore(): UseStore | undefined {
+function getCandidatePoolIdbStore(): CoreKvStore | undefined {
   if (typeof indexedDB === 'undefined') return undefined;
+  const factory = getKvStoreFactory();
+  if (!factory) return undefined;
   if (!candidatePoolIdbStore) {
-    candidatePoolIdbStore = createIdbStore('cinetrack-candidate-pool-db', 'ct_candidate_pool');
+    candidatePoolIdbStore = factory('cinetrack-candidate-pool-db', 'ct_candidate_pool');
   }
   return candidatePoolIdbStore;
 }
@@ -2563,7 +2568,7 @@ export async function hydrateDiscoveryHistoryIdb(profileId: string): Promise<Per
   const store = getDiscoveryHistoryIdbStore();
   if (store) {
     try {
-      const idbVal = await idbGet<PersistentTasteMapData>(key, store);
+      const idbVal = await store.get<PersistentTasteMapData>(key);
       if (idbVal && typeof idbVal.entries === 'object') {
         const sanitized = sanitizeLoadedTasteMapObject(profileId, idbVal);
         if (sanitized) {
@@ -2632,7 +2637,7 @@ export function savePersistentTasteMap(profileId: string, data: PersistentTasteM
       }
     } catch {}
     trackCoreIdbWrite(
-      idbSet(key, normalizedData, store).catch((err) => {
+      store.set(key, normalizedData).catch((err) => {
         console.warn('[Cinethos] Discovery history IDB write failed:', err);
       })
     );
@@ -4166,7 +4171,7 @@ export async function fetchActorCreditsBatch(
             let data: any = null;
             const fetcher = fetchTmdbFn || (async (p: string, params?: Record<string, string>) => {
               // P0-02: doğrudan fetch yerine ortak apiFetch (LAN token + 401/503 bildirimi)
-              const res = await apiFetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
+              const res = await coreApiFetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
               return res.json();
             });
 
@@ -5921,7 +5926,7 @@ export async function hydrateCandidatePoolsIdb(
     for (const mediaType of ['movie', 'tv'] as const) {
       const key = `cinetrack_pool_${mediaType}_${profileId}`;
       try {
-        const idbVal = await idbGet<PersistentCandidatePoolData>(key, store);
+        const idbVal = await store.get<PersistentCandidatePoolData>(key);
         if (idbVal && idbVal.mediaType === mediaType && Array.isArray(idbVal.items)) {
           idbHydratedPools.set(key, {
             mediaType,
@@ -6037,7 +6042,7 @@ export function savePersistentPoolData(
       }
     } catch {}
     trackCoreIdbWrite(
-      idbSet(key, poolRecord, store).catch((err) => {
+      store.set(key, poolRecord).catch((err) => {
         console.warn('[Cinethos] Candidate pool IDB write failed:', err);
       })
     );

@@ -5,6 +5,7 @@ import {
   DENSE_VECTOR_DIM,
   type ItemFeatureEncoding,
 } from '../core/encoding.ts';
+import { registerItemEncodingResolver } from '../core/ports/encoding-port.ts';
 import {
   getStoredEncodingIdb,
   saveStoredEncodingIdb,
@@ -387,3 +388,6 @@ export async function clearAllEncodingsCache(): Promise<{ cleared: boolean; erro
 }
 
 export { makeEncodingStorageKey };
+
+/** F5-04: çekirdek kodlama portunu bu adaptörle besler (önbellekli davranış aynı). */
+registerItemEncodingResolver((item) => getItemEncodingSync(item));

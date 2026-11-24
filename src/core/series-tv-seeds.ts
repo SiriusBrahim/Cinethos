@@ -1,4 +1,4 @@
-import type { SeriesCollection, SeriesCollectionPart } from './storage-idb.ts';
+import type { SeriesCollection, SeriesCollectionPart } from './series-types.ts';
 import { isWithinReleaseWindow } from '../utils/release-window.ts';
 
 export interface KnownTvFranchiseSeedPart {

@@ -471,39 +471,14 @@ export async function isItemSurfaced(mediaKey: string): Promise<boolean> {
 // ==========================================
 // 5. ct:series-index (Seri / Franchise İndeksi)
 // ==========================================
-export type SeriesValidationStatus = 'verified' | 'probable' | 'conflict' | 'manual';
+import type {
+  SeriesCollection,
+  SeriesCollectionPart,
+  SeriesValidationStatus,
+} from '../core/series-types.ts';
 
-export interface SeriesCollectionPart {
-  id: number | string;
-  media_type: 'movie' | 'tv';
-  title: string;
-  name?: string;
-  release_date?: string;
-  first_air_date?: string;
-  poster_path?: string | null;
-  backdrop_path?: string | null;
-  vote_average?: number;
-  vote_count?: number;
-  genre_ids?: number[];
-  overview?: string;
-  order?: number;
-  wikidata_id?: string;
-  validation?: SeriesValidationStatus;
-}
-
-export interface SeriesCollection {
-  id: number | string;
-  name: string;
-  media_type: 'movie' | 'tv';
-  poster_path?: string | null;
-  backdrop_path?: string | null;
-  overview?: string;
-  parts: SeriesCollectionPart[];
-  partKeys: string[];
-  sourceItemKey?: string;
-  isStub?: boolean;
-  validation?: SeriesValidationStatus;
-}
+export type { SeriesCollection, SeriesCollectionPart, SeriesValidationStatus };
+import { registerSeriesCatalogPort } from '../core/ports/series-catalog-port.ts';
 
 export interface SeriesIndexData {
   collections: Record<string, SeriesCollection>;
@@ -773,3 +748,13 @@ export function resetIdbMemoryStateForTests(): void {
   resetClientDepotsForTests();
   notifySeriesIndexListeners();
 }
+
+/**
+ * F5-04: çekirdek seri kataloğu portunu bu depo besler.
+ * Okuma fonksiyonları birebir aynıdır; çekirdek artık doğrudan bu modülü
+ * import etmez.
+ */
+registerSeriesCatalogPort({
+  getSeriesForMediaSync,
+  getSeriesCollectionByKeySync,
+});

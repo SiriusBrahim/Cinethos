@@ -13,6 +13,7 @@ import {
   fetchWithHttpRetry,
   type HttpRetryOptions,
 } from './http-retry.ts';
+import { registerApiFetchPort } from '../core/ports/api-port.ts';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -132,3 +133,6 @@ export async function readApiErrorMessage(
     return { message: fallback };
   }
 }
+
+/** F5-04: çekirdek API portunu bu adaptörle besler (davranış aynı). */
+registerApiFetchPort(apiFetch);
