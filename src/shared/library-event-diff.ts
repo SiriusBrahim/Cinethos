@@ -13,7 +13,7 @@
  * - eventId opak ve kişisel olmayan UUID'dir; profil/oyuncu kimliği taşımaz.
  */
 
-import { createAppEvent } from '../app/app-event-bus.ts';
+import { createAppEvent } from './runtime/app-event-bus.ts';
 import type { LibraryListId, MediaKind, TypedAppEvent } from '../contracts/index.ts';
 import { makeMediaKey } from '../core/keys.ts';
 import type { DataDocument, FavoriteActorInfo, Profile, SavedItem } from '../core/cinetrack-core.ts';

@@ -23,11 +23,8 @@ import {
   ContentIntelligenceRepository,
   type ContentQueueJobRow,
 } from './content-intelligence-repository.ts';
-import {
-  ContentMetadataSource,
-  TransientMetadataFetchError,
-  hasSufficientDetail,
-} from './content-metadata-source.ts';
+import { ContentMetadataSource, TransientMetadataFetchError } from './content-metadata-source.ts';
+import { hasSufficientDetail } from '../modules/content/metadata-detail.ts';
 
 export interface EnqueueContentJobInput {
   readonly mediaKey?: string;

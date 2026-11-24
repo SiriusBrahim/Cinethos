@@ -26,17 +26,15 @@ import type {
 import type { DataDocument } from '../../core/cinetrack-core.ts';
 import { normalizeProfileId } from '../../core/profile-id.ts';
 import { makeMediaKey, parseMediaKey } from '../../core/keys.ts';
-import {
-  hasSufficientDetail,
-  type ContentMetadataSource,
-} from '../../server/content-metadata-source.ts';
+import { hasSufficientDetail } from './metadata-detail.ts';
+import type { ContentMetadataPort } from './ports.ts';
 import type {
   ContentIntelligenceRecord,
   NormalizedContentMetadata,
 } from './types.ts';
 
 export interface ContentServiceOptions {
-  readonly metadataSource: ContentMetadataSource;
+  readonly metadataSource: ContentMetadataPort;
   /** Merkezi içerik kaydı okuyucusu (ör. coordinator.getByMediaKey). */
   readonly getStoredRecord?: (mediaKey: string) => ContentIntelligenceRecord | null;
   /** Eksik metadata taraması için birincil kullanıcı belgesi okuyucusu. */
@@ -206,7 +204,7 @@ function toContentMetadataFromStored(
 }
 
 export class ContentService implements IContentService {
-  private readonly metadataSource: ContentMetadataSource;
+  private readonly metadataSource: ContentMetadataPort;
   private readonly getStoredRecord?: (mediaKey: string) => ContentIntelligenceRecord | null;
   private readonly readDocument?: () => Promise<DataDocument | null>;
   private readonly enqueueRawItem?: (

@@ -34,7 +34,7 @@ import type {
 } from "../core/taste/types.ts";
 import type { TypedAppEvent } from "../contracts/index.ts";
 import type { DataDocument } from "../core/cinetrack-core.ts";
-import { createAppEventBus, type AppEventBus } from "../app/app-event-bus.ts";
+import { createAppEventBus, type AppEventBus } from "../shared/runtime/app-event-bus.ts";
 import {
   createServerTasteServiceAdapter,
   subscribeTasteAdapterToEventBus,

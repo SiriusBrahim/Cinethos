@@ -11,7 +11,7 @@ import type {
   IModuleRegistry,
   ModuleContext,
   ModuleHealth,
-} from '../contracts/index.ts';
+} from '../../contracts/index.ts';
 
 export class ModuleRegistry implements IModuleRegistry {
   private readonly modules = new Map<string, IApplicationModule>();

@@ -1,4 +1,4 @@
-import { normalizeProfileId } from '../core/profile-id.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 /**
  * MIA Faz 1B — Adım 8: Uygulama Olay Yolu (IEventPublisher / IEventSubscriber).
  *
@@ -18,7 +18,7 @@ import type {
   IEventSubscriber,
   TypedAppEvent,
   WriteProfileRef,
-} from '../contracts/index.ts';
+} from '../../contracts/index.ts';
 import { emitShellEvent } from './shell-events.ts';
 
 export interface AppEventBusOptions {

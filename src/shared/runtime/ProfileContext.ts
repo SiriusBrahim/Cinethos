@@ -6,7 +6,7 @@
  * `IEventPublisher` kanalına (`ProfileSwitched`) bildirir.
  */
 
-import { normalizeProfileId } from '../core/profile-id.ts';
+import { normalizeProfileId } from '../../core/profile-id.ts';
 import {
   ProfileConflictError,
   type IEventPublisher,
@@ -16,7 +16,7 @@ import {
   type ProfileRef,
   type TypedAppEvent,
   type WriteProfileRef,
-} from '../contracts/index.ts';
+} from '../../contracts/index.ts';
 
 function requireCanonicalProfileId(profileId: unknown): string {
   return normalizeProfileId(profileId) ?? '';

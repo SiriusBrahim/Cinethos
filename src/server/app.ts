@@ -42,9 +42,9 @@ import { CorruptJsonFileError } from './atomic-json.ts';
 import { hashDocument } from './archive-integrity.ts';
 import { RestoreJournal } from './restore-journal.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';
-import { createAppEventBus, type AppEventBus } from '../app/app-event-bus.ts';
-import { createModuleRegistry, type ModuleRegistry } from '../app/runtime-module-registry.ts';
-import { createProfileContext, type ProfileContext } from '../app/ProfileContext.ts';
+import { createAppEventBus, type AppEventBus } from '../shared/runtime/app-event-bus.ts';
+import { createModuleRegistry, type ModuleRegistry } from '../shared/runtime/runtime-module-registry.ts';
+import { createProfileContext, type ProfileContext } from '../shared/runtime/ProfileContext.ts';
 import {
   createServerTasteServiceAdapter,
   subscribeTasteAdapterToEventBus,
