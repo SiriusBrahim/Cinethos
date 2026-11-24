@@ -347,9 +347,20 @@ Yok. Hiçbir test silinmedi, atlanmadı veya beklentisi düşürülmedi.
 
 ### 10.2 CI (GitHub Actions)
 
-CI sonucu bu dokümanın commit'i push edildikten sonra PR #65 kontrollerinden okunur;
-sonuç raporun sonundaki tabloya işlenir. Yerel E2E engeli CI'da geçerli değildir:
-workflow imajında Playwright bağımlılıkları kurulur.
+Kod ağacı `9f3b639` üzerinde dört kontrol de başarılı:
+
+| Kontrol | Sonuç |
+|---|---|
+| Lint, Test, Build & Production Smoke Test | ✅ success |
+| Playwright E2E | ✅ success |
+| Salt okunur bakım analizi | ✅ success |
+| Vercel Preview Comments | ✅ success |
+
+Önceki HEAD `f74ffb6` üzerinde yalnızca **Playwright E2E** kırmızıydı; nedeni
+`905db21`de düzeltilen iki gerçek axe ihlali ve seçici kırılganlığıydı. Yerel E2E
+engeli CI'da geçerli değildir: workflow imajında Playwright bağımlılıkları kurulur.
+Bu doküman commit'i yalnızca doküman değişikliği içerir; kod ağacı `9f3b639` ile
+aynıdır.
 
 ---
 
@@ -407,7 +418,9 @@ Sunum katmanı dışında iş mantığı dosyası değişmedi; `OperationsSectio
 | Başlangıç HEAD | `977b701` |
 | Erken commit'ler | `db38276`, `4605491`, `1413754`, `f2cbcc6`, `f74ffb6` |
 | Erişilebilirlik/E2E düzeltmesi | `905db21` |
-| Son HEAD | bu doküman commit'i (push sonrası PR #65 head SHA'sı ile doğrulandı) |
+| Yerel E2E kanıtı / rapor güncellemesi | `9f3b639` |
+| CI durumu (`9f3b639`) | ✅ 4/4 kontrol başarılı (aşağıda §10.2) |
+| PR durumu | açık, merge edilmedi |
 
 Commit grupları:
 
@@ -424,5 +437,5 @@ Commit grupları:
    retry/iptal erişilebilir adları, hata metni tekrarının kaldırılması, E2E seçicileri,
    yeni birim testi.
 
-> CI durumu ve nihai SHA, push sonrası PR #65 üzerinden doğrulanır; bu tablo
-> doğrulama sonucuyla güncellenir.
+> CI durumu `9f3b639` üzerinde doğrulandı (§10.2). Bu doküman commit'i yalnızca
+> doküman değişikliği ekler; kod ağacı değişmez. PR #65 açık ve merge edilmedi.
