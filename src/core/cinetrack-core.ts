@@ -1,24 +1,9 @@
 import { normalizeProfileId } from './profile-id.ts';
-import { backfillInteractionDates, resolveItemSignalDate } from './item-dates.ts';
+import { resolveItemSignalDate } from './item-dates.ts';
 export { PROFILE_ID_PATTERN, normalizeProfileId } from './profile-id.ts';
 import { getKvStoreFactory, type CoreKvStore } from './ports/kv-store-port.ts';
 import { coreApiFetch } from './ports/api-port.ts';
 import { getCandidatePoolStorePort } from './candidate-pool-store-port.ts';
-import {
-  DEFAULT_MAX_DATA_BYTES,
-  DEFAULT_MAX_ITEMS_PER_PROFILE,
-  DEFAULT_MAX_PROFILES,
-  formatMaxDataLimitMb,
-  measureUtf8Bytes,
-} from './limits.ts';
-import {
-  enrichSavedItemsFromCinemaKunye,
-  extractCinemaKunyeFromItems,
-  mergeCinemaKunyeDocumentsLossless,
-  normalizeCinemaKunyeActorList,
-  normalizeCinemaKunyeDocument,
-  type CinemaKunyeDocument,
-} from './cinema-kunye.ts';
 
 let discoveryHistoryIdbStore: CoreKvStore | undefined;
 let candidatePoolIdbStore: CoreKvStore | undefined;

@@ -13,6 +13,7 @@
 import path from 'node:path';
 import type { MediaKind } from '../contracts/index.ts';
 import { sanitizeRawContentInput } from '../modules/content/content-metadata-processor.ts';
+import { asExternalRecord } from './external-json.ts';
 import type { ContentMetadataPort } from '../modules/content/ports.ts';
 import { hasSufficientDetail } from '../modules/content/metadata-detail.ts';
 import { readJsonFileWithRecoveryAsync } from './atomic-json.ts';
@@ -154,7 +155,9 @@ export class ContentMetadataSource implements ContentMetadataPort {
       if (!res.ok) {
         return null;
       }
-      const raw = (await res.json()) as Record<string, unknown>;
+      // F5-09: dış JSON güvenilir tip değildir; nesne değilse veri yok sayılır.
+      const raw = asExternalRecord(await res.json());
+      if (!raw) return null;
       return sanitizeRawContentInput({
         ...raw,
         media_type: mediaType,

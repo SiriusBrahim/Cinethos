@@ -23,11 +23,8 @@ import {
 import {
   CURRENT_SCHEMA_VERSION,
   LATEST_BACKUP_VERSION,
-  SUPPORTED_BACKUP_VERSIONS,
   type ParsedBackupDocument,
   type ParsedBackupProfile,
-  type SavedItem,
-  type FavoriteActorInfo,
 } from './document-types.ts';
 import {
   isPlainRecord,
