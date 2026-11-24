@@ -42,13 +42,11 @@ import { GitHubBidirectionalSyncManager } from './github-bidirectional-sync.ts';
 /** Aşama 2: kalıcı senkronizasyon durumu şema sürümü. v1 alanları geriye dönük okunur. */
 export * from './persistent-store/contracts.ts';
 
-import {
+import type {
   GitHubSyncErrorCategory,
   GitHubTokenCandidateInfo,
   PersistentStoreOptions,
   RemoteRepoAccessCheck,
-  STAGE_LABELS,
-  SYNC_STATE_VERSION,
   StagedFileOutcome,
   StagedSyncReport,
   SyncFileStage,
@@ -56,6 +54,12 @@ import {
   SyncResult,
   SyncStatus,
   TokenSourceKind,
+} from './persistent-store/contracts.ts';
+// `node server.ts` (npm start) TypeScript tiplerini yalnızca silerek çalıştırır;
+// bu yüzden tip adları ayrı bir `import type` bloğunda olmalıdır.
+import {
+  STAGE_LABELS,
+  SYNC_STATE_VERSION,
   classifyHttpFailure,
   classifyTokenFormat,
   isPlainRecordObject,
