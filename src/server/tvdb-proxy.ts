@@ -83,7 +83,7 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
         return { token: '', error: errMsg };
       }
 
-      const json = asExternalRecord(JSON.parse === JSON.parse ? await response.json() : await response.json());
+      const json = asExternalRecord(await response.json());
       const payload = asExternalRecord(json?.data);
       const token = readString(payload?.token, 4096);
       if (!token || !/^[A-Za-z0-9_.\-]+$/.test(token)) {
