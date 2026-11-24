@@ -347,20 +347,27 @@ Yok. Hiçbir test silinmedi, atlanmadı veya beklentisi düşürülmedi.
 
 ### 10.2 CI (GitHub Actions)
 
-Kod ağacı `9f3b639` üzerinde dört kontrol de başarılı:
+Doğrulanan HEAD **`c439cf1`** (2026-11-24). Dört kontrol de başarılı:
 
-| Kontrol | Sonuç |
-|---|---|
-| Lint, Test, Build & Production Smoke Test | ✅ success |
-| Playwright E2E | ✅ success |
-| Salt okunur bakım analizi | ✅ success |
-| Vercel Preview Comments | ✅ success |
+| Kontrol | Sonuç | Bitiş (UTC) |
+|---|---|---|
+| Lint, Test, Build & Production Smoke Test | ✅ success | 10:01:04 |
+| Playwright E2E | ✅ success | 09:58:15 |
+| Salt okunur bakım analizi | ✅ success | 10:01:08 |
+| Vercel Preview Comments | ✅ success (0 çözülmemiş geri bildirim) | 09:57:19 |
+
+**Tarihsel doğrulama noktası `9f3b639`:** aynı dört kontrol bu commit üzerinde de
+başarılıydı. `c439cf1` yalnızca doküman değişikliği eklediği için kod ağacı
+`9f3b639` ile aynıdır; iki SHA eşdeğer kod ağacını gösterir, son doğrulanan HEAD
+`c439cf1`'dir.
 
 Önceki HEAD `f74ffb6` üzerinde yalnızca **Playwright E2E** kırmızıydı; nedeni
 `905db21`de düzeltilen iki gerçek axe ihlali ve seçici kırılganlığıydı. Yerel E2E
 engeli CI'da geçerli değildir: workflow imajında Playwright bağımlılıkları kurulur.
-Bu doküman commit'i yalnızca doküman değişikliği içerir; kod ağacı `9f3b639` ile
-aynıdır.
+
+Bu §10.2/§14 düzeltmesi `c439cf1` sonrasında ayrı bir doküman commit'i olarak
+eklenir; kod ağacını değiştirmez. Yeni doküman commit'inin kendi CI sonucu PR #65
+kontrollerinden okunur ve bu dokümanda önceden başarılı sayılmaz.
 
 ---
 
@@ -419,7 +426,9 @@ Sunum katmanı dışında iş mantığı dosyası değişmedi; `OperationsSectio
 | Erken commit'ler | `db38276`, `4605491`, `1413754`, `f2cbcc6`, `f74ffb6` |
 | Erişilebilirlik/E2E düzeltmesi | `905db21` |
 | Yerel E2E kanıtı / rapor güncellemesi | `9f3b639` |
-| CI durumu (`9f3b639`) | ✅ 4/4 kontrol başarılı (aşağıda §10.2) |
+| Tarihsel CI doğrulama noktası | `9f3b639` — ✅ 4/4 kontrol başarılı (§10.2) |
+| Son doğrulanan HEAD (CI) | `c439cf1` — ✅ 4/4 kontrol başarılı, 2026-11-24 (§10.2) |
+| Bu doküman düzeltmesi | `c439cf1` sonrası; yalnızca doküman, kod ağacı değişmez |
 | PR durumu | açık, merge edilmedi |
 
 Commit grupları:
@@ -436,6 +445,11 @@ Commit grupları:
 6. `erişilebilirlik + E2E düzeltmesi` — `905db21`: `.ws-stats`/`.ws-mini-grid` rolü,
    retry/iptal erişilebilir adları, hata metni tekrarının kaldırılması, E2E seçicileri,
    yeni birim testi.
+7. `dokümantasyon` — `9f3b639` (yerel E2E kanıtı/rapor güncellemesi), `c439cf1`
+   (§10.2/§14 CI doğrulama kanıtı) ve bu son doküman düzeltmesi; üçü de yalnızca
+   doküman değişikliğidir, kod ağacı `905db21`'den sonra değişmedi.
 
-> CI durumu `9f3b639` üzerinde doğrulandı (§10.2). Bu doküman commit'i yalnızca
-> doküman değişikliği ekler; kod ağacı değişmez. PR #65 açık ve merge edilmedi.
+> Son doğrulanan HEAD `c439cf1`; dört kontrol de başarılı (§10.2). Tarihsel
+> doğrulama noktası `9f3b639`'dur. Bu doküman düzeltmesi yalnızca doküman
+> değişikliği ekler, kod ağacı `c439cf1` ile aynı kalır; yeni doküman commit'inin
+> CI sonucu PR #65 kontrollerinden izlenir. PR #65 açık ve merge edilmedi.
