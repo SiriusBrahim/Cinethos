@@ -86,7 +86,7 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
       const json = asExternalRecord(await response.json());
       const payload = asExternalRecord(json?.data);
       const token = readString(payload?.token, 4096);
-      if (!token || !/^[A-Za-z0-9_.\-]+$/.test(token)) {
+      if (!token || !/^[A-Za-z0-9_.-]+$/.test(token)) {
         return { token: '', error: 'TVDB yanıtında geçerli bir JWT token bulunamadı.' };
       }
 
