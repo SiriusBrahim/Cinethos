@@ -46,7 +46,6 @@ import type {
   
   
   SyncFileInspection,
-  SyncOperationKind,
   SyncSideSummary,
   UserDataConflictItem,
 } from '../core/sync-display.ts';
