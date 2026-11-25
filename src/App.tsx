@@ -1,14 +1,8 @@
 import { useToasts } from './app/useToasts.ts';
 import {
-  ACTIVE_PROFILE_STORAGE,
   DIRTY_KEY,
   HIDE_LISTED_STORAGE_KEY,
-  PROFILES_STORAGE,
-  PROFILE_STORAGE,
-  deletedKeysStorageKey,
-  favActorsStorageKey,
   hasPersistedProfilesInStorage,
-  listStorageKey,
   loadActiveProfileId,
   loadDeletedKeys,
   loadDislikedCache,
@@ -16,7 +10,6 @@ import {
   loadInitialProfiles,
   loadProfileItems,
   loadProfilePreferences,
-  preferencesStorageKey,
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
 import { mergeRemoteDocument } from './app/server-sync.ts';
@@ -116,6 +109,12 @@ import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { createCatalogLoader } from './app/catalog-loader.ts';
+import { useAppPersistence } from './app/persistence/use-app-persistence.ts';
+import {
+  createProfileRecord,
+  resolveProfileSwitchState,
+  snapshotOutgoingProfile,
+} from './app/profile/profile-coordinator.ts';
 import { buildUserDataDocument } from './app/user-data-payload.ts';
 import { useLibraryController } from './hooks/useLibraryController.ts';
 import { hasPendingOfflineSync } from './services/offline-queue.ts';
@@ -473,58 +472,8 @@ export function App() {
     },
   });
 
-  // Sync to localStorage (quota-safe for >2 MB libraries: metadata-only in PROFILES_STORAGE + isolated watchlist write)
-  useEffect(() => {
-    try {
-      const lightweightProfiles = profiles.map((p) => ({
-        id: p.id,
-        name: p.id === activeProfileId ? profileName : p.name,
-        createdAt: p.createdAt || '',
-        isDemo: Boolean(p.isDemo),
-        favoriteActors: p.id === activeProfileId ? favoriteActors : p.favoriteActors || [],
-        items: [],
-      }));
-      localStorage.setItem(PROFILES_STORAGE, JSON.stringify(lightweightProfiles));
-      localStorage.setItem(ACTIVE_PROFILE_STORAGE, activeProfileId);
-      localStorage.setItem(PROFILE_STORAGE, profileName);
-      localStorage.setItem(preferencesStorageKey(activeProfileId), JSON.stringify(preferences));
-      localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(favoriteActors));
-      localStorage.setItem(deletedKeysStorageKey(activeProfileId), JSON.stringify(deletedKeys));
-    } catch (err) {
-      console.warn('LocalStorage metadata save warning:', err);
-    }
-
-    try {
-      localStorage.setItem(listStorageKey(activeProfileId), JSON.stringify(savedItems));
-    } catch {
-      try {
-        const compactSaved = savedItems.map((it) => ({
-          ...it,
-          overview: typeof it.overview === 'string' ? it.overview.slice(0, 120) : '',
-        }));
-        localStorage.setItem(listStorageKey(activeProfileId), JSON.stringify(compactSaved));
-      } catch {
-        // >5 MB yedeklerde tarayıcı localStorage kotası aşılabilir; tam veri React state'te ve data/cinetrack-data.json üzerinde korunur.
-      }
-    }
-
-    if (!hasHydratedLocalEffectRef.current) {
-      hasHydratedLocalEffectRef.current = true;
-      return;
-    }
-    if (applyingRemoteSnapshotRef.current) {
-      applyingRemoteSnapshotRef.current = false;
-      return;
-    }
-    isDirtyRef.current = true;
-    if (serverSyncReady) {
-      try {
-        localStorage.setItem(DIRTY_KEY, '1');
-      } catch {}
-    } else {
-      localEditedDuringStartupRef.current = true;
-    }
-  }, [
+  // F5.2-02: autosave, kota güvenliği ve kirli işaret kararı ortak persistence hook'unda.
+  const { persistProfilesBestEffort } = useAppPersistence({
     profiles,
     activeProfileId,
     profileName,
@@ -533,33 +482,13 @@ export function App() {
     favoriteActors,
     deletedKeys,
     serverSyncReady,
-  ]);
-
-  const persistProfilesBestEffort = useCallback((profilesList: Profile[]) => {
-    for (const p of profilesList) {
-      if (!p || !p.id) continue;
-      try {
-        localStorage.setItem(preferencesStorageKey(p.id), JSON.stringify(p.preferences || {}));
-        localStorage.setItem(favActorsStorageKey(p.id), JSON.stringify(p.favoriteActors || []));
-        localStorage.setItem(
-          deletedKeysStorageKey(p.id),
-          JSON.stringify(normalizeDeletedKeys(p.deleted_keys))
-        );
-      } catch {}
-      try {
-        localStorage.setItem(listStorageKey(p.id), JSON.stringify(p.items || []));
-      } catch {
-        try {
-          const compactSaved = (p.items || []).map((it) => ({
-            ...it,
-            overview: typeof it.overview === 'string' ? it.overview.slice(0, 120) : '',
-          }));
-          localStorage.setItem(listStorageKey(p.id), JSON.stringify(compactSaved));
-        } catch {}
-      }
-      void saveUserListsIdb(p.id, p.items || []);
-    }
-  }, []);
+    refs: {
+      hydratedRef: hasHydratedLocalEffectRef,
+      applyingRemoteSnapshotRef,
+      isDirtyRef,
+      localEditedDuringStartupRef,
+    },
+  });
 
   const buildCurrentLivePayloadFromRefs = useCallback(
     (): DataDocument =>
@@ -1481,20 +1410,14 @@ export function App() {
     clearServerTasteSignalCache();
     const newId = normalizeProfileId(rawNewId);
     if (!newId || newId === activeProfileId) return;
-    const outgoingId = activeProfileId;
-    const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
-    const updatedProfiles = profiles.map((p) =>
-      p.id === outgoingId
-        ? {
-            ...p,
-            name: profileName,
-            items: savedItems,
-            preferences,
-            favoriteActors: favoriteActorsRef.current || [],
-            ...(Object.keys(outgoingDeleted).length > 0 ? { deleted_keys: outgoingDeleted } : {}),
-          }
-        : p
-    );
+    const updatedProfiles = snapshotOutgoingProfile(profiles, {
+      activeProfileId,
+      profileName,
+      savedItems,
+      preferences,
+      favoriteActors: favoriteActorsRef.current || [],
+      deletedKeys: deletedKeysRef.current,
+    });
     profilesRef.current = updatedProfiles;
     setProfiles(updatedProfiles);
     persistProfilesBestEffort(updatedProfiles);
@@ -1502,29 +1425,22 @@ export function App() {
     setActiveProfileId(newId);
     activeProfileIdRef.current = newId;
     const target = updatedProfiles.find((p) => p.id === newId);
-    const nextName = target?.name || 'Profilim';
-    profileNameRef.current = nextName;
-    setProfileName(nextName);
-    const items = target?.items?.length ? target.items : loadProfileItems(newId);
-    savedItemsRef.current = items;
-    setSavedItems(items);
-    const nextPrefs =
-      target?.preferences &&
-      ((target.preferences.disliked?.length || 0) > 0 ||
-        (target.preferences.hidden?.length || 0) > 0 ||
-        (target.preferences.providers?.length || 0) > 0 ||
-        Boolean(target.preferences.mood) ||
-        Boolean(target.preferences.reminders))
-        ? target.preferences
-        : loadProfilePreferences(newId);
-    preferencesRef.current = nextPrefs;
-    setPreferences(nextPrefs);
-    const favs = target?.favoriteActors?.length ? target.favoriteActors : loadFavoriteActors(newId);
-    favoriteActorsRef.current = favs;
-    setFavoriteActors(favs);
-    const targetDeleted = normalizeDeletedKeys(target?.deleted_keys || loadDeletedKeys(newId));
-    deletedKeysRef.current = targetDeleted;
-    setDeletedKeys(targetDeleted);
+    const next = resolveProfileSwitchState(target, newId, {
+      loadItems: loadProfileItems,
+      loadPreferences: loadProfilePreferences,
+      loadFavoriteActors: loadFavoriteActors,
+      loadDeletedKeys: loadDeletedKeys,
+    });
+    profileNameRef.current = next.name;
+    setProfileName(next.name);
+    savedItemsRef.current = next.items;
+    setSavedItems(next.items);
+    preferencesRef.current = next.preferences;
+    setPreferences(next.preferences);
+    favoriteActorsRef.current = next.favoriteActors;
+    setFavoriteActors(next.favoriteActors);
+    deletedKeysRef.current = next.deletedKeys;
+    setDeletedKeys(next.deletedKeys);
     const nextTasteMap = loadPersistentTasteMap(newId);
     tasteMapRef.current = nextTasteMap;
     setTasteMap(nextTasteMap);
@@ -1536,31 +1452,17 @@ export function App() {
   };
 
   const handleCreateProfile = (name: string, isDemo = false) => {
-    const outgoingId = activeProfileId;
-    const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
-    const newId = normalizeProfileId(`profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)!;
-    const newProf: Profile = {
-      id: newId,
-      name,
-      createdAt: new Date().toISOString(),
-      preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
-      items: [],
-      favoriteActors: [],
-      isDemo,
-    };
+    const newProf = createProfileRecord({ name, isDemo });
+    const newId = newProf.id;
     const nextProfiles = [
-      ...profiles.map((p) =>
-        p.id === outgoingId
-          ? {
-              ...p,
-              name: profileName,
-              items: savedItems,
-              preferences,
-              favoriteActors: favoriteActorsRef.current || [],
-              ...(Object.keys(outgoingDeleted).length > 0 ? { deleted_keys: outgoingDeleted } : {}),
-            }
-          : p
-      ),
+      ...snapshotOutgoingProfile(profiles, {
+        activeProfileId,
+        profileName,
+        savedItems,
+        preferences,
+        favoriteActors: favoriteActorsRef.current || [],
+        deletedKeys: deletedKeysRef.current,
+      }),
       newProf,
     ];
     profilesRef.current = nextProfiles;
