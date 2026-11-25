@@ -64,11 +64,9 @@ import {
   normalizeSavedItem,
   normalizeDataDocument,
   resolveAirDate,
-  reminderDaysUntil,
   buildTasteProfileV3,
   findSavedItem,
   makeMediaKey,
-  isItemSaved,
   filterHistoryByType,
   TARGET_RECOMMENDATION_COUNT,
   FavoriteActorInfo,
@@ -78,9 +76,6 @@ import {
   PersistentTasteMapData,
   TasteProfileSummary,
   buildTasteProfileSummary,
-  matchesSelectedGenre,
-  HIDE_LISTED_CATEGORIES,
-  filterHiddenUserRegisteredItems,
   normalizeDeletedKeys,
   hydrateDiscoveryHistoryIdb,
   hydrateCandidatePoolsIdb,
@@ -136,7 +131,6 @@ import {
 } from './services/storage-idb.ts';
 import {
   registerLocalSavedSeriesHints,
-  computeUserSeriesUniverses,
 } from './services/series-service.ts';
 import {
   getStockMovies,
@@ -152,15 +146,18 @@ import {
   enforcePosterCacheQuota,
   requestServiceWorkerPosterPurge,
 } from './services/poster-cache-manager.ts';
-import { getItemEncodingSync, maintainEncodingsDepot } from './services/encoding-service.ts';
+import { maintainEncodingsDepot } from './services/encoding-service.ts';
 import { runIdbSchemaMigrationsOnce } from './services/idb-schema-version.ts';
-import { computeProfileCentroid, cosineSimilarity } from './core/encoding.ts';
 import {
   checkWeeklyAutoBackup,
   recordProfileChangeAndMaybeBackup,
 } from './services/auto-backup-service.ts';
 import { startIdleStockEnrichment } from './services/idle-enrichment-service.ts';
 import { displayTitle } from './utils/helpers.ts';
+import { collectDueReminders } from './app/release-reminders.ts';
+import { buildSeriesUniverseData } from './app/series-universe.ts';
+import { getCatalogTitles } from './app/catalog-titles.ts';
+import { buildDisplayedItems } from './app/displayed-items.ts';
 const EMPTY_REASONS_MAP = new Map<string, string>();
 
 export function App() {
@@ -956,34 +953,20 @@ export function App() {
     }
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const due = collectDueReminders(currentItems, currentPrefs, today);
     const newlyNotified: string[] = [];
 
-    for (const item of currentItems) {
-      if (item.status === 'completed') continue;
-      const airDate = resolveAirDate(item);
-      if (!airDate) continue;
-      const days = reminderDaysUntil(airDate, today);
-      if (days === null) continue;
-      const key = `${item.media_type}:${item.id}:${airDate}`;
-      if (currentPrefs.notified.includes(key) || newlyNotified.includes(key)) continue;
-
-      const next = item.next_episode_to_air;
-      const episodeTag =
-        item.media_type === 'tv' && next?.air_date === airDate && next.season_number
-          ? ` (S${next.season_number}B${next.episode_number})`
-          : '';
-      const when = days === 0 ? 'bugün' : `${days} gün içinde`;
-
+    for (const reminder of due) {
       const notification = new Notification('Cinethos yayın hatırlatıcısı', {
-        body: `${displayTitle(item)} ${when} yayınlanıyor${episodeTag}.`,
+        body: reminder.body,
       });
       notification.onclick = () => {
         window.focus();
-        setDetailItem(item);
+        setDetailItem(reminder.item);
         notification.close();
       };
 
-      newlyNotified.push(key);
+      newlyNotified.push(reminder.key);
     }
 
     if (newlyNotified.length > 0) {
@@ -1314,176 +1297,59 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: detay zenginleştirme yalnızca liste uzunluğu değişince çalışmalı
   }, [savedItems.length]);
 
-  // Filter & sort displayed items
-  const filterAndSortItems = (items: any[]) => {
-    let filtered = items.filter((item) => {
-      if (item.media_type !== 'movie' && item.media_type !== 'tv') return false;
-      if (selectedType !== 'all' && item.media_type !== selectedType) return false;
-      if (selectedGenre && !matchesSelectedGenre(item, selectedGenre)) return false;
-      return true;
-    });
-
-    if (tab === 'discover' && category !== 'for-you' && selectedSort === 'popular') {
-      return filtered;
-    }
-
-    if (selectedSort === 'similarity') {
-      const savedEncodings = savedItemsRef.current.map((it) => ({
-        encoding: getItemEncodingSync(it),
-        personal_rating: it.personal_rating,
-      }));
-      const profileCentroid = computeProfileCentroid(savedEncodings);
-      if (profileCentroid.length > 0) {
-        const simMap = new Map<string, number>();
-        for (const it of filtered) {
-          const enc = getItemEncodingSync(it);
-          const sim = cosineSimilarity(profileCentroid, enc.denseVector);
-          simMap.set(`${it.media_type}:${it.id}`, sim);
-        }
-        filtered = [...filtered].sort(
-          (a, b) =>
-            (simMap.get(`${b.media_type}:${b.id}`) ?? 0) -
-            (simMap.get(`${a.media_type}:${a.id}`) ?? 0)
-        );
-      }
-    } else if (selectedSort === 'rating') {
-      filtered = [...filtered].sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
-    } else if (selectedSort === 'title') {
-      filtered = [...filtered].sort((a, b) =>
-        displayTitle(a).localeCompare(displayTitle(b), 'tr')
-      );
-    } else if (selectedSort === 'recent') {
-      filtered = [...filtered].sort((a, b) =>
-        tab === 'list'
-          ? (b.addedAt || '').localeCompare(a.addedAt || '')
-          : (b.release_date || b.first_air_date || '').localeCompare(
-              a.release_date || a.first_air_date || ''
-            )
-      );
-    }
-    return filtered;
-  };
-
   // FEAT-01 #10 & #11: Compute missing franchise parts strictly for franchises present in user's savedItems
   const seriesUniverseData = React.useMemo(() => {
     void seriesIndexVersion;
     const effectiveDemo = Boolean(activeProfile?.isDemo || tmdbSourceMeta.source === 'demo');
-    const universes = computeUserSeriesUniverses(savedItems, {
+    return buildSeriesUniverseData({
+      savedItems,
+      disliked: preferences.disliked,
+      hidden: preferences.hidden,
       includeStubs: !effectiveDemo,
-      dislikedKeys: preferences.disliked,
-      hiddenKeys: preferences.hidden,
     });
-    const items: any[] = [];
-    const reasonsMap = new Map<string, string>();
-    const seenKeys = new Set<string>();
-    const dislikedSet = new Set(preferences.disliked || []);
-    const hiddenSet = new Set(preferences.hidden || []);
-
-    for (const u of universes) {
-      const ownedTitles = u.userOwnedParts
-        .slice(0, 2)
-        .map((p) => p.title || p.name)
-        .filter(Boolean)
-        .join(', ');
-      const reason = ownedTitles
-        ? `${u.collection.name} · Listenizdeki "${ownedTitles}" ile aynı seride`
-        : `${u.collection.name} serisinin devam halkası`;
-
-      for (const part of u.userMissingParts) {
-        const mType = part.media_type === 'tv' ? 'tv' : 'movie';
-        const key = makeMediaKey(mType, part.id);
-        if (seenKeys.has(key) || dislikedSet.has(key) || hiddenSet.has(key)) continue;
-        if (isItemSaved(savedItems, part, mType)) continue;
-        seenKeys.add(key);
-        items.push({
-          ...part,
-          media_type: mType,
-          belongs_to_collection: mType === 'movie' ? { id: u.collection.id, name: u.collection.name } : undefined,
-        });
-        reasonsMap.set(key, reason);
-      }
-    }
-
-    return { items, reasonsMap, universesCount: universes.length };
   }, [savedItems, preferences.disliked, preferences.hidden, seriesIndexVersion, activeProfile?.isDemo, tmdbSourceMeta.source]);
 
-  const displayedItems = React.useMemo(() => {
-    if (tab === 'discover') {
-      if (category === 'for-you' && forYouSubTab === 'series' && !query.trim()) {
-        return filterAndSortItems(seriesUniverseData.items);
-      }
-
-      const rawSource = category === 'for-you' ? forYouItems : catalogItems;
-      const shouldHideUserRegistered =
-        !query.trim() &&
-        hideListedItems &&
-        (HIDE_LISTED_CATEGORIES as readonly string[]).includes(category);
-
-      const preFiltered = shouldHideUserRegistered
-        ? filterHiddenUserRegisteredItems(rawSource, {
-            savedItems,
-            preferences,
-            tasteMap,
-            hideListedItems: true,
-          })
-        : rawSource;
-
-      const filtered = preFiltered.filter((item) => {
-        const itemType = item.media_type || (item.title ? 'movie' : 'tv');
-        const key = makeMediaKey(itemType, item.id);
-        if (preferences.disliked.includes(key)) return false;
-        if (preferences.hidden?.includes(key)) return false;
-
-        // In Sana Özel (recommendations), strictly filter out items already in the user's list
-        if (category === 'for-you') {
-          if (isItemSaved(savedItems, item, itemType)) return false;
-        }
-
-        return true;
-      });
-      return filterAndSortItems(filtered);
-    }
-
-    if (listStatus === 'disliked') {
-      const activeDisliked = dislikedItems.filter((item) =>
-        preferences.disliked.includes(`${item.media_type}:${item.id}`)
-      );
-      return filterAndSortItems(activeDisliked);
-    }
-
-    let list = savedItems;
-    if (listStatus === 'upcoming') {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      list = savedItems
-        .filter((item) => {
-          const airDate = resolveAirDate(item);
-          return airDate && airDate >= todayStr;
-        })
-        .sort((a, b) => resolveAirDate(a).localeCompare(resolveAirDate(b)));
-    } else if (listStatus !== 'all') {
-      list = savedItems.filter((item) => item.status === listStatus);
-    }
-    return filterAndSortItems(list);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: liste filtresi yalnızca tab/listStatus değişiminde yeniden hesaplanmalı
-  }, [
-    tab,
-    category,
-    forYouSubTab,
-    query,
-    seriesUniverseData.items,
-    forYouItems,
-    catalogItems,
-    hideListedItems,
-    savedItems,
-    preferences.disliked,
-    preferences.hidden,
-    tasteMap,
-    dislikedItems,
-    listStatus,
-    selectedType,
-    selectedGenre,
-    selectedSort,
-  ]);
+  const displayedItems = React.useMemo(
+    () =>
+      buildDisplayedItems({
+        tab,
+        category,
+        forYouSubTab,
+        query,
+        hideListedItems,
+        listStatus,
+        selectedType,
+        selectedGenre,
+        selectedSort,
+        savedItems,
+        preferences,
+        tasteMap,
+        dislikedItems,
+        forYouItems,
+        catalogItems,
+        seriesItems: seriesUniverseData.items,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: liste filtresi yalnızca tab/listStatus değişiminde yeniden hesaplanmalı
+    [
+      tab,
+      category,
+      forYouSubTab,
+      query,
+      seriesUniverseData.items,
+      forYouItems,
+      catalogItems,
+      hideListedItems,
+      savedItems,
+      preferences.disliked,
+      preferences.hidden,
+      tasteMap,
+      dislikedItems,
+      listStatus,
+      selectedType,
+      selectedGenre,
+      selectedSort,
+    ]
+  );
 
   // FEAT-02 #6: Record unsaved items displayed on the Discover tab into ct:surfaced FIFO ring history
   // REG-01: Never mark local ct:stock browsing as surfaced so stock items do not self-poison cooldowns
@@ -1576,79 +1442,29 @@ export function App() {
     void saveUserListsIdb(activeProfileId, savedItems);
   }, [activeProfileId, savedItems]);
 
-  // Header and Catalog Section Titles
-  const getCatalogTitles = () => {
-    if (tab === 'list') {
-      const typeLabel =
-        selectedType === 'movie'
-          ? 'film'
-          : selectedType === 'tv'
-          ? 'dizi'
-          : 'içerik (film + dizi)';
-      const statusTitles: Record<string, { title: string; count: number }> = {
-        all: { title: 'Tüm takip listem', count: allListCount },
-        watching: { title: 'Şu an izlediklerim', count: watchingCount },
-        watchlist: { title: 'İzlenecekler listem', count: watchlistCount },
-        completed: { title: 'Tamamladıklarım', count: completedCount },
-        upcoming: { title: 'Yaklaşan yayınlar', count: upcomingCount },
-        actors: { title: 'Favori oyuncularım', count: favoriteActors.length },
-        disliked: { title: 'İlgilenmediğim içerikler', count: preferences.disliked.length },
-      };
-      const info = statusTitles[listStatus] || statusTitles.all;
-      if (listStatus === 'actors') {
-        return {
-          title: `${info.title} (${info.count})`,
-          description: `Takip ettiğin ${info.count} favori oyuncu ve senin için kişiselleştirilmiş film & dizi önerileri`,
-        };
-      }
-      return {
-        title: `${info.title} (${info.count})`,
-        description: `Listenizde toplam ${info.count} kayıtlı ${typeLabel} bulunuyor`,
-      };
-    }
-    if (query) {
-      return {
-        title: `"${query}" için arama sonuçları`,
-        description: 'Sonuçlar doğrudan TMDB arama servisinden alınır',
-      };
-    }
-    const catMap: Record<string, { title: string; description: string }> = {
-      trending: { title: 'Güncel trendler', description: 'TMDB\'den canlı olarak yükleniyor' },
-      'for-you': {
-        title: forYouSubTab === 'series' ? 'Sana özel · Seriler' : 'Sana özel',
-        description:
-          forYouSubTab === 'series'
-            ? 'Listenizdeki film ve dizilerin aynı evrendeki diğer halkaları ve devam yapımları'
-            : forYouExplanation ||
-              (selectedGenre && genresMap[Number(selectedGenre)]
-                ? `${genresMap[Number(selectedGenre)]} türünde zevk profiline göre oluşturulan 20 öneri`
-                : selectedType === 'movie'
-                ? 'Film izleme geçmişin ve kişisel puanlarından oluşturulan 20 film önerisi'
-                : selectedType === 'tv'
-                ? 'Dizi izleme geçmişin ve kişisel puanlarından oluşturulan 20 dizi önerisi'
-                : 'İzleme listen ve kişisel puanlarından oluşturulan 20 öneri'),
-      },
-      gems: {
-        title: 'Keşfedilmemiş mücevherler',
-        description: 'Yüksek puanlı, daha az popüler ve keşfedilmeyi bekleyen film ve diziler',
-      },
-      upcoming: { title: 'Yakında ve yayında', description: 'Yaklaşan filmler ve yayındaki diziler' },
-      'popular-movies': { title: 'Popüler filmler', description: 'TMDB\'de en çok ilgi gören filmler' },
-      'popular-tv': { title: 'Popüler diziler', description: 'TMDB\'de en çok ilgi gören diziler' },
-      'top-rated': { title: 'Yüksek puanlı filmler', description: 'TMDB puanına göre sıralanır' },
-      stock: {
-        title: `Keşfet — ${stockStats.movieCount} Film · ${stockStats.tvCount} Dizi${
-          tvdbCount > 0 ? ` (TVDB: ${tvdbCount})` : ''
-        }`,
-        description: `Listenizde olmayan, çevrimdışı erişime hazır kişisel aday havuzu (${
-          tvdbCount > 0 ? `${tvdbCount} TVDB yapımı dahil` : 'TMDB ve TVDB kaynaklı'
-        }) ve zevk vektörü sıralaması`,
-      },
-    };
-    return catMap[category] || catMap.trending;
-  };
-
-  const { title: catalogTitle, description: catalogDescription } = getCatalogTitles();
+  // Header and Catalog Section Titles (F5.1-01: saf üretici app/catalog-titles.ts içinde)
+  const { title: catalogTitle, description: catalogDescription } = getCatalogTitles({
+    tab,
+    query,
+    listStatus,
+    selectedType,
+    category,
+    forYouSubTab,
+    forYouExplanation,
+    selectedGenre,
+    genresMap,
+    stockStats,
+    tvdbCount,
+    counts: {
+      allListCount,
+      watchingCount,
+      watchlistCount,
+      completedCount,
+      upcomingCount,
+      favoriteActorsCount: favoriteActors.length,
+      dislikedCount: preferences.disliked.length,
+    },
+  });
 
   // Profile Management
   const handleSaveProfileName = (newName: string) => {
