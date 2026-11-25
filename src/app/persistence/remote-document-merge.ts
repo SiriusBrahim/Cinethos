@@ -14,7 +14,7 @@
  * bağlamı `useCallback`'e bağlayan ince React kabuğudur.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { mergeRemoteDocument } from '../server-sync.ts';
 import { DIRTY_KEY } from '../profile-storage.ts';
@@ -167,19 +167,28 @@ export function useRemoteDocumentMerge({
   refs,
   setters,
 }: UseRemoteDocumentMergeParams): RemoteDocumentMergeController {
+  // ref/setter paketleri her render'da yeni nesne kimliğiyle gelir; App.tsx'teki
+  // orijinal callback'in bağımlılık kimliği korunmalıdır — aksi hâlde callback
+  // her render'da yeniden üretilir ve buna bağlı effect'ler (başlangıç
+  // senkronu vb.) her render'da yeniden tetiklenir. Bu yüzden paketler en
+  // güncel hâlleriyle ref'te tutulur; useCallback yalnızca orijinal iki
+  // bağımlılığa bağlıdır.
+  const payloadRef = useRef({ refs, setters });
+  payloadRef.current = { refs, setters };
+
   const mergeRemoteDocumentIntoState = useCallback<MergeRemoteDocumentIntoState>(
     (rawRemoteDoc, options = {}) =>
       applyMergedRemoteDocumentIntoState(
         {
           buildLivePayloadFromRefs: buildLivePayloadFromRefs,
           persistProfilesBestEffort,
-          refs,
-          setters,
+          refs: payloadRef.current.refs,
+          setters: payloadRef.current.setters,
         },
         rawRemoteDoc,
         options
       ),
-    [buildLivePayloadFromRefs, persistProfilesBestEffort, refs, setters]
+    [buildLivePayloadFromRefs, persistProfilesBestEffort]
   );
 
   return { mergeRemoteDocumentIntoState };

@@ -224,3 +224,22 @@ test('F5.3-03 hook bağımlılıkları açıklı: useRemoteDocumentMerge çağr�
   const sync = await import('../src/app/server-sync.ts');
   assert.equal(typeof sync.mergeRemoteDocument, 'function');
 });
+
+test('F5.3-03 hook useCallback bağımlılık kimliği orijinal callback ile aynıdır', async () => {
+  // REGRESYON KAPISI: App.tsx'teki orijinal mergeRemoteDocumentIntoState
+  // useCallback'i yalnızca [buildCurrentLivePayloadFromRefs,
+  // persistProfilesBestEffort] bağımlıydı. ref/setter paketleri her render'da
+  // yeni nesne kimliğiyledir; hook bunları dep array'e alırsa callback her
+  // render'da yeniden üretilir ve bağlı effect'ler (başlangıç senkronu) her
+  // render'da tetiklenir — CI Playwright E2E'de 409 çakışma banner
+  // regresyonu olarak gözlemlenmişti. Kaynak üzerinden bu kısıt sabitlenir.
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(
+    new URL('../src/app/persistence/remote-document-merge.ts', import.meta.url),
+    'utf8'
+  );
+  const match = source.match(/useCallback<MergeRemoteDocumentIntoState>[\s\S]*?\[([^\]]*)\]/);
+  assert.ok(match, 'useCallback<MergeRemoteDocumentIntoState> dep array bulunamadı');
+  const deps = match[1].split(',').map((d) => d.trim()).filter(Boolean);
+  assert.deepEqual(deps, ['buildLivePayloadFromRefs', 'persistProfilesBestEffort']);
+});
