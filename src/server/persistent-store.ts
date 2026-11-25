@@ -27,7 +27,6 @@ export type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfile
 import { normalizeProfileId } from '../core/profile-id.ts';
 import {
   cleanupStaleTempFiles,
-  CorruptJsonFileError,
   FileWriteSerializer,
   readJsonFileWithRecovery,
   readJsonFileWithRecoveryAsync,
@@ -39,7 +38,6 @@ import {
   computeDerivedProfileContentHash,
   DERIVED_PROFILE_SCHEMA_VERSION,
   normalizeDerivedProfileItem,
-  validateDerivedProfileCache,
   type DerivedProfileValidationResult,
 } from '../core/derived-profile-cache.ts';
 import {
@@ -63,6 +61,22 @@ import {
   recoverInterruptedFileStates,
   saveSyncStateSnapshot,
 } from './persistent-store/store-state.ts';
+import {
+  ensureCatalogFiles as ensureCatalogFilesImpl,
+  ensureCatalogFilesAsync as ensureCatalogFilesAsyncImpl,
+  readCatalog as readCatalogImpl,
+  readCatalogAsync as readCatalogAsyncImpl,
+  readCatalogManifest as readCatalogManifestImpl,
+  readCatalogManifestAsync as readCatalogManifestAsyncImpl,
+  type CatalogStoreContext,
+} from './persistent-store/catalog-store.ts';
+import {
+  readDerivedProfile as readDerivedProfileImpl,
+  readDerivedProfileAsync as readDerivedProfileAsyncImpl,
+  readValidatedDerivedProfile as readValidatedDerivedProfileImpl,
+  readValidatedDerivedProfileAsync as readValidatedDerivedProfileAsyncImpl,
+  type DerivedProfileStoreContext,
+} from './persistent-store/derived-profile-store.ts';
 
 import type {
   GitHubSyncErrorCategory,
@@ -646,170 +660,51 @@ export class PersistentDataStore {
 
   // --- CATALOG OPERATIONS ---
 
+  /** F5.2-03: katalog okuma/hazırlama yolu alt mağazaya delege edilir. */
+  private catalogStoreContext(): CatalogStoreContext {
+    return {
+      catalogDir: this.catalogDir,
+      moviesFile: this.moviesFile,
+      tvFile: this.tvFile,
+      manifestFile: this.manifestFile,
+    };
+  }
+
+  private derivedProfileStoreContext(): DerivedProfileStoreContext {
+    return { profileFilePath: (profileId) => this.getProfileFilePath(profileId) };
+  }
+
   public readCatalog(
     mediaType: 'movie' | 'tv',
     options: { allowEmptyOnCorrupt?: boolean } = {}
   ): Record<string, CatalogRecord> {
-    const file = mediaType === 'movie' ? this.moviesFile : this.tvFile;
-    const recovery = readJsonFileWithRecovery<Record<string, CatalogRecord>>(file, {
-      backupPaths: [`${file}.bak`],
-      validate: (raw) => (isPlainRecordObject(raw) ? (raw as Record<string, CatalogRecord>) : null),
-      label: path.basename(file),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowEmptyOnCorrupt) {
-        return {};
-      }
-      throw new CorruptJsonFileError(file, recovery.error);
-    }
-
-    return {};
+    return readCatalogImpl(this.catalogStoreContext(), mediaType, options);
   }
 
   public readCatalogManifest(): CatalogManifest | null {
-    const recovery = readJsonFileWithRecovery<CatalogManifest>(this.manifestFile, {
-      backupPaths: [`${this.manifestFile}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) && typeof raw.contentHash === 'string'
-          ? // F5.2-05 istisnası: yalnızca `contentHash` doğrulanır (mevcut davranış);
-            // şema genişletilirse bu dar geçiş kaldırılmalıdır.
-            (raw as unknown as CatalogManifest)
-          : null,
-      label: 'manifest.json',
-      restoreRecoveredToTarget: true,
-    });
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-    return null;
+    return readCatalogManifestImpl(this.catalogStoreContext());
   }
 
   public async readCatalogAsync(
     mediaType: 'movie' | 'tv',
     options: { allowEmptyOnCorrupt?: boolean } = {}
   ): Promise<Record<string, CatalogRecord>> {
-    const file = mediaType === 'movie' ? this.moviesFile : this.tvFile;
-    const recovery = await readJsonFileWithRecoveryAsync<Record<string, CatalogRecord>>(file, {
-      backupPaths: [`${file}.bak`],
-      validate: (raw) => (isPlainRecordObject(raw) ? (raw as Record<string, CatalogRecord>) : null),
-      label: path.basename(file),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowEmptyOnCorrupt) {
-        return {};
-      }
-      throw new CorruptJsonFileError(file, recovery.error);
-    }
-
-    return {};
+    return readCatalogAsyncImpl(this.catalogStoreContext(), mediaType, options);
   }
 
   public async readCatalogManifestAsync(): Promise<CatalogManifest | null> {
-    const recovery = await readJsonFileWithRecoveryAsync<CatalogManifest>(this.manifestFile, {
-      backupPaths: [`${this.manifestFile}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) && typeof raw.contentHash === 'string'
-          ? // F5.2-05 istisnası: yalnızca `contentHash` doğrulanır (mevcut davranış).
-            (raw as unknown as CatalogManifest)
-          : null,
-      label: 'manifest.json',
-      restoreRecoveredToTarget: true,
-    });
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-    return null;
+    return readCatalogManifestAsyncImpl(this.catalogStoreContext());
   }
 
   /**
    * Yerel katalog dizini ve dosyalarının (movies.json, tv.json, manifest.json) varlığını garanti eder.
    */
   public ensureCatalogFiles(): void {
-    if (!existsSync(this.catalogDir)) mkdirSync(this.catalogDir, { recursive: true });
-    if (!existsSync(this.moviesFile)) {
-      writeJsonFileAtomic(this.moviesFile, '{}', {
-        backupPath: `${this.moviesFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!existsSync(this.tvFile)) {
-      writeJsonFileAtomic(this.tvFile, '{}', {
-        backupPath: `${this.tvFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!existsSync(this.manifestFile)) {
-      const movies = this.readCatalog('movie', { allowEmptyOnCorrupt: true });
-      const tv = this.readCatalog('tv', { allowEmptyOnCorrupt: true });
-      const serializedMovies = stringifyDeterministic(movies);
-      const serializedTv = stringifyDeterministic(tv);
-      const combinedHash = hashContent(serializedMovies + serializedTv);
-      const manifest: CatalogManifest = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        movieCount: Object.keys(movies).length,
-        tvCount: Object.keys(tv).length,
-        contentHash: combinedHash,
-      };
-      writeJsonFileAtomic(this.manifestFile, stringifyDeterministic(manifest), {
-        backupPath: `${this.manifestFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
+    ensureCatalogFilesImpl(this.catalogStoreContext());
   }
 
   public async ensureCatalogFilesAsync(): Promise<void> {
-    await fsPromises.mkdir(this.catalogDir, { recursive: true });
-    const existsAsync = async (p: string) => {
-      try {
-        await fsPromises.access(p);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    if (!(await existsAsync(this.moviesFile))) {
-      await writeJsonFileAtomicAsync(this.moviesFile, '{}', {
-        backupPath: `${this.moviesFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!(await existsAsync(this.tvFile))) {
-      await writeJsonFileAtomicAsync(this.tvFile, '{}', {
-        backupPath: `${this.tvFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!(await existsAsync(this.manifestFile))) {
-      const movies = await this.readCatalogAsync('movie', { allowEmptyOnCorrupt: true });
-      const tv = await this.readCatalogAsync('tv', { allowEmptyOnCorrupt: true });
-      const serializedMovies = stringifyDeterministic(movies);
-      const serializedTv = stringifyDeterministic(tv);
-      const combinedHash = hashContent(serializedMovies + serializedTv);
-      const manifest: CatalogManifest = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        movieCount: Object.keys(movies).length,
-        tvCount: Object.keys(tv).length,
-        contentHash: combinedHash,
-      };
-      await writeJsonFileAtomicAsync(this.manifestFile, stringifyDeterministic(manifest), {
-        backupPath: `${this.manifestFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
+    await ensureCatalogFilesAsyncImpl(this.catalogStoreContext());
   }
 
   /**
@@ -1409,31 +1304,7 @@ export class PersistentDataStore {
     profileId: string,
     options: { allowNullOnCorrupt?: boolean } = {}
   ): DerivedProfileDocument | null {
-    const filePath = this.getProfileFilePath(profileId);
-    const recovery = readJsonFileWithRecovery<DerivedProfileDocument>(filePath, {
-      backupPaths: [`${filePath}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) &&
-        typeof raw.profileId === 'string' &&
-        isPlainRecordObject(raw.items)
-          ? // F5.2-05 istisnası: profil kimliği ve öğe haritası doğrulanır; tam
-            // şema doğrulaması `readValidatedDerivedProfile` içinde yapılır.
-            (raw as unknown as DerivedProfileDocument)
-          : null,
-      label: path.basename(filePath),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowNullOnCorrupt) return null;
-      throw new CorruptJsonFileError(filePath, recovery.error);
-    }
-
-    return null;
+    return readDerivedProfileImpl(this.derivedProfileStoreContext(), profileId, options);
   }
 
   /**
@@ -1448,17 +1319,11 @@ export class PersistentDataStore {
       expectedSchemaVersion?: number;
     }
   ): DerivedProfileValidationResult {
-    const rawDoc = this.readDerivedProfile(profileId, { allowNullOnCorrupt: true });
-    if (!rawDoc) {
-      return { valid: false, reason: 'missing_document' };
-    }
-    return validateDerivedProfileCache(rawDoc, {
+    return readValidatedDerivedProfileImpl(
+      this.derivedProfileStoreContext(),
       profileId,
-      profileFingerprint: expected.profileFingerprint,
-      algorithmVersion: expected.algorithmVersion,
-      sourceCatalogHash: expected.sourceCatalogHash,
-      expectedSchemaVersion: expected.expectedSchemaVersion,
-    });
+      expected
+    );
   }
 
   public upsertDerivedProfile(
@@ -1597,29 +1462,7 @@ export class PersistentDataStore {
     profileId: string,
     options: { allowNullOnCorrupt?: boolean } = {}
   ): Promise<DerivedProfileDocument | null> {
-    const filePath = this.getProfileFilePath(profileId);
-    const recovery = await readJsonFileWithRecoveryAsync<DerivedProfileDocument>(filePath, {
-      backupPaths: [`${filePath}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) &&
-        typeof raw.profileId === 'string' &&
-        isPlainRecordObject(raw.items)
-          ? // F5.2-05 istisnası: profil kimliği ve öğe haritası doğrulanır; tam
-            // şema doğrulaması `readValidatedDerivedProfile` içinde yapılır.
-            (raw as unknown as DerivedProfileDocument)
-          : null,
-      label: path.basename(filePath),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowNullOnCorrupt) return null;
-      throw new CorruptJsonFileError(filePath, recovery.error);
-    }
-    return null;
+    return readDerivedProfileAsyncImpl(this.derivedProfileStoreContext(), profileId, options);
   }
 
   public async readValidatedDerivedProfileAsync(
@@ -1631,17 +1474,11 @@ export class PersistentDataStore {
       expectedSchemaVersion?: number;
     }
   ): Promise<DerivedProfileValidationResult> {
-    const rawDoc = await this.readDerivedProfileAsync(profileId, { allowNullOnCorrupt: true });
-    if (!rawDoc) {
-      return { valid: false, reason: 'missing_document' };
-    }
-    return validateDerivedProfileCache(rawDoc, {
+    return readValidatedDerivedProfileAsyncImpl(
+      this.derivedProfileStoreContext(),
       profileId,
-      profileFingerprint: expected.profileFingerprint,
-      algorithmVersion: expected.algorithmVersion,
-      sourceCatalogHash: expected.sourceCatalogHash,
-      expectedSchemaVersion: expected.expectedSchemaVersion,
-    });
+      expected
+    );
   }
 
   public async upsertDerivedProfileAsync(
