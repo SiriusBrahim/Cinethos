@@ -230,3 +230,44 @@ backup-parse}.ts`, `src/core/series-types.ts`, `src/core/relationship-ports.ts`,
 3. **sync-core.ts:** sınıf hâlâ 3.438 satır; `inspect`/`pull`/`push`/`reconcile` metotları taşınmadı.
 4. **F5.1-04:** `spec-v7` ve `phases-all` içindeki kullanıcıya görünen metinler JSX kaynağından okunuyor; DOM tabanlı test altyapısı eklenirse `renderToStaticMarkup`/RTL ile değiştirilmeli.
 5. **`any` azaltma:** GitHub sınırı ve TVDB sınırı temizlendi; `persistent-store.ts` içindeki `any` yanıt gövdeleri (yaklaşık 20 nokta) sonraki aday.
+
+---
+
+## 8. Aşama 5.2 — Kalan mimari borçların çözülmesi (25 Kas 2026, bu oturum)
+
+**Başlangıç HEAD:** `7224be0` · **Dal:** `remediation/full-project-remediation` · **PR:** #65 (açık, merge edilmedi)
+**Ortam:** Node 26.13.1 / npm 11.20.0. Tüm kapılar bu ağaçta çalıştırıldı; veri koruması `scripts/run-tests.mjs` sha256 kapısıyla her koşuda doğrulandı.
+
+### 8.1 İş bazında sonuç
+
+| Madde | Durum | Yapılan |
+|---|---|---|
+| **F5.2-01** Kaynağa bağımlı UI testleri | ✅ Tamamlandı | Sabit arayüz metinleri tek sözleşmede (`src/app/ui-copy.ts`). Durum yüzeyleri saf sunum bileşenlerine ayrıldı (`src/components/ui-states.tsx`: `ErrorRecoveryActions`, `StockPullButton`, `MapPreparingNotice`, `EmptyLibraryGuide`, `DerivedCacheResetControl`, `ActorsSubtabsBar`). `spec-v7` ve `phases-all` içindeki JSX kaynak metni kontrolleri kaldırıldı; yerine `react-dom/server` ile **gerçek render çıktısı** ve öğe ağacı üzerinden işleyici çağrıları geldi (`tests/helpers/render-tree.mjs`). `Controls` gizleme kararı saf `shouldHideSecondaryToolbar` fonksiyonuna taşındı. `phases-all` içindeki `2_000_000` metin taraması AST sayısal literal denetimine çevrildi. Yeni bağımlılık eklenmedi. |
+| **F5.2-02** App.tsx sorumlulukları | ✅ Tamamlandı (hedeflenen kapsam) | Profil oluşturma/değiştirme veri hazırlığı `src/app/profile/profile-coordinator.ts`'e (saf, React'siz); iki yerde kopyalanan "giden profil anlık görüntüsü" tek fonksiyona indirildi. Autosave/kota/kirli-işaret kararı `src/app/persistence/persistence-plan.ts` (saf plan + memo + hata toleransı) ve React bağlantısı `src/app/persistence/use-app-persistence.ts`. Debounce/zamanlama davranışı yoktu ve eklenmedi; yazma sırası, kota düşüşünde özet kırpma ve hata sonrası eski değerin korunması birebir korundu. App.tsx 2.206 → **2.108** satır. 11 davranış testi (`tests/f5-2-profile-persistence.test.mjs`). |
+| **F5.2-03** Persistent store ayrıştırması | ⚠️ Kısmen (gerçek ayrıştırma, yazma yolu korundu) | `src/server/persistent-store/catalog-store.ts` (katalog okuma, manifest, bozuk JSON kurtarma, dizin/dosya hazırlığı; senkron + async) ve `src/server/persistent-store/derived-profile-store.ts` (türetilmiş profil okuma + şema/imza doğrulaması; senkron + async). `PersistentDataStore` bu işlevlere delege eden facade olarak kaldı; public metot adları, parametreleri ve dönüş tipleri aynı. **Kilit/lease, atomic write, journal, sync state geçişleri, recovery, çakışma tespiti ve yazma sırası değiştirilmedi.** persistent-store.ts 3.836 → **3.689** satır. 6 doğrudan alt-modül testi (`tests/f5-2-store-submodules.test.mjs`). |
+| **F5.2-04** GitHub sync koordinatörü | ⚠️ Kısmen | Uzak taraf incelemesi (dosya indirme, `too_large` → blob API yedeği, boyut sınırı, katalog/manifest/kullanıcı verisi doğrulaması, profil listesi) `src/server/github-sync/inspect-operation.ts` (829 satır) modülüne taşındı. Modül yalnızca `deps`, `maxBytes` ve `fetchGitBlobBySha` içeren dar bir host bağlamı alır; kilit/kuyruk/journal'a erişmez. Koordinatör üç ince delege metoduyla aynı davranışı korur: github-bidirectional-sync.ts 3.437 → **2.719** satır. 4 test (`tests/f5-2-github-sync-operations.test.mjs`, `fetch` stub'lı). `pull`/`push`/`reconcile` gövdeleri taşınmadı: bu üç işlem aynı `runSerialized` + lease + journal işlem sınırını paylaşıyor ve ayrıştırma kilit sahipliği semantiğini değiştirme riski taşıyor (bkz. §8.3). |
+| **F5.2-05** Persistent store `any` temizliği | ✅ Tamamlandı | `persistent-store.ts` içindeki 38 açık `any` kullanımının tamamı kaldırıldı: GitHub yanıt gövdeleri `unknown` + `github-response.ts` doğrulayıcıları (`readGitHubRepositoryMeta`, `readGitHubFileEnvelope`, `readGitHubCommittedSha`, `findGitHubDirectoryEntry`, `isGitHubTooLargeError`, `readGitHubErrorMessage`), `catch (e: any)` → `catch (e)` + `errorMessageOf`, `Record<string, any>` → `Record<string, unknown>`, `items: any[]` → `unknown[]`, `readJsonFileWithRecovery<any>` → tipli, `(raw as any)` → tip koruyucu. **Kalan 2 dar geçiş** (`CatalogManifest`, `DerivedProfileDocument`) yalnızca mevcut doğrulama koşullarını koruyan, gerekçe yorumlu `as unknown as` geçişleridir; AST testi yeni `any` eklenmesini engeller. 7 test (`tests/f5-2-persistent-store-types.test.mjs`). |
+
+### 8.2 Kapı sonuçları (bu ağaçta gerçekten çalıştırıldı)
+
+| Kapı | Önceki (Aşama 5.1) | Bu oturum |
+|---|---|---|
+| `npm run lint` (ESLint + 2 × `tsc --noEmit`) | 0 hata / 0 uyarı | ✅ 0 hata / 0 uyarı |
+| `npm test` | 831/831 | ✅ **865/865** (+34) |
+| `npm run test:taste` | 440/440 | ✅ **440/440** |
+| `npm run cycles` | 0 | ✅ 0 |
+| Mimari tarayıcı (321 dosya, 1.085 yerel import) | 6 kural 0 ihlal | ✅ 6 kural **0 ihlal**, 0 döngü |
+| `npm run build` | başarılı | ✅ başarılı (6,75 s, PWA 30 giriş) |
+| Data integrity guard | değişmedi | ✅ `data/` değişmedi (16 dosya, 88 unit + 27 taste dosyası) |
+| Üretim duman testi | 200/200 | ✅ `/api/tmdb-status` 200, `/` 200, `/discover/deep-link` 200, `/api/data` 200 |
+| Playwright E2E | CI | ⏹ Bu ortamda çalıştırılmadı; CI işine bırakıldı |
+
+Test artışının dağılımı: F5.2-01 **+6**, F5.2-02 **+11**, F5.2-03 **+6**, F5.2-04 **+4**, F5.2-05 **+7**. Hiçbir test silinmedi, atlanmadı veya gevşetilmedi.
+
+### 8.3 Kalan teknik borç (gerekçeli)
+
+1. **`pull`/`push`/`reconcile` gövdeleri koordinatörde.** Üçü de aynı `runSerialized` kuyruğu, dosya kilidi/lease yenileme ve journal kaydı içinde çalışır. Ayrı modüllere taşımak, kilit sahipliğini ve yarıda kalan işlem kurtarmasını yeniden düzenlemeyi gerektirir; Aşama 2'de kabul edilen güvenceleri riske atmamak için bu oturumda yapılmadı. Öneri: önce lease/journal için sahte (fake) bir port tanımlayıp 14 senaryoyu (yalnız yerel/uzak, çakışma, rate-limit, lease süresi, yarım iş) bu port üzerinden koşturmak, sonra gövdeleri taşımak.
+2. **`persistent-store.ts` yazma yolu.** Katalog upsert, stok yazımı ve türetilmiş profil upsert'i atomik yazma + seri hale getirici + katalog imzası ile aynı işlem sınırını paylaşır; bu nedenle facade'da bırakıldı. Okuma yolu (F5.2-03) ayrıştırıldı; yazma yolu için aynı yöntem (dar bağlam + doğrudan test) uygulanabilir.
+3. **`isDerivedDocFreshForContext` ve `createUnconfiguredReport`** hâlâ koordinatörde; ikisi de işlem raporu/tazelik kararı olarak `sync-core` benzeri saf modüle taşınabilir (davranış aynı kalacak şekilde).
+4. **`as unknown as` geçişleri (2 adet).** `CatalogManifest` yalnızca `contentHash`, `DerivedProfileDocument` yalnızca `profileId` + `items` ile doğrulanıyor (mevcut davranış). Tam şema doğrulaması eklenirse bu geçişler kaldırılmalı; eklenmesi mevcut bozuk-dosya kabul davranışını değiştireceği için bu oturumda yapılmadı.
+5. **App.tsx belge birleştirme ve persist effect'i dışında kalan ref ağı.** Profil/autosave ayrıldı; `mergeRemoteDocumentIntoState` ve `applyDataDocumentToState` hâlâ çok sayıda ref ve sunucu senkron durumuyla bağlı. Taşımak için sunucu belgesi uygulama akışının uçtan uca davranış testi gerekir (mevcut kapsam `phase1-restore-conflict`, `archive-restore-consistency` ve `phase2-sync-*` ile korunuyor).

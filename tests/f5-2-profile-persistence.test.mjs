@@ -55,10 +55,6 @@ function memoryStorage(initial = {}, options = {}) {
   };
 }
 
-/** Silme kayıtları 30 günlük saklama penceresine tabidir; taze zaman damgası üretir. */
-function recentIso(offsetMs = 0) {
-  return new Date(Date.now() - offsetMs).toISOString();
-}
 
 const PREFERENCES = { disliked: [], providers: [], mood: '', reminders: false, notified: [] };
 const expectedTombstone = (() => {

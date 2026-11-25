@@ -44,20 +44,38 @@ function collectAnyUsages(filePath) {
   return lines;
 }
 
-test('F5.2-05 persistent-store.ts içinde açık `any` kalmadı', () => {
-  const remaining = collectAnyUsages(path.join(repoRoot, 'src/server/persistent-store.ts'));
-  assert.deepEqual(remaining, [], `Beklenmeyen any satırları: ${remaining.join(', ')}`);
+test('F5.2-05 persistent-store modüllerinde açık `any` kalmadı', () => {
+  const files = [
+    'src/server/persistent-store.ts',
+    'src/server/persistent-store/catalog-store.ts',
+    'src/server/persistent-store/derived-profile-store.ts',
+    'src/server/persistent-store/contracts.ts',
+    'src/server/persistent-store/store-state.ts',
+  ];
+  for (const rel of files) {
+    const remaining = collectAnyUsages(path.join(repoRoot, rel));
+    assert.deepEqual(remaining, [], `${rel} beklenmeyen any satırları: ${remaining.join(', ')}`);
+  }
 });
 
 test('F5.2-05 doğrulanmış dar geçişler gerekçeleriyle işaretli', () => {
-  const source = fs.readFileSync(path.join(repoRoot, 'src/server/persistent-store.ts'), 'utf8');
-  const casts = source.split('as unknown as').length - 1;
-  assert.equal(casts, 4, 'yalnızca dört doğrulanmış geçiş kalmalı');
-  assert.equal(
-    source.split('F5.2-05 istisnası').length - 1,
-    4,
-    'her geçiş gerekçe yorumu taşımalı (manifest 2, derived profil 2 blok)'
-  );
+  const files = [
+    'src/server/persistent-store.ts',
+    'src/server/persistent-store/catalog-store.ts',
+    'src/server/persistent-store/derived-profile-store.ts',
+  ];
+  const counts = files.map((rel) => {
+    const source = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    return {
+      rel,
+      casts: source.split('as unknown as').length - 1,
+      comments: source.split('F5.2-05 istisnası').length - 1,
+    };
+  });
+  const casts = counts.reduce((sum, entry) => sum + entry.casts, 0);
+  const comments = counts.reduce((sum, entry) => sum + entry.comments, 0);
+  assert.equal(casts, 2, 'yalnızca iki doğrulanmış geçiş kalmalı (manifest + türetilmiş profil)');
+  assert.equal(comments, 2, 'her geçiş gerekçe yorumu taşımalı');
 });
 
 test('F5.2-05 readGitHubRepositoryMeta: geçerli alanları çıkarır, bozuk yükü reddeder', () => {
