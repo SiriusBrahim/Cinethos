@@ -12,7 +12,6 @@ import {
   loadProfilePreferences,
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
-import { mergeRemoteDocument } from './app/server-sync.ts';
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -110,6 +109,7 @@ import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { createCatalogLoader } from './app/catalog-loader.ts';
 import { useAppPersistence } from './app/persistence/use-app-persistence.ts';
+import { useRemoteDocumentMerge } from './app/persistence/remote-document-merge.ts';
 import {
   createProfileRecord,
   resolveProfileSwitchState,
@@ -524,72 +524,36 @@ export function App() {
     setSyncStatus(`Çakışma algılandı: ${conflict.message}`);
   }, []);
 
-  const mergeRemoteDocumentIntoState = useCallback(
-    (
-      rawRemoteDoc: DataDocument,
-      options: {
-        preferActiveFrom?: 'local' | 'remote';
-        foldUnhydrated?: boolean;
-        keepDirtyIfLocalAhead?: boolean;
-      } = {}
-    ): DataDocument | null => {
-      const merged = mergeRemoteDocument(buildCurrentLivePayloadFromRefs(), rawRemoteDoc, {
-        preferActiveFrom: options.preferActiveFrom,
-        foldUnhydrated: options.foldUnhydrated,
-        keepDirtyIfLocalAhead: options.keepDirtyIfLocalAhead,
-      });
-      if (!merged) return null;
-
-      const {
-        mergedDoc,
-        activeProfile: active,
-        favoriteActors: activeFavs,
-        deletedKeys: activeDeleted,
-        shouldStayDirty,
-      } = merged;
-
-      applyingRemoteSnapshotRef.current = true;
-      hadStoredProfilesOnBootRef.current = true;
-
-      profilesRef.current = mergedDoc.profiles;
-      activeProfileIdRef.current = mergedDoc.activeProfileId;
-      profileNameRef.current = active.name;
-      preferencesRef.current = active.preferences;
-      savedItemsRef.current = active.items;
-      favoriteActorsRef.current = activeFavs;
-      deletedKeysRef.current = activeDeleted;
-
-      setProfiles(mergedDoc.profiles);
-      setActiveProfileId(mergedDoc.activeProfileId);
-      setProfileName(active.name);
-      setPreferences(active.preferences);
-      setSavedItems(active.items);
-      setFavoriteActors(activeFavs);
-      setDeletedKeys(activeDeleted);
-
-      const loadedMap = loadPersistentTasteMap(active.id);
-      tasteMapRef.current = loadedMap;
-      setTasteMap(loadedMap);
-
-      persistProfilesBestEffort(mergedDoc.profiles);
-
-      isDirtyRef.current = shouldStayDirty;
-      try {
-        if (shouldStayDirty) {
-          localStorage.setItem(DIRTY_KEY, '1');
-        } else {
-          localStorage.removeItem(DIRTY_KEY);
-        }
-      } catch {}
-
-      if (!shouldStayDirty) {
-        setServerConflict(null);
-      }
-
-      return mergedDoc;
+  // F5.3-03: belge birleştirme sorumluluğu ayrı modüle taşındı; App yalnızca
+  // gerekli ref/setter/kalıcılık bağımlılıklarını sağlar.
+  const { mergeRemoteDocumentIntoState } = useRemoteDocumentMerge({
+    buildLivePayloadFromRefs: buildCurrentLivePayloadFromRefs,
+    persistProfilesBestEffort,
+    refs: {
+      profilesRef,
+      activeProfileIdRef,
+      profileNameRef,
+      preferencesRef,
+      savedItemsRef,
+      favoriteActorsRef,
+      deletedKeysRef,
+      tasteMapRef,
+      isDirtyRef,
+      applyingRemoteSnapshotRef,
+      hadStoredProfilesOnBootRef,
     },
-    [buildCurrentLivePayloadFromRefs, persistProfilesBestEffort]
-  );
+    setters: {
+      setProfiles,
+      setActiveProfileId,
+      setProfileName,
+      setPreferences,
+      setSavedItems,
+      setFavoriteActors,
+      setDeletedKeys,
+      setTasteMap,
+      setServerConflict,
+    },
+  });
 
   const handleMergedServerDocument = useCallback(
     (serverDoc: DataDocument) => {
