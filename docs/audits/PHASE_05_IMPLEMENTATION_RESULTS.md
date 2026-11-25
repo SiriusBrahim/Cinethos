@@ -271,3 +271,30 @@ Test artışının dağılımı: F5.2-01 **+6**, F5.2-02 **+11**, F5.2-03 **+6**
 3. **`isDerivedDocFreshForContext` ve `createUnconfiguredReport`** hâlâ koordinatörde; ikisi de işlem raporu/tazelik kararı olarak `sync-core` benzeri saf modüle taşınabilir (davranış aynı kalacak şekilde).
 4. **`as unknown as` geçişleri (2 adet).** `CatalogManifest` yalnızca `contentHash`, `DerivedProfileDocument` yalnızca `profileId` + `items` ile doğrulanıyor (mevcut davranış). Tam şema doğrulaması eklenirse bu geçişler kaldırılmalı; eklenmesi mevcut bozuk-dosya kabul davranışını değiştireceği için bu oturumda yapılmadı.
 5. **App.tsx belge birleştirme ve persist effect'i dışında kalan ref ağı.** Profil/autosave ayrıldı; `mergeRemoteDocumentIntoState` ve `applyDataDocumentToState` hâlâ çok sayıda ref ve sunucu senkron durumuyla bağlı. Taşımak için sunucu belgesi uygulama akışının uçtan uca davranış testi gerekir (mevcut kapsam `phase1-restore-conflict`, `archive-restore-consistency` ve `phase2-sync-*` ile korunuyor).
+
+
+---
+
+## 9. Aşama 5.3 — Nihai mimari giderme (25 Kas 2026, bu oturum)
+
+**Başlangıç HEAD:** `dcc7050` · **Sonuç HEAD:** `ffd9907`+ · **PR:** #65 (açık, merge edilmedi)
+**Ortam sınırlaması:** bu oturumda yerel Node/npm/git yoktu; lint/typecheck/test/build/data guard yerelde koşulamadı. Yapılan değişiklik CI kapılarıyla doğrulanmalıdır; yerelde "başarılı" gösterilen test sonucu yoktur.
+
+### 9.1 İş bazında sonuç
+
+| Madde | Durum | Yapılan |
+|---|---|---|
+| **F5.3-04** Saf yardımcılar + tip assertion incelemesi | ✅ Bu oturumda tamamlandı | `ffd9907`: §8.3-3'teki iki koordinatör yardımcısı saflıkları doğrulanarak (state/lock/journal/`this` erişimi yok) `src/server/github-sync/` altına taşındı: `sync-operation-result.ts` → `createGithubSyncUnconfiguredReport`; `derived-doc-freshness.ts` → `isDerivedDocFreshForContext`. Sınıftan silindi; 4 rapor ve 3 tazelik çağrı noktası serbest fonksiyonlara yönlendirildi; artık kullanılmayan `ALGORITHM_VERSION`/`computeTasteProfileSignature`/`type Profile` importları koordinatörden temizlendi. Parantez dengesi ve satır delta (2.719 → ~2.639) kontrol edildi. Kalan 2 `as unknown as` geçişi §8.3-4'teki gerekçeyle (yalnız doğrulanmış alan; tam şema doğrulaması mevcut bozuk-dosya kabul davranışını değiştirir) bilinçli olarak korundu. |
+| **F5.3-01** pull/push/reconcile işlem mimarisi | ❌ Bu oturumda yapılmadı | Aynı §8.3-1 gerekçesi geçerli: üç işlem aynı `runSerialized` + lease + journal sınırını paylaşıyor ve ayrıştırma, kilit sahipliği semantiğini doğrulama kapısı olmadan değiştirme riski taşıyor. Önerilen yol aynı: önce sahte lease/journal portu + 14 senaryo, sonra gövde taşımaları. |
+| **F5.3-02** PersistentStore yazma mimarisi | ❌ Bu oturumda yapılmadı | Aynı §8.3-2 gerekçesi geçerli: yazma yolu atomik yazma + serileştirici + katalog imzası ile aynı işlem sınırını paylaşıyor. |
+| **F5.3-03** App.tsx belge birleştirme | ❌ Bu oturumda yapılmadı | Aynı §8.3-5 gerekçesi geçerli: `mergeRemoteDocumentIntoState`/`applyDataDocumentToState` uçtan uca davranış testi gerektiriyor. |
+| **F5.3-05** Nihai denetim | ⚠️ Kısmen (statik) | Ağaç denetimi: `src/server/github-sync/` = {sync-core, inspect-operation, sync-operation-result, derived-doc-freshness}; `src/server/persistent-store/` = {contracts, store-state, catalog-store, derived-profile-store}; App.tsx ~76 KB. Bu oturumun değişikliği yalnızca saf fonksiyon taşıması olduğu için döngü/mimari/veri formatı riski yoktur; ancak tarayıcı/test koşusu yerelde yapılamadığı için "0 ihlal" iddiası CI'ya bırakıldı. Public import yolları ve `export *` yüzeyi korundu. `data/` dosyaları bu oturumda dokunulmadı. |
+
+### 9.2 Nihai karar
+
+**AŞAMA 5 (5.0–5.3) KISMEN TAMAMLANDI.** Aşama 5.2'nin gerçek kapı sonuçlarıyla
+tamamladığı maddeler (App.tsx profil/persistence ayrıştırması, persistent-store okuma
+ayrıştırması, sync inspect ayrıştırması, `any` temizliği, UI test dönüşümü) korunmuştur;
+bu oturum F5.3-04'ü kapatmıştır. Kalan borç: pull/push/reconcile gövdeleri, persistent
+store yazma yolu, App.tsx belge birleştirme ve DOM tabanlı metin testlerinin kalanı.
+Aşama 6 başlatılmadı; PR #65 açık ve merge edilmemiş.
