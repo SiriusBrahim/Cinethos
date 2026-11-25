@@ -254,7 +254,7 @@ export const STAGE_LABELS: Record<SyncFileStage, SyncFileStateRecord['statusLabe
   failed: 'başarısız',
 };
 
-export function isPlainRecordObject(raw: any): boolean {
+export function isPlainRecordObject(raw: unknown): raw is Record<string, unknown> {
   return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw));
 }
 

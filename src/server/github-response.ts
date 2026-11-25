@@ -93,3 +93,63 @@ export function isGitHubTooLargeError(value: unknown): boolean {
     return detail?.code === 'too_large';
   });
 }
+
+export interface GitHubFileEnvelope {
+  sha?: string;
+  content?: string;
+  encoding?: string;
+  size?: number;
+}
+
+/** Contents API dosya zarfı — `sha` zorunlu değildir (blob yanıtları). */
+export function readGitHubFileEnvelope(value: unknown): GitHubFileEnvelope | null {
+  const record = asExternalRecord(value);
+  if (!record) return null;
+  const envelope: GitHubFileEnvelope = {};
+  const sha = readString(record.sha, 256);
+  if (sha) envelope.sha = sha;
+  if (typeof record.content === 'string') envelope.content = record.content;
+  const encoding = readString(record.encoding, 32);
+  if (encoding !== undefined) envelope.encoding = encoding;
+  const size = readFiniteNumber(record.size);
+  if (size !== undefined) envelope.size = size;
+  return envelope;
+}
+
+/** `PUT /contents` yanıtındaki commit SHA'sı (`content.sha`). */
+export function readGitHubCommittedSha(value: unknown): string | undefined {
+  const record = asExternalRecord(value);
+  if (!record) return undefined;
+  const content = asExternalRecord(record.content);
+  if (!content) return undefined;
+  return readString(content.sha, 256);
+}
+
+export interface GitHubRepositoryMeta {
+  defaultBranch?: string;
+  isPrivate?: boolean;
+  canPush?: boolean;
+}
+
+/** `GET /repos/:owner/:repo` — görünürlük, varsayılan dal ve yazma izni. */
+export function readGitHubRepositoryMeta(value: unknown): GitHubRepositoryMeta | null {
+  const record = asExternalRecord(value);
+  if (!record) return null;
+  const meta: GitHubRepositoryMeta = {};
+  const defaultBranch = readString(record.default_branch, 256);
+  if (defaultBranch) meta.defaultBranch = defaultBranch;
+  if (typeof record.private === 'boolean') meta.isPrivate = record.private;
+  const permissions = asExternalRecord(record.permissions);
+  if (permissions && typeof permissions.push === 'boolean') meta.canPush = permissions.push;
+  return meta;
+}
+
+/** Dizin listesinde ada göre dosya kaydı (liste geçersizse `null`). */
+export function findGitHubDirectoryEntry(
+  value: unknown,
+  name: string
+): GitHubDirectoryEntry | null {
+  const entries = readGitHubDirectoryEntries(value);
+  if (!entries) return null;
+  return entries.find((entry) => entry.name === name) ?? null;
+}

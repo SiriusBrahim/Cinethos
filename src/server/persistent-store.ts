@@ -3,7 +3,24 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
+import {
+  errorMessageOf,
+  redactSecrets,
+  stringifyDeterministic,
+  hashContent,
+  toCanonicalKey,
+  mergeCatalogItem,
+  sanitizeProfileId,
+} from './persistent-store-utils.ts';
+import {
+  findGitHubDirectoryEntry,
+  isGitHubTooLargeError,
+  readGitHubCommittedSha,
+  readGitHubErrorMessage,
+  readGitHubFileEnvelope,
+  readGitHubRepositoryMeta,
+  type GitHubRepositoryMeta,
+} from './github-response.ts';
 export { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
 import type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
 export type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
@@ -69,6 +86,10 @@ import {
   classifyTokenFormat,
   isPlainRecordObject,
 } from './persistent-store/contracts.ts';
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isPlainRecordObject) : [];
+}
 
 export class PersistentDataStore {
   private dataDir: string;
@@ -656,7 +677,9 @@ export class PersistentDataStore {
       backupPaths: [`${this.manifestFile}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) && typeof raw.contentHash === 'string'
-          ? (raw as CatalogManifest)
+          ? // F5.2-05 istisnası: yalnızca `contentHash` doğrulanır (mevcut davranış);
+            // şema genişletilirse bu dar geçiş kaldırılmalıdır.
+            (raw as unknown as CatalogManifest)
           : null,
       label: 'manifest.json',
       restoreRecoveredToTarget: true,
@@ -698,7 +721,8 @@ export class PersistentDataStore {
       backupPaths: [`${this.manifestFile}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) && typeof raw.contentHash === 'string'
-          ? (raw as CatalogManifest)
+          ? // F5.2-05 istisnası: yalnızca `contentHash` doğrulanır (mevcut davranış).
+            (raw as unknown as CatalogManifest)
           : null,
       label: 'manifest.json',
       restoreRecoveredToTarget: true,
@@ -903,7 +927,7 @@ export class PersistentDataStore {
             verifiedReadBack: true,
           };
         }
-      } catch (e: any) {
+      } catch (e) {
         return {
           ok: false,
           step: 'manifest_read',
@@ -914,7 +938,7 @@ export class PersistentDataStore {
           access,
           verifiedReadBack: false,
           error: redactSecrets(
-            `GitHub manifest okuma ağ hatası: ${e?.message || e}`,
+            `GitHub manifest okuma ağ hatası: ${errorMessageOf(e, String(e))}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
@@ -963,7 +987,7 @@ export class PersistentDataStore {
   }
 
   public upsertCatalogItems(
-    items: any[],
+    items: unknown[],
     writeOptions: { beforeRenameHook?: (tempFilePath: string) => void } = {}
   ): { inserted: number; updated: number; unchanged: number; total: number; contentHash: string } {
     // Önce mevcut katalog dosyalarını oku; kurtarılamayan bozuk JSON varsa CorruptJsonFileError fırlatır ve üzerine yazmaz!
@@ -1062,7 +1086,7 @@ export class PersistentDataStore {
   }
 
   public async upsertCatalogItemsAsync(
-    items: any[]
+    items: unknown[]
   ): Promise<{ inserted: number; updated: number; unchanged: number; total: number; contentHash: string }> {
     const movies = await this.readCatalogAsync('movie', { allowEmptyOnCorrupt: false });
     const tv = await this.readCatalogAsync('tv', { allowEmptyOnCorrupt: false });
@@ -1160,7 +1184,7 @@ export class PersistentDataStore {
   }
 
   public upsertCatalogItemsSerialized(
-    items: any[]
+    items: unknown[]
   ): Promise<{ inserted: number; updated: number; unchanged: number; total: number; contentHash: string }> {
     return this.writeSerializer.run(this.manifestFile, () => this.upsertCatalogItemsAsync(items));
   }
@@ -1179,14 +1203,14 @@ export class PersistentDataStore {
   }
 
   public readStockSnapshot(): {
-    movies: any[];
-    tv: any[];
+    movies: Record<string, unknown>[];
+    tv: Record<string, unknown>[];
     updatedAt: string;
     schemaVersion: number;
   } | null {
     const filePath = this.getStockFilePath();
     if (!existsSync(filePath)) return null;
-    const recovery = readJsonFileWithRecovery<any>(filePath, {
+    const recovery = readJsonFileWithRecovery<Record<string, unknown>>(filePath, {
       backupPaths: [`${filePath}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) && Array.isArray(raw.movies) && Array.isArray(raw.tv)
@@ -1197,8 +1221,8 @@ export class PersistentDataStore {
     });
     if (recovery.status !== 'ok' && recovery.status !== 'recovered') return null;
     return {
-      movies: recovery.data.movies,
-      tv: recovery.data.tv,
+      movies: asRecordArray(recovery.data.movies),
+      tv: asRecordArray(recovery.data.tv),
       updatedAt: typeof recovery.data.updatedAt === 'string' ? recovery.data.updatedAt : '',
       schemaVersion: Number(recovery.data.schemaVersion) || 1,
     };
@@ -1217,7 +1241,7 @@ export class PersistentDataStore {
       backupPaths: [`${filePath}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) &&
-        (isPlainRecordObject((raw as any).entries) || Array.isArray((raw as any).entries))
+        (isPlainRecordObject(raw.entries) || Array.isArray(raw.entries))
           ? normalizeCinemaKunyeDocument(raw)
           : null,
       label: path.basename(filePath),
@@ -1234,7 +1258,7 @@ export class PersistentDataStore {
       backupPaths: [`${filePath}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) &&
-        (isPlainRecordObject((raw as any).entries) || Array.isArray((raw as any).entries))
+        (isPlainRecordObject(raw.entries) || Array.isArray(raw.entries))
           ? normalizeCinemaKunyeDocument(raw)
           : null,
       label: path.basename(filePath),
@@ -1319,15 +1343,15 @@ export class PersistentDataStore {
       message: '',
     };
 
-    const dedupList = (raw: unknown[], namespace: 'movie' | 'tv'): any[] => {
+    const dedupList = (raw: unknown[], namespace: 'movie' | 'tv'): Record<string, unknown>[] => {
       const seen = new Set<string>();
-      const out: any[] = [];
+      const out: Record<string, unknown>[] = [];
       for (const candidate of raw) {
         if (!isPlainRecordObject(candidate)) {
           result.skippedInvalid++;
           continue;
         }
-        const idRaw = (candidate as any).id;
+        const idRaw = candidate.id;
         const idNum = Number(idRaw);
         const validId =
           (Number.isSafeInteger(idNum) && idNum > 0) ||
@@ -1392,7 +1416,9 @@ export class PersistentDataStore {
         isPlainRecordObject(raw) &&
         typeof raw.profileId === 'string' &&
         isPlainRecordObject(raw.items)
-          ? (raw as DerivedProfileDocument)
+          ? // F5.2-05 istisnası: profil kimliği ve öğe haritası doğrulanır; tam
+            // şema doğrulaması `readValidatedDerivedProfile` içinde yapılır.
+            (raw as unknown as DerivedProfileDocument)
           : null,
       label: path.basename(filePath),
       restoreRecoveredToTarget: true,
@@ -1578,7 +1604,9 @@ export class PersistentDataStore {
         isPlainRecordObject(raw) &&
         typeof raw.profileId === 'string' &&
         isPlainRecordObject(raw.items)
-          ? (raw as DerivedProfileDocument)
+          ? // F5.2-05 istisnası: profil kimliği ve öğe haritası doğrulanır; tam
+            // şema doğrulaması `readValidatedDerivedProfile` içinde yapılır.
+            (raw as unknown as DerivedProfileDocument)
           : null,
       label: path.basename(filePath),
       restoreRecoveredToTarget: true,
@@ -1763,13 +1791,13 @@ export class PersistentDataStore {
     let tvCount = 0;
     try {
       movieCount = Object.keys(this.readCatalog('movie')).length;
-    } catch (err: any) {
-      corruptionWarnings.push(err?.message || 'movies.json okunamadı');
+    } catch (err) {
+      corruptionWarnings.push(errorMessageOf(err, 'movies.json okunamadı'));
     }
     try {
       tvCount = Object.keys(this.readCatalog('tv')).length;
-    } catch (err: any) {
-      corruptionWarnings.push(err?.message || 'tv.json okunamadı');
+    } catch (err) {
+      corruptionWarnings.push(errorMessageOf(err, 'tv.json okunamadı'));
     }
 
     let profilesCount = 0;
@@ -1954,7 +1982,7 @@ export class PersistentDataStore {
 
       // 1. Repo varlık ve erişim kontrolü
       const repoUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}`;
-      let repoMeta: any = null;
+      let repoMeta: GitHubRepositoryMeta | null = null;
 
       try {
         const res = await fetch(repoUrl, { headers: baseHeaders });
@@ -2040,8 +2068,8 @@ export class PersistentDataStore {
           };
         }
 
-        repoMeta = await res.json().catch(() => null);
-      } catch (e: any) {
+        repoMeta = readGitHubRepositoryMeta(await res.json().catch(() => null));
+      } catch (e) {
         return {
           ok: false,
           accessible: false,
@@ -2053,14 +2081,14 @@ export class PersistentDataStore {
           configuredBranch: this.githubBranch,
           hasPushPermission: false,
           error: redactSecrets(
-            `GitHub sunucusuna bağlanılamadı: ${e?.message || 'Ağ hatası'}`,
+            `GitHub sunucusuna bağlanılamadı: ${errorMessageOf(e, 'Ağ hatası')}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
         };
       }
 
-      if (!isPlainRecordObject(repoMeta)) {
+      if (!repoMeta) {
         return {
           ok: false,
           accessible: false,
@@ -2076,8 +2104,8 @@ export class PersistentDataStore {
         };
       }
 
-      const isRemotePrivate = repoMeta.private === true;
-      const remoteIsPublic = repoMeta.private === false;
+      const isRemotePrivate = repoMeta.isPrivate === true;
+      const remoteIsPublic = repoMeta.isPrivate === false;
       this.lastObservedRemotePublic = remoteIsPublic;
       const warning = this.buildPublicVisibilityWarning(remoteIsPublic);
 
@@ -2085,12 +2113,9 @@ export class PersistentDataStore {
       this.repoVisibilityWarning = warning;
 
       // Yetki kontrolü (permissions.push)
-      const hasPushPermission =
-        repoMeta.permissions && typeof repoMeta.permissions.push === 'boolean'
-          ? repoMeta.permissions.push
-          : true;
+      const hasPushPermission = typeof repoMeta.canPush === 'boolean' ? repoMeta.canPush : true;
 
-      if (repoMeta.permissions && repoMeta.permissions.push === false) {
+      if (repoMeta.canPush === false) {
         return {
           ok: false,
           accessible: true,
@@ -2099,7 +2124,7 @@ export class PersistentDataStore {
           isEmptyRepo: false,
           isPrivate: isRemotePrivate,
           effectiveIsPublicRepo,
-          defaultBranch: repoMeta.default_branch,
+          defaultBranch: repoMeta.defaultBranch,
           configuredBranch: this.githubBranch,
           hasPushPermission: false,
           warning,
@@ -2123,7 +2148,7 @@ export class PersistentDataStore {
             isEmptyRepo: false,
             isPrivate: isRemotePrivate,
             effectiveIsPublicRepo,
-            defaultBranch: repoMeta.default_branch,
+            defaultBranch: repoMeta.defaultBranch,
             configuredBranch: this.githubBranch,
             hasPushPermission,
             warning,
@@ -2153,7 +2178,7 @@ export class PersistentDataStore {
                 isEmptyRepo: true,
                 isPrivate: isRemotePrivate,
                 effectiveIsPublicRepo,
-                defaultBranch: repoMeta.default_branch,
+                defaultBranch: repoMeta.defaultBranch,
                 configuredBranch: this.githubBranch,
                 hasPushPermission,
                 warning,
@@ -2169,7 +2194,7 @@ export class PersistentDataStore {
               isEmptyRepo: false,
               isPrivate: isRemotePrivate,
               effectiveIsPublicRepo,
-              defaultBranch: repoMeta.default_branch,
+              defaultBranch: repoMeta.defaultBranch,
               configuredBranch: this.githubBranch,
               hasPushPermission,
               warning,
@@ -2179,7 +2204,7 @@ export class PersistentDataStore {
           // Depo boş değil ama belirtilen dal mevcut değil!
           const branchErrMsg = redactSecrets(
             `Yapılandırılmış dal ('${this.githubBranch}') depoda bulunamadı (HTTP 404). Mevcut varsayılan dal: '${
-              repoMeta.default_branch || 'bilinmiyor'
+              repoMeta.defaultBranch || 'bilinmiyor'
             }'.`,
             this.getKnownSecretsForRedaction()
           );
@@ -2191,7 +2216,7 @@ export class PersistentDataStore {
             isEmptyRepo: false,
             isPrivate: isRemotePrivate,
             effectiveIsPublicRepo,
-            defaultBranch: repoMeta.default_branch,
+            defaultBranch: repoMeta.defaultBranch,
             configuredBranch: this.githubBranch,
             hasPushPermission,
             warning,
@@ -2212,7 +2237,7 @@ export class PersistentDataStore {
             isEmptyRepo: false,
             isPrivate: isRemotePrivate,
             effectiveIsPublicRepo,
-            defaultBranch: repoMeta.default_branch,
+            defaultBranch: repoMeta.defaultBranch,
             configuredBranch: this.githubBranch,
             hasPushPermission,
             warning,
@@ -2225,7 +2250,7 @@ export class PersistentDataStore {
             errorCategory: category,
           };
         }
-      } catch (e: any) {
+      } catch (e) {
         return {
           ok: false,
           accessible: false,
@@ -2234,12 +2259,12 @@ export class PersistentDataStore {
           isEmptyRepo: false,
           isPrivate: isRemotePrivate,
           effectiveIsPublicRepo,
-          defaultBranch: repoMeta.default_branch,
+          defaultBranch: repoMeta.defaultBranch,
           configuredBranch: this.githubBranch,
           hasPushPermission,
           warning,
           error: redactSecrets(
-            `Dal kontrolünde ağ hatası: ${e?.message || 'bağlantı hatası'}`,
+            `Dal kontrolünde ağ hatası: ${errorMessageOf(e, 'bağlantı hatası')}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
@@ -2254,7 +2279,7 @@ export class PersistentDataStore {
         isEmptyRepo: false,
         isPrivate: isRemotePrivate,
         effectiveIsPublicRepo,
-        defaultBranch: repoMeta.default_branch,
+        defaultBranch: repoMeta.defaultBranch,
         configuredBranch: this.githubBranch,
         hasPushPermission,
         warning,
@@ -2309,9 +2334,9 @@ export class PersistentDataStore {
         },
       });
       if (res.status !== 200) return null;
-      const data: any = await res.json().catch(() => null);
-      if (data && typeof data.content === 'string' && data.encoding === 'base64') {
-        return Buffer.from(data.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+      const envelope = readGitHubFileEnvelope(await res.json().catch(() => null));
+      if (envelope?.content !== undefined && envelope.encoding === 'base64') {
+        return Buffer.from(envelope.content.replace(/\s+/g, ''), 'base64').toString('utf8');
       }
       return null;
     } catch {
@@ -2374,7 +2399,7 @@ export class PersistentDataStore {
           }
         }
         if (getRes.status === 200) {
-          let fileData: any = null;
+          let fileData: unknown = null;
           try {
             fileData = await getRes.json();
           } catch {
@@ -2384,30 +2409,29 @@ export class PersistentDataStore {
               errorCategory: 'malformed_response',
             };
           }
-          if (!fileData || typeof fileData !== 'object' || typeof fileData.sha !== 'string') {
+          const fileEnvelope = readGitHubFileEnvelope(fileData);
+          if (!fileEnvelope?.sha) {
             return {
               ok: false,
               error: 'GitHub dosya yanıtında geçerli SHA alanı bulunamadı.',
               errorCategory: 'malformed_response',
             };
           }
-          remoteSha = fileData.sha;
+          remoteSha = fileEnvelope.sha;
           if (
-            typeof fileData.content === 'string' &&
-            fileData.encoding !== 'none' &&
-            (fileData.content.length > 0 || fileData.size === 0)
+            fileEnvelope.content !== undefined &&
+            fileEnvelope.encoding !== 'none' &&
+            (fileEnvelope.content.length > 0 || fileEnvelope.size === 0)
           ) {
-            remoteContent = Buffer.from(fileData.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+            remoteContent = Buffer.from(fileEnvelope.content.replace(/\s+/g, ''), 'base64').toString('utf8');
           } else if (remoteSha) {
             const blobText = await this.fetchBlobTextBySha(remoteSha);
             if (blobText !== null) remoteContent = blobText;
           }
         } else if (getRes.status === 403) {
-          const errBody: any = await getRes.json().catch(() => ({}));
-          const rawMsg = String(errBody?.message || '');
-          const isTooLarge =
-            Array.isArray(errBody?.errors) &&
-            errBody.errors.some((e: any) => e?.code === 'too_large');
+          const errBody = await getRes.json().catch(() => ({}));
+          const rawMsg = readGitHubErrorMessage(errBody);
+          const isTooLarge = isGitHubTooLargeError(errBody);
           if (isTooLarge) {
             const parentDir = path.posix.dirname(repoPath);
             const baseName = path.posix.basename(repoPath);
@@ -2418,16 +2442,14 @@ export class PersistentDataStore {
               { headers: makeAuthHeaders(this.githubToken) }
             );
             if (dirRes.status === 200) {
-              const list = await dirRes.json().catch(() => null);
-              if (Array.isArray(list)) {
-                const found = list.find(
-                  (it: any) => it && it.name === baseName && typeof it.sha === 'string'
-                );
-                if (found) {
-                  remoteSha = found.sha;
-                  const blobText = await this.fetchBlobTextBySha(found.sha);
-                  if (blobText !== null) remoteContent = blobText;
-                }
+              const found = findGitHubDirectoryEntry(
+                await dirRes.json().catch(() => null),
+                baseName
+              );
+              if (found?.sha) {
+                remoteSha = found.sha;
+                const blobText = await this.fetchBlobTextBySha(found.sha);
+                if (blobText !== null) remoteContent = blobText;
               }
             }
           }
@@ -2444,7 +2466,7 @@ export class PersistentDataStore {
           }
         } else if (getRes.status !== 404) {
           const errBody = await getRes.json().catch(() => ({}));
-          const rawMsg = String(errBody?.message || '');
+          const rawMsg = readGitHubErrorMessage(errBody);
           const category = classifyHttpFailure(getRes.status, getRes.headers, rawMsg);
           return {
             ok: false,
@@ -2455,11 +2477,11 @@ export class PersistentDataStore {
             errorCategory: category,
           };
         }
-      } catch (e: any) {
+      } catch (e) {
         return {
           ok: false,
           error: redactSecrets(
-            `GitHub ağ bağlantı hatası: ${e?.message || 'bağlantı kurulamadı'}`,
+            `GitHub ağ bağlantı hatası: ${errorMessageOf(e, 'bağlantı kurulamadı')}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
@@ -2483,7 +2505,7 @@ export class PersistentDataStore {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const activePutToken = this.githubToken || '';
       const baseHeaders = makeAuthHeaders(activePutToken);
-      const payload: Record<string, any> = {
+      const payload: Record<string, unknown> = {
         message: commitMessage,
         content: Buffer.from(contentString, 'utf8').toString('base64'),
       };
@@ -2508,7 +2530,7 @@ export class PersistentDataStore {
         }
 
         if (putRes.status === 200 || putRes.status === 201) {
-          let resData: any = null;
+          let resData: unknown = null;
           try {
             resData = await putRes.json();
           } catch {
@@ -2518,14 +2540,14 @@ export class PersistentDataStore {
               errorCategory: 'malformed_response',
             };
           }
-          if (!resData || typeof resData !== 'object') {
+          if (!isPlainRecordObject(resData)) {
             return {
               ok: false,
               error: 'GitHub yazma yanıtı beklenmeyen biçimde döndü.',
               errorCategory: 'malformed_response',
             };
           }
-          const committedSha = resData.content?.sha || remoteSha;
+          const committedSha = readGitHubCommittedSha(resData) || remoteSha;
 
           // 4. Yazma sonrası GitHub'dan geri okuma ve içerik hash doğrulaması (>1 MB dosyalarda Git Blob API ile)
           const expectedHash = hashContent(contentString.trim());
@@ -2644,12 +2666,12 @@ export class PersistentDataStore {
           ),
           errorCategory: category,
         };
-      } catch (e: any) {
+      } catch (e) {
         if (attempt === maxAttempts) {
           return {
             ok: false,
             error: redactSecrets(
-              `GitHub ağ hatası (${maxAttempts} deneme başarısız): ${e?.message || 'bağlantı hatası'}`,
+              `GitHub ağ hatası (${maxAttempts} deneme başarısız): ${errorMessageOf(e, 'bağlantı hatası')}`,
               this.getKnownSecretsForRedaction()
             ),
             errorCategory: 'network_error',
@@ -3459,9 +3481,9 @@ export class PersistentDataStore {
         },
       });
       if (res.status !== 200) return null;
-      const data: any = await res.json().catch(() => null);
-      if (data && typeof data.content === 'string' && data.encoding === 'base64') {
-        return Buffer.from(data.content.replace(/\s+/g, ''), 'base64');
+      const envelope = readGitHubFileEnvelope(await res.json().catch(() => null));
+      if (envelope?.content !== undefined && envelope.encoding === 'base64') {
+        return Buffer.from(envelope.content.replace(/\s+/g, ''), 'base64');
       }
       return null;
     } catch {
@@ -3579,12 +3601,11 @@ export class PersistentDataStore {
           }
 
           if (getRes.status === 200) {
-            const fileData: any = await getRes.json().catch(() => null);
-            const remoteSha = typeof fileData?.sha === 'string' ? fileData.sha : undefined;
+            const fileData = readGitHubFileEnvelope(await getRes.json().catch(() => null));
+            const remoteSha = fileData?.sha;
             let existingBuf: Buffer | null = null;
             if (
-              fileData &&
-              typeof fileData.content === 'string' &&
+              fileData?.content !== undefined &&
               fileData.encoding !== 'none' &&
               fileData.content.replace(/\s+/g, '').length > 0
             ) {
@@ -3613,10 +3634,8 @@ export class PersistentDataStore {
           }
 
           if (getRes.status === 403) {
-            const errBody: any = await getRes.json().catch(() => ({}));
-            const isTooLarge =
-              Array.isArray(errBody?.errors) &&
-              errBody.errors.some((e: any) => e?.code === 'too_large');
+            const errBody = await getRes.json().catch(() => ({}));
+            const isTooLarge = isGitHubTooLargeError(errBody);
             if (isTooLarge) {
               // Large file already occupies this timestamped slot; inspect directory listing to check hash or pick next suffix
               const dirUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/contents/data/exports?ref=${encodeURIComponent(
@@ -3624,10 +3643,10 @@ export class PersistentDataStore {
               )}`;
               const dirRes = await fetch(dirUrl, { headers: baseHeaders });
               if (dirRes.status === 200) {
-                const list = await dirRes.json().catch(() => null);
-                const found = Array.isArray(list)
-                  ? list.find((it: any) => it && it.name === candidateName && typeof it.sha === 'string')
-                  : null;
+                const found = findGitHubDirectoryEntry(
+                  await dirRes.json().catch(() => null),
+                  candidateName
+                );
                 if (found?.sha) {
                   const blobBuf = await this.fetchBlobBufferBySha(found.sha);
                   if (blobBuf) {
@@ -3667,8 +3686,8 @@ export class PersistentDataStore {
             };
           }
 
-          const errBody: any = await getRes.json().catch(() => ({}));
-          const rawMsg = String(errBody?.message || '');
+          const errBody = await getRes.json().catch(() => ({}));
+          const rawMsg = readGitHubErrorMessage(errBody);
           const category = classifyHttpFailure(getRes.status, getRes.headers, rawMsg);
           return {
             attempted: true,
@@ -3683,7 +3702,7 @@ export class PersistentDataStore {
               [this.githubToken]
             ),
           };
-        } catch (e: any) {
+        } catch (e) {
           return {
             attempted: true,
             ok: false,
@@ -3693,7 +3712,7 @@ export class PersistentDataStore {
             verifiedReadBack: false,
             ...warningPatch,
             error: redactSecrets(
-              `GitHub ağ bağlantı hatası: ${e?.message || 'bağlantı kurulamadı'}`,
+              `GitHub ağ bağlantı hatası: ${errorMessageOf(e, 'bağlantı kurulamadı')}`,
               [this.githubToken]
             ),
           };
@@ -3702,7 +3721,7 @@ export class PersistentDataStore {
     }
 
     const putUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/contents/${chosenRepoPath}`;
-    const putPayload: Record<string, any> = {
+    const putPayload: Record<string, unknown> = {
       message: `chore(backup): archive profile export ${path.posix.basename(chosenRepoPath)} [skip ci]`,
       content: params.contentBuffer.toString('base64'),
     };
@@ -3718,8 +3737,8 @@ export class PersistentDataStore {
       });
 
       if (putRes.status !== 200 && putRes.status !== 201) {
-        const errJson: any = await putRes.json().catch(() => ({}));
-        const rawDetail = String(errJson?.message || '');
+        const errJson = await putRes.json().catch(() => ({}));
+        const rawDetail = readGitHubErrorMessage(errJson);
         const acceptedPerms = putRes.headers.get('x-accepted-github-permissions');
         const category = classifyHttpFailure(putRes.status, putRes.headers, rawDetail);
         let detail = rawDetail;
@@ -3746,9 +3765,8 @@ export class PersistentDataStore {
         };
       }
 
-      const resData: any = await putRes.json().catch(() => null);
-      const committedSha: string | undefined =
-        typeof resData?.content?.sha === 'string' ? resData.content.sha : undefined;
+      const putResponse = await putRes.json().catch(() => null);
+      const committedSha: string | undefined = readGitHubCommittedSha(putResponse);
 
       // Mandatory post-upload binary read-back SHA-256 verification
       const readBackUrl = `${putUrl}?ref=${encodeURIComponent(targetBranch)}`;
@@ -3756,17 +3774,15 @@ export class PersistentDataStore {
       let readBackBuffer: Buffer | null = null;
 
       if (readBackRes.status === 200) {
-        const readBackData: any = await readBackRes.json().catch(() => null);
+        const readBackData = readGitHubFileEnvelope(await readBackRes.json().catch(() => null));
         if (
-          readBackData &&
-          typeof readBackData.content === 'string' &&
+          readBackData?.content !== undefined &&
           readBackData.encoding !== 'none' &&
           readBackData.content.replace(/\s+/g, '').length > 0
         ) {
           readBackBuffer = Buffer.from(readBackData.content.replace(/\s+/g, ''), 'base64');
         } else {
-          const blobSha =
-            typeof readBackData?.sha === 'string' ? readBackData.sha : committedSha;
+          const blobSha = readBackData?.sha ?? committedSha;
           if (blobSha) {
             readBackBuffer = await this.fetchBlobBufferBySha(blobSha);
           }
@@ -3817,7 +3833,7 @@ export class PersistentDataStore {
         verifiedReadBack: true,
         ...warningPatch,
       };
-    } catch (e: any) {
+    } catch (e) {
       return {
         attempted: true,
         ok: false,
@@ -3827,7 +3843,7 @@ export class PersistentDataStore {
         verifiedReadBack: false,
         ...warningPatch,
         error: redactSecrets(
-          `GitHub ağ hatası: ${e?.message || 'bağlantı hatası'}`,
+          `GitHub ağ hatası: ${errorMessageOf(e, 'bağlantı hatası')}`,
           [this.githubToken]
         ),
       };
