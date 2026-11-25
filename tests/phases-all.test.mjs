@@ -61,6 +61,14 @@ import {
 } from '../src/core/exporters.ts';
 import { createCineTrackApp } from '../src/server/app.ts';
 import { validateTmdbResponseShape } from '../src/services/api.ts';
+import {
+  callCount,
+  constInitializerNumber,
+  constInitializerText,
+  importedNamesFrom,
+  parseFile,
+  stringLiterals,
+} from './helpers/source-ast.mjs';
 import { formatMatchBadge } from '../src/i18n/index.ts';
 import {
   clearOfflineSyncSnapshot,
@@ -872,16 +880,22 @@ test('Yerel mimari güvenceleri: bun.lock yoktur, VITE_ sırrı yoktur, CINETRAC
   assert.equal(envExample.includes('CINETRACK_TRUST_PROXY=false'), true);
   assert.equal(envExample.includes('CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=false'), true);
 
-  const apiTs = fs.readFileSync(path.join(repoRoot, 'src/services/api.ts'), 'utf8');
-  assert.equal(apiTs.includes('VITE_CINETRACK_TOKEN'), false, 'İstemci kodunda VITE_CINETRACK_TOKEN bulunmamalı');
+  // F5.1-04: metin araması yerine AST string literal taraması.
+  const apiSource = parseFile(path.join(repoRoot, 'src/services/api.ts'));
+  assert.equal(
+    stringLiterals(apiSource).has('VITE_CINETRACK_TOKEN'),
+    false,
+    'İstemci kodunda VITE_CINETRACK_TOKEN bulunmamalı'
+  );
 
   // 3. server.ts içinde CINETRACK_HOST = '127.0.0.1' ve tek kaynaklı DEFAULT_MAX_DATA_BYTES (25 MiB) sabiti korunmalı
-  const serverTs = fs.readFileSync(path.join(repoRoot, 'server.ts'), 'utf8');
-  const limitsTs = fs.readFileSync(path.join(repoRoot, 'src/core/limits.ts'), 'utf8');
-  assert.ok(serverTs.includes("const CINETRACK_HOST = '127.0.0.1'"), 'CINETRACK_HOST sabiti 127.0.0.1 olmalı');
-  assert.ok(serverTs.includes('const maxDataBytes = DEFAULT_MAX_DATA_BYTES;'), 'server.ts tek kaynaklı DEFAULT_MAX_DATA_BYTES kullanmalı');
-  assert.ok(limitsTs.includes('export const DEFAULT_MAX_DATA_BYTES = 25 * 1024 * 1024;'), 'DEFAULT_MAX_DATA_BYTES 25 MiB olmalı');
-  assert.equal(serverTs.includes('CINETRACK_MAX_DATA_BYTE'), false, 'maxDataBytes ortam değişkenine bağlanmamalı');
+  // F5.1-04: metin araması yerine AST sabit/ifade denetimi.
+  const serverSource = parseFile(path.join(repoRoot, 'server.ts'));
+  const limitsSource = parseFile(path.join(repoRoot, 'src/core/limits.ts'));
+  assert.equal(constInitializerText(serverSource, 'CINETRACK_HOST'), "'127.0.0.1'", 'CINETRACK_HOST sabiti 127.0.0.1 olmalı');
+  assert.equal(constInitializerText(serverSource, 'maxDataBytes'), 'DEFAULT_MAX_DATA_BYTES', 'server.ts tek kaynaklı DEFAULT_MAX_DATA_BYTES kullanmalı');
+  assert.equal(constInitializerNumber(limitsSource, 'DEFAULT_MAX_DATA_BYTES'), 25 * 1024 * 1024, 'DEFAULT_MAX_DATA_BYTES 25 MiB olmalı');
+  assert.equal(stringLiterals(serverSource).has('CINETRACK_MAX_DATA_BYTE'), false, 'maxDataBytes ortam değişkenine bağlanmamalı');
 
   // 4. Sıfır güvenlik seçeneği ile (varsayılan localhost) token istemeden yazma ve hız sınırı olmadan TMDB erişimi çalışmalı
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-zeroenv-'));
@@ -1281,13 +1295,26 @@ test("Keşfet - 'Listemdekileri Gizle' filtresi: Gündemdekiler, Yüksek Puanlı
   assert.equal(isMediaRegisteredInUserProfile({ id: 501, media_type: 'movie' }, { savedItems, preferences, tasteMap }), true);
   assert.equal(isMediaRegisteredInUserProfile({ id: 509, media_type: 'movie' }, { savedItems, preferences, tasteMap }), false);
 
-  // Controls.tsx ve App.tsx entegrasyon kontrolü
+  // Controls.tsx ve görüntüleme hattı entegrasyon kontrolü (F5.1-04: AST).
   const repoRoot = path.resolve(import.meta.dirname, '..');
-  const controlsTsx = fs.readFileSync(path.join(repoRoot, 'src/components/Controls.tsx'), 'utf8');
-  const appTsx = fs.readFileSync(path.join(repoRoot, 'src/App.tsx'), 'utf8');
-  assert.ok(controlsTsx.includes('Listemdekileri Gizle'), 'Controls.tsx içinde Listemdekileri Gizle etiketi bulunmalı');
-  assert.ok(controlsTsx.includes('type="checkbox"'), 'Controls.tsx içinde checkbox kontrolü bulunmalı');
-  assert.ok(appTsx.includes('filterHiddenUserRegisteredItems'), 'App.tsx veri katmanında filterHiddenUserRegisteredItems kullanmalı');
+  const controlsTsx = parseFile(path.join(repoRoot, 'src/components/Controls.tsx'));
+  assert.ok(
+    stringLiterals(controlsTsx).has('Listemdekileri Gizle'),
+    'Controls.tsx içinde Listemdekileri Gizle etiketi bulunmalı'
+  );
+  assert.ok(
+    stringLiterals(controlsTsx).has('checkbox'),
+    'Controls.tsx içinde checkbox kontrolü bulunmalı'
+  );
+  const displayPipeline = parseFile(path.join(repoRoot, 'src/app/displayed-items.ts'));
+  assert.ok(
+    importedNamesFrom(displayPipeline, 'core/cinetrack-core.ts').includes('filterHiddenUserRegisteredItems'),
+    'Görüntüleme hattı filterHiddenUserRegisteredItems kullanmalı'
+  );
+  assert.ok(
+    callCount(displayPipeline, 'filterHiddenUserRegisteredItems') > 0,
+    'Görüntüleme hattı filterHiddenUserRegisteredItems çağırmalı'
+  );
 });
 
 // ============================================================================

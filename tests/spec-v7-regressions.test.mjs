@@ -59,6 +59,7 @@ import {
 } from '../src/services/stock-engine.ts';
 import { renderRelationshipCanvasNode } from '../src/components/RelationshipCanvas.ts';
 import { ErrorBoundary } from '../src/components/ErrorBoundary.tsx';
+import { declaredNames, getModuleEdges, parseFile } from './helpers/source-ast.mjs';
 
 function createFakeIndexedDB() {
   const databases = new Map();
@@ -474,10 +475,19 @@ test('REG-04: Supabase cloud database package, repositories, migrations, and ser
   assert.equal(fs.existsSync(path.join(root, 'src/server/catalog-repository.ts')), false);
   assert.equal(fs.existsSync(path.join(root, 'supabase')), false);
 
-  const serverSrc = fs.readFileSync(path.join(root, 'server.ts'), 'utf8');
-  const storageSrc = fs.readFileSync(path.join(root, 'src/server/storage.ts'), 'utf8');
-  assert.equal(/supabase|UserDataRepository|CatalogRepository/i.test(serverSrc), false);
-  assert.equal(/supabase|UserDataRepository|CatalogRepository/i.test(storageSrc), false);
+  // F5.1-04: metin/regex yerine AST — import kenarları ve tanımlı sınıflar.
+  for (const relPath of ['server.ts', 'src/server/storage.ts']) {
+    const source = parseFile(path.join(root, relPath));
+    const modules = getModuleEdges(source).map((edge) => edge.module);
+    assert.equal(
+      modules.some((module) => /supabase/i.test(module)),
+      false,
+      `${relPath} supabase modülü import etmemeli`
+    );
+    const declared = declaredNames(source);
+    assert.equal(declared.classes.includes('UserDataRepository'), false, `${relPath} UserDataRepository tanımlamamalı`);
+    assert.equal(declared.classes.includes('CatalogRepository'), false, `${relPath} CatalogRepository tanımlamamalı`);
+  }
 });
 
 test('IMP-18 + IMP-19 + BUG-11: ErrorBoundary diagnostic recovery, empty-state guides, Vite manualChunks safety, and <1,000-line ceiling', () => {
