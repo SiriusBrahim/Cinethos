@@ -1,5 +1,6 @@
 import React from 'react';
 import { resetDerivedCachesPreserveProfileAndStock } from '../services/idb-schema-version.ts';
+import { ErrorRecoveryActions } from './ui-states.tsx';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -182,33 +183,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             </p>
           )}
 
-          <div className="message-actions error-diagnostic-actions">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={this.handleRetry}
-              disabled={this.state.isResettingCache}
-            >
-              Tekrar dene
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => void this.handleResetCachesAndRetry()}
-              disabled={this.state.isResettingCache}
-            >
-              {this.state.isResettingCache
-                ? 'Önbellekler temizleniyor…'
-                : 'Önbellekleri sıfırla ve dene'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => void this.handleCopyError()}
-            >
-              {this.state.copied ? '✓ Hata metni kopyalandı' : 'Hata metnini kopyala'}
-            </button>
-          </div>
+          <ErrorRecoveryActions
+            isResettingCaches={this.state.isResettingCache}
+            copied={this.state.copied}
+            onRetry={this.handleRetry}
+            onResetCachesAndRetry={() => void this.handleResetCachesAndRetry()}
+            onCopy={() => void this.handleCopyError()}
+          />
         </div>
       );
     }

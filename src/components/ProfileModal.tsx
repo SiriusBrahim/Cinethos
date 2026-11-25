@@ -25,6 +25,7 @@ import {
   type RemoteSyncStatusPayload,
 } from './ProfileGitHubSyncSection.tsx';
 import { DuplicateMergePanel } from './DuplicateMergePanel.tsx';
+import { DerivedCacheResetControl } from './ui-states.tsx';
 
 export type ProfileModalTabKey = 'stats' | 'profile' | 'backup' | 'sync';
 
@@ -566,24 +567,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               {/* IMP-15: Çift Kayıt Temizliği */}
               <DuplicateMergePanel items={savedItems} onMergePair={onMergeDuplicates} />
 
-              {/* REG-03: Türetilmiş Önbellekleri Sıfırla */}
-              <div className="profile-tools-section">
-                <strong className="profile-tools-heading">Önbellek Bakımı (Vektör & Harita)</strong>
-                <p className="cache-reset-note">
-                  Zevk vektörü (<code>ct:encodings</code>) ve ilişki haritası önbelleğini temizler. İzleme listenize, profil ayarlarınıza ve yerel stok havuzunuza (<code>ct:stock</code>) dokunulmaz.
-                </p>
-                <div className="csv-actions-row">
-                  <button
-                    type="button"
-                    className="btn whitespace-nowrap"
-                    disabled={isResettingCaches}
-                    onClick={() => void handleResetDerivedCaches()}
-                  >
-                    {isResettingCaches ? 'Önbellekler sıfırlanıyor…' : 'Önbellekleri Sıfırla'}
-                  </button>
-                </div>
-                {cacheResetMessage && <p className="provider-message">{cacheResetMessage}</p>}
-              </div>
+              {/* REG-03: Türetilmiş Önbellekleri Sıfırla (F5.2-01: ortak durum bileşeni) */}
+              <DerivedCacheResetControl
+                resetting={isResettingCaches}
+                message={cacheResetMessage}
+                onReset={() => void handleResetDerivedCaches()}
+              />
             </div>
           )}
         </div>

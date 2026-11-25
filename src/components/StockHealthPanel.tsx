@@ -3,6 +3,7 @@ import {
   computeStockHealthMetrics,
   type StockHealthMetrics,
 } from '../services/stock-health-service.ts';
+import { StockPullButton } from './ui-states.tsx';
 
 interface StockHealthPanelProps {
   isOpen: boolean;
@@ -54,15 +55,13 @@ export const StockHealthPanel: React.FC<StockHealthPanelProps> = ({
         </div>
         <div className="stock-health-actions">
           {onReplenishStock && (
-            <button
-              type="button"
+            <StockPullButton
+              replenishing={isStockReplenishing}
+              disabled={loading}
               className="btn btn-primary btn-sm whitespace-nowrap"
-              disabled={isStockReplenishing || loading}
-              onClick={onReplenishStock}
               title="TMDB'den yeni stok içerikleri çek (mevcut liste ve stok kayıtları tekrar eklenmez)"
-            >
-              {isStockReplenishing ? 'Stok Çekiliyor…' : 'Stok İçerik Çek'}
-            </button>
+              onClick={onReplenishStock}
+            />
           )}
           <button
             type="button"

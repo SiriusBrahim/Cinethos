@@ -32,6 +32,19 @@ function moduleSpecifier(node) {
     : null;
 }
 
+/** Dosyadaki sayısal literal değerleri (kaynak metni taraması olmadan). */
+export function numericLiteralValues(sourceFile) {
+  const values = [];
+  walk(sourceFile, (node) => {
+    if (ts.isNumericLiteral(node)) values.push(Number(node.text.replace(/_/g, '')));
+    else if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)) {
+      const value = Number(node.operand.text.replace(/_/g, ''));
+      values.push(node.operator === ts.SyntaxKind.MinusToken ? -value : value);
+    }
+  });
+  return values;
+}
+
 /** Dosyanın import/export-from/re-export kenarları: { module, names, typeOnly }. */
 export function getModuleEdges(sourceFile) {
   const edges = [];

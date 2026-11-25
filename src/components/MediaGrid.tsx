@@ -13,6 +13,8 @@ import {
 } from '../core/cinetrack-core.ts';
 import { imageUrl, handleImageError } from '../utils/helpers.ts';
 import { TmdbItem } from '../types/tmdb.ts';
+import { UI_COPY } from '../app/ui-copy.ts';
+import { ActorsSubtabsBar, EmptyLibraryGuide, StockPullButton } from './ui-states.tsx';
 
 interface MediaGridProps {
   title: string;
@@ -211,7 +213,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               title="TMDB'den yeni stok içerikleri çek (listelerdeki ve stoktaki mevcut kayıtlar atlanır)"
             >
               <span className={`refresh-icon ${isStockReplenishing ? 'spinning' : ''}`} aria-hidden="true">↻</span>{' '}
-              <span>{isStockReplenishing ? 'Stok Çekiliyor…' : 'Stok İçerik Çek'}</span>
+              <span>{isStockReplenishing ? UI_COPY.stock.pullBusy : UI_COPY.stock.pull}</span>
             </button>
           )}
           <div className={`loading ${isLoading || loadingMore ? 'visible' : ''}`} aria-live="polite">
@@ -287,27 +289,11 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
       )}
 
       {isActorsListMode && (
-        <div className="actors-subtabs-bar" role="tablist" aria-label="Favori oyuncular görünümü">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={actorsSubTab === 'actors'}
-            className={`actors-subtab-btn ${actorsSubTab === 'actors' ? 'is-active' : ''}`}
-            onClick={() => setActorsSubTab('actors')}
-          >
-            <span>Oyuncular</span>{' '}
-            <strong className="actors-subtab-count tabular-nums">{safeFavoriteActors.length}</strong>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={actorsSubTab === 'recommendations'}
-            className={`actors-subtab-btn ${actorsSubTab === 'recommendations' ? 'is-active' : ''}`}
-            onClick={() => setActorsSubTab('recommendations')}
-          >
-            <span>Öneriler</span>
-          </button>
-        </div>
+        <ActorsSubtabsBar
+          activeSubTab={actorsSubTab}
+          favoriteCount={safeFavoriteActors.length}
+          onSubTabChange={setActorsSubTab}
+        />
       )}
 
       {isActorsListMode && actorsSubTab === 'recommendations' ? (
@@ -619,14 +605,12 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
                       )}
                       <div className="message-actions">
                         {onReplenishStock && (
-                          <button
+                          <StockPullButton
+                            variant="long"
+                            replenishing={isStockReplenishing}
                             className="btn btn-primary"
-                            type="button"
-                            disabled={isStockReplenishing}
                             onClick={onReplenishStock}
-                          >
-                            {isStockReplenishing ? 'Stok havuzu indiriliyor…' : 'Stok havuzunu indir'}
-                          </button>
+                          />
                         )}
                         <button
                           className="btn"
@@ -654,14 +638,11 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
                         Filtreleri temizle
                       </button>
                       {onReplenishStock && (
-                        <button
+                        <StockPullButton
+                          replenishing={isStockReplenishing}
                           className="btn whitespace-nowrap"
-                          type="button"
-                          disabled={isStockReplenishing}
                           onClick={onReplenishStock}
-                        >
-                          {isStockReplenishing ? 'Stok Çekiliyor…' : 'Stok İçerik Çek'}
-                        </button>
+                        />
                       )}
                     </div>
                   </>
@@ -720,28 +701,10 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
               </>
             ) : (
               <>
-                <strong>İzleme listen henüz boş — ilk içeriğini ekle</strong>
-                <span>
-                  Keşfet sekmesinden izlediğin veya merak ettiğin yapımları işaretle ya da özel içerik ekle. İlk birkaç kayıttan sonra Sana Özel önerileri, Zevk Haritası ve Seriler otomatik aktifleşir.
-                </span>
-                <div className="message-actions">
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    onClick={() => onEmptyAction('discover')}
-                  >
-                    Keşfet&apos;e git
-                  </button>
-                  {onOpenAddCustom && (
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={onOpenAddCustom}
-                    >
-                      Özel içerik ekle
-                    </button>
-                  )}
-                </div>
+                <EmptyLibraryGuide
+                  onGoDiscover={() => onEmptyAction('discover')}
+                  onOpenAddCustom={onOpenAddCustom}
+                />
               </>
             )}
           </div>

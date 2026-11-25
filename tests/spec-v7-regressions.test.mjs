@@ -58,6 +58,16 @@ import {
   resetStockEngineForTests,
 } from '../src/services/stock-engine.ts';
 import { renderRelationshipCanvasNode } from '../src/components/RelationshipCanvas.ts';
+import React from 'react';
+import { UI_COPY } from '../src/app/ui-copy.ts';
+import {
+  DerivedCacheResetControl,
+  EmptyLibraryGuide,
+  ErrorRecoveryActions,
+  MapPreparingNotice,
+  StockPullButton,
+} from '../src/components/ui-states.tsx';
+import { renderText } from './helpers/render-tree.mjs';
 import { ErrorBoundary } from '../src/components/ErrorBoundary.tsx';
 import { declaredNames, getModuleEdges, parseFile } from './helpers/source-ast.mjs';
 
@@ -501,28 +511,37 @@ test('IMP-18 + IMP-19 + BUG-11: ErrorBoundary diagnostic recovery, empty-state g
   assert.equal(derived.errorName, 'TypeError');
   assert.equal(derived.errorMessage, 'NaN coordinate in ForceGraph2D');
 
-  const ebSrc = fs.readFileSync(path.join(root, 'src/components/ErrorBoundary.tsx'), 'utf8');
-  assert.ok(ebSrc.includes('Tekrar dene'));
-  assert.ok(ebSrc.includes('Hata metnini kopyala'));
-  assert.ok(ebSrc.includes('Önbellekleri sıfırla ve dene'));
+  // F5.2-01: JSX kaynak metni yerine bileşenin gerçek render çıktısı doğrulanır.
+  const errorActions = renderText(
+    React.createElement(ErrorRecoveryActions, {
+      isResettingCaches: false,
+      copied: false,
+      onRetry: () => {},
+      onResetCachesAndRetry: () => {},
+      onCopy: () => {},
+    })
+  );
+  assert.ok(errorActions.includes(UI_COPY.errorBoundary.retry));
+  assert.ok(errorActions.includes(UI_COPY.errorBoundary.copyError));
+  assert.ok(errorActions.includes(UI_COPY.errorBoundary.resetCachesAndRetry));
 
-  // IMP-19: Empty-state guides in MediaGrid, TasteMapView, RelationshipExplorer, and REG-03 in ProfileModal
-  const mediaGridSrc = fs.readFileSync(path.join(root, 'src/components/MediaGrid.tsx'), 'utf8');
-  assert.ok(mediaGridSrc.includes('Stok havuzunu indir'));
-  assert.ok(mediaGridSrc.includes('Stok İçerik Çek'));
-  assert.ok(mediaGridSrc.includes('İzleme listen henüz boş — ilk içeriğini ekle'));
+  // IMP-19: Boş durum rehberleri, stok düğmesi ve hazırlanma metinleri render edilir.
+  const emptyGuide = renderText(
+    EmptyLibraryGuide({ onGoDiscover: () => {}, onOpenAddCustom: () => {} })
+  );
+  assert.ok(emptyGuide.includes(UI_COPY.library.emptyTitle));
+  assert.ok(emptyGuide.includes(UI_COPY.library.goDiscover));
 
-  const stockHealthSrc = fs.readFileSync(path.join(root, 'src/components/StockHealthPanel.tsx'), 'utf8');
-  assert.ok(stockHealthSrc.includes('Stok İçerik Çek'));
-
-  const tasteViewSrc = fs.readFileSync(path.join(root, 'src/components/TasteMapView.tsx'), 'utf8');
-  assert.ok(tasteViewSrc.includes('Harita hazırlanıyor…'));
-
-  const relExpSrc = fs.readFileSync(path.join(root, 'src/components/RelationshipExplorer.tsx'), 'utf8');
-  assert.ok(relExpSrc.includes('Harita hazırlanıyor…'));
-
-  const profileModalSrc = fs.readFileSync(path.join(root, 'src/components/ProfileModal.tsx'), 'utf8');
-  assert.ok(profileModalSrc.includes('Önbellekleri Sıfırla'));
+  assert.equal(
+    renderText(StockPullButton({ replenishing: false, onClick: () => {} })),
+    UI_COPY.stock.pull
+  );
+  assert.ok(renderText(MapPreparingNotice()).includes(UI_COPY.maps.preparing));
+  assert.ok(
+    renderText(DerivedCacheResetControl({ resetting: false, onReset: () => {} })).includes(
+      UI_COPY.profile.resetDerivedCaches
+    )
+  );
 
   // REG-02: vite.config.ts matches react-vendor BEFORE d3-graph
   const viteSrc = fs.readFileSync(path.join(root, 'vite.config.ts'), 'utf8');

@@ -66,9 +66,14 @@ import {
   constInitializerNumber,
   constInitializerText,
   importedNamesFrom,
+  numericLiteralValues,
   parseFile,
   stringLiterals,
 } from './helpers/source-ast.mjs';
+import { renderMarkup, renderText } from './helpers/render-tree.mjs';
+import { UI_COPY } from '../src/app/ui-copy.ts';
+import { shouldHideSecondaryToolbar } from '../src/app/controls-state.ts';
+import { ActorsSubtabsBar } from '../src/components/ui-states.tsx';
 import { formatMatchBadge } from '../src/i18n/index.ts';
 import {
   clearOfflineSyncSnapshot,
@@ -1297,7 +1302,19 @@ test("Keşfet - 'Listemdekileri Gizle' filtresi: Gündemdekiler, Yüksek Puanlı
 
   // Controls.tsx ve görüntüleme hattı entegrasyon kontrolü (F5.1-04: AST).
   const repoRoot = path.resolve(import.meta.dirname, '..');
+  // F5.2-01: ikincil çubuğun gizlenme kararı saf fonksiyonun davranışıyla doğrulanır.
+  assert.equal(
+    shouldHideSecondaryToolbar('list', 'actors'),
+    true,
+    'Favori Oyuncular sekmesinde ikincil filtre çubuğu gizlenmeli'
+  );
+  assert.equal(shouldHideSecondaryToolbar('list', 'all'), false);
+  assert.equal(shouldHideSecondaryToolbar('discover', 'actors'), false);
   const controlsTsx = parseFile(path.join(repoRoot, 'src/components/Controls.tsx'));
+  assert.ok(
+    importedNamesFrom(controlsTsx, 'app/controls-state.ts').includes('shouldHideSecondaryToolbar'),
+    'Controls.tsx gizleme kararını ortak yardımcıdan almalı'
+  );
   assert.ok(
     stringLiterals(controlsTsx).has('Listemdekileri Gizle'),
     'Controls.tsx içinde Listemdekileri Gizle etiketi bulunmalı'
@@ -1322,9 +1339,10 @@ test("Keşfet - 'Listemdekileri Gizle' filtresi: Gündemdekiler, Yüksek Puanlı
 // ============================================================================
 test('>2 MB Yedek Yükleme Desteği: 2 MB üzeri büyük yedek dosyaları istemci ve sunucu katmanlarında kesintisiz kabul edilir ve kaydedilir', async () => {
   const repoRoot = path.resolve(import.meta.dirname, '..');
-  const profileModalTsx = fs.readFileSync(path.join(repoRoot, 'src/components/ProfileModal.tsx'), 'utf8');
+  // F5.2-01: kaynak metni yerine AST sayısal sabitleri denetlenir.
+  const profileModalTsx = parseFile(path.join(repoRoot, 'src/components/ProfileModal.tsx'));
   assert.equal(
-    profileModalTsx.includes('2_000_000'),
+    numericLiteralValues(profileModalTsx).some((value) => value >= 2_000_000),
     false,
     'ProfileModal.tsx içinde 2 MB dosya boyutu engeli bulunmamalı'
   );
@@ -1705,18 +1723,28 @@ test('Listem > Favori Oyuncular 2 Sekmeli Yapı (Oyuncular & Öneriler) ve Taş�
   // UI bileşen doğrulaması: Controls.tsx Favori Oyuncular sekmesinde alt filtre barını gizlemeli,
   // MediaGrid.tsx ise 'Oyuncular' ve 'Öneriler' 2 sekmeli yapıyı ve Öneriler alt barını sunmalı
   const repoRoot = path.resolve(import.meta.dirname, '..');
-  const controlsTsx = fs.readFileSync(path.join(repoRoot, 'src/components/Controls.tsx'), 'utf8');
-  const mediaGridTsx = fs.readFileSync(path.join(repoRoot, 'src/components/MediaGrid.tsx'), 'utf8');
 
+  // F5.2-01: sekme etiketleri bileşenin gerçek render çıktısından doğrulanır.
+  const actorsTree = ActorsSubtabsBar({
+    activeSubTab: 'actors',
+    favoriteCount: favoriteActors.length,
+    onSubTabChange: () => {},
+  });
+  const actorsText = renderText(actorsTree);
+  assert.ok(actorsText.includes(UI_COPY.actors.actorsTab), 'Oyuncular sekmesi render edilmeli');
   assert.ok(
-    controlsTsx.includes("const hideSecondaryToolbar = tab === 'list' && listStatus === 'actors';"),
-    'Controls.tsx Favori Oyuncular sekmesinde ikincil filtre barını ayırmalı'
+    actorsText.includes(UI_COPY.actors.recommendationsTab),
+    'Öneriler sekmesi render edilmeli'
   );
-  assert.ok(mediaGridTsx.includes('actors-subtabs-bar'), 'MediaGrid.tsx içinde 2 sekmeli Oyuncular/Öneriler barı bulunmalı');
-  assert.ok(mediaGridTsx.includes('Oyuncular'), 'MediaGrid.tsx içinde Oyuncular sekmesi bulunmalı');
-  assert.ok(mediaGridTsx.includes('Öneriler'), 'MediaGrid.tsx içinde Öneriler sekmesi bulunmalı');
+  assert.ok(renderMarkup(actorsTree).includes('actors-subtabs-bar'));
+
+  const mediaGridTsx = parseFile(path.join(repoRoot, 'src/components/MediaGrid.tsx'));
   assert.ok(
-    mediaGridTsx.includes('actors-recommendations-toolbar'),
+    importedNamesFrom(mediaGridTsx, './ui-states.tsx').includes('ActorsSubtabsBar'),
+    'MediaGrid.tsx 2 sekmeli çubuğu ortak bileşenden kullanmalı'
+  );
+  assert.ok(
+    [...stringLiterals(mediaGridTsx)].some((value) => value.includes('actors-recommendations-toolbar')),
     'MediaGrid.tsx içinde Öneriler sekmesine taşınmış filtre alt barı bulunmalı'
   );
 });

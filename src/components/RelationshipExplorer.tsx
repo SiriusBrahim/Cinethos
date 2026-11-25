@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
+import { UI_COPY } from '../app/ui-copy.ts';
 import { normalizeProfileId } from '../core/profile-id.ts';
 import {
   buildRelationshipGraph,
@@ -730,7 +731,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
           onClick={handleRefresh}
           disabled={loading}
         >
-          {loading ? 'Harita hazırlanıyor…' : 'Haritayı Güncelle'}
+          {loading ? UI_COPY.maps.preparing : 'Haritayı Güncelle'}
         </button>
       </div>
 
@@ -917,7 +918,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
               )}
               <h3>
                 {isInitialPreparing
-                  ? 'Harita hazırlanıyor…'
+                  ? UI_COPY.maps.preparing
                   : mode === 'relationships' && !sourceKey
                     ? 'Kaynak yapım seçilmedi'
                     : graphData && graphData.nodes.length <= 1
@@ -970,7 +971,7 @@ export const RelationshipExplorer: React.FC<RelationshipExplorerProps> = ({
                   disabled={loading}
                 >
                   {loading
-                    ? 'Harita hazırlanıyor…'
+                    ? UI_COPY.maps.preparing
                     : graphData
                       ? 'Yeniden Dene'
                       : 'Haritayı Güncelle'}
