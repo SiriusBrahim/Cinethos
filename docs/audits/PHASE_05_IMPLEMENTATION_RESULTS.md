@@ -190,3 +190,43 @@ backup-parse}.ts`, `src/core/series-types.ts`, `src/core/relationship-ports.ts`,
 | 17 | PR #65 açık + merge edilmemiş | ✅ |
 
 **Nihai durum: AŞAMA 5.1 KISMEN TAMAMLANDI. Aşama 6 başlatılmadı.**
+---
+
+## 7. Aşama 5.2 — Kalan işlerin uygulanması (25 Kas 2026)
+
+**Başlangıç HEAD:** `9784bda` · **Dal:** `remediation/full-project-remediation` · **PR:** #65 (açık, merge edilmedi)
+**Ortam:** yerel Node 26.13.1 / npm 11.20.0; tüm kapılar bu ağaçta çalıştırıldı.
+
+### 7.1 İş bazında sonuç
+
+| Madde | Durum | Yapılan |
+|---|---|---|
+| **F5.1-01** App.tsx | ⚠️ Kısmen (gerçek ayrıştırma yapıldı) | 2.391 → **2.207** satır. Saf sorumluluklar çıkarıldı: `src/app/catalog-titles.ts`, `src/app/displayed-items.ts`, `src/app/series-universe.ts`, `src/app/release-reminders.ts`. Liste filtresi/sıralama, seri evreni, hatırlatıcı adayları ve katalog başlıkları artık React dışında ve doğrudan test edilebilir. 5 davranış testi (`tests/f5-1-app-helpers.test.mjs`). |
+| **F5.1-02** persistent-store | ⚠️ Kısmen | 3.876 → **3.837** satır. Durum dosyası sorumluluğu `src/server/persistent-store/store-state.ts`'e taşındı: şablon okuma/yazma (atomik), gelecek sürüm reddi, bozuk JSON'da güvenli davranış, yarıda kalan `syncing` kayıtlarının kurtarılması. Sınıf bu modülü delege eder; kilit/lease/atomic-write/serileştirme kodu değişmedi. 4 davranış testi. |
+| **F5.1-03** bidi sync | ✅ Bu oturumda tamamlandı (yardımcı katman) | 5.118 → **3.438** satır. Modül düzeyindeki saf katman (envanter, normalize/merge/hash, `inspect*`, `compareSyncSides`, bağımlılık sözleşmesi) `src/server/github-sync/sync-core.ts` (1.758 satır) modülüne taşındı. Sınıf koordinatör olarak kaldı; tüm adlar `export *` ile geriye dönük uyumlu. Tip adları ayrı `import type` bloğunda (Node type-stripping güvenli). |
+| **F5.1-04** davranışsal testler | ⚠️ Kısmen | `tests/phase3-ui-write-paths.test.mjs` tamamen AST tabanlı yapısal doğrulamaya çevrildi (regex/metin yok). `spec-v7-regressions` REG-04 ve `phases-all` ortam/sabit kontrolleri AST'ye taşındı. Ortak yardımcı: `tests/helpers/source-ast.mjs`. Kalan: `spec-v7`/`phases-all` içindeki UI kopyası metinleri (JSX metni) hâlâ kaynak üzerinden okunuyor; DOM test ortamı (jsdom/RTL) bu projede yok. |
+| **F5.1-05** tip birleştirme | ✅ Doğrulandı + düzeltildi | Kanonik tanım tek: `core/media/types.ts`; `document-types.ts` yalnızca yeniden dışa aktarır. Önceki oturumun bıraktığı `ParsedBackupProfile.preferences: unknown` tip regresyonu (`useProfileBackupCoordinator` derleme hatası) düzeltildi: alan gerçekte normalize edilmiş `Preferences` taşıyor. |
+| **F5.1-06** GitHub sınırı | ✅ | `src/server/github-response.ts`: `readGitHubBlobPayload`, `readGitHubContentEntry`, `readGitHubDirectoryEntries`, `readGitHubErrorMessage`, `isGitHubTooLargeError`. Senkron motorundaki `any` yanıt gövdeleri kaldırıldı; eksik/yanlış alanlar istisna yerine `malformed_response` üretir. 4 davranış testi. |
+| **F5.1-07** ölü modüller + adapter | ✅ | `store-catalog.ts`, `store-profile.ts`, `sync-compare.ts`, `sync-manifest.ts`, `store-types.ts` (toplam 927 satır) AST/import taramasıyla **hiçbir** içe aktaranı olmadığı doğrulanıp kaldırıldı. Adapter akışı değişmedi: tek giriş `services/core-adapters.ts`; production'da `app.ts` üzerinden yüklenir, testler açıkça import eder. |
+
+### 7.2 Kapı sonuçları (bu ağaçta gerçekten çalıştırıldı)
+
+| Kapı | Sonuç |
+|---|---|
+| `npm run lint` (ESLint + 2 × `tsc --noEmit`) | ✅ 0 hata / 0 uyarı |
+| `npm test` | ✅ **831/831** (818 → +13) |
+| `npm run test:taste` | ✅ **440/440** |
+| `npm run cycles` | ✅ 0 döngü |
+| Mimari tarayıcı (AST) | ✅ 6 kuralın tamamı **0 ihlal** (core-purity, server-isolation, client-no-server, contracts-isolation, modules-no-server, shared-isolation) |
+| `npm run build` | ✅ başarılı |
+| Data integrity guard | ✅ `data/` değişmedi (16 dosya) |
+| Üretim duman testi (`NODE_ENV=production node server.ts`) | ✅ `/api/data` 200, `/` 200, kontrollü kapanış |
+| Playwright E2E | ⏹ Bu ortamda çalıştırılmadı; CI işine bırakıldı |
+
+### 7.3 Kalan teknik borç
+
+1. **App.tsx (2.207 satır):** profil değiştirme/oluşturma, belge birleştirme ve persist effect'leri hâlâ bileşen içinde. Bunlar çok sayıda ref üzerinden birbirine bağlı; hook'a taşımak davranışsal eşdeğerlik testi gerektirir.
+2. **persistent-store.ts (3.837 satır):** katalog/profile/derived-profile okuma-yazma grupları ve GitHub uzak IO metotları sınıf içinde. Sınıfı kompozisyona çevirmek (CatalogStore/ProfileStore/GitHubRemoteClient) ayrı bir oturum ve geniş regresyon testi ister.
+3. **sync-core.ts:** sınıf hâlâ 3.438 satır; `inspect`/`pull`/`push`/`reconcile` metotları taşınmadı.
+4. **F5.1-04:** `spec-v7` ve `phases-all` içindeki kullanıcıya görünen metinler JSX kaynağından okunuyor; DOM tabanlı test altyapısı eklenirse `renderToStaticMarkup`/RTL ile değiştirilmeli.
+5. **`any` azaltma:** GitHub sınırı ve TVDB sınırı temizlendi; `persistent-store.ts` içindeki `any` yanıt gövdeleri (yaklaşık 20 nokta) sonraki aday.
