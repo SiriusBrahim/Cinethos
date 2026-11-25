@@ -41,6 +41,11 @@ import { GitHubBidirectionalSyncManager } from './github-bidirectional-sync.ts';
 
 /** Aşama 2: kalıcı senkronizasyon durumu şema sürümü. v1 alanları geriye dönük okunur. */
 export * from './persistent-store/contracts.ts';
+import {
+  loadSyncStateSnapshot,
+  recoverInterruptedFileStates,
+  saveSyncStateSnapshot,
+} from './persistent-store/store-state.ts';
 
 import type {
   GitHubSyncErrorCategory,
@@ -521,78 +526,37 @@ export class PersistentDataStore {
   }
 
   private loadPersistedSyncState() {
-    if (!existsSync(this.syncStateFile)) return;
-    const parsed = tryParseValidJson<{
-      lastSyncAt?: string | null;
-      lastError?: string | null;
-      repoVisibilityWarning?: string;
-      persistedInitialReconcile?: boolean;
-      persistedPublicPersonalConsent?: boolean;
-      publicConsentUpdatedAt?: string | null;
-      persistedPublicCatalogConsent?: boolean;
-      publicCatalogConsentUpdatedAt?: string | null;
-      lastObservedRemotePublic?: boolean;
-      lastRemoteSummary?: SyncSideSummary | null;
-      lastComparison?: SyncComparisonSummary | null;
-      lastSyncReport?: Omit<BidirectionalSyncReport, 'updatedDataDocument'> | null;
-      fileStates?: Record<string, SyncFileStateRecord>;
-      syncStateVersion?: number;
-    }>(this.syncStateFile, (raw) => (isPlainRecordObject(raw) ? raw : null));
-    if (parsed.ok) {
-      // Gelecek şema sürümü bu sürüm tarafından yorumlanamaz; sessizce yanlış
-      // okumak yerine dosya yok sayılır (veri dosyalarına dokunulmaz).
-      if (
-        typeof parsed.data.syncStateVersion === 'number' &&
-        parsed.data.syncStateVersion > SYNC_STATE_VERSION
-      ) {
-        return;
-      }
-      this.lastSyncAt = parsed.data.lastSyncAt ?? null;
-      this.lastError = parsed.data.lastError ?? null;
-      this.repoVisibilityWarning = parsed.data.repoVisibilityWarning;
-      this.persistedInitialReconcile = Boolean(parsed.data.persistedInitialReconcile);
-      if (typeof parsed.data.persistedPublicPersonalConsent === 'boolean') {
-        this.persistedPublicPersonalConsent = parsed.data.persistedPublicPersonalConsent;
-      }
-      this.publicConsentUpdatedAt = parsed.data.publicConsentUpdatedAt ?? null;
-      if (typeof parsed.data.persistedPublicCatalogConsent === 'boolean') {
-        this.persistedPublicCatalogConsent = parsed.data.persistedPublicCatalogConsent;
-      }
-      this.publicCatalogConsentUpdatedAt = parsed.data.publicCatalogConsentUpdatedAt ?? null;
-      if (typeof parsed.data.lastObservedRemotePublic === 'boolean') {
-        this.lastObservedRemotePublic = parsed.data.lastObservedRemotePublic;
-      }
-      this.lastRemoteSummary = parsed.data.lastRemoteSummary ?? null;
-      this.lastComparison = parsed.data.lastComparison ?? null;
-      this.lastSyncReport = parsed.data.lastSyncReport ?? null;
-      if (isPlainRecordObject(parsed.data.fileStates)) {
-        this.fileStates = { ...parsed.data.fileStates };
-      }
-      this.recoverStaleSyncingFileStates();
+    const snapshot = loadSyncStateSnapshot(this.syncStateFile);
+    if (!snapshot) return;
+    this.lastSyncAt = snapshot.lastSyncAt;
+    this.lastError = snapshot.lastError;
+    this.repoVisibilityWarning = snapshot.repoVisibilityWarning;
+    this.persistedInitialReconcile = snapshot.persistedInitialReconcile;
+    if (snapshot.persistedPublicPersonalConsent !== undefined) {
+      this.persistedPublicPersonalConsent = snapshot.persistedPublicPersonalConsent;
     }
+    this.publicConsentUpdatedAt = snapshot.publicConsentUpdatedAt;
+    if (snapshot.persistedPublicCatalogConsent !== undefined) {
+      this.persistedPublicCatalogConsent = snapshot.persistedPublicCatalogConsent;
+    }
+    this.publicCatalogConsentUpdatedAt = snapshot.publicCatalogConsentUpdatedAt;
+    if (snapshot.lastObservedRemotePublic !== undefined) {
+      this.lastObservedRemotePublic = snapshot.lastObservedRemotePublic;
+    }
+    this.lastRemoteSummary = snapshot.lastRemoteSummary;
+    this.lastComparison = snapshot.lastComparison;
+    this.lastSyncReport = snapshot.lastSyncReport;
+    this.fileStates = snapshot.fileStates;
+    this.recoverStaleSyncingFileStates();
   }
 
-  /**
-   * Aşama 2 (B-10): Önceki süreç `syncing` durumunda çöktüyse dosya durumu
-   * sonsuza dek "gönderiliyor" görünmemeli. Kayıt `pending`e çevrilir ve
-   * kesinti açıkça raporlanır; hiçbir iş başarılı sayılmaz.
-   */
   private recoverStaleSyncingFileStates(): void {
-    const recovered: string[] = [];
-    for (const [repoPath, state] of Object.entries(this.fileStates)) {
-      if (!state || state.status !== 'syncing') continue;
-      this.fileStates[repoPath] = {
-        ...state,
-        status: 'pending',
-        statusLabel: STAGE_LABELS.pending,
-        noop: false,
-        error: 'Kesinti: önceki süreçte yarıda kaldı; sonraki senkronizasyonda yeniden denenecek.',
-        errorCategory: 'network_error',
-        updatedAt: new Date().toISOString(),
-      };
-      recovered.push(repoPath);
-    }
+    const { fileStates, recovered } = recoverInterruptedFileStates(
+      this.fileStates,
+      new Date().toISOString()
+    );
     if (recovered.length === 0) return;
+    this.fileStates = fileStates;
     this.lastError = `Kesinti sonrası kurtarma: ${recovered.length} dosya yarıda kalmıştı (${recovered.join(', ')}).`;
     try {
       this.persistSyncState();
@@ -602,35 +566,27 @@ export class PersistentDataStore {
   }
 
   private persistSyncState() {
-    try {
-      const payload = {
-        syncStateVersion: SYNC_STATE_VERSION,
-        lastSyncAt: this.lastSyncAt,
-        lastError: this.lastError,
-        persistedInitialReconcile: this.persistedInitialReconcile,
-        ...(this.persistedPublicPersonalConsent !== undefined
-          ? { persistedPublicPersonalConsent: this.persistedPublicPersonalConsent }
-          : {}),
-        ...(this.publicConsentUpdatedAt ? { publicConsentUpdatedAt: this.publicConsentUpdatedAt } : {}),
-        ...(this.persistedPublicCatalogConsent !== undefined
-          ? { persistedPublicCatalogConsent: this.persistedPublicCatalogConsent }
-          : {}),
-        ...(this.publicCatalogConsentUpdatedAt
-          ? { publicCatalogConsentUpdatedAt: this.publicCatalogConsentUpdatedAt }
-          : {}),
-        ...(this.lastObservedRemotePublic !== undefined
-          ? { lastObservedRemotePublic: this.lastObservedRemotePublic }
-          : {}),
-        ...(this.repoVisibilityWarning ? { repoVisibilityWarning: this.repoVisibilityWarning } : {}),
-        ...(this.lastRemoteSummary ? { lastRemoteSummary: this.lastRemoteSummary } : {}),
-        ...(this.lastComparison ? { lastComparison: this.lastComparison } : {}),
-        ...(this.lastSyncReport ? { lastSyncReport: this.lastSyncReport } : {}),
-        fileStates: this.fileStates,
-      };
-      writeJsonFileAtomic(this.syncStateFile, stringifyDeterministic(payload), {
-        validateParsed: isPlainRecordObject,
-      });
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    saveSyncStateSnapshot(this.syncStateFile, {
+      lastSyncAt: this.lastSyncAt,
+      lastError: this.lastError,
+      repoVisibilityWarning: this.repoVisibilityWarning,
+      persistedInitialReconcile: this.persistedInitialReconcile,
+      ...(this.persistedPublicPersonalConsent !== undefined
+        ? { persistedPublicPersonalConsent: this.persistedPublicPersonalConsent }
+        : {}),
+      publicConsentUpdatedAt: this.publicConsentUpdatedAt,
+      ...(this.persistedPublicCatalogConsent !== undefined
+        ? { persistedPublicCatalogConsent: this.persistedPublicCatalogConsent }
+        : {}),
+      publicCatalogConsentUpdatedAt: this.publicCatalogConsentUpdatedAt,
+      ...(this.lastObservedRemotePublic !== undefined
+        ? { lastObservedRemotePublic: this.lastObservedRemotePublic }
+        : {}),
+      lastRemoteSummary: this.lastRemoteSummary,
+      lastComparison: this.lastComparison,
+      lastSyncReport: this.lastSyncReport,
+      fileStates: this.fileStates,
+    });
   }
 
   private setFileSyncStage(
