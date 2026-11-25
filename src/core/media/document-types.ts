@@ -36,7 +36,7 @@ export interface ParsedBackupProfile {
   id: string;
   name: string;
   createdAt?: string;
-  preferences: unknown;
+  preferences: Preferences;
   items: SavedItem[];
   favoriteActors: FavoriteActorInfo[];
   deleted_keys?: Record<string, string>;
@@ -64,4 +64,5 @@ export interface ParsedBackupDocument {
 import type {
   SavedItem,
   FavoriteActorInfo,
+  Preferences,
 } from './types.ts';
