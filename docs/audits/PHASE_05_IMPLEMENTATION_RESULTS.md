@@ -468,3 +468,157 @@ davranışsal risk taşımaz, yalnızca derleme düzeltmeleri gerektirir.
 | `npm run test:taste` | ✅ **440/440**, veri kapısı OK |
 | `npm run build` | ✅ başarılı |
 | CI | Bu commit'lerin HEAD SHA'sı için ayrıca doğrulanacak (§11.5 notu) |
+
+---
+
+## 12. Aşama 5 kalan işlerin tamamlanması (26 Kas 2026)
+
+**Başlangıç HEAD:** `205ac14` (uzak dal ile aynı, `0 0` ileri/geri) · **Dal:**
+`remediation/full-project-remediation` · **PR:** #65 (açık, `merged_at: null`,
+base `master@9be5011`).
+
+### 12.1 Envanter: bu oturumdan önce tamamlanmış olanlar
+
+Çalışmaya başlamadan önce kod ağacı ve §8–§11 okundu. Önceki oturumların
+bıraktığı durum:
+
+| Sorumluluk | Durum | Kanıt |
+|---|---|---|
+| Katalog yazma | ✅ Ayrıldı (önceki oturum) | `src/server/persistent-store/catalog-write-store.ts`; facade `upsertCatalogItemsOp`'a delege ediyor (`persistent-store.ts:898`) |
+| Türetilmiş profil yazma | ✅ Ayrıldı | `derived-profile-write-store.ts`; `persistent-store.ts:1043` |
+| Sinema künyesi yazma | ✅ Ayrıldı | `cinema-kunye-write-store.ts`; `persistent-store.ts:993` |
+| Stok yazma | ✅ Ayrıldı | `stock-write-store.ts`; `persistent-store.ts:1008` |
+| Senkron durumu yazma | ✅ Ayrıldı | `store-state.ts` (`saveSyncStateSnapshot`), atomik yazma + journal korunur |
+| Uzak belge birleştirme | ✅ Ayrıldı (F5.3-03, önceki oturum) | `src/app/persistence/remote-document-merge.ts` + `src/app/server-sync.ts` (saf `mergeRemoteDocument`) |
+| Belge **doğrudan uygulama** | ❌ App.tsx içinde kalmıştı | `src/App.tsx:637` (bu oturumun işi) |
+
+Yani Aşama 5’in “App.tsx sorumlulukları” maddesinde kalan son parça
+`applyDataDocumentToState` idi; yazma tarafında ise güvenle ayrılabilecek
+sorumluluk kalmamıştı (aşağıda §12.5).
+
+### 12.2 Bu oturumda yapılan değişiklik (Aşama A → Aşama B)
+
+**Aşama A — yeni modül ve bağımsız doğrulama**
+
+`src/app/persistence/remote-document-merge.ts` içine iki şey eklendi:
+
+1. `applyDataDocumentToState(context, rawDoc): boolean` — saf fonksiyon.
+   Bağlam yalnızca `persistProfilesBestEffort`, `resolveQueuedConflict`,
+   `refs`, `setters` içerir; React yok, ağ yok, GitHub yok.
+2. `useDataDocumentApply(...)` — orijinal `useCallback` bağımlılıklarını
+   (`[persistProfilesBestEffort, resolveQueuedConflict]`) aynen koruyan ince
+   React kabuğu. `useRemoteDocumentMerge` ile aynı ref/setter sözleşmesini
+   paylaşır.
+
+Davranış birebir korundu (karşılaştırma orijinal gövdeyle satır satır yapıldı):
+
+| Adım | Önce (App.tsx) | Sonra (modül) |
+|---|---|---|
+| Geçersiz belge | `normalizeDataDocument` null → erken `return` | aynı; ayrıca `false` döner |
+| Ref/state yazımı | 8 ref + 9 setter, aynı sıra | aynı sıra |
+| Taste map | `loadPersistentTasteMap(active.id)` | aynı |
+| Profil kalıcılığı | `persistProfilesBestEffort(doc.profiles)` | aynı |
+| Kirli işaret | `isDirtyRef=false` + `localStorage.removeItem(DIRTY_KEY)` (try/catch) | `writeDirtyFlag(false)` — merge yoluyla **aynı** yardımcı |
+| Çakışma | `resolveQueuedConflict()` sonra `setServerConflict(null)` | aynı sıra |
+
+**Aşama B — entegrasyon ve eski kodun kaldırılması**
+
+- `App.tsx`: 34 satırlık `useCallback` gövdesi silindi; yerine
+  `useOfflineSync`’ten **sonra** `useDataDocumentApply({...})` çağrısı geldi.
+  Sıra zorunlu: `resolveQueuedConflict` çevrimdışı kuyruk hook’undan gelir,
+  o hook ise `mergeRemoteDocumentIntoState`’e bağlıdır (döngü olmaması için
+  apply hook’u sonra kurulur).
+- Ref/setter bağlantıları `remoteDocumentRefs` / `remoteDocumentSetters`
+  nesnelerine alındı; iki hook aynı nesneleri paylaşıyor (tekrar yok).
+- Kullanılmayan `normalizeFavoriteActors`, `normalizeDeletedKeys` importları
+  App.tsx’ten kaldırıldı.
+- `applyDataDocumentToState` çağrı noktaları (yedek geri yükleme,
+  `useServerSyncCoordinator` çakışma çözümü) değişmedi; aynı isimle hook’tan
+  geliyor.
+- App.tsx: **2.072 → 2.049 satır**. Modül: 195 → 306 satır (taşınan gövde +
+  sözleşme tipleri + açıklayıcı yorumlar).
+
+### 12.3 Testler
+
+Mevcut 5 testin üzerine 4 davranış testi eklendi
+(`tests/f5-3-app-remote-document-merge.test.mjs`, 9 test):
+
+1. **Geçersiz belge:** `null`, `undefined`, `{}`, `{profiles: []}`, `'bozuk'`
+   → `false`; hiçbir setter/ref/kalıcılık/çakışma çağrısı yok.
+2. **Geçerli belge:** aktif profil + liste belgeyle değişir; `isDirty=false`;
+   `localStorage.removeItem('cinetrack.dirty.v2')` çağrılır;
+   `resolveQueuedConflict` **tam bir kez**; `setServerConflict(null)`; her
+   setter tam bir kez; taste map ref ve state aynı nesne.
+3. **Normalizasyon:** yinelenen/`null` favori aktörler tekilleşir; geçersiz
+   `deleted_keys` girdisi düşer, geçerli tombstone ISO zaman damgasıyla korunur.
+4. **Hook kimliği:** `useDataDocumentApply` callback bağımlılıkları orijinal
+   `[persistProfilesBestEffort, resolveQueuedConflict]` ile aynı (kaynak
+   düzeyinde regresyon kapısı; merge hook’un mevcut kapısı korunuyor).
+
+Testler gerçek davranışı doğrular (kaynak metni taraması yalnızca 4. maddedeki
+bağımlılık kimliği için, çünkü hook render edilmeden kimlik gözlemlenemiyor).
+Hiçbir test silinmedi, atlanmadı veya gevşetilmedi.
+
+### 12.4 Kapı sonuçları (bu ağaçta gerçekten çalıştırıldı)
+
+| Kapı | Komut | Sonuç |
+|---|---|---|
+| ESLint + TypeScript (2 proje) | `npm run lint` | ✅ 0 hata / 0 uyarı |
+| Birim testleri + veri kapısı | `npm test` | ✅ **916/916**, `data/ değişmedi (0 dosya, 94 test dosyası)` |
+| Taste testleri | `npm run test:taste` | ✅ **440/440**, veri kapısı OK |
+| Döngü denetimi | `npm run cycles` | ✅ 0 döngü |
+| Mimari sınırlar | `tests/architecture-boundaries.test.mjs` (npm test içinde) | ✅ geçti |
+| Production build | `npm run build` | ✅ başarılı |
+| Üretim duman testi | `NODE_ENV=production node server.ts` + curl | ✅ `/api/tmdb-status` 200, `/` 200, `/discover/deep-link` 200, `/api/data` 200, `/api/sync/status` 200 (`mode: local_only`, GitHub yapılandırması yok), `POST /api/sync/push` 404 (beklenen) |
+| Playwright E2E | `npm run test:e2e` | ⏹ Bu ortamda çalıştırılmadı (tarayıcı yok); CI `e2e` işine bırakıldı |
+
+Test artışı: 912 → **916** (+4). Uygulama davranışı ve veri formatı değişmedi;
+`data/` bu oturumda hiç yazılmadı (kapı 0 dosya).
+
+### 12.5 Tamamlanamayan / zorlanmayan işler (teknik gerekçe)
+
+1. **`pull`/`push`/`reconcile` gövdeleri** hâlâ `github-bidirectional-sync.ts`
+   içinde. Üçü aynı `runSerialized` kuyruğu + lease yenileme + journal
+   kaydının içinde çalışıyor; gövdeleri ayırmak kilit sahipliği ve yarım kalan
+   işlem kurtarma semantiğini yeniden düzenlemek demek. Bu, §8.3-1’deki kararın
+   aynısıdır ve GitHub senkronizasyonunu değiştirmeme kuralı gereği bu oturumda
+   da yapılmadı.
+2. **GitHub’a özgü store metotları** (`commitFileToGitHub`,
+   `uploadBinaryBackupToGitHub`, `verifyRemoteRepoAccess`, `syncToGitHub`, …)
+   `PersistentDataStore`’un public yüzeyinde duruyor. Yerel veri yolları bu
+   metotlara bağımlı değil (testle doğrulanıyor), fakat taşımak
+   `PersistentDataStoreSyncPort` sözleşmesini jenerikleştirmeyi gerektiriyor;
+   senkron davranışını değiştirmeden yapılabilecek ama bu oturumun kapsamı
+   dışında bırakıldı.
+3. **`PersistentDataStore` içindeki kalan yazma adımları.** Katalog, türetilmiş
+   profil, künye, stok ve senkron durumu yazmaları ayrı modüllere taşınmış
+   durumda. Facade’da kalan kod yazma *kararı* değil, aynı işlem sınırını
+   paylaşan senkron geçişleri/lease/journal sarmalayıcılarıdır; bunları
+   ayırmak atomik yazma + serileştirici + katalog imzası sırasını
+   değiştirebileceği için **taşınmadı** (istenen kural: veri bütünlüğü riski
+   varsa zorlamadan dur).
+4. **Hook’un React render testi.** `useDataDocumentApply` yalnızca kimlik
+   sözleşmesi ve saf fonksiyon üzerinden doğrulanıyor; `react-dom/server`
+   ile render edilmiş bir test eklemek mevcut test yaklaşımından farklı bir
+   altyapı gerektirdiği için eklenmedi (saf gövde %100 test kapsamında).
+
+### 12.6 Bilinçli bırakılan teknik borç
+
+- `PersistentStoreOptions` düz `github*` alanları (geriye dönük uyumluluk).
+- `persistent-store.ts` içindeki iki `import type` (çalışma zamanı yükü yok).
+- `excel-profile-backup.ts` opsiyonel `uploadToGithub` sözleşmesi (UI göndermiyor).
+- `src/core/sync-display.ts` GitHub rapor tipleri (sağlayıcıdan bağımsız tüketiciler var).
+- §11.4’teki kaldırma haritası aynen geçerli; bu oturum yeni bir GitHub
+  bağımlılığı eklemedi ve `remote-document-merge.ts` sağlayıcıdan bağımsız kaldı
+  (GitHub import’u 0 — `tests/f5-3-github-isolation.test.mjs` bunu zorluyor).
+
+### 12.7 Commit ve PR durumu
+
+| Alan | Değer |
+|---|---|
+| Kod commit’i | `1cf0565` — `refactor(f5.3-03): belge uygulama sorumluluğunu birleştirme modülüne taşı` |
+| Bu doküman commit’i | ayrı commit (doküman güncellemesi) |
+| Dal | `remediation/full-project-remediation` |
+| PR #65 | açık, birleştirilmedi |
+| CI | son HEAD SHA’sı için ayrıca doğrulanır (aşağıdaki oturum raporu) |
+| Aşama 6 | başlatılmadı |
