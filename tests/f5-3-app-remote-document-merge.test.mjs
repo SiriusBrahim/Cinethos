@@ -14,6 +14,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyDataDocumentToState,
   applyMergedRemoteDocumentIntoState,
 } from '../src/app/persistence/remote-document-merge.ts';
 import { buildUserDataDocument } from '../src/app/user-data-payload.ts';
@@ -212,6 +213,205 @@ test('F5.3-03 yerel ileride: keepDirtyIfLocalAhead ile kirli kalır, çakışma 
   // Aktif profilin favori aktörleri kayıpsız taşınır.
   assert.equal(refs.favoriteActorsRef.current.length, 1);
   assert.equal(refs.favoriteActorsRef.current[0].id, 111);
+});
+
+/** App.tsx'in apply bağlamını taklit eder (merge bağlamı + çakışma çözümü). */
+function makeApplyContext(localDoc) {
+  const { context, refs, calls } = makeContext(localDoc);
+  calls.resolved = 0;
+  return {
+    refs,
+    calls,
+    context: {
+      persistProfilesBestEffort: context.persistProfilesBestEffort,
+      resolveQueuedConflict: () => {
+        calls.resolved += 1;
+      },
+      refs,
+      setters: context.setters,
+    },
+  };
+}
+
+/** DIRTY_KEY temizliğini gözlemlemek için en küçük localStorage vekili. */
+function withLocalStorage(fn) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const removed = [];
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: (key) => removed.push(key),
+    },
+  });
+  try {
+    fn(removed);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete globalThis.localStorage;
+  }
+}
+
+test('F5.3-03 apply: geçersiz belge hiçbir ref/state değiştirmez, çakışma çözülmez', () => {
+  const localDoc = buildUserDataDocument({
+    profiles: [makeProfile('PROFILE-A', [savedItem(550, 'Fight Club')])],
+    activeProfileId: 'PROFILE-A',
+    profileName: 'A',
+    preferences: makeProfile('PROFILE-A').preferences,
+    savedItems: [savedItem(550, 'Fight Club')],
+    favoriteActors: [],
+    deletedKeys: {},
+  });
+  const { context, refs, calls } = makeApplyContext(localDoc);
+
+  for (const invalid of [null, undefined, {}, { profiles: [] }, 'bozuk']) {
+    assert.equal(applyDataDocumentToState(context, invalid), false);
+  }
+
+  // Mevcut durum korunur: hiçbir setter, kalıcılık veya çakışma çözümü çağrısı yok.
+  assert.equal(calls.setters.length, 0);
+  assert.equal(calls.persist.length, 0);
+  assert.equal(calls.resolved, 0);
+  assert.equal(refs.applyingRemoteSnapshotRef.current, false);
+  assert.equal(refs.hadStoredProfilesOnBootRef.current, null);
+  assert.equal(refs.savedItemsRef.current.length, 1);
+});
+
+test('F5.3-03 apply: geçerli belge ref/state yazar, kirli işareti ve çakışmayı temizler', () => {
+  const localDoc = buildUserDataDocument({
+    profiles: [makeProfile('PROFILE-A', [])],
+    activeProfileId: 'PROFILE-A',
+    profileName: 'A',
+    preferences: makeProfile('PROFILE-A').preferences,
+    savedItems: [],
+    favoriteActors: [],
+    deletedKeys: {},
+  });
+  const { context, refs, calls } = makeApplyContext(localDoc);
+  refs.isDirtyRef.current = true;
+
+  const remoteDoc = buildUserDataDocument({
+    profiles: [
+      makeProfile('PROFILE-B', [savedItem(550, 'Fight Club')], { name: 'B' }),
+    ],
+    activeProfileId: 'PROFILE-B',
+    profileName: 'B',
+    preferences: makeProfile('PROFILE-B').preferences,
+    savedItems: [savedItem(550, 'Fight Club')],
+    favoriteActors: [],
+    deletedKeys: {},
+  });
+
+  withLocalStorage((removedKeys) => {
+    assert.equal(applyDataDocumentToState(context, remoteDoc), true);
+
+    // Aktif profil ve liste belgeyle birebir değiştirilir (birleştirme yok).
+    assert.equal(refs.activeProfileIdRef.current, 'PROFILE-B');
+    assert.equal(refs.profileNameRef.current, 'B');
+    assert.equal(refs.profilesRef.current.length, 1);
+    assert.equal(refs.savedItemsRef.current.length, 1);
+    assert.equal(refs.savedItemsRef.current[0].id, 550);
+    assert.equal(refs.applyingRemoteSnapshotRef.current, true);
+    assert.equal(refs.hadStoredProfilesOnBootRef.current, true);
+    // Kirli işaret temizlenir.
+    assert.equal(refs.isDirtyRef.current, false);
+    assert.deepEqual(removedKeys, ['cinetrack.dirty.v2']);
+    // Bekleyen çakışma bir kez çözülür, sunucu çakışması sıfırlanır.
+    assert.equal(calls.resolved, 1);
+    const conflictCalls = calls.setters.filter(([name]) => name === 'setServerConflict');
+    assert.deepEqual(conflictCalls, [['setServerConflict', null]]);
+    // Profiller en-iyi-çabayla kalıcılaştırılır.
+    assert.equal(calls.persist.length, 1);
+    // Taste map aktif profil için yüklenir; ref ve state aynı nesnedir.
+    const tasteCalls = calls.setters.filter(([name]) => name === 'setTasteMap');
+    assert.equal(tasteCalls.length, 1);
+    assert.equal(tasteCalls[0][1], refs.tasteMapRef.current);
+    // Tüm setter'lar tam bir kez çağrılır.
+    const setterNames = calls.setters.map(([name]) => name);
+    for (const expected of [
+      'setProfiles',
+      'setActiveProfileId',
+      'setProfileName',
+      'setPreferences',
+      'setSavedItems',
+      'setFavoriteActors',
+      'setDeletedKeys',
+      'setTasteMap',
+      'setServerConflict',
+    ]) {
+      assert.equal(
+        setterNames.filter((n) => n === expected).length,
+        1,
+        `${expected} tam bir kez çağrılmalı`
+      );
+    }
+  });
+});
+
+test('F5.3-03 apply: deleted_keys ve favori aktörler normalize edilerek uygulanır', () => {
+  const localDoc = buildUserDataDocument({
+    profiles: [makeProfile('PROFILE-A', [])],
+    activeProfileId: 'PROFILE-A',
+    profileName: 'A',
+    preferences: makeProfile('PROFILE-A').preferences,
+    savedItems: [],
+    favoriteActors: [],
+    deletedKeys: {},
+  });
+  const { context, refs } = makeApplyContext(localDoc);
+  // Tombstone saklama süresi geçmiş kayıtları düşürür; taze bir zaman damgası kullan.
+  const recentTs = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const remoteDoc = buildUserDataDocument({
+    profiles: [
+      makeProfile('PROFILE-A', [savedItem(550, 'Fight Club')], {
+        favoriteActors: [
+          { id: 111, name: 'Efsane Aktör' },
+          { id: 111, name: 'Efsane Aktör' },
+          null,
+        ],
+        deleted_keys: { 'movie:42': recentTs, bozuk: 5 },
+      }),
+    ],
+    activeProfileId: 'PROFILE-A',
+    profileName: 'A',
+    preferences: makeProfile('PROFILE-A').preferences,
+    savedItems: [savedItem(550, 'Fight Club')],
+    // Aktif profilin favorileri belgede üst düzey alandan gelir; yinelenen ve
+    // geçersiz kayıtlar normalize edilmelidir.
+    favoriteActors: [
+      { id: 111, name: 'Efsane Aktör' },
+      { id: 111, name: 'Efsane Aktör' },
+      null,
+    ],
+    deletedKeys: { 'movie:42': recentTs, bozuk: 5 },
+  });
+
+  withLocalStorage(() => {
+    assert.equal(applyDataDocumentToState(context, remoteDoc), true);
+  });
+
+  // Yinelenen/geçersiz favori aktörler tekilleşir; geçersiz silme kaydı düşer.
+  assert.equal(refs.favoriteActorsRef.current.length, 1);
+  assert.equal(refs.favoriteActorsRef.current[0].id, 111);
+  assert.deepEqual(Object.keys(refs.deletedKeysRef.current), ['movie:42']);
+  assert.equal(refs.deletedKeysRef.current['movie:42'], recentTs);
+});
+
+test('F5.3-03 apply: hook bağımlılık kimliği orijinal callback ile aynıdır', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(
+    new URL('../src/app/persistence/remote-document-merge.ts', import.meta.url),
+    'utf8'
+  );
+  const match = source.match(/useCallback<ApplyDataDocumentToState>[\s\S]*?\[([^\]]*)\]/);
+  assert.ok(match, 'useCallback<ApplyDataDocumentToState> dep array bulunamadı');
+  const deps = match[1].split(',').map((d) => d.trim()).filter(Boolean);
+  assert.deepEqual(deps, ['persistProfilesBestEffort', 'resolveQueuedConflict']);
+  const mod = await import('../src/app/persistence/remote-document-merge.ts');
+  assert.equal(typeof mod.useDataDocumentApply, 'function');
+  assert.equal(typeof mod.applyDataDocumentToState, 'function');
 });
 
 test('F5.3-03 hook bağımlılıkları açıklı: useRemoteDocumentMerge çağrı mimarisi', async () => {

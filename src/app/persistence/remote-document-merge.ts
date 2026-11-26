@@ -8,6 +8,12 @@
  * kalıcılaştırır, kirli işareti (DIRTY_KEY) güncelleyerek sunucu çakışma
  * durumunu da koordine eder.
  *
+ * Aynı dosyada `applyDataDocumentToState` de yaşar: sunucudan gelen belgeyi
+ * (yedek geri yükleme, çakışmada "sunucuyu kullan") birleştirme yapmadan
+ * doğrudan uygular. İki yolun ortak noktası tek bir ref/setter sözleşmesidir;
+ * farkları korunur — apply yolu kirli işareti temizler ve bekleyen çevrimdışı
+ * çakışmayı çözer, merge yolu ise yerel ilerideyse kirli bırakabilir.
+ *
  * Modül dar bir bağlam arabirimiyle çalışır: ref'ler, state güncelleyiciler ve
  * kalıcılık geri çağrıları App'ten verilir; burada yeni bir senkron yolu
  * açılmaz, davranış birebir korunur. `useRemoteDocumentMerge` yalnızca bu
@@ -18,7 +24,12 @@ import { useCallback, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { mergeRemoteDocument } from '../server-sync.ts';
 import { DIRTY_KEY } from '../profile-storage.ts';
-import { loadPersistentTasteMap } from '../../core/cinetrack-core.ts';
+import {
+  loadPersistentTasteMap,
+  normalizeDataDocument,
+  normalizeDeletedKeys,
+  normalizeFavoriteActors,
+} from '../../core/cinetrack-core.ts';
 import type {
   DataDocument,
   FavoriteActorInfo,
@@ -72,6 +83,19 @@ export interface ApplyMergedRemoteDocumentOptions {
 
 export interface MergeRemoteDocumentIntoState {
   (rawRemoteDoc: DataDocument, options?: ApplyMergedRemoteDocumentOptions): DataDocument | null;
+}
+
+export interface RemoteDocumentApplyContext {
+  /** Profil listesini en-iyi-çaba ile kalıcılaştırır. */
+  persistProfilesBestEffort: (profiles: Profile[]) => void;
+  /** Bekleyen çevrimdışı çakışmayı/snapshot'ı çözer. */
+  resolveQueuedConflict: () => void;
+  refs: RemoteDocumentMergeStateRefs;
+  setters: RemoteDocumentMergeSetters;
+}
+
+export interface ApplyDataDocumentToState {
+  (rawDoc: DataDocument): void;
 }
 
 /**
@@ -149,6 +173,93 @@ export function applyMergedRemoteDocumentIntoState(
   }
 
   return mergedDoc;
+}
+
+/**
+ * Sunucu belgesini birleştirme yapmadan doğrudan uygular.
+ *
+ * Davranış App.tsx'teki orijinal `applyDataDocumentToState` ile birebir aynıdır:
+ * belge normalize edilemezse hiçbir şey değişmez (`false` döner), aksi hâlde
+ * ref'ler ve state yazılır, aktif profilin taste haritası yüklenir, profiller
+ * en-iyi-çabayla kalıcılaştırılır, kirli işaret temizlenir, bekleyen çevrimdışı
+ * çakışma çözülür ve sunucu çakışma durumu sıfırlanır.
+ */
+export function applyDataDocumentToState(
+  context: RemoteDocumentApplyContext,
+  rawDoc: DataDocument
+): boolean {
+  const doc = normalizeDataDocument(rawDoc);
+  if (!doc) return false;
+
+  const { refs, setters } = context;
+
+  refs.applyingRemoteSnapshotRef.current = true;
+  refs.hadStoredProfilesOnBootRef.current = true;
+  refs.profilesRef.current = doc.profiles;
+  setters.setProfiles(doc.profiles);
+  setters.setActiveProfileId(doc.activeProfileId);
+  refs.activeProfileIdRef.current = doc.activeProfileId;
+  const active = doc.profiles.find((p) => p.id === doc.activeProfileId) || doc.profiles[0];
+  refs.profileNameRef.current = active.name;
+  setters.setProfileName(active.name);
+  refs.preferencesRef.current = active.preferences;
+  setters.setPreferences(active.preferences);
+  refs.savedItemsRef.current = active.items;
+  setters.setSavedItems(active.items);
+  const activeFavs = normalizeFavoriteActors(active.favoriteActors || []);
+  refs.favoriteActorsRef.current = activeFavs;
+  setters.setFavoriteActors(activeFavs);
+  const activeDeleted = normalizeDeletedKeys(active.deleted_keys);
+  refs.deletedKeysRef.current = activeDeleted;
+  setters.setDeletedKeys(activeDeleted);
+  const loadedMap = loadPersistentTasteMap(active.id);
+  refs.tasteMapRef.current = loadedMap;
+  setters.setTasteMap(loadedMap);
+  context.persistProfilesBestEffort(doc.profiles);
+  refs.isDirtyRef.current = false;
+  writeDirtyFlag(false);
+  context.resolveQueuedConflict();
+  setters.setServerConflict(null);
+
+  return true;
+}
+
+export type UseDataDocumentApplyParams = RemoteDocumentApplyContext;
+
+export interface DataDocumentApplyController {
+  applyDataDocumentToState: ApplyDataDocumentToState;
+}
+
+/**
+ * `useRemoteDocumentMerge` ile aynı ref/setter sözleşmesini kullanan ince React
+ * kabuğu. Bağımlılıklar App.tsx'teki orijinal callback ile aynıdır:
+ * `[persistProfilesBestEffort, resolveQueuedConflict]`.
+ */
+export function useDataDocumentApply({
+  persistProfilesBestEffort,
+  resolveQueuedConflict,
+  refs,
+  setters,
+}: UseDataDocumentApplyParams): DataDocumentApplyController {
+  const payloadRef = useRef({ refs, setters });
+  payloadRef.current = { refs, setters };
+
+  const applyDocument = useCallback<ApplyDataDocumentToState>(
+    (rawDoc) => {
+      applyDataDocumentToState(
+        {
+          persistProfilesBestEffort,
+          resolveQueuedConflict,
+          refs: payloadRef.current.refs,
+          setters: payloadRef.current.setters,
+        },
+        rawDoc
+      );
+    },
+    [persistProfilesBestEffort, resolveQueuedConflict]
+  );
+
+  return { applyDataDocumentToState: applyDocument };
 }
 
 export type UseRemoteDocumentMergeParams = RemoteDocumentMergeContext;

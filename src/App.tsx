@@ -62,13 +62,11 @@ import {
   filterHistoryByType,
   TARGET_RECOMMENDATION_COUNT,
   FavoriteActorInfo,
-  normalizeFavoriteActors,
   replenishCandidatePool,
   loadPersistentTasteMap,
   PersistentTasteMapData,
   TasteProfileSummary,
   buildTasteProfileSummary,
-  normalizeDeletedKeys,
   hydrateDiscoveryHistoryIdb,
   hydrateCandidatePoolsIdb,
 } from './core/cinetrack-core.ts';
@@ -109,7 +107,10 @@ import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { createCatalogLoader } from './app/catalog-loader.ts';
 import { useAppPersistence } from './app/persistence/use-app-persistence.ts';
-import { useRemoteDocumentMerge } from './app/persistence/remote-document-merge.ts';
+import {
+  useDataDocumentApply,
+  useRemoteDocumentMerge,
+} from './app/persistence/remote-document-merge.ts';
 import {
   createProfileRecord,
   resolveProfileSwitchState,
@@ -524,35 +525,39 @@ export function App() {
     setSyncStatus(`Çakışma algılandı: ${conflict.message}`);
   }, []);
 
-  // F5.3-03: belge birleştirme sorumluluğu ayrı modüle taşındı; App yalnızca
-  // gerekli ref/setter/kalıcılık bağımlılıklarını sağlar.
+  // F5.3-03: belge birleştirme/uygulama sorumluluğu ayrı modüle taşındı; App
+  // yalnızca gerekli ref/setter/kalıcılık bağlantılarını sağlar. Aynı bağlantı
+  // iki hook tarafından paylaşılır (merge ve doğrudan uygulama).
+  const remoteDocumentRefs = {
+    profilesRef,
+    activeProfileIdRef,
+    profileNameRef,
+    preferencesRef,
+    savedItemsRef,
+    favoriteActorsRef,
+    deletedKeysRef,
+    tasteMapRef,
+    isDirtyRef,
+    applyingRemoteSnapshotRef,
+    hadStoredProfilesOnBootRef,
+  };
+  const remoteDocumentSetters = {
+    setProfiles,
+    setActiveProfileId,
+    setProfileName,
+    setPreferences,
+    setSavedItems,
+    setFavoriteActors,
+    setDeletedKeys,
+    setTasteMap,
+    setServerConflict,
+  };
+
   const { mergeRemoteDocumentIntoState } = useRemoteDocumentMerge({
     buildLivePayloadFromRefs: buildCurrentLivePayloadFromRefs,
     persistProfilesBestEffort,
-    refs: {
-      profilesRef,
-      activeProfileIdRef,
-      profileNameRef,
-      preferencesRef,
-      savedItemsRef,
-      favoriteActorsRef,
-      deletedKeysRef,
-      tasteMapRef,
-      isDirtyRef,
-      applyingRemoteSnapshotRef,
-      hadStoredProfilesOnBootRef,
-    },
-    setters: {
-      setProfiles,
-      setActiveProfileId,
-      setProfileName,
-      setPreferences,
-      setSavedItems,
-      setFavoriteActors,
-      setDeletedKeys,
-      setTasteMap,
-      setServerConflict,
-    },
+    refs: remoteDocumentRefs,
+    setters: remoteDocumentSetters,
   });
 
   const handleMergedServerDocument = useCallback(
@@ -572,6 +577,15 @@ export function App() {
     syncDocument,
     resolveQueuedConflict,
   } = useOfflineSync(handleServerConflict, handleMergedServerDocument);
+
+  // Sunucu belgesini birleştirmeden uygulama (yedek geri yükleme, "sunucuyu
+  // kullan") sorumluluğu da modülde; App yalnızca bağlantıları sağlar.
+  const { applyDataDocumentToState } = useDataDocumentApply({
+    persistProfilesBestEffort,
+    resolveQueuedConflict,
+    refs: remoteDocumentRefs,
+    setters: remoteDocumentSetters,
+  });
 
   // Autonomous 500-movie + 500-TV IndexedDB stock engine & <250 background replenisher (Aşama 2 & 4)
   const stockEngineState = useStockEngine(activeProfileId);
@@ -633,43 +647,6 @@ export function App() {
       void registerLocalSavedSeriesHints(savedItems);
     }
   }, [savedItems]);
-
-  const applyDataDocumentToState = useCallback(
-    (rawDoc: DataDocument) => {
-      const doc = normalizeDataDocument(rawDoc);
-      if (!doc) return;
-      applyingRemoteSnapshotRef.current = true;
-      hadStoredProfilesOnBootRef.current = true;
-      profilesRef.current = doc.profiles;
-      setProfiles(doc.profiles);
-      setActiveProfileId(doc.activeProfileId);
-      activeProfileIdRef.current = doc.activeProfileId;
-      const active = doc.profiles.find((p) => p.id === doc.activeProfileId) || doc.profiles[0];
-      profileNameRef.current = active.name;
-      setProfileName(active.name);
-      preferencesRef.current = active.preferences;
-      setPreferences(active.preferences);
-      savedItemsRef.current = active.items;
-      setSavedItems(active.items);
-      const activeFavs = normalizeFavoriteActors(active.favoriteActors || []);
-      favoriteActorsRef.current = activeFavs;
-      setFavoriteActors(activeFavs);
-      const activeDeleted = normalizeDeletedKeys(active.deleted_keys);
-      deletedKeysRef.current = activeDeleted;
-      setDeletedKeys(activeDeleted);
-      const loadedMap = loadPersistentTasteMap(active.id);
-      tasteMapRef.current = loadedMap;
-      setTasteMap(loadedMap);
-      persistProfilesBestEffort(doc.profiles);
-      isDirtyRef.current = false;
-      try {
-        localStorage.removeItem(DIRTY_KEY);
-      } catch {}
-      resolveQueuedConflict();
-      setServerConflict(null);
-    },
-    [persistProfilesBestEffort, resolveQueuedConflict]
-  );
 
   const {
     pushToServer,
