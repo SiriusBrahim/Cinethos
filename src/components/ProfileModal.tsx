@@ -531,7 +531,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 dislikedItems={dislikedItems}
                 genresMap={genresMap}
                 cinemaKunye={cinemaKunye}
-                remoteSyncInfo={remoteSyncInfo}
                 serverBackups={serverBackups}
                 loadingBackups={loadingBackups}
                 backupMessage={backupMessage}
