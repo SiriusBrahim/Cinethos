@@ -1047,6 +1047,15 @@ export interface ProfileBackupExportReportClient {
     sourceDiagnostics?: Record<string, any>;
     packageInspection?: Record<string, any>;
   };
+  /** B-37: dışa aktarma dosyaları saklama politikası sonucu. */
+  retention?: {
+    examined: number;
+    kept: Array<{ name: string; sizeBytes: number; protectedReason: 'latest' | 'policy' }>;
+    removed: Array<{ name: string; sizeBytes: number; reason: 'age' | 'count' | 'size' }>;
+    totalBytesBefore: number;
+    totalBytesAfter: number;
+    errors?: Array<{ name: string; message: string }>;
+  };
   githubUpload: {
     attempted: boolean;
     ok: boolean;

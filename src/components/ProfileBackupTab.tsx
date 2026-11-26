@@ -432,6 +432,25 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
               </div>
             </div>
 
+            {excelExportReport.retention && (
+              <div className="excel-github-outcome mt-2">
+                <strong>Dışa Aktarma Saklama Politikası (B-37):</strong>{' '}
+                {excelExportReport.retention.kept.length} dosya saklandı · temizlenen:{' '}
+                {excelExportReport.retention.removed.length} · kullanılan alan{' '}
+                {(excelExportReport.retention.totalBytesAfter / (1024 * 1024)).toFixed(2)} MB
+                {excelExportReport.retention.kept.length > 0 && (
+                  <ul className="excel-metric-sub" style={{ marginTop: 4 }}>
+                    {excelExportReport.retention.kept.map((entry) => (
+                      <li key={entry.name}>
+                        {entry.name}
+                        {entry.protectedReason === 'latest' ? ' (son başarılı dışa aktarma)' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
             {verifiedDownloadInfo && (
               <div className="excel-github-outcome mt-2">
                 <strong>İndirilen İkili Dosya Doğrulaması:</strong>{' '}

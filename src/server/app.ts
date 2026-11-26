@@ -185,10 +185,14 @@ function streamRequestBodyToFile(
 
 import {
   executeProfileBackupExport,
-  buildProfileBackupDataset,
+  buildProfileBackupPreviewPage,
   EXPORT_FILE_NAME_PATTERN,
   getPosterCacheStatsAsync,
 } from './excel-profile-backup.ts';
+
+/** B-23 — önizleme sayfalama sınırları (tek kaynak). */
+export const BACKUP_PREVIEW_DEFAULT_PAGE_SIZE = 50;
+export const BACKUP_PREVIEW_MAX_PAGE_SIZE = 200;
 import { createTasteRouter } from './taste-routes.ts';
 import { runHybridMerge } from './hybrid-merge.ts';
 import {
@@ -2526,9 +2530,31 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
+  // B-23: önizleme sayfalanır. `page`/`pageSize` verilmezse ilk sayfa (50 satır)
+  // döner; geçersiz değerler 400 ile reddedilir. Tam dışa aktarma ayrı uçtadır ve
+  // tüm arşivi eksiksiz üretir.
   app.post('/api/backup/excel/preview', originGuard, tokenGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
+      const rawPage = req.body?.page;
+      const rawPageSize = req.body?.pageSize;
+      const page = rawPage === undefined ? 1 : Number(rawPage);
+      const pageSize = rawPageSize === undefined ? BACKUP_PREVIEW_DEFAULT_PAGE_SIZE : Number(rawPageSize);
+      if (!Number.isInteger(page) || page < 1) {
+        res.status(400).json({ ok: false, status_message: 'Geçersiz sayfa numarası.' });
+        return;
+      }
+      if (
+        !Number.isInteger(pageSize) ||
+        pageSize < 1 ||
+        pageSize > BACKUP_PREVIEW_MAX_PAGE_SIZE
+      ) {
+        res.status(400).json({
+          ok: false,
+          status_message: `Geçersiz sayfa boyutu (1-${BACKUP_PREVIEW_MAX_PAGE_SIZE}).`,
+        });
+        return;
+      }
       // MIA Faz 1 — Adım 1.4: Yedek dışa aktarma okumaları PrimaryDataRepository üzerinden.
       const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
@@ -2550,7 +2576,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const moviesCatalog = (await persistentStore.readCatalogAsync('movie')) || {};
       const tvCatalog = (await persistentStore.readCatalogAsync('tv')) || {};
 
-      const dataset = await buildProfileBackupDataset({
+      const preview = await buildProfileBackupPreviewPage({
         profile,
         schemaVersion: exportDoc.schemaVersion,
         engineVersion: exportDoc.engineVersion,
@@ -2558,23 +2584,24 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         tvCatalog,
         genresMap,
         dislikedItemsHint,
+        page,
+        pageSize,
       });
 
       res.json({
         ok: true,
-        profileId: dataset.profileId,
-        profileName: dataset.profileName,
-        completeness: {
-          rawProfileItemsCount: dataset.rawProfileItemsCount,
-          normalizedSavedItemsCount: dataset.normalizedSavedItemsCount,
-          rawDislikedCount: dataset.rawDislikedCount,
-          uniqueDislikedCount: dataset.uniqueDislikedCount,
-          favoriteActorsCount: dataset.favoriteActorsCount,
-          customItemsCount: dataset.customItemsCount,
-          totalItemsCount: dataset.totalItemsCount,
+        profileId: preview.profileId,
+        profileName: preview.profileName,
+        completeness: preview.completeness,
+        sheetCounts: preview.sheetCounts,
+        pageInfo: {
+          page: preview.page,
+          pageSize: preview.pageSize,
+          totalPages: preview.totalPages,
+          totalItemsCount: preview.completeness.totalItemsCount,
+          hasMore: preview.hasMore,
         },
-        sheetCounts: dataset.sheetCounts,
-        dataset,
+        rows: preview.rows,
       });
     } catch (err: any) {
       res.status(500).json({
