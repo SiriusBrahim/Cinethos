@@ -756,7 +756,7 @@ diye kontrol kaldırılmadı.
 | Davranış testleri | **TAMAM** | Yeni 8 test (§13.3) + mevcut 12 güvenilirlik, 15 yazma modülü, 9 belge birleştirme, 7 izolasyon, 6 sınır testi; `npm test` 924/924 | — |
 | Yerel veri mimarisi | **TAMAM** | §13.5 duman testi + izolasyon/sınır testleri | — |
 | Mimari kalite | **TAMAM** | `npm run lint` 0/0 (ESLint + 2 tsc), `npm run cycles` 0, `tests/architecture-boundaries` geçti, kullanılmayan import temizlendi | — |
-| CI ve build | **TAMAM** | `npm run build` ✅, üretim duman testi ✅; CI sonuçları push sonrası HEAD SHA'sı için ayrıca doğrulanır (§13.8) | — |
+| CI ve build | **TAMAM** | `npm run build` ✅, üretim duman testi ✅, CI `e9162a8` için **4/4 success** (§13.8) | — |
 | Teknik borç | **KABUL** | §13.7 sınıflandırma | Gerekçeli, Aşama 5'i engellemiyor |
 
 ### 13.7 Teknik borç sınıflandırması
@@ -795,6 +795,19 @@ bölünmesi, `any` temizliği.
   işlemi yapılmadı, `master`'a commit gönderilmedi, Aşama 6 başlatılmadı.
 - CI sonuçları, push edilen HEAD SHA'sı için ayrıca sorgulanır ve PR
   açıklaması bu bölümle hizalanır.
+
+CI doğrulaması — kod + test commit'lerini içeren HEAD **`e9162a8`** için ayrı
+ayrı sorgulandı (önceki commit'lerin sonuçları bu SHA'ya sayılmadı):
+
+| Kontrol | Durum | Bitiş (UTC) |
+|---|---|---|
+| `Lint, Test, Build & Production Smoke Test` | ✅ success | 21:12:12 |
+| `Playwright E2E` | ✅ success | 21:09:28 |
+| `Salt okunur bakım analizi` | ✅ success | 21:11:49 |
+| `Vercel Preview Comments` | ✅ success | 21:08:32 |
+
+Bu CI tablosunu ekleyen commit yalnızca bu dokümanı değiştirir; kod commit'i
+`5323837`, kapanış dokümanı commit'i `e9162a8`'dir.
 
 **Aşama 5 durumu: TAMAMLANDI.** Engelleyici eksiklik kalmadı; kalan maddeler
 yukarıda gerekçeli "kabul edilen borç" olarak sınıflandırıldı.
