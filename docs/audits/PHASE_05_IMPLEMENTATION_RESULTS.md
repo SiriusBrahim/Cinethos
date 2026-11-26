@@ -298,3 +298,69 @@ ayrıştırması, sync inspect ayrıştırması, `any` temizliği, UI test dön�
 bu oturum F5.3-04'ü kapatmıştır. Kalan borç: pull/push/reconcile gövdeleri, persistent
 store yazma yolu, App.tsx belge birleştirme ve DOM tabanlı metin testlerinin kalanı.
 Aşama 6 başlatılmadı; PR #65 açık ve merge edilmemiş.
+---
+
+## 10. Aşama 5.3 — GitHub izolasyonu ve yerel veri güvenilirliği (26 Kas 2026)
+
+**Başlangıç (yerel klon) HEAD:** `dcc7050` · **Uzak/PR HEAD:** `77567f7` · **Kod bitiş HEAD:** `7aadf0b`
+**Dal:** `remediation/full-project-remediation` · **PR:** #65 (açık, merge edilmedi)
+
+### 10.0 Başlangıç doğrulaması ve commit uyuşmazlığı
+
+- Uzak dal yerel klondan **9 commit ilerideydi** (`ffd9907`, `3381aeb`, `f945044`, `7c9f696`, `0cecbad`, `cc2ad6b`, `e3baa47`, `caab5ec`, `77567f7`). Yerel `git cat-file` bu nesneleri göremedi; GitHub API (`GITHUB_GET_A_COMMIT`) her iki SHA'yı da doğruladı ve ebeveyn zinciri `dcc7050 → ffd9907 → 3381aeb` olarak okundu. Fark, başka bir oturumun bu dalı ilerletmesinden kaynaklanıyordu.
+- Çözüm: cherry-pick/rebase **yapılmadı**; `git merge --ff-only origin/remediation/...` ile ilerleme alındı (kayıp commit yok, geçmiş yeniden yazılmadı).
+- PR #65: `state=open`, `merged_at=null`, `merge_commit_sha=null`, base `master@9be5011`, head = dal ucu. CI sonuçları her zaman **ilgili HEAD SHA'sı** için ayrı sorgulandı.
+
+### 10.1 Mimari karar
+
+Cinethos'un son kullanıcı sürümü yerel-öncelikli çalışır; GitHub senkronizasyonu yalnızca geliştirme aracıdır. Bu oturumda senkronizasyon **geliştirilmedi**; sınırı ayrıldı ve kaldırılabilir hâle getirildi.
+
+```
+YEREL ÇEKİRDEK                         GELİŞTİRME ENTEGRASYONU
+UI (src/components, src/App.tsx)       github-sync/register.ts  (tek bağlantı noktası)
+Application services                   github-bidirectional-sync.ts
+Domain (src/core)                      github-sync/{sync-core,inspect,pull,push,reconcile}
+persistent-store  ──(saf port)──▶      github-response.ts, persistent-store/github-commit-store.ts
+Local file system
+```
+
+### 10.2 Yapılan değişiklikler
+
+| Madde | Durum | Kanıt |
+|---|---|---|
+| **F5.3-01** Senkronizasyon geliştirmelerinin iptali | ✅ (kapsam dışı bırakıldı) | Pull/push/reconcile/lease/journal üzerinde yeni özellik çalışması yapılmadı. Bağımlılık envanteri çıkarıldı (aşağıda) ve izolasyon planına bağlandı. |
+| **F5.3-02** PersistentStore yerel yazma güvenilirliği | ✅ Doğrulandı + test edildi | `tests/f5-3-local-store-reliability.test.mjs`: 12 senaryo (tekil/art arda/eşzamanlı yazma, yazma hatası, rename hatası, bozuk JSON, eksik dosya, okuma sırasında yazma, yeniden açılış, türetilmiş profil no-op tutarlılığı, `.tmp` artığı temizliği, bozuk manifestte katalog korunması). Tümü gerçek geçici dizinlerde gerçek dosya sistemi üzerinde koşar. |
+| **F5.3-03** App.tsx yerel veri akışı | ✅ Denetlendi | `src/app/persistence/remote-document-merge.ts` sunucu (yerel SQLite/filesystem) belgesini birleştirir; GitHub import'u yoktur (izolasyon testi bunu zorlar). GitHub'a özgü panel artık statik grafikte değil: `ProfileModal` içinde `React.lazy` + `Suspense` ile yalnızca senkron sekmesi açıldığında yükleniyor. `RemoteSyncStatusPayload` tipi `src/core/sync-display.ts`'e taşındı (sağlayıcıdan bağımsız; `ProfileBackupTab` artık GitHub bileşeninden tip import etmiyor). |
+| **F5.3-04** Önceki yardımcıların denetimi | ✅ Doğrulandı | `src/server/github-sync/sync-operation-result.ts` ve `derived-doc-freshness.ts` gerçekten saf (state/lock/journal/`this` erişimi yok) ve yalnızca GitHub senkronizasyon modülleri tarafından kullanılıyor. Çekirdek/uygulama katmanı bunları import etmiyor (test). Mevcut 2 `as unknown as` geçişi (CatalogManifest `contentHash`, DerivedProfileDocument `profileId`+`items`) doğrulama sözleşmesi nedeniyle korundu; gerekçeleri §8.3-4'te. |
+| **F5.3-05** İzolasyon sınırı ve nihai denetim | ⚠️ Kısmen (gerçek sınır kuruldu, tam kaldırma için kalan liste §10.4) | Yeni saf port `src/server/persistence/remote-sync-port.ts` + kayıt defteri `remote-sync-registry.ts`. `PersistentDataStore` artık `github-bidirectional-sync.ts` import etmiyor; motor `createRemoteSyncEngine(deps)` ile geliyor. GitHub motoru `src/server/github-sync/register.ts` içinde kaydediliyor ve yalnızca `app.ts` bağlıyor. Motor yoksa `createLocalOnlyRemoteSyncEngine` devreye giriyor: `ok:false / config_error` raporu döner, ağ çağrısı yapılmaz, yerel okuma-yazma etkilenmez. |
+
+### 10.3 İzolasyon öncesi/sonrası bağımlılık yapısı
+
+| Ölçüm | Önce | Sonra |
+|---|---|---|
+| `src/core`, `src/app`, `src/services`, `src/components`, `src/modules`, `src/shared` içinde GitHub import'u | 2 (ProfileModal → GitHubSyncSection, ProfileBackupTab → tip) | **0** (statik import) |
+| `persistent-store.ts → github-bidirectional-sync.ts` | Var | **Yok** (port + kayıt defteri) |
+| GitHub motorunun örneklendiği yer | `persistent-store.createBidirectionalManager()` | `github-sync/register.ts` (tek kayıt noktası) |
+| GitHub panelinin istemci grafiğine girişi | Statik import (her açılışta) | Dinamik `import()` (yalnızca senkron sekmesi) |
+| `persistent-store.ts` içinde kalan GitHub import'ları | 2 (`github-response.ts`, `persistent-store/github-commit-store.ts`) | 2 — **donduruldu**, testle büyümesi engellendi |
+
+Yeni koruma testi: `tests/f5-3-github-isolation.test.mjs` (5 test). Katman sızıntısını, motor import'unu, port saflığını, tek kayıt noktasını ve "motor yokken ağ çağrısı yok" davranışını doğrular.
+
+### 10.4 Bilinçli olarak bırakılan borç (tam kaldırma için kalan liste)
+
+1. `persistent-store.ts` hâlâ `github-response.ts` (GitHub HTTP zarf okuyucuları) ve `persistent-store/github-commit-store.ts` (uzak commit yazımı) import ediyor. Bunlar `PersistentDataStoreSyncPort` üzerinden senkron motoruna **yerel tarafın uzak yazma yeteneği** olarak sunuluyor; kaldırmak, commit/verify/staged-sync metotlarının motorun içine taşınmasını gerektirir (senkron semantiği riski).
+2. `PersistentStoreOptions` hâlâ `githubToken/githubOwner/githubRepo/...` alanlarını taşıyor; token'lar normal kullanıcı ayarlarından ayrı bir `remoteSync` alt nesnesine taşınmadı (davranış/uyumluluk riski, ayrı iş).
+3. `PersistentDataStoreSyncPort` tipi GitHub adlı üyeler içeriyor (`recoverGitHubTokenOn401`, `commitFileToGitHub`, `syncToGitHub`); port sözleşmesinin jenerik adlara çevrilmesi motorla birlikte yapılmalı.
+4. Yerel `data/` dizini bu taze klonda yok (gitignore'lu); veri koruma kapısı bu nedenle "0 dosya" karşılaştırdı. Bu oturumda hiçbir kullanıcı verisi okunmadı/yazılmadı.
+
+### 10.5 Kapılar (bu ağaçta çalıştırıldı)
+
+| Kapı | Sonuç |
+|---|---|
+| `npm ci` | ✅ (lockfile korunarak) |
+| `npm run lint` (ESLint + 2 × `tsc --noEmit`) | ✅ 0 hata / 0 uyarı |
+| `npm test` | ✅ **904/904** (887 → +17: 12 yerel güvenilirlik, 5 izolasyon) |
+| `npm run test:taste` | ✅ **440/440** |
+| `npm run build` | ✅ başarılı |
+| Üretim duman testi (`NODE_ENV=production`, GitHub yapılandırması yok) | ✅ `/api/tmdb-status` 200, `/` 200, `/discover/deep-link` 200, `/api/data` 200, `/api/sync/status` 200 (local_only), `POST /api/sync/trigger` 404 (production'da kapalı — beklenen) |
+| Playwright E2E | Bu ortamda çalıştırılmadı; CI'ya bırakıldı |
