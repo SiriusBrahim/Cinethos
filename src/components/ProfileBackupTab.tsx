@@ -11,7 +11,7 @@ import {
 } from '../services/api.ts';
 import { recordManualBackupSuccess } from '../services/auto-backup-service.ts';
 import { BRAND_NAME, brandProfileFileName } from '../shared/brand.ts';
-import type { RemoteSyncStatusPayload } from './ProfileGitHubSyncSection.tsx';
+import type { RemoteSyncStatusPayload } from '../core/sync-display.ts';
 
 interface ProfileBackupTabProps {
   activeProfileId: string;

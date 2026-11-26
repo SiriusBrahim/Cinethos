@@ -3,11 +3,11 @@
  *
  * Bu modül yalnızca **tip** tanımlar ve hiçbir GitHub modülünü import etmez.
  * `PersistentDataStore` uzak senkronizasyon motorunu bu arayüz üzerinden
- * kullanır; gerçek motor (şu an GitHub) `remote-sync-registry.ts` üzerinden
+ * kullanır; gerçek motor `remote-sync-registry.ts` üzerinden
  * dışarıdan kaydedilir. Böylece:
- *  - yerel veri katmanı GitHub'a derleme zamanında bağlı değildir,
+ *  - yerel veri katmanı sağlayıcıya derleme zamanında bağlı değildir,
  *  - entegrasyon yoksa uygulama yerel modda çalışır (unconfigured davranış),
- *  - GitHub entegrasyonu kaldırıldığında yalnızca kayıt modülü ve motor silinir.
+ *  - entegrasyon kaldırıldığında yalnızca kayıt modülü ve motor silinir.
  */
 
 import type {

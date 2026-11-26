@@ -292,3 +292,37 @@ export function deriveSyncUiBanner(
     isVerifiedEqual: false,
   };
 }
+
+/**
+ * F5.3-05 — Sunucu senkronizasyon durumu yükü (istemci görünümü).
+ *
+ * GitHub'a özgü panel bileşeninden çıkarıldı: profil/backup ve yerel durum
+ * yüzeyleri bu tipi sağlayıcıdan bağımsız olarak kullanır. Alanlar mevcut
+ * API yanıtıyla birebir uyumludur (davranış değişmedi).
+ */
+export interface RemoteSyncStatusPayload {
+  configured?: boolean;
+  githubSyncEnabled?: boolean;
+  syncInProgress?: boolean;
+  isPublicRepo?: boolean;
+  allowPublicPersonalSync?: boolean;
+  personalSyncBlockedByPublicGuard?: boolean;
+  repoVisibilityWarning?: string;
+  lastSyncAt?: string;
+  lastError?: string;
+  profilesCount?: number;
+  catalogCounts?: { movies?: number; tv?: number };
+  remoteTarget?: { owner: string; repo: string; branch: string } | null;
+  configDiagnostics?: { observedRemoteIsPublicRepo?: boolean };
+  localSummary?: SyncSideSummary | null;
+  lastRemoteSummary?: SyncSideSummary | null;
+  lastComparison?: SyncComparisonSummary | null;
+  fileSummaryCounts?: {
+    pending?: number;
+    downloaded?: number;
+    uploaded?: number;
+    merged?: number;
+    skipped?: number;
+    failed?: number;
+  };
+}

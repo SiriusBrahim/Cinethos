@@ -20,10 +20,16 @@ import { PROVIDER_OPTIONS } from '../utils/helpers.ts';
 import { useDialogAccessibility } from '../hooks/useDialogAccessibility.ts';
 import { ProfileStatsTab } from './ProfileStatsTab.tsx';
 import { ProfileBackupTab } from './ProfileBackupTab.tsx';
-import {
-  ProfileGitHubSyncSection,
-  type RemoteSyncStatusPayload,
-} from './ProfileGitHubSyncSection.tsx';
+import type { RemoteSyncStatusPayload } from '../core/sync-display.ts';
+
+// F5.3-05: GitHub geliştirme paneli statik modül grafiğinin parçası değildir.
+// Yalnızca senkron sekmesi açıldığında (ve geliştirme modunda) yüklenir; böylece
+// entegrasyon kaldırıldığında bu tek satır ve bileşen dosyası silinir.
+const LazyProfileGitHubSyncSection = React.lazy(() =>
+  import('./ProfileGitHubSyncSection.tsx').then((mod) => ({
+    default: mod.ProfileGitHubSyncSection,
+  }))
+);
 import { DuplicateMergePanel } from './DuplicateMergePanel.tsx';
 import { DerivedCacheResetControl } from './ui-states.tsx';
 
@@ -552,16 +558,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   </p>
                 </div>
               ) : (
-                <ProfileGitHubSyncSection
-                  remoteSyncInfo={remoteSyncInfo}
-                  onRemoteSyncInfoChange={setRemoteSyncInfo}
-                  profiles={profiles}
-                  savedItems={savedItems}
-                  onBeforeSyncFlush={onBeforeSyncFlush}
-                  onMergeSyncedDocument={onMergeSyncedDocument}
-                  onApplyRestoredDocument={onApplyRestoredDocument}
-                  onCinemaKunyeSynced={onCinemaKunyeSynced}
-                />
+                <React.Suspense fallback={null}>
+                  <LazyProfileGitHubSyncSection
+                    remoteSyncInfo={remoteSyncInfo}
+                    onRemoteSyncInfoChange={setRemoteSyncInfo}
+                    profiles={profiles}
+                    savedItems={savedItems}
+                    onBeforeSyncFlush={onBeforeSyncFlush}
+                    onMergeSyncedDocument={onMergeSyncedDocument}
+                    onApplyRestoredDocument={onApplyRestoredDocument}
+                    onCinemaKunyeSynced={onCinemaKunyeSynced}
+                  />
+                </React.Suspense>
               )}
 
               {/* IMP-15: Çift Kayıt Temizliği */}
