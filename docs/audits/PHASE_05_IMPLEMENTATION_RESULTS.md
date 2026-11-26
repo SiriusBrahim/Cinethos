@@ -364,3 +364,107 @@ Yeni koruma testi: `tests/f5-3-github-isolation.test.mjs` (5 test). Katman sız�
 | `npm run build` | ✅ başarılı |
 | Üretim duman testi (`NODE_ENV=production`, GitHub yapılandırması yok) | ✅ `/api/tmdb-status` 200, `/` 200, `/discover/deep-link` 200, `/api/data` 200, `/api/sync/status` 200 (local_only), `POST /api/sync/trigger` 404 (production'da kapalı — beklenen) |
 | Playwright E2E | Bu ortamda çalıştırılmadı; CI'ya bırakıldı |
+
+---
+
+## 11. Aşama 5.3 — Son GitHub izolasyon düzeltmeleri (F5.3-06)
+
+Bu bölüm, §10.4'teki borçların bir kısmını kapatır. GitHub senkronizasyonu bu
+aşamada **geliştirilmedi**; yalnızca kullanıcı arayüzünden, yerel veri
+sözleşmesinden ve sunucu route katmanından ayrıldı. Pull/push/reconcile/lease/
+journal davranışları değiştirilmedi.
+
+### 11.1 Yapılan değişiklikler
+
+| Madde | Değişiklik | Kanıt |
+|---|---|---|
+| **1. Kullanıcı arayüzü** | `ProfileBackupTab` içindeki "GitHub deposuna yükle" onay kutusu, `uploadExcelToGithub` durumu, `uploadToGithub` istek alanı ve `githubUpload` sonuç bloğu kaldırıldı. Bileşen artık `remoteSyncInfo` prop'u almıyor. JSON / Excel (.xlsx) / SQLite yedekleme ve geri yükleme düğmeleri aynen duruyor. | `tests/f5-3-github-boundary.test.mjs` — kaynak düzeyinde seçenek yokluğu + yerel düğmelerin varlığı doğrulanır. |
+| **2. Store bağımlılıkları** | `persistent-store.ts` içindeki `github-response.ts` ve `persistent-store/github-commit-store.ts` çalışma zamanı import'ları kaldırıldı. Yalnızca `import type` kaldı; gerçek yardımcılar GitHub'a özgü metotların içinde `await import(...)` ile yükleniyor. Böylece yerel veri yolları GitHub kodunu hiç yüklemez. | İzolasyon testi: `runtimeImportsOf('src/server/persistent-store.ts')` içinde GitHub import'u **0**. |
+| **3. Yapılandırma sınırı** | `PersistentStoreOptions.remoteSync?: RemoteSyncConfiguration` eklendi (enabled, token, owner/repo/branch, görünürlük/onay, token adayları). `app.ts` store'u yalnızca bu nesneyle kuruyor. Düz (legacy) alanlar geriye dönük uyumluluk için okunmaya devam ediyor ve `remoteSync` önceliklidir. | `tests/f5-3-github-boundary.test.mjs`: `remoteSync.enabled:false` → `githubSyncEnabled:false`; ayrıca `{dataDir}` ile kurulan store tüm yerel işlemleri yapar. |
+| **4. Sunucu route'ları** | Tüm `/api/sync/*` uçları `src/server/app.ts` içinden çıkarılıp `src/server/github-routes.ts` → `registerGitHubSyncRoutes(deps)` altında toplandı. `app.ts` yalnızca tek çağrı yapar. Geliştirme kapısı (`githubDevSyncEnabled !== true → 404 github_dev_sync_disabled`) korunuyor; `/api/sync/status` yerel durum okuması olarak açık kalıyor. | `tests/f5-3-github-boundary.test.mjs`: modül kapalıyken `/api/sync/push` 404, yerel route 200; `buildSyncFailure` 409/500 + token maskeleme. |
+| **5. İzolasyon testleri** | `tests/f5-3-github-isolation.test.mjs` güncellendi (statik GitHub çalışma zamanı import'u = 0 kuralı). Yeni `tests/f5-3-github-boundary.test.mjs` 6 test ekler. | Toplam 12 test. |
+| **6. Test altyapısı (yan bulgu)** | `tests/helpers/test-data.mjs` temizliği geçici dizin sembolik bağlantıya çevrildiğinde `rmSync(recursive)` ile **hedefin içeriğini** siliyordu. TOCTOU testi bu yüzden gerçek `data/cinetrack.db` dosyasını silebiliyordu. Temizlik artık önce `lstat` ile bağlantıyı saptayıp yalnızca bağlantıyı kaldırıyor; hedef dizine dokunmuyor. | `tests/phase1-test-isolation.test.mjs` — "temizlik, sembolik bağlantı hedefindeki gerçek veriyi silmez". Tam koşuda veri kapısı: `data/ değişmedi (0 dosya)`. |
+
+### 11.2 Önce/sonra
+
+| Ölçüm | Aşama 5.3 öncesi | Şimdi |
+|---|---|---|
+| `persistent-store.ts` çalışma zamanı GitHub import'u | 2 | **0** (yalnızca `import type`) |
+| `app.ts` içindeki `/api/sync` route tanımı | 11 route + kapı | **0** (tek `registerGitHubSyncRoutes` çağrısı) |
+| Profil yedekleme ekranında GitHub yükleme seçeneği | Var | **Yok** |
+| Store'un GitHub yapılandırması olmadan kurulması | Zaten mümkündü, alanlar düz | `remoteSync` sınırı + test |
+| GitHub token'ı olmadan uygulama açılışı | Mümkündü | **Testle doğrulandı** (`/api/health`, `/api/data` 200) |
+| `npm test` | 904 | **912** (+6 sınır, +1 veri temizliği, +1 statik import kuralı) |
+
+### 11.3 Kalan GitHub bağımlılıkları (dürüst envanter)
+
+1. **`PersistentDataStore` içindeki GitHub'a özgü genel metotlar.** `syncToGitHub`,
+   `runStagedFullSync`, `inspectGitHub`, `pullFromGitHub`, `pushToGitHub`,
+   `reconcileWithGitHub`, `commitFileToGitHub`, `uploadBinaryBackupToGitHub`,
+   `verifyRemoteRepoAccess`, `updateGitHubToken`, `recoverGitHubTokenOn401`,
+   `getKnownSecretsForRedaction`. Bunlar `PersistentDataStoreSyncPort` üzerinden
+   motora açılıyor. Yerel işlemler bu metotları çağırmaz, ancak sınıfın public
+   yüzeyinde dururlar.
+2. **Tip düzeyinde iki import:** `GitHubRepositoryMeta` (github-response) ve
+   `GitHubCommitOutcome` (github-commit-store). Derleme zamanı bağımlılığıdır;
+   çalışma zamanında yüklenmez.
+3. **`PersistentStoreOptions` düz alanları** (`githubToken`, `githubOwner`, …)
+   geriye dönük uyumluluk için duruyor; yeni kod `remoteSync` kullanmalı.
+4. **`excel-profile-backup.ts`** isteğe bağlı `uploadToGithub` parametresini ve
+   `githubUpload` rapor alanını koruyor (sunucu sözleşmesi); kullanıcı arayüzü
+   artık bu parametreyi göndermiyor.
+5. **`server.ts`** GitHub ortam değişkenlerini okuyup `createCineTrackApp`
+   seçeneklerine aktarıyor; uygulama bu değerler olmadan da açılıyor.
+6. **`src/services/api.ts`** GitHub senkron uçlarını çağıran istemci
+   fonksiyonlarını içeriyor; yedekleme ekranı bunları kullanmıyor.
+
+### 11.4 "Yarın GitHub'ı tamamen silmek istesek" — somut kaldırma haritası
+
+**Olduğu gibi silinebilecek dosyalar (başka yerden import edilmiyor):**
+
+- `src/server/github-sync/` klasörünün tamamı (9 dosya, ~4.600 satır):
+  `sync-core.ts`, `inspect-operation.ts`, `pull-operation.ts`, `push-operation.ts`,
+  `reconcile-operation.ts`, `sync-operation-host.ts`, `sync-operation-result.ts`,
+  `derived-doc-freshness.ts`, `register.ts`
+- `src/server/github-bidirectional-sync.ts` (859)
+- `src/server/github-request.ts` (150), `src/server/github-response.ts` (155),
+  `src/server/github-token-refresh.ts` (131)
+- `src/server/persistent-store/github-commit-store.ts` (436)
+- `src/server/github-routes.ts` (346)
+- `src/components/ProfileGitHubSyncSection.tsx` (734)
+- `tests/github-bidirectional-sync.test.mjs`, `tests/f5-3-github-isolation.test.mjs`,
+  `tests/f5-3-github-boundary.test.mjs`, `tests/phase2-*sync*` içindeki GitHub
+  senaryoları (silme kararı test sahipliğine bağlı)
+
+**Değiştirilmesi zorunlu dosyalar (silme tek başına derlemeyi bozar):**
+
+| Dosya | Zorunlu değişiklik |
+|---|---|
+| `src/server/app.ts` | `import './github-sync/register.ts'`, `registerGitHubSyncRoutes(...)` çağrısı, `CineTrackAppOptions` GitHub alanları ve store `remoteSync` bloğu kaldırılır. |
+| `src/server/persistent-store.ts` | §11.3-1'deki GitHub metotları ve iki `import type` satırı; `github*` özel alanları; `githubSyncEnabled` durum yüklemesi kaldırılır. Yerel katalog/profil/türetilmiş veri yolları aynen kalır. |
+| `src/server/persistent-store/contracts.ts` | `RemoteSyncConfiguration`, `PersistentStoreOptions.remoteSync` ve legacy `github*` alanları; `TokenSourceKind`, `GitHubTokenCandidateInfo`, `GitHubSyncErrorCategory`, `classifyTokenFormat`, `classifyHttpFailure` kaldırılır. `SyncStatus`/`SyncFileStateRecord` gibi yerel durum tipleri sadeleştirilir. |
+| `src/server/persistence/remote-sync-port.ts`, `remote-sync-registry.ts` | Port ve kayıt defteri ya tamamen silinir ya da sağlayıcısız yerel "yok" motoru olarak kalır (bu aşamada bilinçli olarak korundu). |
+| `src/server/persistent-store-types.ts` | `PersistentDataStoreSyncPort` içindeki GitHub adlı üyeler. |
+| `src/server/excel-profile-backup.ts` | `uploadToGithub` seçeneği, `githubUpload` rapor alanı ve `persistentStore.uploadBinaryBackupToGitHub` çağrısı. |
+| `src/services/api.ts` | GitHub senkron istemci fonksiyonları ve `githubUpload` alanı. |
+| `src/components/ProfileModal.tsx` | `LazyProfileGitHubSyncSection`, `remoteSyncInfo` durumu ve senkron sekmesi. |
+| `src/core/sync-display.ts` | `BidirectionalSyncReport`/`SyncSideSummary` vb. tipler; kaldırılırsa kalan tüketiciler güncellenir. |
+| `server.ts` | GitHub ortam değişkenleri ve senkron durum log satırı. |
+| `scripts/` + `docs/audits/*` | GitHub senkron kapıları ve bu envanter. |
+
+**Kritik sınır:** `persistent-store.ts` içindeki `commitFileToGitHub`,
+`uploadBinaryBackupToGitHub` ve `verifyRemoteRepoAccess` metotları bugün hâlâ
+GitHub HTTP çağrılarını **store içinde** barındırıyor. Tam kaldırmada bu üç metot
+ya silinir ya da `RemoteSyncEngine` portuna taşınır. Yerel katalog/profil/
+türetilmiş veri yolları bu metotlara bağımlı değildir; bu yüzden kaldırma
+davranışsal risk taşımaz, yalnızca derleme düzeltmeleri gerektirir.
+
+### 11.5 Kapılar (bu ağaçta çalıştırıldı)
+
+| Kapı | Sonuç |
+|---|---|
+| `npm run lint` (ESLint + 2 × `tsc --noEmit`) | ✅ 0 hata / 0 uyarı |
+| `npm test` | ✅ **912/912**, veri kapısı: `data/ değişmedi (0 dosya)` |
+| `npm run test:taste` | ✅ **440/440**, veri kapısı OK |
+| `npm run build` | ✅ başarılı |
+| CI | Bu commit'lerin HEAD SHA'sı için ayrıca doğrulanacak (§11.5 notu) |

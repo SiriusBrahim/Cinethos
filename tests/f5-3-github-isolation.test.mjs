@@ -45,6 +45,24 @@ function importsOf(relPath) {
   return specifiers;
 }
 
+/** `import type` / `import { type X }` gibi derleme-zamanı bağlantıları ayıklar. */
+function runtimeImportsOf(relPath) {
+  const source = fs.readFileSync(path.join(repoRoot, relPath), 'utf8');
+  const runtime = [];
+  for (const m of source.matchAll(/import\s+(?!type\b)([^;]*?)\s+from\s+['"]([^'"]+)['"]/g)) {
+    const clause = m[1].replace(/\{[^}]*\}/g, (block) =>
+      block
+        .slice(1, -1)
+        .split(',')
+        .filter((part) => part.trim() && !/^\s*type\s/.test(part))
+        .join(',')
+    );
+    if (!/^\s*$/.test(clause.replace(/[{}]/g, '').replace(/,/g, ''))) runtime.push(m[2]);
+  }
+  for (const m of source.matchAll(/import\s+['"]([^'"]+)['"]/g)) runtime.push(m[1]);
+  return runtime;
+}
+
 test('F5.3-05 çekirdek, uygulama, servis ve modüller GitHub modülü import etmez', () => {
   const layers = ['src/core', 'src/app', 'src/components', 'src/services', 'src/shared', 'src/modules'];
   const offenders = [];
@@ -65,11 +83,21 @@ test('F5.3-05 yerel veri katmanı senkronizasyon motorunu import etmez', () => {
     false,
     'persistent-store.ts GitHub senkronizasyon modüllerini import etmemeli'
   );
-  const registered = specifiers.filter((s) => /github/i.test(s)).sort();
+});
+
+test('F5.3-06 yerel veri katmanı GitHub modüllerini çalışma zamanında statik import etmez', () => {
+  // F5.3-06: kalan GitHub bağlantıları yalnızca tip (`import type`) düzeyindedir;
+  // çalışma zamanı yardımcıları GitHub'a özgü metotların içinde dinamik yüklenir.
+  const runtime = runtimeImportsOf('src/server/persistent-store.ts');
   assert.deepEqual(
-    registered,
-    ['./github-response.ts', './persistent-store/github-commit-store.ts'],
-    'kalan GitHub import listesi dondurulmuştur; yeni bağımlılık eklenmemeli'
+    runtime.filter((s) => /github/i.test(s)),
+    [],
+    'persistent-store.ts çalışma zamanında GitHub modülü yüklememeli'
+  );
+  assert.deepEqual(
+    runtime.filter((s) => /github/i.test(s)).length,
+    0,
+    'yerel veri yolları GitHub kodunu çalıştırmamalı'
   );
 });
 
