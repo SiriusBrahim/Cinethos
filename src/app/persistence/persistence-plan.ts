@@ -41,14 +41,8 @@ export interface StorageWrite {
 
 export interface LocalStoragePlan {
   metadata: StorageWrite[];
-  list: { key: string; primary: string; compactFallback: string };
-}
-
-export function compactSavedItems(items: SavedItem[]): SavedItem[] {
-  return items.map((item) => ({
-    ...item,
-    overview: typeof item.overview === 'string' ? item.overview.slice(0, 120) : '',
-  }));
+  /** B-21: tam liste tek parça yazılır; kota hatasında kırpılmış kopya ÜRETİLMEZ. */
+  list: { key: string; value: string };
 }
 
 export function buildLocalStoragePlan(snapshot: PersistenceSnapshot): LocalStoragePlan {
@@ -86,8 +80,7 @@ export function buildLocalStoragePlan(snapshot: PersistenceSnapshot): LocalStora
     ],
     list: {
       key: listStorageKey(snapshot.activeProfileId),
-      primary: JSON.stringify(snapshot.savedItems),
-      compactFallback: JSON.stringify(compactSavedItems(snapshot.savedItems)),
+      value: JSON.stringify(snapshot.savedItems),
     },
   };
 }
@@ -189,16 +182,9 @@ export function applyLocalStoragePlan(
 ): ApplyStorageResult {
   const result = applyStorageWrites(storage, plan.metadata, memo);
 
-  const primary: StorageWrite = { key: plan.list.key, value: plan.list.primary };
-  const written = tryWrite(storage, primary, memo, result);
-  if (!written) {
-    const fallback: StorageWrite = { key: plan.list.key, value: plan.list.compactFallback };
-    if (tryWrite(storage, fallback, memo, result)) {
-      result.compacted.push(plan.list.key);
-      // Birincil deneme başarısızdı ama kırpılmış yedek yazıldı; hata sayılmaz.
-      result.failed = result.failed.filter((entry) => entry.key !== plan.list.key);
-    }
-  }
+  // B-21: kota dolduğunda kullanıcı verisi kırpılmaz ve silinmez. Yazma
+  // başarısızsa eski sağlıklı değer korunur ve hata çağırana bildirilir.
+  tryWrite(storage, { key: plan.list.key, value: plan.list.value }, memo, result);
 
   return result;
 }

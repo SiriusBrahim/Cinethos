@@ -23,7 +23,6 @@ import {
   applyStorageWrites,
   buildLocalStoragePlan,
   buildProfileWritePlans,
-  compactSavedItems,
   decideDirtyAfterSync,
 } from '../src/app/persistence/persistence-plan.ts';
 import {
@@ -230,7 +229,7 @@ test('F5.2-02 autosave: plan etkin profilin anahtarlarını ve hafif profil list
   assert.equal(lightweight[0].name, 'A (güncel)', 'etkin profilin güncel adı yazılmalı');
   assert.deepEqual(lightweight[0].items, [], 'ağır liste PROFILES_STORAGE içine yazılmamalı');
   assert.equal(lightweight[1].name, 'B');
-  assert.deepEqual(JSON.parse(plan.list.primary).map((item) => item.id), [1]);
+  assert.deepEqual(JSON.parse(plan.list.value).map((item) => item.id), [1]);
 });
 
 test('F5.2-02 autosave: yazım gerçekten uygulanır ve aynı veri ikinci kez yazılmaz', () => {
@@ -254,24 +253,21 @@ test('F5.2-02 autosave: yazım gerçekten uygulanır ve aynı veri ikinci kez ya
   assert.deepEqual(changed.written, [listStorageKey('profile-a')]);
 });
 
-test('F5.2-02 autosave: kota düşüşünde özet kırpılmış liste yazılır', () => {
+test('B-21 autosave: kota düşüşünde liste kırpılmaz, hata bildirilir ve eski veri korunur', () => {
   const longOverview = 'x'.repeat(400);
-  const storage = memoryStorage(
-    {},
-    {
-      failWhen: (key, value) =>
-        key === listStorageKey('profile-a') && value.length > 400,
-    }
-  );
+  const key = listStorageKey('profile-a');
+  const previous = JSON.stringify([savedItem(6)]);
+  const storage = memoryStorage({ [key]: previous }, {
+    failWhen: (writeKey, value) => writeKey === key && value.length > 400,
+  });
   const plan = buildLocalStoragePlan(snapshot({ savedItems: [savedItem(7, longOverview)] }));
-  assert.notEqual(plan.list.primary, plan.list.compactFallback);
 
+  assert.equal('compactFallback' in plan.list, false, 'kırpılmış yedek planı üretilmemeli');
   const result = applyLocalStoragePlan(storage, plan);
-  assert.deepEqual(result.compacted, [listStorageKey('profile-a')]);
-  assert.equal(result.failed.length, 0);
-  const stored = JSON.parse(storage.data.get(listStorageKey('profile-a')));
-  assert.equal(stored[0].overview.length, 120);
-  assert.equal(compactSavedItems([savedItem(7, longOverview)])[0].overview.length, 120);
+
+  assert.deepEqual(result.compacted, []);
+  assert.ok(result.failed.some((failure) => failure.key === key), 'başarısız yazım bildirilmeli');
+  assert.equal(storage.data.get(key), previous, 'eski sağlıklı liste korunmalı, üzerine yazılmamalı');
 });
 
 test('F5.2-02 persistence hatası: başarısız yazım mevcut sağlıklı veriyi bozmaz', () => {
