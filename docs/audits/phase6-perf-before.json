@@ -1,0 +1,85 @@
+{
+  "label": "before",
+  "generatedAt": "2026-11-26T22:53:47.331Z",
+  "node": "v24.22.1",
+  "scale": {
+    "1000": {
+      "localStorage": {
+        "payloadBytes": 995780,
+        "serializationMs": 8.85,
+        "firstWriteMs": 0.17,
+        "repeatWriteMs": 0.02,
+        "compactFallbackSupported": true
+      },
+      "rapidUpdateBurst": {
+        "updates": 50,
+        "totalMs": 469.6,
+        "perUpdateMs": 9.39,
+        "schedulerUsed": false,
+        "distinctKeysWritten": 7
+      },
+      "preview": {
+        "fullDatasetMs": 41.29,
+        "fullDatasetJsonBytes": 466511,
+        "rssDeltaMb": 0,
+        "paginatedPreview": null,
+        "peakRssMb": 253.8,
+        "posterCacheDirExists": false
+      }
+    },
+    "5000": {
+      "localStorage": {
+        "payloadBytes": 4987781,
+        "serializationMs": 41.11,
+        "firstWriteMs": 0.02,
+        "repeatWriteMs": 0,
+        "compactFallbackSupported": true
+      },
+      "rapidUpdateBurst": {
+        "updates": 50,
+        "totalMs": 1940.2,
+        "perUpdateMs": 38.8,
+        "schedulerUsed": false,
+        "distinctKeysWritten": 7
+      },
+      "preview": {
+        "fullDatasetMs": 157.33,
+        "fullDatasetJsonBytes": 2335855,
+        "rssDeltaMb": 0,
+        "paginatedPreview": null,
+        "peakRssMb": 404.5,
+        "posterCacheDirExists": false
+      }
+    },
+    "10000": {
+      "localStorage": {
+        "payloadBytes": 9977780,
+        "serializationMs": 62.19,
+        "firstWriteMs": 0.01,
+        "repeatWriteMs": 0,
+        "compactFallbackSupported": true
+      },
+      "rapidUpdateBurst": {
+        "updates": 50,
+        "totalMs": 3180.2,
+        "perUpdateMs": 63.6,
+        "schedulerUsed": false,
+        "distinctKeysWritten": 7
+      },
+      "preview": {
+        "fullDatasetMs": 262.3,
+        "fullDatasetJsonBytes": 4672532,
+        "rssDeltaMb": 0,
+        "paginatedPreview": null,
+        "peakRssMb": 717,
+        "posterCacheDirExists": false
+      }
+    }
+  },
+  "excelExport1000": {
+    "ms": 389.17,
+    "sizeBytes": 97822,
+    "peakRssMb": 395,
+    "rssDeltaMb": 8.9
+  }
+}

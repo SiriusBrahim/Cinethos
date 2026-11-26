@@ -308,12 +308,24 @@ yeni mimari: [../PHASE_05_ARCHITECTURE.md](../PHASE_05_ARCHITECTURE.md).
 Kapılar: 818/818 unit, 440/440 taste, lint 0/0, 0 döngü, 0 mimari ihlal, build başarılı,
 data guard 15 dosya değişmedi. E2E bu oturumda koşulmadı; CI'da çalışır.
 
-**Aşama 6 başlatılmamıştır.**
+**Aşama 6 tamamlandı (26 Kasım 2026).** Sonuçlar, ölçümler ve kapanış matrisi:
+[docs/audits/PHASE_06_IMPLEMENTATION_RESULTS.md](audits/PHASE_06_IMPLEMENTATION_RESULTS.md).
+Aşama 7 başlatılmadı.
 
 ## 8. Aşama 6 — İstemci performansı, depolama ve bellek
 
 **Öncelik:** P2/P3/P4  
 **Amaç:** Başlangıç yükünü, localStorage yazım maliyetini ve büyük dışa aktarmalarda bellek kullanımını azaltmak.
+
+### Uygulama durumu (26 Kasım 2026)
+
+| Madde | Durum | Ölçülen sonuç |
+|---|---|---|
+| **B-20** Bundle/lazy | ✅ Tamamlandı | İlk yükteki JS 1.360.643 B → 912.432 B (gzip 416.005 → 271.708); ana chunk 773,40 → 527,16 kB; `d3-graph` ön yüklemesi kalktı; 0 etkisiz dinamik import |
+| **B-21** Local persistence | ✅ Tamamlandı | 50 hızlı güncelleme 10.000 kayıtta 3.180 ms → 135 ms; kota kırpması kaldırıldı; gizlenme/kapanma flush'ı |
+| **B-23** Excel önizleme | ✅ Tamamlandı | Önizleme yanıtı 10.000 kayıtta 4,67 MB → 25,7 kB (sayfalı); geçersiz parametre 400; tam export eksiksiz |
+| **B-37** Export retention | ✅ Tamamlandı | Yaş/adet/boyut politikası, en yeni dosya korunur, `data/backups` ve kullanıcı dosyaları kapsam dışı |
+| **B-22** Öneri cache | ✅ Doğrulandı | Aşama 3 LRU/TTL/revizyon davranışı yerinde; regresyon yok, değişiklik yapılmadı |
 
 ### Yapılacak işler
 
@@ -452,10 +464,10 @@ data guard 15 dosya değişmedi. E2E bu oturumda koşulmadı; CI'da çalışır.
 | B-17 | P2 | 5 | Core purity / port-adaptör sınırı |
 | B-18 | P3 | 5 | Kullanılmayan bağımlılık kararının verilmesi |
 | B-19 | P2 | 7 | Üretim bağımlılık açıkları |
-| B-20 | P2 | 6 | Bundle/chunk/lazy loading |
-| B-21 | P2 | 6 | localStorage performansı ve sessiz kırpma |
+| B-20 | P2 | 6 | Bundle/chunk/lazy loading — ✅ Aşama 6 |
+| B-21 | P2 | 6 | localStorage performansı ve sessiz kırpma — ✅ Aşama 6 |
 | B-22 | P3 | 3 | ✅ Öneri cache sınırı |
-| B-23 | P4 | 6 | Excel/önizleme bellek yönetimi |
+| B-23 | P4 | 6 | Excel/önizleme bellek yönetimi — ✅ Aşama 6 (sayfalı önizleme) |
 | B-24 | P2 | 4 | ✅ Masaüstü sekme şeridi erişilebilirliği |
 | B-25 | P2 | 4 | ✅ Mobil sticky header yüksekliği |
 | B-26 | P3 | 4 | ✅ İşlem Merkezi görev eylemleri |
@@ -469,7 +481,7 @@ data guard 15 dosya değişmedi. E2E bu oturumda koşulmadı; CI'da çalışır.
 | B-34 | P3 | 8 | Zevk Haritası canonical key |
 | B-35 | P4 | 8 | İlişki ağırlıkları kalibrasyonu |
 | B-36 | P3 | 9 | Restore sonrası geri alma |
-| B-37 | P3 | 6 ve 9 | Export retention ve bellek |
+| B-37 | P3 | 6 ve 9 | Export retention ve bellek — ✅ Aşama 6 (retention); bellek kalemi Aşama 9'da |
 | B-38 | P3 | 2 | ✅ Serileştirilmemiş saveData yolunu kapatma |
 | B-39 | P4 | 2 | ✅ Senkron sayaçlarının doğruluğu |
 
@@ -721,4 +733,4 @@ düzeltildi. Tek satırlık hata metni artık özet ile teknik ayrıntıda tekra
 **Şema/migration:** Kullanıcı veri şeması değişmedi; yeni alan veya migration yok.
 `data/` biçimi ve `schemaVersion` aynı kaldı.
 
-**Aşama 1–4 tamamlandı; Aşama 5 başlatılmadı.**
+**Aşama 1–4 tamamlandı; Aşama 5 başlatılmadı.** (Güncel durum: Aşama 5 ve Aşama 6 tamamlandı; Aşama 7 başlatılmadı.)

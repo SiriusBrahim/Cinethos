@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-11-26T22:24:58.116Z",
+  "initialLoadFiles": [
+    {
+      "file": "index-CfLLoEmT.js",
+      "bytes": 773401,
+      "gzipBytes": 227979
+    },
+    {
+      "file": "react-vendor-UatjSyHA.js",
+      "bytes": 210905,
+      "gzipBytes": 65015
+    },
+    {
+      "file": "d3-graph-Bo58pgPc.js",
+      "bytes": 209686,
+      "gzipBytes": 70871
+    },
+    {
+      "file": "series-tv-seeds-CNVjXMN1.js",
+      "bytes": 149464,
+      "gzipBytes": 45555
+    },
+    {
+      "file": "encoding-service-DC6WfpXe.js",
+      "bytes": 12965,
+      "gzipBytes": 4511
+    },
+    {
+      "file": "api-client-DrKXxymt.js",
+      "bytes": 3496,
+      "gzipBytes": 1645
+    },
+    {
+      "file": "rolldown-runtime-XKyaHtl9.js",
+      "bytes": 726,
+      "gzipBytes": 429
+    }
+  ],
+  "initialLoad": {
+    "jsBytes": 1360643,
+    "jsGzipBytes": 416005,
+    "cssBytes": 205854,
+    "cssGzipBytes": 33350
+  },
+  "allJsChunks": {
+    "count": 16,
+    "bytes": 1414712,
+    "gzipBytes": 434685
+  }
+}
