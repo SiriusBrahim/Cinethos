@@ -189,7 +189,17 @@ Değişen davranışa uygun güncellenen mevcut testler: kota kırpma testi → 
 
 ## 12. CI
 
-Son HEAD için zorunlu kontrollerin (`Lint, Test, Build & Production Smoke Test`, `Playwright E2E`, `Salt okunur bakım analizi`, `Vercel Preview Comments`) sonucu PR #65 üzerinde doğrulanacak ve bu bölüm son commit SHA'sıyla güncellenecek.
+PR #65 üzerinde `0960466` (kod + ölçüm + dokümantasyon) için zorunlu kontroller:
+
+| Kontrol | Sonuç | Tamamlanma (UTC) |
+|---|---|---|
+| `Lint, Test, Build & Production Smoke Test` | ✅ success | 23:10:24 |
+| `Playwright E2E` | ✅ success | 23:08:01 |
+| `Salt okunur bakım analizi` | ✅ success | 23:11:16 |
+| `Vercel Preview Comments` | ✅ success | 23:07:26 |
+
+4/4 success. Bu belgenin kendisi (CI kaydı) ayrı bir dokümantasyon commit'i olarak eklenir; kod değişmediği için
+önceki HEAD'in sonuçları geçerliliğini korur, son dal ucu için kontrol tekrar doğrulanır.
 
 ## 13. Kabul edilen teknik borç
 
