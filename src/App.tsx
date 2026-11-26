@@ -55,7 +55,6 @@ import {
   DataDocument,
   normalizeSavedItem,
   normalizeDataDocument,
-  resolveAirDate,
   buildTasteProfileV3,
   findSavedItem,
   makeMediaKey,
@@ -117,6 +116,7 @@ import {
   snapshotOutgoingProfile,
 } from './app/profile/profile-coordinator.ts';
 import { buildUserDataDocument } from './app/user-data-payload.ts';
+import { computeListCounts } from './app/list-counts.ts';
 import { useLibraryController } from './hooks/useLibraryController.ts';
 import { hasPendingOfflineSync } from './services/offline-queue.ts';
 import {
@@ -1264,23 +1264,11 @@ export function App() {
     return list;
   }, [currentHeroItem, trendingTop, catalogItems]);
 
+  // Liste sayaçları tek saf fonksiyonda (F5.3-07): tür yüklemi ve "bugün"
+  // sınırı tek yerde; davranış eski beş filtreyle birebir aynı.
   const todayStr = new Date().toISOString().slice(0, 10);
-  const upcomingCount = savedItems.filter((item) => {
-    const airDate = resolveAirDate(item);
-    return airDate && airDate >= todayStr && (selectedType === 'all' || item.media_type === selectedType);
-  }).length;
-  const watchingCount = savedItems.filter(
-    (item) => item.status === 'watching' && (selectedType === 'all' || item.media_type === selectedType)
-  ).length;
-  const watchlistCount = savedItems.filter(
-    (item) => item.status === 'watchlist' && (selectedType === 'all' || item.media_type === selectedType)
-  ).length;
-  const completedCount = savedItems.filter(
-    (item) => item.status === 'completed' && (selectedType === 'all' || item.media_type === selectedType)
-  ).length;
-  const allListCount = savedItems.filter(
-    (item) => selectedType === 'all' || item.media_type === selectedType
-  ).length;
+  const { upcomingCount, watchingCount, watchlistCount, completedCount, allListCount } =
+    computeListCounts({ savedItems, selectedType, today: todayStr });
 
   const tasteSummary = React.useMemo<TasteProfileSummary>(() => {
     if (tasteMap.summary && tasteMap.summary.topGenres && tasteMap.summary.topGenres.length > 0) {

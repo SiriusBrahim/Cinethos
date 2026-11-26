@@ -411,3 +411,109 @@ test('F5.3-02 GitHub blob yardımcısı: 200 dışı yanıtta null döner', asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+test('F5.3-02 katalog yazma: geçersiz kayıtlar güvenle atlanır, geçerli kayıt yazılır', () => {
+  const ws = workspace();
+  try {
+    ensureCatalogFiles(ws.context);
+    const result = upsertCatalogItemsOp(ws.context, [
+      null,
+      undefined,
+      'bozuk',
+      42,
+      [],
+      { title: 'Kimliksiz' },
+      { id: 0, media_type: 'movie', title: 'Sıfır kimlik' },
+      { id: -3, media_type: 'movie', title: 'Negatif kimlik' },
+      { id: 'abc', media_type: 'movie', title: 'Metin kimlik' },
+      { id: 1.5, media_type: 'movie', title: 'Kesirli kimlik' },
+      { id: 9, media_type: 'movie', title: 'Geçerli' },
+    ]);
+
+    // Yalnızca geçerli kayıt sayılır; geçersizler sessizce atlanır, hata fırlatılmaz.
+    assert.equal(result.inserted, 1);
+    assert.equal(result.total, 1);
+
+    const movies = readCatalog(ws.context, 'movie');
+    assert.deepEqual(Object.keys(movies), ['movie:9']);
+    assert.equal(movies['movie:9'].title, 'Geçerli');
+    assert.deepEqual(readCatalog(ws.context, 'tv'), {});
+
+    const manifest = readCatalogManifest(ws.context);
+    assert.equal(manifest.movieCount, 1);
+    assert.equal(manifest.tvCount, 0);
+    assert.equal(manifest.contentHash, result.contentHash);
+
+    // Geçersiz kayıtlar dosyaya yazılmaz ve geçici dosya bırakmaz.
+    const catalogEntries = fs.readdirSync(ws.context.catalogDir);
+    assert.deepEqual(catalogEntries.filter((name) => name.endsWith('.tmp')), []);
+    assert.doesNotThrow(() =>
+      JSON.parse(fs.readFileSync(ws.context.moviesFile, 'utf8'))
+    );
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test('F5.3-02 katalog yazma: yalnızca geçersiz kayıt gelirse hiçbir şey yazılmaz', () => {
+  const ws = workspace();
+  try {
+    ensureCatalogFiles(ws.context);
+    upsertCatalogItemsOp(ws.context, [{ id: 1, media_type: 'movie', title: 'Eski' }]);
+    const moviesBefore = fs.readFileSync(ws.context.moviesFile, 'utf8');
+    const manifestBefore = fs.readFileSync(ws.context.manifestFile, 'utf8');
+    const manifestMtime = fs.statSync(ws.context.manifestFile).mtimeMs;
+
+    const result = upsertCatalogItemsOp(ws.context, [null, { title: 'Kimliksiz' }, { id: 0 }]);
+    assert.equal(result.total, 0);
+
+    assert.equal(fs.readFileSync(ws.context.moviesFile, 'utf8'), moviesBefore);
+    assert.equal(fs.readFileSync(ws.context.manifestFile, 'utf8'), manifestBefore);
+    assert.equal(fs.statSync(ws.context.manifestFile).mtimeMs, manifestMtime);
+    assert.equal(readCatalog(ws.context, 'movie')['movie:1'].title, 'Eski');
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test('F5.3-02 yazma sırası: katalog → manifest imzası → türetilmiş profil kaynak imzası', () => {
+  const ws = workspace();
+  try {
+    ensureCatalogFiles(ws.context);
+    const ctx = derivedContext(ws);
+    const profilePath = path.join(ws.profilesDir, `${CANONICAL_PROFILE_A}.json`);
+    const items = { 'movie:550': { score: 0.9, reasons: ['a'] } };
+
+    // 1) Katalog yazımı manifest imzasını üretir.
+    const firstCatalog = upsertCatalogItemsOp(ws.context, [
+      { id: 550, media_type: 'movie', title: 'Fight Club' },
+    ]);
+    const firstManifest = readCatalogManifest(ws.context);
+    assert.equal(firstManifest.contentHash, firstCatalog.contentHash);
+
+    // 2) Türetilmiş profil, o sıradaki katalog imzasını kaynak olarak alır.
+    assert.equal(upsertDerivedProfileOp(ctx, dpInput(CANONICAL_PROFILE_A, items)).updated, true);
+    const firstDoc = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+    assert.equal(firstDoc.sourceCatalogHash, firstManifest.contentHash);
+
+    // 3) Katalog büyür: manifest imzası değişir, eski imza geçersizleşir.
+    const secondCatalog = upsertCatalogItemsOp(ws.context, [
+      { id: 1399, media_type: 'tv', name: 'Band of Brothers' },
+    ]);
+    const secondManifest = readCatalogManifest(ws.context);
+    assert.notEqual(secondManifest.contentHash, firstManifest.contentHash);
+    assert.equal(secondManifest.contentHash, secondCatalog.contentHash);
+    assert.equal(secondManifest.tvCount, 1);
+
+    // 4) Aynı profil imzasıyla yazım artık no-op değildir: kaynak katalog değişti.
+    assert.equal(upsertDerivedProfileOp(ctx, dpInput(CANONICAL_PROFILE_A, items)).updated, true);
+    const secondDoc = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+    assert.equal(secondDoc.sourceCatalogHash, secondManifest.contentHash);
+    assert.notEqual(secondDoc.sourceCatalogHash, firstDoc.sourceCatalogHash);
+
+    // 5) Katalog ve içerik sabitken tekrar yazım no-op kalır.
+    assert.equal(upsertDerivedProfileOp(ctx, dpInput(CANONICAL_PROFILE_A, items)).updated, false);
+  } finally {
+    ws.cleanup();
+  }
+});
