@@ -637,3 +637,164 @@ commit’lerin sonuçları bu commit’e sayılmadı.
 
 Bu bölümü ekleyen commit doküman dışında hiçbir dosyayı değiştirmez; kod
 commit’i `1cf0565`, dal ucu bu commit’tir.
+
+---
+
+## 13. Aşama 5 kapanışı (26 Kas 2026, bu oturum)
+
+**Başlangıç HEAD:** `383fcc2` (uzak dal ile aynı: `0 0`) · **Dal:**
+`remediation/full-project-remediation` · **PR:** #65 (açık, `merged_at: null`,
+`mergeable: true`, base `master@9be5011`). Önceki raporlar kanıt sayılmadı;
+her madde güncel kod üzerinden yeniden doğrulandı.
+
+### 13.1 Önceki çalışmaların güncel HEAD doğrulaması
+
+| Önceki iddia | Güncel doğrulama |
+|---|---|
+| Katalog/türetilmiş profil/künye/stok/senkron durumu yazmaları ayrı modüllerde | ✅ `src/server/persistent-store/{catalog,derived-profile,cinema-kunye,stock}-write-store.ts` + `store-state.ts` mevcut; facade delege ediyor |
+| `mergeRemoteDocumentIntoState` ayrıştırıldı | ✅ `src/app/persistence/remote-document-merge.ts` (`applyMergedRemoteDocumentIntoState` + `useRemoteDocumentMerge`) |
+| `applyDataDocumentToState` / `useDataDocumentApply` modülde | ✅ aynı dosya; App.tsx'te inline gövde yok |
+| App.tsx'te eski tanımlar kaldırıldı | ✅ tek `App()` gövdesi; kullanılmayan import yok (`npm run lint` 0/0) |
+| `f5-3-app-remote-document-merge` testleri genişletildi | ✅ 9 test |
+| Local store reliability + write module testleri | ✅ 12 + 15 test |
+| GitHub boundary/isolation testleri | ✅ 6 + 7 test |
+| Lint / type / test / taste / cycles / build | ✅ bu oturumda yeniden çalıştırıldı (§13.3) |
+
+### 13.2 Bu oturumda yapılan kod değişikliği
+
+**F5.3-07 — liste sayaçları tek saf modüle alındı.**
+
+`App.tsx` içinde beş ayrı `savedItems.filter(...)` çağrısı aynı tür yüklemini
+(`selectedType === 'all' || item.media_type === selectedType`) beş kez
+kopyalıyordu ve "yaklaşanlar" sayacı sistem saatine doğrudan bağlı olduğu için
+test edilemiyordu. Yeni modül: `src/app/list-counts.ts` (66 satır).
+
+| Özellik | Önce | Sonra |
+|---|---|---|
+| Tür yüklemi | 5 kopya | 1 fonksiyon (`matchesSelectedType`) |
+| Geçiş sayısı | 5 × `filter` | 1 geçiş |
+| "Bugün" sınırı | gizli `new Date()` | parametre (`today`) → test edilebilir |
+| Geçersiz kayıt | `filter` içinde dolaylı | açık `null`/nesne olmayan/dizi koruması |
+| App.tsx | 2.049 satır | **2.037 satır** |
+
+Davranış birebir korundu: durum sayaçları karşılıklı dışlayan `if/else if`
+zincirine çevrildi (durumlar tek değerli), `upcoming` durumdan bağımsız kaldı
+ve `resolveAirDate` + `airDate >= today` karşılaştırması **değiştirilmedi**
+(sözlük sırası davranışı dahil — testte açıkça sabitlendi). Saat çağırandan
+geldiği için önceki render davranışı aynıdır.
+
+Gerekçe: Aşama 5 planının "tek kaynak politikaları" (madde 3) ve "App kabuğu"
+(madde 6) hedefleri; taşıma yalnızca saf veri dönüşümünü kapsar — React state,
+hook yaşam döngüsü, modal/tab/visibility ve event handler'lar yerinde bırakıldı.
+
+### 13.3 Eklenen davranış testleri
+
+**`tests/f5-3-app-list-counts.test.mjs` (5 test, yeni)**
+
+1. Boş liste → tüm sayaçlar sıfır.
+2. Tür yüklemi: `all`/`movie`/`tv` sayaçları; tek kaynak doğrulaması.
+3. "Yaklaşanlar" tarih sınırı: bugün dahil, gelecek dahil, geçmiş hariç,
+   tarihi olmayan kayıt sayılmaz; dizi `next_episode_to_air` / `first_air_date`
+   yolları; tür filtresi yaklaşanlara da uygulanır.
+4. Geçersiz kayıtlar: `null`, `undefined`, dize, sayı, dizi, durumu eksik,
+   bilinmeyen durum, sayısal/boş tarih → hata fırlatılmaz, yalnızca geçerli
+   alanlar sayılır.
+5. Bilinmeyen tür seçimi hiçbir kaydı saymaz (eski davranış korunur).
+
+**`tests/f5-3-persistent-store-write-modules.test.mjs` (+3 test)**
+
+6. **Geçersiz kayıtlar:** `null`, `undefined`, dize, sayı, dizi, kimliksiz,
+   `id: 0`, negatif, metin ve kesirli kimlikler sessizce atlanır; yalnızca
+   geçerli kayıt yazılır; dosya geçerli JSON kalır, `.tmp` artığı yoktur,
+   manifest sayıları ve imzası tutarlıdır.
+7. **Yalnızca geçersiz girdi:** hiçbir dosya (katalog veya manifest) yeniden
+   yazılmaz, mevcut veri korunur.
+8. **Yazma sırası:** katalog yazımı → manifest `contentHash` → türetilmiş
+   profil `sourceCatalogHash`. Katalog büyüdüğünde imza değişir ve aynı profil
+   imzasıyla yazım no-op olmaktan çıkar; katalog/içerik sabitken no-op kalır.
+
+Testler gerçek üretim kodunu çalıştırır (`tsx --test`, gerçek geçici dizinler).
+Hiçbir test silinmedi, atlanmadı veya gevşetilmedi; üretim kodunda test geçsin
+diye kontrol kaldırılmadı.
+
+### 13.4 Kapılar (bu ağaçta gerçekten çalıştırıldı)
+
+| Kapı | Komut | Sonuç |
+|---|---|---|
+| ESLint + 2 × `tsc --noEmit` | `npm run lint` | ✅ 0 hata / 0 uyarı |
+| Birim testleri + veri kapısı | `npm test` | ✅ **924/924** (916 → 924), `data/` değişmedi (0 dosya, 95 test dosyası) |
+| Taste testleri | `npm run test:taste` | ✅ **440/440**, veri kapısı OK (0 dosya, 27 test dosyası) |
+| Döngü denetimi | `npm run cycles` | ✅ 0 döngü |
+| Production build | `npm run build` | ✅ başarılı |
+| Üretim duman testi (GitHub yapılandırması yok) | `NODE_ENV=production node server.ts` + curl | ✅ `/api/tmdb-status` 200, `/` 200, `/discover/deep-link` 200, `/api/data` 200, `/api/sync/status` 200 (`mode: local_only`, `githubSyncEnabled: false`), `POST /api/sync/push` 404 (beklenen) |
+| Playwright E2E | `npm run test:e2e` | ⏹ bu ortamda çalıştırılmadı (tarayıcı yok); CI `Playwright E2E` işi bu SHA için doğrulanır |
+
+### 13.5 Yerel veri mimarisi doğrulaması
+
+- **Tek veri kaynağı yerel:** duman testinde GitHub token/repo yokken uygulama
+  açıldı, `/api/data` ve yerel okuma yolları 200 döndü; hiçbir istek GitHub'a
+  gitmedi (`mode: local_only`).
+- **Uzak motor kayıtlı değilken yerel yollar çalışır ve ağ çağrısı yapılmaz:**
+  `tests/f5-3-github-isolation.test.mjs` (7 test) + `f5-3-github-boundary`
+  (6 test, token'sız açılış dahil).
+- **Atomic write / kilit / serileştirme / journal / recovery dokunulmadı:**
+  bu oturumda `src/server/persistent-store.ts` ve `atomic-json.ts`
+  değiştirilmedi; güvenilirlik testleri (12 senaryo) yeşil.
+- **Yedekleme yolları korunuyor:** JSON/Excel/SQLite yedekleme ve geri yükleme
+  koduna dokunulmadı; ilgili testler (`phase1-backup-roundtrip`,
+  `excel-profile-backup`, `sqlite-archive`, `cinema-kunye-backup-sync`) geçti.
+- **GitHub sync yeniden tasarlanmadı:** pull/push/reconcile/lease/journal
+  dosyalarında değişiklik yok (`git diff` bu oturumda yalnızca App.tsx,
+  yeni sayaç modülü ve testleri kapsıyor).
+
+### 13.6 Aşama 5 kapanış matrisi
+
+| Alan | Sonuç | Kanıt | Kalan iş |
+|---|---|---|---|
+| App.tsx ayrıştırma | **TAMAM** | `src/App.tsx` 2.037 satır; kalıcılık `app/persistence/*`, belge birleştirme/uygulama `remote-document-merge.ts`, sayaçlar `app/list-counts.ts`, başlıklar `app/catalog-titles.ts`; `tests/f5-3-app-remote-document-merge` (9) + `f5-3-app-list-counts` (5) + `user-data-payload` | Kalan gövde React state/effect/event orkestrasyonu — taşınacak bağımsız iş kuralı yok |
+| PersistentDataStore | **TAMAM** | Yazma sorumlulukları `persistent-store/*-write-store.ts` + `store-state.ts`; atomic write/serializer/journal `persistent-store.ts`'te korunuyor; `f5-3-local-store-reliability` (12) + `f5-3-persistent-store-write-modules` (15) | Sınıfın senkron geçiş sarmalayıcıları bilinçli olarak yerinde (§13.7) |
+| Davranış testleri | **TAMAM** | Yeni 8 test (§13.3) + mevcut 12 güvenilirlik, 15 yazma modülü, 9 belge birleştirme, 7 izolasyon, 6 sınır testi; `npm test` 924/924 | — |
+| Yerel veri mimarisi | **TAMAM** | §13.5 duman testi + izolasyon/sınır testleri | — |
+| Mimari kalite | **TAMAM** | `npm run lint` 0/0 (ESLint + 2 tsc), `npm run cycles` 0, `tests/architecture-boundaries` geçti, kullanılmayan import temizlendi | — |
+| CI ve build | **TAMAM** | `npm run build` ✅, üretim duman testi ✅; CI sonuçları push sonrası HEAD SHA'sı için ayrıca doğrulanır (§13.8) | — |
+| Teknik borç | **KABUL** | §13.7 sınıflandırma | Gerekçeli, Aşama 5'i engellemiyor |
+
+### 13.7 Teknik borç sınıflandırması
+
+**Aşama 5'i engelleyen eksiklik: yok.**
+
+Kabul edilen teknik borç (Aşama 5 hedeflerini etkilemiyor, gerekçeli):
+
+1. `github-bidirectional-sync.ts` içinde `pull`/`push`/`reconcile` gövdeleri ve
+   `PersistentDataStore`'un GitHub'a özgü public metotları. Ayrıştırmak kilit
+   sahipliği, lease yenileme ve journal kurtarma semantiğini yeniden
+   düzenlemek demek; ürün kararı gereği GitHub senkronizasyonu
+   geliştirilmiyor ve yerel veri yolları bu metotlara bağımlı değil (testli).
+2. `PersistentDataStore` içindeki senkron geçiş sarmalayıcıları
+   (commit/verify/staged-sync). Yazma *kararı* değil, işlem sınırı kodu;
+   taşımak atomik yazma + serileştirici + katalog imzası sırasını değiştirir.
+3. `PersistentStoreOptions` düz `github*` alanları ve `persistent-store.ts`
+   içindeki iki `import type` (çalışma zamanı yükü yok, geriye dönük uyumluluk).
+4. `excel-profile-backup.ts` opsiyonel `uploadToGithub` sözleşmesi (UI
+   göndermiyor) ve `src/core/sync-display.ts` sağlayıcıdan bağımsız rapor tipleri.
+5. `noUnusedLocals`/`noUnusedParameters` açılmadı: kod tabanında geniş ve
+   ilgisiz bir diff gerektirir; ESLint + iki `tsc` projesi hatasız (§13.4).
+6. Çift veri modeli (`core/media/types.ts` ↔ `core/media/document-types.ts`)
+   birleştirilmedi: iki modelin alan kümesi farklı ve birleştirme kamu API'sini
+   değiştirir; bu oturumun kapsamı dışında.
+
+Gelecekte ele alınabilecek iyileştirmeler (Aşama 5 kapsamı dışı): GitHub
+motorunun tamamen silinmesi (§11.4 haritası), `github-bidirectional-sync.ts`
+bölünmesi, `any` temizliği.
+
+### 13.8 Commit, CI ve PR durumu
+
+- Kod + test commit'i: `refactor(f5.3-07): liste sayaçlarını tek saf modüle taşı`
+- Bu belge commit'i: ayrı commit (yalnızca dokümantasyon)
+- PR #65: **açık ve birleştirilmemiş** (`merged_at: null`); merge/kapatma
+  işlemi yapılmadı, `master`'a commit gönderilmedi, Aşama 6 başlatılmadı.
+- CI sonuçları, push edilen HEAD SHA'sı için ayrıca sorgulanır ve PR
+  açıklaması bu bölümle hizalanır.
+
+**Aşama 5 durumu: TAMAMLANDI.** Engelleyici eksiklik kalmadı; kalan maddeler
+yukarıda gerekçeli "kabul edilen borç" olarak sınıflandırıldı.
