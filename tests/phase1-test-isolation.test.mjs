@@ -36,7 +36,7 @@ import {
 import { createDataStorage } from '../src/server/storage.ts';
 import { writeTasteObjections } from '../src/server/taste-store.ts';
 import { auditTestDiscovery, PROJECT_ROOT } from '../scripts/test-discovery.mjs';
-import { makeTempDataDir } from './helpers/test-data.mjs';
+import { cleanupTempDataDirs, makeTempDataDir } from './helpers/test-data.mjs';
 
 const POSIX = process.platform !== 'win32';
 
@@ -397,6 +397,25 @@ describe('Aşama 1 — test keşfi (N-02)', () => {
   it('test runner concurrency açıkça 1 (yarış koşulu yok)', () => {
     const runner = readFileSync(path.join(PROJECT_ROOT, 'scripts/run-tests.mjs'), 'utf8');
     assert.ok(runner.includes("'--test-concurrency=1'"));
+  });
+});
+
+describe('Aşama 1 — geçici dizin temizliği', () => {
+  it('temizlik, sembolik bağlantı hedefindeki gerçek veriyi silmez', { skip: !POSIX }, () => {
+    const target = mkdtempSync(path.join(os.tmpdir(), 'ct-cleanup-target-'));
+    writeFileSync(path.join(target, 'cinetrack.db'), 'korunmalı', 'utf8');
+
+    const dir = makeTempDataDir('ct-cleanup-link-');
+    rmSync(dir, { recursive: true, force: true });
+    symlinkSync(target, dir, 'dir');
+
+    cleanupTempDataDirs();
+
+    try {
+      assert.equal(readFileSync(path.join(target, 'cinetrack.db'), 'utf8'), 'korunmalı');
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 });
 

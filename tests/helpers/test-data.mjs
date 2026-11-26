@@ -5,7 +5,7 @@
  * yazma girişimi `test-data-guard` tarafından çalışma zamanında engellenir.
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { lstatSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -27,6 +27,18 @@ export function useIsolatedDataDir(prefix = 'cinethos-test-') {
 
 export function cleanupTempDataDirs() {
   for (const dir of created) {
+    // Bazı güvenlik testleri geçici dizini bilinçli olarak gerçek `data/`
+    // dizinine sembolik bağlantıya çevirir. `rmSync(recursive)` bir bağlantıyı
+    // hedefinin içeriğiyle birlikte silebildiği için önce bağlantının kendisi
+    // kaldırılır; hedef dizine hiç dokunulmaz.
+    try {
+      if (lstatSync(dir).isSymbolicLink()) {
+        unlinkSync(dir);
+        continue;
+      }
+    } catch {
+      continue;
+    }
     rmSync(dir, { recursive: true, force: true });
   }
   created.clear();
