@@ -12,7 +12,7 @@ import {
   loadProfilePreferences,
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
 import { Stats } from './components/Stats.tsx';
@@ -30,22 +30,22 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  importer: () => Promise<{ default: T }>
-): React.LazyExoticComponent<T> {
-  return lazy(async () => {
-    try {
-      return await importer();
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      return importer();
-    }
-  });
-}
+import { lazyWithRetry } from './app/lazy-with-retry.ts';
 
 const TasteMapView = lazyWithRetry(() => import('./components/TasteMapView.tsx'));
 const RelationshipExplorer = lazyWithRetry(() => import('./components/RelationshipExplorer.tsx'));
 const TasteProfileDashboard = lazyWithRetry(() => import('./components/taste/TasteProfileDashboard.tsx'));
+// B-20: "Seriler ve Evrenler" ekranı ~150 kB dizi tohum verisini ilk pakete
+// çekiyordu; yalnızca sekme açıldığında yüklenir.
+const SeriesSection = lazyWithRetry(() =>
+  import('./modules/series/SeriesSection.tsx').then((mod) => ({ default: mod.SeriesSection }))
+);
+// B-20: İşlem merkezi de ilk açılışta gerekmiyor; davranış aynı kalır.
+const OperationsSection = lazyWithRetry(() =>
+  import('./modules/operations/OperationsSection.tsx').then((mod) => ({
+    default: mod.OperationsSection,
+  }))
+);
 
 import {
   SavedItem,
@@ -92,8 +92,6 @@ import {
   loadServerTasteSignal,
 } from './services/taste-signal-service.ts';
 import { HomeSection } from './modules/home/HomeSection.tsx';
-import { SeriesSection } from './modules/series/SeriesSection.tsx';
-import { OperationsSection } from './modules/operations/OperationsSection.tsx';
 import { getModule, type ModuleId } from './app/module-registry.ts';
 import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
@@ -356,17 +354,17 @@ export function App() {
   }, [refreshStockStats]);
 
   // Sorun 1: Kullanıcı listeleri, disliked veya hidden güncellendiğinde ct:stock deposunu arındır ve gerçek .length değerlerini yansıt
-  useEffect(() => {
+    useEffect(() => {
     void syncStockWithUserExclusions(activeProfileId, savedItems, preferences).then((res) => {
       setStockStats({
         movieCount: res.moviesCount,
         tvCount: res.tvCount,
       });
     });
-    if (serverSyncReady || savedItems.length > 0) {
-      void saveUserListsIdb(activeProfileId, savedItems);
-    }
-  }, [activeProfileId, savedItems, preferences, serverSyncReady]);
+    // B-21: liste IndexedDB'ye tek yerde (aşağıdaki savedItems etkisi) yazılır;
+    // burada ikinci kez yazmak her preference değişiminde tam listeyi tekrar
+    // serileştiriyordu.
+  }, [activeProfileId, savedItems, preferences]);
 
   // Stok görünümünde listeye eklenen içerik sayaç düşmesine rağmen ekranda kalıyordu; gridi anında arındır
   useEffect(() => {
@@ -473,8 +471,26 @@ export function App() {
     },
   });
 
+  // B-21: kota/yazma hatası sessiz kalmaz; kalıcı uyarı şeridi + tek seferlik toast.
+  const [storageWriteFailed, setStorageWriteFailed] = useState(false);
+  const lastStorageWarningAtRef = useRef(0);
+  const handleStorageWriteFailure = useCallback(() => {
+    setStorageWriteFailed(true);
+    const now = Date.now();
+    if (now - lastStorageWarningAtRef.current < 30_000) return;
+    lastStorageWarningAtRef.current = now;
+    showToast(
+      'Tarayıcı depolamasına yazılamadı (alan dolu olabilir). Verileriniz silinmedi veya kısaltılmadı; tam liste IndexedDB ve sunucu yedeğinde korunuyor.'
+    );
+  }, [showToast]);
+  const handleStorageWriteSuccess = useCallback(() => {
+    setStorageWriteFailed(false);
+  }, []);
+
   // F5.2-02: autosave, kota güvenliği ve kirli işaret kararı ortak persistence hook'unda.
   const { persistProfilesBestEffort } = useAppPersistence({
+    onWriteFailure: handleStorageWriteFailure,
+    onWriteSuccess: handleStorageWriteSuccess,
     profiles,
     activeProfileId,
     profileName,
@@ -1539,7 +1555,7 @@ export function App() {
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
-        unpersistedWarning={unpersistedWarning}
+        unpersistedWarning={unpersistedWarning || storageWriteFailed}
       />
       <Header
         profileName={profileName}
@@ -1648,23 +1664,39 @@ export function App() {
           </ErrorBoundary>
         ) : tab === 'series' ? (
           <ErrorBoundary sectionName="Seriler ve Evrenler">
-            <SeriesSection
-              profileId={activeProfileId}
-              savedItems={savedItems}
-              preferences={preferences}
-              favoriteActors={favoriteActors}
-              genreNames={genresMap}
-              onRefresh={handleLoadRelationshipCandidates}
-              onOpenDetails={(item) => setDetailItem(item)}
-              onQuickSave={(item) => setQuickSaveItem(item)}
-            />
+            <Suspense
+              fallback={
+                <div className="lazy-tab-fallback" role="status">
+                  Seriler ve Evrenler yükleniyor…
+                </div>
+              }
+            >
+              <SeriesSection
+                profileId={activeProfileId}
+                savedItems={savedItems}
+                preferences={preferences}
+                favoriteActors={favoriteActors}
+                genreNames={genresMap}
+                onRefresh={handleLoadRelationshipCandidates}
+                onOpenDetails={(item) => setDetailItem(item)}
+                onQuickSave={(item) => setQuickSaveItem(item)}
+              />
+            </Suspense>
           </ErrorBoundary>
         ) : tab === 'operations' ? (
           <ErrorBoundary sectionName="İşlem Merkezi">
-            <OperationsSection
-              profileId={activeProfileId}
-              onOpenBackup={() => setProfileOpen(true)}
-            />
+            <Suspense
+              fallback={
+                <div className="lazy-tab-fallback" role="status">
+                  İşlem Merkezi yükleniyor…
+                </div>
+              }
+            >
+              <OperationsSection
+                profileId={activeProfileId}
+                onOpenBackup={() => setProfileOpen(true)}
+              />
+            </Suspense>
           </ErrorBoundary>
         ) : tab === 'relationships' ? (
           <ErrorBoundary sectionName="İlişki Keşfi">

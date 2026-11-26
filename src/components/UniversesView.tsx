@@ -9,7 +9,12 @@ import {
   computeUserSeriesUniverses,
   UserSeriesUniverse,
 } from '../services/series-service';
-import { RelationshipExplorer } from './RelationshipExplorer';
+// B-20: İnteraktif graf motoru (react-force-graph-2d + d3) yalnızca "Zevk Ağı"
+// alt sekmesi açıldığında yüklenir; statik import onu ilk paket zincirine
+// bağlıyordu (build: INEFFECTIVE_DYNAMIC_IMPORT).
+const RelationshipExplorer = React.lazy(() =>
+  import('./RelationshipExplorer.tsx').then((mod) => ({ default: mod.RelationshipExplorer }))
+);
 
 interface UniversesViewProps {
   profileId: string;
@@ -448,18 +453,26 @@ export const UniversesView: React.FC<UniversesViewProps> = ({
           </div>
 
           <div className="rounded-3xl overflow-hidden border border-white/7 bg-[#0a0b0e] shadow-2xl min-h-[600px]">
-            <RelationshipExplorer
-              mode="relationships"
-              profileId={profileId}
-              savedItems={savedItems}
-              preferences={preferences}
-              candidates={[]}
-              favoriteActors={favoriteActors}
-              genreNames={genreNames}
-              onRefresh={onRefreshGraph}
-              onOpenDetails={onOpenDetails}
-              onQuickSave={onQuickSave}
-            />
+            <React.Suspense
+              fallback={
+                <div className="p-6 text-xs text-cinema-textMuted" role="status">
+                  Zevk ağı yükleniyor…
+                </div>
+              }
+            >
+              <RelationshipExplorer
+                mode="relationships"
+                profileId={profileId}
+                savedItems={savedItems}
+                preferences={preferences}
+                candidates={[]}
+                favoriteActors={favoriteActors}
+                genreNames={genreNames}
+                onRefresh={onRefreshGraph}
+                onOpenDetails={onOpenDetails}
+                onQuickSave={onQuickSave}
+              />
+            </React.Suspense>
           </div>
         </div>
       )}

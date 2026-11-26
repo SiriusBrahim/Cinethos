@@ -543,11 +543,17 @@ test('IMP-18 + IMP-19 + BUG-11: ErrorBoundary diagnostic recovery, empty-state g
     )
   );
 
-  // REG-02: vite.config.ts matches react-vendor BEFORE d3-graph
+  // REG-02 / B-20: yalnızca React satıcı paketi elle ayrılır. Graf motoru ayrı
+  // chunk'a zorlanmaz; tek tüketicisi olan tembel RelationshipExplorer ile
+  // birlikte yüklenir (aksi hâlde ilk açılışta ön yükleniyordu).
   const viteSrc = fs.readFileSync(path.join(root, 'vite.config.ts'), 'utf8');
   const reactVendorIdx = viteSrc.indexOf("return 'react-vendor'");
-  const d3GraphIdx = viteSrc.indexOf("return 'd3-graph'");
-  assert.ok(reactVendorIdx > 0 && d3GraphIdx > reactVendorIdx, 'react-vendor must precede d3-graph in manualChunks');
+  assert.ok(reactVendorIdx > 0, 'react-vendor manualChunk kuralı bulunmalı');
+  assert.equal(
+    viteSrc.includes("return 'd3-graph'"),
+    false,
+    'graf motoru ilk pakete zorlanmamalı'
+  );
 
   // BUG-11: Every v7 new or touched modular file must remain strictly < 1,000 lines and free of inline style={{}}
   const v7Modules = [
