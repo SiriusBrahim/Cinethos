@@ -39,6 +39,10 @@ import {
   type TokenSourceKind,
 } from './persistent-store.ts';
 import { CorruptJsonFileError } from './atomic-json.ts';
+// F5.3-05: GitHub uzak senkronizasyon motoru yalnızca bu bileşim kökünde
+// kaydedilir. Yerel veri katmanı (persistent-store) GitHub'ı import etmez;
+// entegrasyon kaldırılacağında bu tek satır ve github-sync/ silinir.
+import './github-sync/register.ts';
 import { hashDocument } from './archive-integrity.ts';
 import { RestoreJournal } from './restore-journal.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';

@@ -7,6 +7,9 @@ import { spawnSync } from 'node:child_process';
 import { PersistentDataStore } from '../src/server/persistent-store.ts';
 import { createDataStorage } from '../src/server/storage.ts';
 import { GitHubBidirectionalSyncManager } from '../src/server/github-bidirectional-sync.ts';
+// F5.3-05: GitHub motoru artık bileşim kökünde kaydedilir; store'u doğrudan
+// kuran testler bu kaydı açıkça yapar.
+import '../src/server/github-sync/register.ts';
 import {
   acquireSyncFileLease,
   isSyncLeaseBusyError,

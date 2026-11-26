@@ -25,7 +25,8 @@ import type {
   SyncSideSummary,
 } from '../core/sync-display.ts';
 import { BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
-import { GitHubBidirectionalSyncManager } from './github-bidirectional-sync.ts';
+import { createRemoteSyncEngine } from './persistence/remote-sync-registry.ts';
+import type { RemoteSyncEngine } from './persistence/remote-sync-port.ts';
 
 /** Aşama 2: kalıcı senkronizasyon durumu şema sürümü. v1 alanları geriye dönük okunur. */
 export * from './persistent-store/contracts.ts';
@@ -123,7 +124,7 @@ export class PersistentDataStore {
   private maxDataBytes?: number;
   private githubSyncEnabled: boolean;
   private attachedStorage!: ReturnType<typeof createDataStorage>;
-  private bidirectionalManager!: GitHubBidirectionalSyncManager;
+  private remoteSync!: RemoteSyncEngine;
 
   private githubToken?: string;
   private githubTokenSource: TokenSourceKind;
@@ -286,14 +287,19 @@ export class PersistentDataStore {
     };
   }
 
-  private createBidirectionalManager(): GitHubBidirectionalSyncManager {
-    return new GitHubBidirectionalSyncManager({
+  /**
+   * F5.3-05: Uzak senkronizasyon motoru dışarıdan gelir. Bu modül yalnızca saf
+   * `RemoteSyncEngine` arayüzünü bilir; GitHub'a özgü hiçbir import yoktur.
+   * Motor kaydedilmemişse yerel mod motoru döner (uygulama çalışmaya devam eder).
+   */
+  private createRemoteSync(): RemoteSyncEngine {
+    return createRemoteSyncEngine({
       dataDir: this.dataDir,
       maxDataBytes: this.maxDataBytes,
       enableStartupRecovery: this.githubSyncEnabled,
       store: this,
       storage: this.attachedStorage,
-      getGitHubConfig: () => ({
+      getConfig: () => ({
         token: this.githubToken,
         owner: this.githubOwner,
         repo: this.githubRepo,
@@ -302,7 +308,7 @@ export class PersistentDataStore {
         allowPublicPersonalSync: this.isPersonalSyncAllowedForRepo(true),
         allowPublicCatalogSync: this.isCatalogSyncAllowedForRepo(true),
       }),
-      onSyncCompleted: ({ report, lastRemoteSummary, lastComparison }) => {
+      onCompleted: ({ report, lastRemoteSummary, lastComparison }) => {
         this.recordBidirectionalOutcome(report, lastRemoteSummary, lastComparison);
       },
     });
@@ -314,11 +320,11 @@ export class PersistentDataStore {
    * (ör. aşamalı senkronizasyonun çağırdığı prob) yeniden kilitlenmez.
    */
   private async withExclusiveSync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
-    if (!this.bidirectionalManager) return fn();
+    if (!this.remoteSync) return fn();
     // runExclusive kendi AsyncLocalStorage bağlamıyla yalnızca gerçek iç içe
     // çağrıları tanır. Queue'nun global "running" durumu bağımsız istekleri
     // doğrudan çalıştırmak için kullanılmamalıdır.
-    return this.bidirectionalManager.runExclusive(operation, fn);
+    return this.remoteSync.runExclusive(operation, fn);
   }
 
   public async runExclusiveSyncToGitHub(
@@ -349,7 +355,7 @@ export class PersistentDataStore {
     if (typeof maxDataBytes === 'number' && maxDataBytes > 0) {
       this.maxDataBytes = maxDataBytes;
     }
-    this.bidirectionalManager = this.createBidirectionalManager();
+    this.remoteSync = this.createRemoteSync();
   }
 
   public getKnownSecretsForRedaction(): string[] {
@@ -453,11 +459,11 @@ export class PersistentDataStore {
   }
 
   public isSyncBusy(): boolean {
-    return this.bidirectionalManager.isBusy();
+    return this.remoteSync.isBusy();
   }
 
   public hasCompletedInitialReconcile(): boolean {
-    return this.persistedInitialReconcile || this.bidirectionalManager.hasCompletedInitialReconcile();
+    return this.persistedInitialReconcile || this.remoteSync.hasCompletedInitialReconcile();
   }
 
   private recordBidirectionalOutcome(
@@ -1111,7 +1117,7 @@ export class PersistentDataStore {
 
     let localSummary: SyncSideSummary | undefined;
     try {
-      localSummary = this.bidirectionalManager.inspectLocalSideSync().summary;
+      localSummary = this.remoteSync.inspectLocalSideSync().summary;
     } catch {
       localSummary = undefined;
     }
@@ -1192,10 +1198,10 @@ export class PersistentDataStore {
       ...(corruptionWarnings.length > 0 ? { corruptionWarnings } : {}),
       lastSyncAt: this.lastSyncAt,
       syncInProgress: this.isSyncBusy(),
-      syncQueue: this.bidirectionalManager.getQueueStatus(),
-      interruptedSync: this.bidirectionalManager.getRecoveredInterruption()
+      syncQueue: this.remoteSync.getQueueStatus(),
+      interruptedSync: this.remoteSync.getRecoveredInterruption()
         ? {
-            ...this.bidirectionalManager.getRecoveredInterruption()!,
+            ...this.remoteSync.getRecoveredInterruption()!,
             recoveredAt: new Date().toISOString(),
           }
         : null,
@@ -1224,23 +1230,23 @@ export class PersistentDataStore {
   }
 
   public inspectGitHub(): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.inspect();
+    return this.remoteSync.inspect();
   }
 
   public pullFromGitHub(
     options: { conflictStrategy?: 'ask' | 'merge' | 'overwrite_with_remote' } = {}
   ): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.pull(options);
+    return this.remoteSync.pull(options);
   }
 
   public pushToGitHub(): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.push();
+    return this.remoteSync.push();
   }
 
   public reconcileWithGitHub(
     options: { includePersonalOverride?: boolean; includeCatalogOverride?: boolean } = {}
   ): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.reconcile(options);
+    return this.remoteSync.reconcile(options);
   }
 
   /**
