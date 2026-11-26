@@ -620,5 +620,20 @@ Test artışı: 912 → **916** (+4). Uygulama davranışı ve veri formatı de�
 | Bu doküman commit’i | ayrı commit (doküman güncellemesi) |
 | Dal | `remediation/full-project-remediation` |
 | PR #65 | açık, birleştirilmedi |
-| CI | son HEAD SHA’sı için ayrıca doğrulanır (aşağıdaki oturum raporu) |
+| CI (`b9c881e`) | ✅ 4/4 success — `Lint, Test, Build & Production Smoke Test`, `Playwright E2E`, `Salt okunur bakım analizi`, `Vercel Preview Comments` (§12.8) |
 | Aşama 6 | başlatılmadı |
+
+### 12.8 CI doğrulaması
+
+CI, yalnızca ilgili HEAD SHA’sı için ayrı ayrı sorgulandı (`b9c881e`); önceki
+commit’lerin sonuçları bu commit’e sayılmadı.
+
+| Kontrol | Durum | Bitiş (UTC) |
+|---|---|---|
+| `Lint, Test, Build & Production Smoke Test` | ✅ success | 20:24:31 |
+| `Playwright E2E` | ✅ success | 20:22:00 |
+| `Salt okunur bakım analizi` | ✅ success | 20:24:43 |
+| `Vercel Preview Comments` | ✅ success | 20:20:49 |
+
+Bu bölümü ekleyen commit doküman dışında hiçbir dosyayı değiştirmez; kod
+commit’i `1cf0565`, dal ucu bu commit’tir.
