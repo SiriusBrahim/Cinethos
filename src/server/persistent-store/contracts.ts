@@ -42,9 +42,38 @@ export interface GitHubTokenCandidateInfo {
   source: TokenSourceKind;
 }
 
+/**
+ * F5.3-06 — Uzak senkronizasyon (geliştirme entegrasyonu) yapılandırması.
+ *
+ * Yerel veri işlemleri bu nesneyi hiç gerektirmez: `dataDir` ile oluşturulan
+ * depo katalog, profil, türetilmiş veri ve yedekleme işlevlerini eksiksiz
+ * yerine getirir. Alanlar bir sağlayıcı adaptörünün (şu an GitHub) ihtiyaç
+ * duyduğu değerlerdir; sağlayıcı adı sözleşmeye sızmaz.
+ */
+export interface RemoteSyncConfiguration {
+  enabled?: boolean;
+  token?: string;
+  tokenSource?: TokenSourceKind;
+  tokenCandidates?: GitHubTokenCandidateInfo[];
+  getLiveTokenCandidates?: () => GitHubTokenCandidateInfo[];
+  onAuthFailureRefreshToken?: (
+    failedToken: string
+  ) => Promise<{ token: string; source?: TokenSourceKind } | string | null>;
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  isPublicRepo?: boolean;
+  allowPublicPersonalSync?: boolean;
+  allowPublicCatalogSync?: boolean;
+  processEnvIsPublicRepo?: string | null;
+  localEnvIsPublicRepo?: string | null;
+}
+
 export interface PersistentStoreOptions {
   dataDir: string;
   maxDataBytes?: number;
+  /** Tercih edilen yapılandırma sınırı; mevcut düz alanlar geriye dönük uyumludur. */
+  remoteSync?: RemoteSyncConfiguration;
   githubSyncEnabled?: boolean;
   githubToken?: string;
   githubTokenSource?: TokenSourceKind;

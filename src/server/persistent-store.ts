@@ -4,15 +4,10 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { errorMessageOf, redactSecrets, stringifyDeterministic, hashContent, sanitizeProfileId,  } from './persistent-store-utils.ts';
-import {
-  findGitHubDirectoryEntry,
-  isGitHubTooLargeError,
-  readGitHubCommittedSha,
-  readGitHubErrorMessage,
-  readGitHubFileEnvelope,
-  readGitHubRepositoryMeta,
-  type GitHubRepositoryMeta,
-} from './github-response.ts';
+// F5.3-06: GitHub yanıt çözümleyicileri yalnızca **tip** olarak statik
+// bağlanır; çalışma zamanı kodu GitHub'a özgü metotların içinde dinamik olarak
+// yüklenir. Böylece yerel veri yolları GitHub modülünü hiç çalıştırmaz.
+import type { GitHubRepositoryMeta } from './github-response.ts';
 export { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
 import type { CatalogRecord, CatalogManifest, DerivedProfileDocument } from './persistent-store-types.ts';
 export type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
@@ -44,12 +39,7 @@ import {
 } from './persistent-store/derived-profile-write-store.ts';
 import { saveCinemaKunyeOp, type CinemaKunyeSaveResult } from './persistent-store/cinema-kunye-write-store.ts';
 import { saveStockSnapshotUploadOp } from './persistent-store/stock-write-store.ts';
-import {
-  commitFileToGitHubImpl,
-  fetchBlobTextByShaImpl,
-  fetchBlobBufferByShaImpl,
-  type GitHubCommitOutcome,
-} from './persistent-store/github-commit-store.ts';
+import type { GitHubCommitOutcome } from './persistent-store/github-commit-store.ts';
 import {
   loadSyncStateSnapshot,
   recoverInterruptedFileStates,
@@ -144,9 +134,13 @@ export class PersistentDataStore {
   private localEnvIsPublicRepo: string | null;
 
   constructor(options: PersistentStoreOptions) {
+    // F5.3-06: uzak senkronizasyon ayarları ayrı bir sınırda toplanır. Düz
+    // alanlar geriye dönük uyumluluk için okunmaya devam eder; `remoteSync`
+    // verildiğinde önceliklidir. Yerel veri yolları bu blok olmadan çalışır.
+    const remote = options.remoteSync;
     this.dataDir = options.dataDir;
     this.maxDataBytes = options.maxDataBytes;
-    this.githubSyncEnabled = options.githubSyncEnabled !== false;
+    this.githubSyncEnabled = (remote?.enabled ?? options.githubSyncEnabled) !== false;
     this.catalogDir = path.join(this.dataDir, 'catalog');
     this.profilesDir = path.join(this.dataDir, 'profiles');
     this.moviesFile = path.join(this.catalogDir, 'movies.json');
@@ -154,11 +148,12 @@ export class PersistentDataStore {
     this.manifestFile = path.join(this.catalogDir, 'manifest.json');
     this.syncStateFile = path.join(this.dataDir, 'sync-state.json');
 
-    this.githubToken = options.githubToken?.trim();
+    this.githubToken = (remote?.token ?? options.githubToken)?.trim();
     this.githubTokenSource =
-      options.githubTokenSource ?? (this.githubToken ? 'options' : 'none');
-    if (Array.isArray(options.githubTokenCandidates)) {
-      for (const cand of options.githubTokenCandidates) {
+      remote?.tokenSource ?? options.githubTokenSource ?? (this.githubToken ? 'options' : 'none');
+    const tokenCandidates = remote?.tokenCandidates ?? options.githubTokenCandidates;
+    if (Array.isArray(tokenCandidates)) {
+      for (const cand of tokenCandidates) {
         const tok = cand?.token?.trim();
         if (tok && !this.githubTokenCandidates.some((x) => x.token === tok)) {
           this.githubTokenCandidates.push({ token: tok, source: cand.source });
@@ -174,16 +169,22 @@ export class PersistentDataStore {
         source: this.githubTokenSource,
       });
     }
-    this.getLiveGitHubTokenCandidates = options.getLiveGitHubTokenCandidates;
-    this.onAuthFailureRefreshToken = options.onAuthFailureRefreshToken;
-    this.githubOwner = options.githubOwner?.trim();
-    this.githubRepo = options.githubRepo?.trim();
-    this.githubBranch = options.githubBranch?.trim() || 'main';
-    this.isPublicRepo = Boolean(options.isPublicRepo);
-    this.allowPublicPersonalSync = options.allowPublicPersonalSync;
-    this.allowPublicCatalogSync = options.allowPublicCatalogSync;
-    this.processEnvIsPublicRepo = options.processEnvIsPublicRepo ?? null;
-    this.localEnvIsPublicRepo = options.localEnvIsPublicRepo ?? null;
+    this.getLiveGitHubTokenCandidates =
+      remote?.getLiveTokenCandidates ?? options.getLiveGitHubTokenCandidates;
+    this.onAuthFailureRefreshToken =
+      remote?.onAuthFailureRefreshToken ?? options.onAuthFailureRefreshToken;
+    this.githubOwner = (remote?.owner ?? options.githubOwner)?.trim();
+    this.githubRepo = (remote?.repo ?? options.githubRepo)?.trim();
+    this.githubBranch = (remote?.branch ?? options.githubBranch)?.trim() || 'main';
+    this.isPublicRepo = Boolean(remote?.isPublicRepo ?? options.isPublicRepo);
+    this.allowPublicPersonalSync =
+      remote?.allowPublicPersonalSync ?? options.allowPublicPersonalSync;
+    this.allowPublicCatalogSync =
+      remote?.allowPublicCatalogSync ?? options.allowPublicCatalogSync;
+    this.processEnvIsPublicRepo =
+      (remote?.processEnvIsPublicRepo ?? options.processEnvIsPublicRepo) ?? null;
+    this.localEnvIsPublicRepo =
+      (remote?.localEnvIsPublicRepo ?? options.localEnvIsPublicRepo) ?? null;
 
     this.initDirectories();
     if (this.githubSyncEnabled) this.loadPersistedSyncState();
@@ -1369,6 +1370,7 @@ export class PersistentDataStore {
           };
         }
 
+        const { readGitHubRepositoryMeta } = await import('./github-response.ts');
         repoMeta = readGitHubRepositoryMeta(await res.json().catch(() => null));
       } catch (e) {
         return {
@@ -1622,6 +1624,7 @@ export class PersistentDataStore {
    * bounded retry, error classification, read-back hash verification, and token redaction.
    */
   private async fetchBlobTextBySha(sha: string): Promise<string | null> {
+    const { fetchBlobTextByShaImpl } = await import('./persistent-store/github-commit-store.ts');
     return fetchBlobTextByShaImpl({ token: this.githubToken, owner: this.githubOwner, repo: this.githubRepo }, sha);
   }  /**
    * Commit a file to GitHub via Contents API with SHA conflict management,
@@ -1633,6 +1636,7 @@ export class PersistentDataStore {
     commitMessage: string,
     options?: { isEmptyRepo?: boolean; branchToUse?: string }
   ): Promise<GitHubCommitOutcome> {
+    const { commitFileToGitHubImpl } = await import('./persistent-store/github-commit-store.ts');
     return commitFileToGitHubImpl(
       {
         token: this.githubToken,
@@ -2430,6 +2434,7 @@ export class PersistentDataStore {
   }
 
   private async fetchBlobBufferBySha(sha: string): Promise<Buffer | null> {
+    const { fetchBlobBufferByShaImpl } = await import('./persistent-store/github-commit-store.ts');
     return fetchBlobBufferByShaImpl({ token: this.githubToken, owner: this.githubOwner, repo: this.githubRepo }, sha);
   }  /**
    * Uploads a binary backup archive (e.g. `.xlsx`) under `data/exports/` on GitHub
@@ -2453,6 +2458,13 @@ export class PersistentDataStore {
     repoVisibilityWarning?: string;
     error?: string;
   }> {
+    const {
+      findGitHubDirectoryEntry,
+      isGitHubTooLargeError,
+      readGitHubCommittedSha,
+      readGitHubErrorMessage,
+      readGitHubFileEnvelope,
+    } = await import('./github-response.ts');
     const localHash = crypto.createHash('sha256').update(params.contentBuffer).digest('hex');
     const safeBase = path.posix.basename(String(params.fileName || '').trim());
     if (!/^Cinethos_Profile_\d{4}-\d{2}-\d{2}_\d{4}(?:_\d{2,14})?\.(?:xlsx|json)$/.test(safeBase)) {
