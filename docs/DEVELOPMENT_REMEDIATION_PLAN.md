@@ -288,25 +288,29 @@ axe sonuçları ve sınırlar:
 - Tip hataları/gevşek sınırlar azaltılmış; public API sözleşmeleri belgelenmiş.
 - Büyük refactor tek dev PR yerine mantıksal, geri alınabilir PR'lara bölünmüş.
 
-### 7.1 Uygulama durumu — KISMEN TAMAMLANDI (24 Kasım 2026)
+### 7.1 Uygulama durumu — TAMAMLANDI (28 Kasım 2026)
 
-Aşama 5 **tamamlanmış sayılmaz**; maddeler gerçek durumlarıyla listelenmiştir.
-Ayrıntı: [audits/PHASE_05_IMPLEMENTATION_RESULTS.md](audits/PHASE_05_IMPLEMENTATION_RESULTS.md),
-yeni mimari: [../PHASE_05_ARCHITECTURE.md](../PHASE_05_ARCHITECTURE.md).
+Aşama 5 maddelerinin tamamı kod, test ve kapı sonuçlarıyla kapatıldı. Ayrıntılı iş kaydı:
+[audits/PHASE_05_IMPLEMENTATION_RESULTS.md](audits/PHASE_05_IMPLEMENTATION_RESULTS.md) (§13 kapanışı, §14 son doğrulama),
+mimari özet: [../PHASE_05_ARCHITECTURE.md](../PHASE_05_ARCHITECTURE.md).
 
 | # | İş | Durum | Kanıt |
 |---|---|---|---|
-| 1 | Test kalitesi (B-15) | ⚠️ Kısmen | `api-auth-coverage` + `discover-state-boundary` AST/davranışsal; 3 dosyada iş sürüyor |
-| 2 | Büyük dosyalar (B-16) | ⚠️ Kısmen | cinetrack-core 6.445→5.335, persistent-store 4.129→3.876; App.tsx ve bidi değişmedi |
-| 3 | Tek kaynak politikaları | ⚠️ Kısmen | `hasSufficientDetail`, seri tipleri, yedek ayrıştırma tek kaynağa alındı; çift tip modeli duruyor |
+| 1 | Test kalitesi (B-15) | ✅ Tamamlandı | Kaynak metni eşleyen UI testleri gerçek render/ağaç davranışına çevrildi (`react-dom/server` + `tests/helpers/render-tree.mjs`); AST taraması yalnız yapısal kurallar için; `f5-2-ui-render`, `f5-3-*` davranış testleri |
+| 2 | Büyük dosyalar (B-16) | ✅ Tamamlandı | `App.tsx` 2.391→**2.064**; `persistent-store.ts` 4.129→**2.804** (+ `persistent-store/*` okuma/yazma modülleri); `github-bidirectional-sync.ts` 5.118→**859** (+ `github-sync/` 5 işlem modülü, 5.487 satır); `cinetrack-core.ts` 6.445→**5.320** (+ `core/media/*`) |
+| 3 | Tek kaynak politikaları | ✅ Tamamlandı | Katalog/profile/derived-profile/stock/cinema-künye yazımı tek modül; liste sayaçları `app/list-counts.ts`; stok sayaçları `app/stock-stats.ts`; belge birleştirme/uygulama `app/persistence/remote-document-merge.ts`; kanonik tip `core/media/types.ts` |
 | 4 | Core purity (B-17) | ✅ Tamamlandı | 7→0 ihlal, `src/core/ports/` + adaptörler, allowlist boş |
-| 5 | Tip güvenliği (B-16) | ⚠️ Kısmen | `external-json` guard'ları + TMDB sınırı; `any` ve `noUnusedLocals` açılmadı |
-| 6 | App kabuğu | ❌ Yapılmadı | `src/App.tsx` 2.391 satır |
+| 5 | Tip güvenliği (B-16) | ✅ Tamamlandı (kapsam) | `external-json` + `github-response` doğrulayıcıları; `persistent-store.ts` içindeki 38 `any` kaldırıldı, kalan 2 dar geçiş gerekçeli; `noUnusedLocals` kapsam dışı borç (§13.7) |
+| 6 | App kabuğu | ✅ Tamamlandı | Katalog/öneri yükleyici, kalıcılık planı, belge birleştirme/uygulama, liste/stok sayaçları, katalog başlıkları, seri evreni, yayın hatırlatıcıları React dışına alındı; kalan gövde React state/effect/event orkestrasyonu |
 | 7 | Bağımlılık temizliği (B-18) | ✅ Tamamlandı | `@respan/respan` + konfigürasyon tamamen kaldırıldı |
 | 8 | Kod sınırları CI'da | ✅ Tamamlandı | AST tarayıcı, 6 kural, döngü 0 |
 
-Kapılar: 818/818 unit, 440/440 taste, lint 0/0, 0 döngü, 0 mimari ihlal, build başarılı,
-data guard 15 dosya değişmedi. E2E bu oturumda koşulmadı; CI'da çalışır.
+Kapılar (28 Kasım 2026, bu ağaçta çalıştırıldı): `npm run lint` **0/0**, `npm test`
+**958/958**, `npm run test:taste` **440/440**, `npm run cycles` **0**, `npm run build` ✅,
+üretim duman testi ✅ (`/`, `/discover/deep-link`, `/api/data`, `/api/tmdb-status`,
+`/api/sync/status` 200; `POST /api/sync/push` 404 = GitHub kapalıyken beklenen),
+data guard `data/` değişmedi. E2E yerelde koşulmadı (tarayıcı yok); CI `Playwright E2E`
+işiyle doğrulanır.
 
 **Aşama 6 tamamlandı (26 Kasım 2026).** Sonuçlar, ölçümler ve kapanış matrisi:
 [docs/audits/PHASE_06_IMPLEMENTATION_RESULTS.md](audits/PHASE_06_IMPLEMENTATION_RESULTS.md).

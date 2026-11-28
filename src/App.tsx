@@ -115,6 +115,7 @@ import {
 } from './app/profile/profile-coordinator.ts';
 import { buildUserDataDocument } from './app/user-data-payload.ts';
 import { computeListCounts } from './app/list-counts.ts';
+import { summarizeStockPool } from './app/stock-stats.ts';
 import { useLibraryController } from './hooks/useLibraryController.ts';
 import { hasPendingOfflineSync } from './services/offline-queue.ts';
 import {
@@ -325,13 +326,11 @@ export function App() {
           preferencesRef.current
         )
       );
-      const tvdbM = allM.filter((m) => m.source === 'tvdb').length;
-      const tvdbT = allT.filter((t) => t.source === 'tvdb').length;
-      setTvdbCount(tvdbM + tvdbT);
-      setStockStats({
-        movieCount: cleanMovies.length,
-        tvCount: cleanTv.length,
-      });
+      // F5.3-08: TVDB sayacı geçmişte tüm havuzdan, liste sayaçları ise
+      // filtrelenmiş havuzdan hesaplanıyordu; bu ayrım korunuyor.
+      setTvdbCount(summarizeStockPool(allM, allT).tvdbCount);
+      const cleanStats = summarizeStockPool(cleanMovies, cleanTv);
+      setStockStats({ movieCount: cleanStats.movieCount, tvCount: cleanStats.tvCount });
     });
   }, []);
 
@@ -340,13 +339,9 @@ export function App() {
     const unsubscribeStock = subscribeStockState(() => {
       const cleanMovies = getStockMovies(savedItemsRef.current, preferencesRef.current);
       const cleanTv = getStockSeries(savedItemsRef.current, preferencesRef.current);
-      const tvdbM = cleanMovies.filter((m) => m.source === 'tvdb').length;
-      const tvdbT = cleanTv.filter((t) => t.source === 'tvdb').length;
-      setTvdbCount(tvdbM + tvdbT);
-      setStockStats({
-        movieCount: cleanMovies.length,
-        tvCount: cleanTv.length,
-      });
+      const stats = summarizeStockPool(cleanMovies, cleanTv);
+      setTvdbCount(stats.tvdbCount);
+      setStockStats({ movieCount: stats.movieCount, tvCount: stats.tvCount });
     });
     return () => {
       unsubscribeStock();
