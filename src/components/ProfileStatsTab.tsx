@@ -10,7 +10,13 @@ import {
   computeProfileWatchlistIntersection,
 } from '../core/exporters.ts';
 import { calculateItemWatchMinutes, getTvShowEpisodesCount } from '../utils/helpers.ts';
-import { TasteProfileDashboard } from './taste/TasteProfileDashboard.tsx';
+// B-20: Zevk paneli ağır bir görünüm; profil sekmesi açılmadan ilk pakete
+// girmemesi için lazy sınırına alındı (statik import build uyarısı üretiyordu).
+const TasteProfileDashboard = React.lazy(() =>
+  import('./taste/TasteProfileDashboard.tsx').then((mod) => ({
+    default: mod.TasteProfileDashboard,
+  }))
+);
 
 // Zevk motoru taksonomisini ana pakete taşımamak için kart isteğe bağlı yüklenir.
 const ProfileIdentityCard = React.lazy(() =>
@@ -399,7 +405,15 @@ export const ProfileStatsTab: React.FC<ProfileStatsTabProps> = ({
 
       {/* Sinema Kimliğim — Algoritmik Zevk Takımyıldızı (Derin Sinema) */}
       <div className="profile-tools-section">
-        <TasteProfileDashboard compact />
+        <React.Suspense
+          fallback={
+            <div className="profile-tools-loading" role="status">
+              Sinema kimliği yükleniyor…
+            </div>
+          }
+        >
+          <TasteProfileDashboard compact />
+        </React.Suspense>
       </div>
 
       {/* Zevk DNA Özeti */}

@@ -31,24 +31,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runArchitectureScan } from '../scripts/maintenance/architecture-boundaries.mjs';
+import {
+  extractImports,
+  runArchitectureScan,
+} from '../scripts/maintenance/architecture-boundaries.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RULES_PATH = path.join(REPO_ROOT, 'scripts/maintenance/architecture-rules.json');
 
 /**
- * GEÇİCİ allowlist — bilinen 5 `core-purity` ihlali (master @ 148c95d).
+ * GEÇİCİ allowlist — bilinen `core-purity` ihlalleri.
  * Biçim: `<kural-id> :: <dosya> :: <specifier>`
  * Satır numarası bilinçli olarak anahtara dahil DEĞİLDİR (satırlar editsiz
  * kayar; ihlalin özü dosya + import edilen birimdir).
+ *
+ * NOT (F5-02): AST tabanlı tarayıcı çok satırlı importları da gördüğü için
+ * `relationship-explorer.ts` iki ek ihlal daha bildirir (storage-idb,
+ * series-tv-seeds). Bu ihlaller F5-04 (core ports/adapters) kapsamında
+ * giderilecek ve allowlist küçülecektir.
  */
-const ALLOWED_VIOLATIONS = new Set([
-  'core-purity :: src/core/actor-recommendations.ts :: ../services/api-client.ts',
-  'core-purity :: src/core/cinetrack-core.ts :: idb-keyval',
-  'core-purity :: src/core/cinetrack-core.ts :: ../services/api-client.ts',
-  'core-purity :: src/core/relationship-explorer.ts :: ../services/encoding-service.ts',
-  'core-purity :: src/core/taste/migration.ts :: crypto',
-]);
+const ALLOWED_VIOLATIONS = new Set([]);
 
 function violationKey(ruleId, violation) {
   return `${ruleId} :: ${violation.file} :: ${violation.specifier}`;
@@ -96,7 +98,7 @@ test('Mimari sınır analizi tamamlanır ve eksiksiz rapor üretir', () => {
 test('architecture-rules.json gevşetilemez: kurallar ve yasak listeleri korunur', () => {
   const config = loadRules();
 
-  assert.equal(config.version, 1, 'kural dosyası sürümü düşürülemez');
+  assert.equal(config.version, 2, 'kural dosyası sürümü düşürülemez');
 
   const ruleIds = new Set((config.rules ?? []).map((r) => r.id));
   // Her bilinen kural mevcut olmalı (kural silmek gevşetmedir).
@@ -105,6 +107,8 @@ test('architecture-rules.json gevşetilemez: kurallar ve yasak listeleri korunur
     'server-isolation',
     'client-no-server',
     'contracts-isolation',
+    'modules-no-server',
+    'shared-isolation',
   ]) {
     assert.ok(ruleIds.has(requiredId), `zorunlu kural eksik: ${requiredId}`);
   }
@@ -147,7 +151,7 @@ test('architecture-rules.json gevşetilemez: kurallar ve yasak listeleri korunur
   mustContain(
     'server-isolation',
     'forbidLayers',
-    ['components', 'hooks', 'features', 'design-system'],
+    ['app', 'components', 'hooks', 'features', 'design-system'],
     'katman yasağı gevşetilemez'
   );
   mustContain('server-isolation', 'forbidPackages', ['react', 'react-dom'], 'paket yasağı gevşetilemez');
@@ -165,6 +169,24 @@ test('architecture-rules.json gevşetilemez: kurallar ve yasak listeleri korunur
     byId.get('client-no-server').forbidNodeBuiltins,
     true,
     'client-no-server: Node yerleşik modül yasağı kaldırılamaz'
+  );
+
+  // modules-no-server: modüller sunucu uygulama katmanına bağımlı olamaz.
+  mustContain('modules-no-server', 'from', ['src/modules/**'], 'kural kapsamı daraltılamaz');
+  mustContain('modules-no-server', 'forbidLayers', ['server'], 'katman yasağı gevşetilemez');
+  assert.equal(
+    byId.get('modules-no-server').forbidNodeBuiltins,
+    true,
+    'modules-no-server: Node yerleşik modül yasağı kaldırılamaz'
+  );
+
+  // shared-isolation: ortak primitifler tüketen katmanlara bağımlı olamaz.
+  mustContain('shared-isolation', 'from', ['src/shared/**'], 'kural kapsamı daraltılamaz');
+  mustContain(
+    'shared-isolation',
+    'forbidLayers',
+    ['server', 'app', 'components', 'hooks', 'features', 'modules', 'services', 'design-system'],
+    'katman yasağı gevşetilemez'
   );
 
   // contracts-isolation: sözleşme katmanı çalışma zamanına bağımlı olamaz.
@@ -234,6 +256,42 @@ test('Mimari ihlaller: yeni ihlal yok, allowlist güncel (bayat girdi yok)', () 
     actualViolations.length <= ALLOWED_VIOLATIONS.size,
     `ihlal sayısı izin verilen tabanı aşıyor: ${actualViolations.length} > ${ALLOWED_VIOLATIONS.size}`
   );
+});
+
+// ---------------------------------------------------------------------------
+// 3b. Import tespiti — çok satırlı ve dinamik biçimler kaçmaz (F5-02)
+test('Import tespiti çok satırlı, alias, relative ve dinamik biçimleri yakalar', () => {
+  const source = [
+    "import { a } from './tek-satir.ts';",
+    "import {",
+    '  b,',
+    '  c,',
+    "} from '../cok-satirli/hedef.ts';",
+    "import type { D } from '@kapsam/paket'; // yorum",
+    "export * from './yeniden-disa-aktarim.ts';",
+    "export { e } from './secmeli-disa-aktarim.ts';",
+    'const lazy = await import(\'./dinamik.ts\');',
+    "const legacy = require('./gereksinim.ts');",
+    "// import { sahte } from './yorum-icinde.ts';",
+    "const metin = \"import './metin-icinde.ts';\";",
+  ].join('\n');
+
+  const found = extractImports(source, 'ornek.ts').map((entry) => entry.specifier);
+
+  assert.ok(found.includes('./tek-satir.ts'), 'tek satırlı import kaçmamalı');
+  assert.ok(found.includes('../cok-satirli/hedef.ts'), 'çok satırlı import kaçmamalı');
+  assert.ok(found.includes('@kapsam/paket'), 'kapsamlı paket importu kaçmamalı');
+  assert.ok(found.includes('./yeniden-disa-aktarim.ts'), 'export * kaçmamalı');
+  assert.ok(found.includes('./secmeli-disa-aktarim.ts'), 'seçmeli export kaçmamalı');
+  assert.ok(found.includes('./dinamik.ts'), 'dinamik import kaçmamalı');
+  assert.ok(found.includes('./gereksinim.ts'), 'require kaçmamalı');
+  assert.equal(found.includes('./yorum-icinde.ts'), false, 'yorumdaki import sayılmamalı');
+  assert.equal(found.includes('./metin-icinde.ts'), false, 'metin içindeki import sayılmamalı');
+
+  const multiline = extractImports(source, 'ornek.ts').find(
+    (entry) => entry.specifier === '../cok-satirli/hedef.ts'
+  );
+  assert.equal(multiline.line, 2, 'çok satırlı import doğru satırda bildirilmeli');
 });
 
 // ---------------------------------------------------------------------------

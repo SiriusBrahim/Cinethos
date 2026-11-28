@@ -1,22 +1,47 @@
-import React, { lazy } from 'react';
+/**
+ * B-20 — Tem bel bileşen yükleyici.
+ *
+ * Dinamik import geçici bir ağ hatasıyla başarısız olursa bir kez yeniden
+ * denenir; ikinci başarısızlıkta hata React'e iletilir ve mevcut
+ * `ErrorBoundary` devreye girer (uygulama çökmez).
+ */
+
+import React from 'react';
+
+export interface LazyWithRetryOptions {
+  /** Yeniden denemeden önce beklenecek süre (ms). */
+  retryDelayMs?: number;
+  /** Testlerde zamanlayıcı enjeksiyonu. */
+  wait?: (delayMs: number) => Promise<void>;
+}
 
 /**
- * M1 — Tekrar denemeli lazy yükleme.
- *
- * Ağ dalgalanmalarında (özellikle PWA/çevrimdışı geçişleri) chunk yükleme
- * başarısızlıklarına karşı tek seferlik 250 ms beklemeyle yeniden dener.
- * App.tsx'ten buraya taşındı; kayıt defteri modül bölümlerini bu yardımcıyla
- * tembel yükler (kod bölünmesi korunur).
+ * Dinamik import'u bir kez yeniden dener. İkinci deneme de başarısız olursa
+ * ilk hata yeniden fırlatılır (React bunu ErrorBoundary'ye iletir).
  */
-export function lazyWithRetry<T extends React.ComponentType<any>>(
-  importer: () => Promise<{ default: T }>
-): React.LazyExoticComponent<T> {
-  return lazy(async () => {
+export async function loadWithRetry<T>(
+  importer: () => Promise<T>,
+  options: LazyWithRetryOptions = {}
+): Promise<T> {
+  const retryDelayMs = options.retryDelayMs ?? 250;
+  const wait =
+    options.wait ??
+    ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+  try {
+    return await importer();
+  } catch (firstError) {
+    await wait(retryDelayMs);
     try {
       return await importer();
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      return importer();
+      throw firstError;
     }
-  });
+  }
+}
+
+export function lazyWithRetry<T extends React.ComponentType<any>>(
+  importer: () => Promise<{ default: T }>,
+  options: LazyWithRetryOptions = {}
+): React.LazyExoticComponent<T> {
+  return React.lazy(() => loadWithRetry(importer, options));
 }

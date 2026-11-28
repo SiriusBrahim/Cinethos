@@ -150,7 +150,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             <ActionButton onClick={onGoTaste}>Zevk haritam</ActionButton>
           </div>
         </div>
-        <div className="ws-hero-stats" role="list" aria-label="Kütüphane özeti">
+        <div className="ws-hero-stats" role="group" aria-label="Kütüphane özeti">
           <StatTile label="İzleniyor" value={dashboard.stats.watching} tone="info" />
           <StatTile label="İzleyeceğim" value={dashboard.stats.watchlist} />
           <StatTile label="İzlendi" value={dashboard.stats.completed} tone="ok" />

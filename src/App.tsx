@@ -1,14 +1,8 @@
 import { useToasts } from './app/useToasts.ts';
 import {
-  ACTIVE_PROFILE_STORAGE,
   DIRTY_KEY,
   HIDE_LISTED_STORAGE_KEY,
-  PROFILES_STORAGE,
-  PROFILE_STORAGE,
-  deletedKeysStorageKey,
-  favActorsStorageKey,
   hasPersistedProfilesInStorage,
-  listStorageKey,
   loadActiveProfileId,
   loadDeletedKeys,
   loadDislikedCache,
@@ -16,11 +10,9 @@ import {
   loadInitialProfiles,
   loadProfileItems,
   loadProfilePreferences,
-  preferencesStorageKey,
 } from './app/profile-storage.ts';
 import { normalizeProfileId } from './core/profile-id.ts';
-import { mergeRemoteDocument } from './app/server-sync.ts';
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { Header } from './components/Header.tsx';
 import { Hero } from './components/Hero.tsx';
 import { Stats } from './components/Stats.tsx';
@@ -38,22 +30,22 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { ConflictBanner } from './components/ConflictBanner.tsx';
 
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  importer: () => Promise<{ default: T }>
-): React.LazyExoticComponent<T> {
-  return lazy(async () => {
-    try {
-      return await importer();
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      return importer();
-    }
-  });
-}
+import { lazyWithRetry } from './app/lazy-with-retry.ts';
 
 const TasteMapView = lazyWithRetry(() => import('./components/TasteMapView.tsx'));
 const RelationshipExplorer = lazyWithRetry(() => import('./components/RelationshipExplorer.tsx'));
 const TasteProfileDashboard = lazyWithRetry(() => import('./components/taste/TasteProfileDashboard.tsx'));
+// B-20: "Seriler ve Evrenler" ekranı ~150 kB dizi tohum verisini ilk pakete
+// çekiyordu; yalnızca sekme açıldığında yüklenir.
+const SeriesSection = lazyWithRetry(() =>
+  import('./modules/series/SeriesSection.tsx').then((mod) => ({ default: mod.SeriesSection }))
+);
+// B-20: İşlem merkezi de ilk açılışta gerekmiyor; davranış aynı kalır.
+const OperationsSection = lazyWithRetry(() =>
+  import('./modules/operations/OperationsSection.tsx').then((mod) => ({
+    default: mod.OperationsSection,
+  }))
+);
 
 import {
   SavedItem,
@@ -63,25 +55,17 @@ import {
   DataDocument,
   normalizeSavedItem,
   normalizeDataDocument,
-  resolveAirDate,
-  reminderDaysUntil,
   buildTasteProfileV3,
   findSavedItem,
   makeMediaKey,
-  isItemSaved,
   filterHistoryByType,
   TARGET_RECOMMENDATION_COUNT,
   FavoriteActorInfo,
-  normalizeFavoriteActors,
   replenishCandidatePool,
   loadPersistentTasteMap,
   PersistentTasteMapData,
   TasteProfileSummary,
   buildTasteProfileSummary,
-  matchesSelectedGenre,
-  HIDE_LISTED_CATEGORIES,
-  filterHiddenUserRegisteredItems,
-  normalizeDeletedKeys,
   hydrateDiscoveryHistoryIdb,
   hydrateCandidatePoolsIdb,
 } from './core/cinetrack-core.ts';
@@ -108,9 +92,7 @@ import {
   loadServerTasteSignal,
 } from './services/taste-signal-service.ts';
 import { HomeSection } from './modules/home/HomeSection.tsx';
-import { SeriesSection } from './modules/series/SeriesSection.tsx';
-import { OperationsSection } from './modules/operations/OperationsSection.tsx';
-import type { ModuleId } from './app/module-registry.ts';
+import { getModule, type ModuleId } from './app/module-registry.ts';
 import { useHashNavigation } from './app/useHashNavigation.ts';
 import { MobileBottomNav } from './presentation/layouts/MobileLayout.tsx';
 import { useDiscoverState } from './modules/discover/state.ts';
@@ -121,7 +103,19 @@ import { useStockEngine } from './hooks/useStockEngine.ts';
 import { useCinemaKunye } from './hooks/useCinemaKunye.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { createCatalogLoader } from './app/catalog-loader.ts';
+import { useAppPersistence } from './app/persistence/use-app-persistence.ts';
+import {
+  useDataDocumentApply,
+  useRemoteDocumentMerge,
+} from './app/persistence/remote-document-merge.ts';
+import {
+  createProfileRecord,
+  resolveProfileSwitchState,
+  snapshotOutgoingProfile,
+} from './app/profile/profile-coordinator.ts';
 import { buildUserDataDocument } from './app/user-data-payload.ts';
+import { computeListCounts } from './app/list-counts.ts';
+import { summarizeStockPool } from './app/stock-stats.ts';
 import { useLibraryController } from './hooks/useLibraryController.ts';
 import { hasPendingOfflineSync } from './services/offline-queue.ts';
 import {
@@ -136,7 +130,6 @@ import {
 } from './services/storage-idb.ts';
 import {
   registerLocalSavedSeriesHints,
-  computeUserSeriesUniverses,
 } from './services/series-service.ts';
 import {
   getStockMovies,
@@ -152,15 +145,18 @@ import {
   enforcePosterCacheQuota,
   requestServiceWorkerPosterPurge,
 } from './services/poster-cache-manager.ts';
-import { getItemEncodingSync, maintainEncodingsDepot } from './services/encoding-service.ts';
+import { maintainEncodingsDepot } from './services/encoding-service.ts';
 import { runIdbSchemaMigrationsOnce } from './services/idb-schema-version.ts';
-import { computeProfileCentroid, cosineSimilarity } from './core/encoding.ts';
 import {
   checkWeeklyAutoBackup,
   recordProfileChangeAndMaybeBackup,
 } from './services/auto-backup-service.ts';
 import { startIdleStockEnrichment } from './services/idle-enrichment-service.ts';
 import { displayTitle } from './utils/helpers.ts';
+import { collectDueReminders } from './app/release-reminders.ts';
+import { buildSeriesUniverseData } from './app/series-universe.ts';
+import { getCatalogTitles } from './app/catalog-titles.ts';
+import { buildDisplayedItems } from './app/displayed-items.ts';
 const EMPTY_REASONS_MAP = new Map<string, string>();
 
 export function App() {
@@ -330,13 +326,11 @@ export function App() {
           preferencesRef.current
         )
       );
-      const tvdbM = allM.filter((m) => m.source === 'tvdb').length;
-      const tvdbT = allT.filter((t) => t.source === 'tvdb').length;
-      setTvdbCount(tvdbM + tvdbT);
-      setStockStats({
-        movieCount: cleanMovies.length,
-        tvCount: cleanTv.length,
-      });
+      // F5.3-08: TVDB sayacı geçmişte tüm havuzdan, liste sayaçları ise
+      // filtrelenmiş havuzdan hesaplanıyordu; bu ayrım korunuyor.
+      setTvdbCount(summarizeStockPool(allM, allT).tvdbCount);
+      const cleanStats = summarizeStockPool(cleanMovies, cleanTv);
+      setStockStats({ movieCount: cleanStats.movieCount, tvCount: cleanStats.tvCount });
     });
   }, []);
 
@@ -345,13 +339,9 @@ export function App() {
     const unsubscribeStock = subscribeStockState(() => {
       const cleanMovies = getStockMovies(savedItemsRef.current, preferencesRef.current);
       const cleanTv = getStockSeries(savedItemsRef.current, preferencesRef.current);
-      const tvdbM = cleanMovies.filter((m) => m.source === 'tvdb').length;
-      const tvdbT = cleanTv.filter((t) => t.source === 'tvdb').length;
-      setTvdbCount(tvdbM + tvdbT);
-      setStockStats({
-        movieCount: cleanMovies.length,
-        tvCount: cleanTv.length,
-      });
+      const stats = summarizeStockPool(cleanMovies, cleanTv);
+      setTvdbCount(stats.tvdbCount);
+      setStockStats({ movieCount: stats.movieCount, tvCount: stats.tvCount });
     });
     return () => {
       unsubscribeStock();
@@ -359,17 +349,17 @@ export function App() {
   }, [refreshStockStats]);
 
   // Sorun 1: Kullanıcı listeleri, disliked veya hidden güncellendiğinde ct:stock deposunu arındır ve gerçek .length değerlerini yansıt
-  useEffect(() => {
+    useEffect(() => {
     void syncStockWithUserExclusions(activeProfileId, savedItems, preferences).then((res) => {
       setStockStats({
         movieCount: res.moviesCount,
         tvCount: res.tvCount,
       });
     });
-    if (serverSyncReady || savedItems.length > 0) {
-      void saveUserListsIdb(activeProfileId, savedItems);
-    }
-  }, [activeProfileId, savedItems, preferences, serverSyncReady]);
+    // B-21: liste IndexedDB'ye tek yerde (aşağıdaki savedItems etkisi) yazılır;
+    // burada ikinci kez yazmak her preference değişiminde tam listeyi tekrar
+    // serileştiriyordu.
+  }, [activeProfileId, savedItems, preferences]);
 
   // Stok görünümünde listeye eklenen içerik sayaç düşmesine rağmen ekranda kalıyordu; gridi anında arındır
   useEffect(() => {
@@ -476,58 +466,26 @@ export function App() {
     },
   });
 
-  // Sync to localStorage (quota-safe for >2 MB libraries: metadata-only in PROFILES_STORAGE + isolated watchlist write)
-  useEffect(() => {
-    try {
-      const lightweightProfiles = profiles.map((p) => ({
-        id: p.id,
-        name: p.id === activeProfileId ? profileName : p.name,
-        createdAt: p.createdAt || '',
-        isDemo: Boolean(p.isDemo),
-        favoriteActors: p.id === activeProfileId ? favoriteActors : p.favoriteActors || [],
-        items: [],
-      }));
-      localStorage.setItem(PROFILES_STORAGE, JSON.stringify(lightweightProfiles));
-      localStorage.setItem(ACTIVE_PROFILE_STORAGE, activeProfileId);
-      localStorage.setItem(PROFILE_STORAGE, profileName);
-      localStorage.setItem(preferencesStorageKey(activeProfileId), JSON.stringify(preferences));
-      localStorage.setItem(favActorsStorageKey(activeProfileId), JSON.stringify(favoriteActors));
-      localStorage.setItem(deletedKeysStorageKey(activeProfileId), JSON.stringify(deletedKeys));
-    } catch (err) {
-      console.warn('LocalStorage metadata save warning:', err);
-    }
+  // B-21: kota/yazma hatası sessiz kalmaz; kalıcı uyarı şeridi + tek seferlik toast.
+  const [storageWriteFailed, setStorageWriteFailed] = useState(false);
+  const lastStorageWarningAtRef = useRef(0);
+  const handleStorageWriteFailure = useCallback(() => {
+    setStorageWriteFailed(true);
+    const now = Date.now();
+    if (now - lastStorageWarningAtRef.current < 30_000) return;
+    lastStorageWarningAtRef.current = now;
+    showToast(
+      'Tarayıcı depolamasına yazılamadı (alan dolu olabilir). Verileriniz silinmedi veya kısaltılmadı; tam liste IndexedDB ve sunucu yedeğinde korunuyor.'
+    );
+  }, [showToast]);
+  const handleStorageWriteSuccess = useCallback(() => {
+    setStorageWriteFailed(false);
+  }, []);
 
-    try {
-      localStorage.setItem(listStorageKey(activeProfileId), JSON.stringify(savedItems));
-    } catch {
-      try {
-        const compactSaved = savedItems.map((it) => ({
-          ...it,
-          overview: typeof it.overview === 'string' ? it.overview.slice(0, 120) : '',
-        }));
-        localStorage.setItem(listStorageKey(activeProfileId), JSON.stringify(compactSaved));
-      } catch {
-        // >5 MB yedeklerde tarayıcı localStorage kotası aşılabilir; tam veri React state'te ve data/cinetrack-data.json üzerinde korunur.
-      }
-    }
-
-    if (!hasHydratedLocalEffectRef.current) {
-      hasHydratedLocalEffectRef.current = true;
-      return;
-    }
-    if (applyingRemoteSnapshotRef.current) {
-      applyingRemoteSnapshotRef.current = false;
-      return;
-    }
-    isDirtyRef.current = true;
-    if (serverSyncReady) {
-      try {
-        localStorage.setItem(DIRTY_KEY, '1');
-      } catch {}
-    } else {
-      localEditedDuringStartupRef.current = true;
-    }
-  }, [
+  // F5.2-02: autosave, kota güvenliği ve kirli işaret kararı ortak persistence hook'unda.
+  const { persistProfilesBestEffort } = useAppPersistence({
+    onWriteFailure: handleStorageWriteFailure,
+    onWriteSuccess: handleStorageWriteSuccess,
     profiles,
     activeProfileId,
     profileName,
@@ -536,33 +494,13 @@ export function App() {
     favoriteActors,
     deletedKeys,
     serverSyncReady,
-  ]);
-
-  const persistProfilesBestEffort = useCallback((profilesList: Profile[]) => {
-    for (const p of profilesList) {
-      if (!p || !p.id) continue;
-      try {
-        localStorage.setItem(preferencesStorageKey(p.id), JSON.stringify(p.preferences || {}));
-        localStorage.setItem(favActorsStorageKey(p.id), JSON.stringify(p.favoriteActors || []));
-        localStorage.setItem(
-          deletedKeysStorageKey(p.id),
-          JSON.stringify(normalizeDeletedKeys(p.deleted_keys))
-        );
-      } catch {}
-      try {
-        localStorage.setItem(listStorageKey(p.id), JSON.stringify(p.items || []));
-      } catch {
-        try {
-          const compactSaved = (p.items || []).map((it) => ({
-            ...it,
-            overview: typeof it.overview === 'string' ? it.overview.slice(0, 120) : '',
-          }));
-          localStorage.setItem(listStorageKey(p.id), JSON.stringify(compactSaved));
-        } catch {}
-      }
-      void saveUserListsIdb(p.id, p.items || []);
-    }
-  }, []);
+    refs: {
+      hydratedRef: hasHydratedLocalEffectRef,
+      applyingRemoteSnapshotRef,
+      isDirtyRef,
+      localEditedDuringStartupRef,
+    },
+  });
 
   const buildCurrentLivePayloadFromRefs = useCallback(
     (): DataDocument =>
@@ -598,72 +536,40 @@ export function App() {
     setSyncStatus(`Çakışma algılandı: ${conflict.message}`);
   }, []);
 
-  const mergeRemoteDocumentIntoState = useCallback(
-    (
-      rawRemoteDoc: DataDocument,
-      options: {
-        preferActiveFrom?: 'local' | 'remote';
-        foldUnhydrated?: boolean;
-        keepDirtyIfLocalAhead?: boolean;
-      } = {}
-    ): DataDocument | null => {
-      const merged = mergeRemoteDocument(buildCurrentLivePayloadFromRefs(), rawRemoteDoc, {
-        preferActiveFrom: options.preferActiveFrom,
-        foldUnhydrated: options.foldUnhydrated,
-        keepDirtyIfLocalAhead: options.keepDirtyIfLocalAhead,
-      });
-      if (!merged) return null;
+  // F5.3-03: belge birleştirme/uygulama sorumluluğu ayrı modüle taşındı; App
+  // yalnızca gerekli ref/setter/kalıcılık bağlantılarını sağlar. Aynı bağlantı
+  // iki hook tarafından paylaşılır (merge ve doğrudan uygulama).
+  const remoteDocumentRefs = {
+    profilesRef,
+    activeProfileIdRef,
+    profileNameRef,
+    preferencesRef,
+    savedItemsRef,
+    favoriteActorsRef,
+    deletedKeysRef,
+    tasteMapRef,
+    isDirtyRef,
+    applyingRemoteSnapshotRef,
+    hadStoredProfilesOnBootRef,
+  };
+  const remoteDocumentSetters = {
+    setProfiles,
+    setActiveProfileId,
+    setProfileName,
+    setPreferences,
+    setSavedItems,
+    setFavoriteActors,
+    setDeletedKeys,
+    setTasteMap,
+    setServerConflict,
+  };
 
-      const {
-        mergedDoc,
-        activeProfile: active,
-        favoriteActors: activeFavs,
-        deletedKeys: activeDeleted,
-        shouldStayDirty,
-      } = merged;
-
-      applyingRemoteSnapshotRef.current = true;
-      hadStoredProfilesOnBootRef.current = true;
-
-      profilesRef.current = mergedDoc.profiles;
-      activeProfileIdRef.current = mergedDoc.activeProfileId;
-      profileNameRef.current = active.name;
-      preferencesRef.current = active.preferences;
-      savedItemsRef.current = active.items;
-      favoriteActorsRef.current = activeFavs;
-      deletedKeysRef.current = activeDeleted;
-
-      setProfiles(mergedDoc.profiles);
-      setActiveProfileId(mergedDoc.activeProfileId);
-      setProfileName(active.name);
-      setPreferences(active.preferences);
-      setSavedItems(active.items);
-      setFavoriteActors(activeFavs);
-      setDeletedKeys(activeDeleted);
-
-      const loadedMap = loadPersistentTasteMap(active.id);
-      tasteMapRef.current = loadedMap;
-      setTasteMap(loadedMap);
-
-      persistProfilesBestEffort(mergedDoc.profiles);
-
-      isDirtyRef.current = shouldStayDirty;
-      try {
-        if (shouldStayDirty) {
-          localStorage.setItem(DIRTY_KEY, '1');
-        } else {
-          localStorage.removeItem(DIRTY_KEY);
-        }
-      } catch {}
-
-      if (!shouldStayDirty) {
-        setServerConflict(null);
-      }
-
-      return mergedDoc;
-    },
-    [buildCurrentLivePayloadFromRefs, persistProfilesBestEffort]
-  );
+  const { mergeRemoteDocumentIntoState } = useRemoteDocumentMerge({
+    buildLivePayloadFromRefs: buildCurrentLivePayloadFromRefs,
+    persistProfilesBestEffort,
+    refs: remoteDocumentRefs,
+    setters: remoteDocumentSetters,
+  });
 
   const handleMergedServerDocument = useCallback(
     (serverDoc: DataDocument) => {
@@ -682,6 +588,15 @@ export function App() {
     syncDocument,
     resolveQueuedConflict,
   } = useOfflineSync(handleServerConflict, handleMergedServerDocument);
+
+  // Sunucu belgesini birleştirmeden uygulama (yedek geri yükleme, "sunucuyu
+  // kullan") sorumluluğu da modülde; App yalnızca bağlantıları sağlar.
+  const { applyDataDocumentToState } = useDataDocumentApply({
+    persistProfilesBestEffort,
+    resolveQueuedConflict,
+    refs: remoteDocumentRefs,
+    setters: remoteDocumentSetters,
+  });
 
   // Autonomous 500-movie + 500-TV IndexedDB stock engine & <250 background replenisher (Aşama 2 & 4)
   const stockEngineState = useStockEngine(activeProfileId);
@@ -743,43 +658,6 @@ export function App() {
       void registerLocalSavedSeriesHints(savedItems);
     }
   }, [savedItems]);
-
-  const applyDataDocumentToState = useCallback(
-    (rawDoc: DataDocument) => {
-      const doc = normalizeDataDocument(rawDoc);
-      if (!doc) return;
-      applyingRemoteSnapshotRef.current = true;
-      hadStoredProfilesOnBootRef.current = true;
-      profilesRef.current = doc.profiles;
-      setProfiles(doc.profiles);
-      setActiveProfileId(doc.activeProfileId);
-      activeProfileIdRef.current = doc.activeProfileId;
-      const active = doc.profiles.find((p) => p.id === doc.activeProfileId) || doc.profiles[0];
-      profileNameRef.current = active.name;
-      setProfileName(active.name);
-      preferencesRef.current = active.preferences;
-      setPreferences(active.preferences);
-      savedItemsRef.current = active.items;
-      setSavedItems(active.items);
-      const activeFavs = normalizeFavoriteActors(active.favoriteActors || []);
-      favoriteActorsRef.current = activeFavs;
-      setFavoriteActors(activeFavs);
-      const activeDeleted = normalizeDeletedKeys(active.deleted_keys);
-      deletedKeysRef.current = activeDeleted;
-      setDeletedKeys(activeDeleted);
-      const loadedMap = loadPersistentTasteMap(active.id);
-      tasteMapRef.current = loadedMap;
-      setTasteMap(loadedMap);
-      persistProfilesBestEffort(doc.profiles);
-      isDirtyRef.current = false;
-      try {
-        localStorage.removeItem(DIRTY_KEY);
-      } catch {}
-      resolveQueuedConflict();
-      setServerConflict(null);
-    },
-    [persistProfilesBestEffort, resolveQueuedConflict]
-  );
 
   const {
     pushToServer,
@@ -956,34 +834,20 @@ export function App() {
     }
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const due = collectDueReminders(currentItems, currentPrefs, today);
     const newlyNotified: string[] = [];
 
-    for (const item of currentItems) {
-      if (item.status === 'completed') continue;
-      const airDate = resolveAirDate(item);
-      if (!airDate) continue;
-      const days = reminderDaysUntil(airDate, today);
-      if (days === null) continue;
-      const key = `${item.media_type}:${item.id}:${airDate}`;
-      if (currentPrefs.notified.includes(key) || newlyNotified.includes(key)) continue;
-
-      const next = item.next_episode_to_air;
-      const episodeTag =
-        item.media_type === 'tv' && next?.air_date === airDate && next.season_number
-          ? ` (S${next.season_number}B${next.episode_number})`
-          : '';
-      const when = days === 0 ? 'bugün' : `${days} gün içinde`;
-
+    for (const reminder of due) {
       const notification = new Notification('Cinethos yayın hatırlatıcısı', {
-        body: `${displayTitle(item)} ${when} yayınlanıyor${episodeTag}.`,
+        body: reminder.body,
       });
       notification.onclick = () => {
         window.focus();
-        setDetailItem(item);
+        setDetailItem(reminder.item);
         notification.close();
       };
 
-      newlyNotified.push(key);
+      newlyNotified.push(reminder.key);
     }
 
     if (newlyNotified.length > 0) {
@@ -1314,176 +1178,59 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: detay zenginleştirme yalnızca liste uzunluğu değişince çalışmalı
   }, [savedItems.length]);
 
-  // Filter & sort displayed items
-  const filterAndSortItems = (items: any[]) => {
-    let filtered = items.filter((item) => {
-      if (item.media_type !== 'movie' && item.media_type !== 'tv') return false;
-      if (selectedType !== 'all' && item.media_type !== selectedType) return false;
-      if (selectedGenre && !matchesSelectedGenre(item, selectedGenre)) return false;
-      return true;
-    });
-
-    if (tab === 'discover' && category !== 'for-you' && selectedSort === 'popular') {
-      return filtered;
-    }
-
-    if (selectedSort === 'similarity') {
-      const savedEncodings = savedItemsRef.current.map((it) => ({
-        encoding: getItemEncodingSync(it),
-        personal_rating: it.personal_rating,
-      }));
-      const profileCentroid = computeProfileCentroid(savedEncodings);
-      if (profileCentroid.length > 0) {
-        const simMap = new Map<string, number>();
-        for (const it of filtered) {
-          const enc = getItemEncodingSync(it);
-          const sim = cosineSimilarity(profileCentroid, enc.denseVector);
-          simMap.set(`${it.media_type}:${it.id}`, sim);
-        }
-        filtered = [...filtered].sort(
-          (a, b) =>
-            (simMap.get(`${b.media_type}:${b.id}`) ?? 0) -
-            (simMap.get(`${a.media_type}:${a.id}`) ?? 0)
-        );
-      }
-    } else if (selectedSort === 'rating') {
-      filtered = [...filtered].sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
-    } else if (selectedSort === 'title') {
-      filtered = [...filtered].sort((a, b) =>
-        displayTitle(a).localeCompare(displayTitle(b), 'tr')
-      );
-    } else if (selectedSort === 'recent') {
-      filtered = [...filtered].sort((a, b) =>
-        tab === 'list'
-          ? (b.addedAt || '').localeCompare(a.addedAt || '')
-          : (b.release_date || b.first_air_date || '').localeCompare(
-              a.release_date || a.first_air_date || ''
-            )
-      );
-    }
-    return filtered;
-  };
-
   // FEAT-01 #10 & #11: Compute missing franchise parts strictly for franchises present in user's savedItems
   const seriesUniverseData = React.useMemo(() => {
     void seriesIndexVersion;
     const effectiveDemo = Boolean(activeProfile?.isDemo || tmdbSourceMeta.source === 'demo');
-    const universes = computeUserSeriesUniverses(savedItems, {
+    return buildSeriesUniverseData({
+      savedItems,
+      disliked: preferences.disliked,
+      hidden: preferences.hidden,
       includeStubs: !effectiveDemo,
-      dislikedKeys: preferences.disliked,
-      hiddenKeys: preferences.hidden,
     });
-    const items: any[] = [];
-    const reasonsMap = new Map<string, string>();
-    const seenKeys = new Set<string>();
-    const dislikedSet = new Set(preferences.disliked || []);
-    const hiddenSet = new Set(preferences.hidden || []);
-
-    for (const u of universes) {
-      const ownedTitles = u.userOwnedParts
-        .slice(0, 2)
-        .map((p) => p.title || p.name)
-        .filter(Boolean)
-        .join(', ');
-      const reason = ownedTitles
-        ? `${u.collection.name} · Listenizdeki "${ownedTitles}" ile aynı seride`
-        : `${u.collection.name} serisinin devam halkası`;
-
-      for (const part of u.userMissingParts) {
-        const mType = part.media_type === 'tv' ? 'tv' : 'movie';
-        const key = makeMediaKey(mType, part.id);
-        if (seenKeys.has(key) || dislikedSet.has(key) || hiddenSet.has(key)) continue;
-        if (isItemSaved(savedItems, part, mType)) continue;
-        seenKeys.add(key);
-        items.push({
-          ...part,
-          media_type: mType,
-          belongs_to_collection: mType === 'movie' ? { id: u.collection.id, name: u.collection.name } : undefined,
-        });
-        reasonsMap.set(key, reason);
-      }
-    }
-
-    return { items, reasonsMap, universesCount: universes.length };
   }, [savedItems, preferences.disliked, preferences.hidden, seriesIndexVersion, activeProfile?.isDemo, tmdbSourceMeta.source]);
 
-  const displayedItems = React.useMemo(() => {
-    if (tab === 'discover') {
-      if (category === 'for-you' && forYouSubTab === 'series' && !query.trim()) {
-        return filterAndSortItems(seriesUniverseData.items);
-      }
-
-      const rawSource = category === 'for-you' ? forYouItems : catalogItems;
-      const shouldHideUserRegistered =
-        !query.trim() &&
-        hideListedItems &&
-        (HIDE_LISTED_CATEGORIES as readonly string[]).includes(category);
-
-      const preFiltered = shouldHideUserRegistered
-        ? filterHiddenUserRegisteredItems(rawSource, {
-            savedItems,
-            preferences,
-            tasteMap,
-            hideListedItems: true,
-          })
-        : rawSource;
-
-      const filtered = preFiltered.filter((item) => {
-        const itemType = item.media_type || (item.title ? 'movie' : 'tv');
-        const key = makeMediaKey(itemType, item.id);
-        if (preferences.disliked.includes(key)) return false;
-        if (preferences.hidden?.includes(key)) return false;
-
-        // In Sana Özel (recommendations), strictly filter out items already in the user's list
-        if (category === 'for-you') {
-          if (isItemSaved(savedItems, item, itemType)) return false;
-        }
-
-        return true;
-      });
-      return filterAndSortItems(filtered);
-    }
-
-    if (listStatus === 'disliked') {
-      const activeDisliked = dislikedItems.filter((item) =>
-        preferences.disliked.includes(`${item.media_type}:${item.id}`)
-      );
-      return filterAndSortItems(activeDisliked);
-    }
-
-    let list = savedItems;
-    if (listStatus === 'upcoming') {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      list = savedItems
-        .filter((item) => {
-          const airDate = resolveAirDate(item);
-          return airDate && airDate >= todayStr;
-        })
-        .sort((a, b) => resolveAirDate(a).localeCompare(resolveAirDate(b)));
-    } else if (listStatus !== 'all') {
-      list = savedItems.filter((item) => item.status === listStatus);
-    }
-    return filterAndSortItems(list);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: liste filtresi yalnızca tab/listStatus değişiminde yeniden hesaplanmalı
-  }, [
-    tab,
-    category,
-    forYouSubTab,
-    query,
-    seriesUniverseData.items,
-    forYouItems,
-    catalogItems,
-    hideListedItems,
-    savedItems,
-    preferences.disliked,
-    preferences.hidden,
-    tasteMap,
-    dislikedItems,
-    listStatus,
-    selectedType,
-    selectedGenre,
-    selectedSort,
-  ]);
+  const displayedItems = React.useMemo(
+    () =>
+      buildDisplayedItems({
+        tab,
+        category,
+        forYouSubTab,
+        query,
+        hideListedItems,
+        listStatus,
+        selectedType,
+        selectedGenre,
+        selectedSort,
+        savedItems,
+        preferences,
+        tasteMap,
+        dislikedItems,
+        forYouItems,
+        catalogItems,
+        seriesItems: seriesUniverseData.items,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bilinçli: liste filtresi yalnızca tab/listStatus değişiminde yeniden hesaplanmalı
+    [
+      tab,
+      category,
+      forYouSubTab,
+      query,
+      seriesUniverseData.items,
+      forYouItems,
+      catalogItems,
+      hideListedItems,
+      savedItems,
+      preferences.disliked,
+      preferences.hidden,
+      tasteMap,
+      dislikedItems,
+      listStatus,
+      selectedType,
+      selectedGenre,
+      selectedSort,
+    ]
+  );
 
   // FEAT-02 #6: Record unsaved items displayed on the Discover tab into ct:surfaced FIFO ring history
   // REG-01: Never mark local ct:stock browsing as surfaced so stock items do not self-poison cooldowns
@@ -1528,23 +1275,11 @@ export function App() {
     return list;
   }, [currentHeroItem, trendingTop, catalogItems]);
 
+  // Liste sayaçları tek saf fonksiyonda (F5.3-07): tür yüklemi ve "bugün"
+  // sınırı tek yerde; davranış eski beş filtreyle birebir aynı.
   const todayStr = new Date().toISOString().slice(0, 10);
-  const upcomingCount = savedItems.filter((item) => {
-    const airDate = resolveAirDate(item);
-    return airDate && airDate >= todayStr && (selectedType === 'all' || item.media_type === selectedType);
-  }).length;
-  const watchingCount = savedItems.filter(
-    (item) => item.status === 'watching' && (selectedType === 'all' || item.media_type === selectedType)
-  ).length;
-  const watchlistCount = savedItems.filter(
-    (item) => item.status === 'watchlist' && (selectedType === 'all' || item.media_type === selectedType)
-  ).length;
-  const completedCount = savedItems.filter(
-    (item) => item.status === 'completed' && (selectedType === 'all' || item.media_type === selectedType)
-  ).length;
-  const allListCount = savedItems.filter(
-    (item) => selectedType === 'all' || item.media_type === selectedType
-  ).length;
+  const { upcomingCount, watchingCount, watchlistCount, completedCount, allListCount } =
+    computeListCounts({ savedItems, selectedType, today: todayStr });
 
   const tasteSummary = React.useMemo<TasteProfileSummary>(() => {
     if (tasteMap.summary && tasteMap.summary.topGenres && tasteMap.summary.topGenres.length > 0) {
@@ -1576,79 +1311,29 @@ export function App() {
     void saveUserListsIdb(activeProfileId, savedItems);
   }, [activeProfileId, savedItems]);
 
-  // Header and Catalog Section Titles
-  const getCatalogTitles = () => {
-    if (tab === 'list') {
-      const typeLabel =
-        selectedType === 'movie'
-          ? 'film'
-          : selectedType === 'tv'
-          ? 'dizi'
-          : 'içerik (film + dizi)';
-      const statusTitles: Record<string, { title: string; count: number }> = {
-        all: { title: 'Tüm takip listem', count: allListCount },
-        watching: { title: 'Şu an izlediklerim', count: watchingCount },
-        watchlist: { title: 'İzlenecekler listem', count: watchlistCount },
-        completed: { title: 'Tamamladıklarım', count: completedCount },
-        upcoming: { title: 'Yaklaşan yayınlar', count: upcomingCount },
-        actors: { title: 'Favori oyuncularım', count: favoriteActors.length },
-        disliked: { title: 'İlgilenmediğim içerikler', count: preferences.disliked.length },
-      };
-      const info = statusTitles[listStatus] || statusTitles.all;
-      if (listStatus === 'actors') {
-        return {
-          title: `${info.title} (${info.count})`,
-          description: `Takip ettiğin ${info.count} favori oyuncu ve senin için kişiselleştirilmiş film & dizi önerileri`,
-        };
-      }
-      return {
-        title: `${info.title} (${info.count})`,
-        description: `Listenizde toplam ${info.count} kayıtlı ${typeLabel} bulunuyor`,
-      };
-    }
-    if (query) {
-      return {
-        title: `"${query}" için arama sonuçları`,
-        description: 'Sonuçlar doğrudan TMDB arama servisinden alınır',
-      };
-    }
-    const catMap: Record<string, { title: string; description: string }> = {
-      trending: { title: 'Güncel trendler', description: 'TMDB\'den canlı olarak yükleniyor' },
-      'for-you': {
-        title: forYouSubTab === 'series' ? 'Sana özel · Seriler' : 'Sana özel',
-        description:
-          forYouSubTab === 'series'
-            ? 'Listenizdeki film ve dizilerin aynı evrendeki diğer halkaları ve devam yapımları'
-            : forYouExplanation ||
-              (selectedGenre && genresMap[Number(selectedGenre)]
-                ? `${genresMap[Number(selectedGenre)]} türünde zevk profiline göre oluşturulan 20 öneri`
-                : selectedType === 'movie'
-                ? 'Film izleme geçmişin ve kişisel puanlarından oluşturulan 20 film önerisi'
-                : selectedType === 'tv'
-                ? 'Dizi izleme geçmişin ve kişisel puanlarından oluşturulan 20 dizi önerisi'
-                : 'İzleme listen ve kişisel puanlarından oluşturulan 20 öneri'),
-      },
-      gems: {
-        title: 'Keşfedilmemiş mücevherler',
-        description: 'Yüksek puanlı, daha az popüler ve keşfedilmeyi bekleyen film ve diziler',
-      },
-      upcoming: { title: 'Yakında ve yayında', description: 'Yaklaşan filmler ve yayındaki diziler' },
-      'popular-movies': { title: 'Popüler filmler', description: 'TMDB\'de en çok ilgi gören filmler' },
-      'popular-tv': { title: 'Popüler diziler', description: 'TMDB\'de en çok ilgi gören diziler' },
-      'top-rated': { title: 'Yüksek puanlı filmler', description: 'TMDB puanına göre sıralanır' },
-      stock: {
-        title: `Keşfet — ${stockStats.movieCount} Film · ${stockStats.tvCount} Dizi${
-          tvdbCount > 0 ? ` (TVDB: ${tvdbCount})` : ''
-        }`,
-        description: `Listenizde olmayan, çevrimdışı erişime hazır kişisel aday havuzu (${
-          tvdbCount > 0 ? `${tvdbCount} TVDB yapımı dahil` : 'TMDB ve TVDB kaynaklı'
-        }) ve zevk vektörü sıralaması`,
-      },
-    };
-    return catMap[category] || catMap.trending;
-  };
-
-  const { title: catalogTitle, description: catalogDescription } = getCatalogTitles();
+  // Header and Catalog Section Titles (F5.1-01: saf üretici app/catalog-titles.ts içinde)
+  const { title: catalogTitle, description: catalogDescription } = getCatalogTitles({
+    tab,
+    query,
+    listStatus,
+    selectedType,
+    category,
+    forYouSubTab,
+    forYouExplanation,
+    selectedGenre,
+    genresMap,
+    stockStats,
+    tvdbCount,
+    counts: {
+      allListCount,
+      watchingCount,
+      watchlistCount,
+      completedCount,
+      upcomingCount,
+      favoriteActorsCount: favoriteActors.length,
+      dislikedCount: preferences.disliked.length,
+    },
+  });
 
   // Profile Management
   const handleSaveProfileName = (newName: string) => {
@@ -1665,20 +1350,14 @@ export function App() {
     clearServerTasteSignalCache();
     const newId = normalizeProfileId(rawNewId);
     if (!newId || newId === activeProfileId) return;
-    const outgoingId = activeProfileId;
-    const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
-    const updatedProfiles = profiles.map((p) =>
-      p.id === outgoingId
-        ? {
-            ...p,
-            name: profileName,
-            items: savedItems,
-            preferences,
-            favoriteActors: favoriteActorsRef.current || [],
-            ...(Object.keys(outgoingDeleted).length > 0 ? { deleted_keys: outgoingDeleted } : {}),
-          }
-        : p
-    );
+    const updatedProfiles = snapshotOutgoingProfile(profiles, {
+      activeProfileId,
+      profileName,
+      savedItems,
+      preferences,
+      favoriteActors: favoriteActorsRef.current || [],
+      deletedKeys: deletedKeysRef.current,
+    });
     profilesRef.current = updatedProfiles;
     setProfiles(updatedProfiles);
     persistProfilesBestEffort(updatedProfiles);
@@ -1686,29 +1365,22 @@ export function App() {
     setActiveProfileId(newId);
     activeProfileIdRef.current = newId;
     const target = updatedProfiles.find((p) => p.id === newId);
-    const nextName = target?.name || 'Profilim';
-    profileNameRef.current = nextName;
-    setProfileName(nextName);
-    const items = target?.items?.length ? target.items : loadProfileItems(newId);
-    savedItemsRef.current = items;
-    setSavedItems(items);
-    const nextPrefs =
-      target?.preferences &&
-      ((target.preferences.disliked?.length || 0) > 0 ||
-        (target.preferences.hidden?.length || 0) > 0 ||
-        (target.preferences.providers?.length || 0) > 0 ||
-        Boolean(target.preferences.mood) ||
-        Boolean(target.preferences.reminders))
-        ? target.preferences
-        : loadProfilePreferences(newId);
-    preferencesRef.current = nextPrefs;
-    setPreferences(nextPrefs);
-    const favs = target?.favoriteActors?.length ? target.favoriteActors : loadFavoriteActors(newId);
-    favoriteActorsRef.current = favs;
-    setFavoriteActors(favs);
-    const targetDeleted = normalizeDeletedKeys(target?.deleted_keys || loadDeletedKeys(newId));
-    deletedKeysRef.current = targetDeleted;
-    setDeletedKeys(targetDeleted);
+    const next = resolveProfileSwitchState(target, newId, {
+      loadItems: loadProfileItems,
+      loadPreferences: loadProfilePreferences,
+      loadFavoriteActors: loadFavoriteActors,
+      loadDeletedKeys: loadDeletedKeys,
+    });
+    profileNameRef.current = next.name;
+    setProfileName(next.name);
+    savedItemsRef.current = next.items;
+    setSavedItems(next.items);
+    preferencesRef.current = next.preferences;
+    setPreferences(next.preferences);
+    favoriteActorsRef.current = next.favoriteActors;
+    setFavoriteActors(next.favoriteActors);
+    deletedKeysRef.current = next.deletedKeys;
+    setDeletedKeys(next.deletedKeys);
     const nextTasteMap = loadPersistentTasteMap(newId);
     tasteMapRef.current = nextTasteMap;
     setTasteMap(nextTasteMap);
@@ -1720,31 +1392,17 @@ export function App() {
   };
 
   const handleCreateProfile = (name: string, isDemo = false) => {
-    const outgoingId = activeProfileId;
-    const outgoingDeleted = normalizeDeletedKeys(deletedKeysRef.current);
-    const newId = normalizeProfileId(`profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)!;
-    const newProf: Profile = {
-      id: newId,
-      name,
-      createdAt: new Date().toISOString(),
-      preferences: { disliked: [], providers: [], mood: '', reminders: false, notified: [] },
-      items: [],
-      favoriteActors: [],
-      isDemo,
-    };
+    const newProf = createProfileRecord({ name, isDemo });
+    const newId = newProf.id;
     const nextProfiles = [
-      ...profiles.map((p) =>
-        p.id === outgoingId
-          ? {
-              ...p,
-              name: profileName,
-              items: savedItems,
-              preferences,
-              favoriteActors: favoriteActorsRef.current || [],
-              ...(Object.keys(outgoingDeleted).length > 0 ? { deleted_keys: outgoingDeleted } : {}),
-            }
-          : p
-      ),
+      ...snapshotOutgoingProfile(profiles, {
+        activeProfileId,
+        profileName,
+        savedItems,
+        preferences,
+        favoriteActors: favoriteActorsRef.current || [],
+        deletedKeys: deletedKeysRef.current,
+      }),
       newProf,
     ];
     profilesRef.current = nextProfiles;
@@ -1847,6 +1505,16 @@ export function App() {
     replaceCinemaKunye,
     handleSaveProfileName,
     showToast,
+    // Aşama 1 — yedek/geri yükleme tam belge kapsamı (B-05, B-06).
+    profiles,
+    deletedKeys,
+    setActiveProfileId,
+    setDeletedKeys,
+    setProfileName,
+    persistProfiles: persistProfilesBestEffort,
+    ...(getLastKnownServerRevision() !== null
+      ? { revision: getLastKnownServerRevision() as number }
+      : {}),
   });
 
   const handleEmptyAction = (act: string) => {
@@ -1872,12 +1540,17 @@ export function App() {
     }
   };
 
+  const activeModuleLabel = getModule(tab)?.label ?? '';
+
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        İçeriğe geç
+      </a>
       <OfflineIndicator
         isOnline={isOnline}
         pendingSync={pendingSync}
-        unpersistedWarning={unpersistedWarning}
+        unpersistedWarning={unpersistedWarning || storageWriteFailed}
       />
       <Header
         profileName={profileName}
@@ -1905,7 +1578,10 @@ export function App() {
         onDismiss={() => setServerConflict(null)}
       />
 
-      <main className="shell">
+      <main className="shell" id="main-content" tabIndex={-1}>
+        <p className="sr-only" role="status" aria-live="polite">
+          {activeModuleLabel} bölümü açıldı
+        </p>
         {tab === 'discover' && !query && (
           <Hero
             heroItem={currentHeroItem}
@@ -1983,23 +1659,39 @@ export function App() {
           </ErrorBoundary>
         ) : tab === 'series' ? (
           <ErrorBoundary sectionName="Seriler ve Evrenler">
-            <SeriesSection
-              profileId={activeProfileId}
-              savedItems={savedItems}
-              preferences={preferences}
-              favoriteActors={favoriteActors}
-              genreNames={genresMap}
-              onRefresh={handleLoadRelationshipCandidates}
-              onOpenDetails={(item) => setDetailItem(item)}
-              onQuickSave={(item) => setQuickSaveItem(item)}
-            />
+            <Suspense
+              fallback={
+                <div className="lazy-tab-fallback" role="status">
+                  Seriler ve Evrenler yükleniyor…
+                </div>
+              }
+            >
+              <SeriesSection
+                profileId={activeProfileId}
+                savedItems={savedItems}
+                preferences={preferences}
+                favoriteActors={favoriteActors}
+                genreNames={genresMap}
+                onRefresh={handleLoadRelationshipCandidates}
+                onOpenDetails={(item) => setDetailItem(item)}
+                onQuickSave={(item) => setQuickSaveItem(item)}
+              />
+            </Suspense>
           </ErrorBoundary>
         ) : tab === 'operations' ? (
           <ErrorBoundary sectionName="İşlem Merkezi">
-            <OperationsSection
-              profileId={activeProfileId}
-              onOpenBackup={() => setProfileOpen(true)}
-            />
+            <Suspense
+              fallback={
+                <div className="lazy-tab-fallback" role="status">
+                  İşlem Merkezi yükleniyor…
+                </div>
+              }
+            >
+              <OperationsSection
+                profileId={activeProfileId}
+                onOpenBackup={() => setProfileOpen(true)}
+              />
+            </Suspense>
           </ErrorBoundary>
         ) : tab === 'relationships' ? (
           <ErrorBoundary sectionName="İlişki Keşfi">

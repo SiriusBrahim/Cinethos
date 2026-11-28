@@ -248,20 +248,17 @@ function makeContentId(item: SavedItem): string | null {
   return `${mediaType}:${item.id}`;
 }
 
-/** UUID üret (Node.js crypto / Web Crypto uyumlu) */
+/**
+ * UUID üretir (F5-04: Node `crypto` bağımlılığı kaldırıldı).
+ *
+ * Node 22 ve tarayıcılar `globalThis.crypto.randomUUID` sağlar. Sağlanmayan
+ * çalışma zamanlarında deterministik olmayan opak bir kimlik üretilir; migrasyon
+ * çıktısının hash/veri formatı değişmez (yalnızca olay kimliği üretimi).
+ */
 function newUUID(): string {
-  if (
-    typeof globalThis !== "undefined" &&
-    typeof (globalThis as Record<string, unknown>).crypto === "object" &&
-    typeof (
-      (globalThis as Record<string, unknown>).crypto as Record<string, unknown>
-    ).randomUUID === "function"
-  ) {
-    return (
-      (globalThis as Record<string, unknown>).crypto as { randomUUID: () => string }
-    ).randomUUID();
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return cryptoApi.randomUUID();
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { randomUUID } = require("crypto") as { randomUUID: () => string };
-  return randomUUID();
+  return `evt-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 }

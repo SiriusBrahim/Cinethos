@@ -35,6 +35,11 @@ import {
 import type { CatalogRecord, PersistentDataStore } from './persistent-store.ts';
 import { redactSecrets } from './persistent-store.ts';
 import { populateTasteDnaWorksheet } from './excel-taste-dna-sheet.ts';
+import {
+  applyExportRetention,
+  type ExportRetentionPolicy,
+  type ExportRetentionReport,
+} from './export-retention.ts';
 
 export const EXCEL_SHEET_NAMES = Object.freeze([
   'Özet',
@@ -273,6 +278,8 @@ export interface ProfileBackupExecutionReport {
     packageInspection?: XlsxPackageInspection;
   };
   githubUpload: GitHubExcelUploadOutcome;
+  /** B-37: dışa aktarma sonrası saklama politikası sonucu. */
+  retention?: ExportRetentionReport;
 }
 
 export type PosterFetcherFn = (
@@ -373,8 +380,7 @@ export function resolveUniqueExportFileName(
   return { fileName: fallbackName, fullPath: path.join(exportsDir, fallbackName) };
 }
 
-export const EXPORT_FILE_NAME_PATTERN =
-  /^(?:Cinethos|CineTrack)_Profile_\d{4}-\d{2}-\d{2}_\d{4}(?:_\d{2,14})?\.(?:xlsx|json)$/;
+export { EXPORT_FILE_NAME_PATTERN } from './export-file-names.ts';
 
 /**
  * Inspects image magic bytes to ensure only valid binary JPEG/PNG/GIF images are embedded into Excel.
@@ -1791,6 +1797,262 @@ export async function buildProfileBackupDataset(
     ratedItemsCount,
     decadeDistribution,
     topGenres,
+  };
+}
+
+export interface BuildPreviewPageOptions extends BuildDatasetOptions {
+  /** 1 tabanlı sayfa numarası. */
+  page: number;
+  /** Sayfa başına satır sayısı. */
+  pageSize: number;
+}
+
+export interface BackupPreviewRow {
+  sheet: ContentSheetName;
+  row: ExportRowItem;
+}
+
+export interface BackupPreviewPage {
+  profileId: string;
+  profileName: string;
+  schemaVersion: number;
+  engineVersion: string;
+  exportedAtIso: string;
+  completeness: {
+    rawProfileItemsCount: number;
+    normalizedSavedItemsCount: number;
+    rawDislikedCount: number;
+    uniqueDislikedCount: number;
+    favoriteActorsCount: number;
+    customItemsCount: number;
+    totalItemsCount: number;
+    totalMovieCount: number;
+    totalTvCount: number;
+  };
+  sheetCounts: Record<ContentSheetName, SheetBreakdownCount>;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasMore: boolean;
+  rows: BackupPreviewRow[];
+}
+
+/**
+ * B-23 — Sayfalanmış önizleme.
+ *
+ * Tam veri seti üretmek yerine yalnızca istenen sayfanın satırlarını eşler.
+ * Sayfa sırası, tam dışa aktarmayla aynıdır: İzlenen → İzlenecek → İzleniyor
+ * → İlgilenmiyorum; ilk üç sayfa eklenme zamanına göre yeniden→eskiye sıralı.
+ * Toplam sayılar ve sayfa bilgisi her zaman tam arşivden hesaplanır.
+ */
+export async function buildProfileBackupPreviewPage(
+  options: BuildPreviewPageOptions
+): Promise<BackupPreviewPage> {
+  const page = Number.isFinite(options.page) ? Math.trunc(options.page) : 1;
+  const pageSize = Number.isFinite(options.pageSize) ? Math.trunc(options.pageSize) : 50;
+  const tmdbPosterSize = options.tmdbPosterSize || 'w154';
+  const moviesCatalog = options.moviesCatalog || {};
+  const tvCatalog = options.tvCatalog || {};
+  const mergedGenresMap: Record<number, string> = {
+    ...DEFAULT_TR_GENRES,
+    ...(options.genresMap || {}),
+  };
+
+  const rawItemsClone = Array.isArray(options.profile.items)
+    ? options.profile.items.map((it) => ({ ...it }))
+    : [];
+  const normalizedItems = dedupeItems(
+    rawItemsClone.map((it) => normalizeSavedItem(it)).filter(Boolean) as SavedItem[]
+  );
+  const prefs = normalizePreferences(options.profile.preferences || {});
+  const favoriteActorsCount = normalizeFavoriteActors(options.profile.favoriteActors || []).length;
+
+  const hintByKey = new Map<string, Record<string, any>>();
+  for (const hint of options.dislikedItemsHint || []) {
+    if (!hint || typeof hint !== 'object' || hint.id == null) continue;
+    const mType = resolveMediaType(hint);
+    if (mType === 'unknown') continue;
+    hintByKey.set(makeMediaKey(mType, hint.id), hint);
+  }
+
+  const rawByKey = new Map<string, Record<string, any>>();
+  for (const rawItem of rawItemsClone) {
+    if (!rawItem || typeof rawItem !== 'object' || rawItem.id == null) continue;
+    const mType = resolveMediaType(rawItem);
+    if (mType === 'unknown') continue;
+    const key = makeMediaKey(mType, rawItem.id);
+    if (!rawByKey.has(key)) rawByKey.set(key, rawItem);
+  }
+
+  // Kaynak kayıtlar tam veri setindeki sıralama anahtarıyla sıralanır; satır
+  // eşlemesi (pahalı kısım) yalnızca dilim için yapılır.
+  const sortTime = (item: SavedItem): string => {
+    const raw = rawByKey.get(makeMediaKey(item));
+    return (
+      (typeof raw?.addedAt === 'string' && raw.addedAt) ||
+      (typeof raw?.firstAddedAt === 'string' && raw.firstAddedAt) ||
+      (typeof item.addedAt === 'string' && item.addedAt) ||
+      (typeof item.updatedAt === 'string' && item.updatedAt) ||
+      ''
+    );
+  };
+  const grouped: Record<Exclude<ContentSheetName, 'İlgilenmiyorum'>, SavedItem[]> = {
+    İzlenen: [],
+    İzlenecek: [],
+    İzleniyor: [],
+  };
+  for (const item of normalizedItems) {
+    if (item.status === 'completed') grouped.İzlenen.push(item);
+    else if (item.status === 'watching') grouped.İzleniyor.push(item);
+    else grouped.İzlenecek.push(item);
+  }
+  for (const sheetName of Object.keys(grouped) as Array<keyof typeof grouped>) {
+    grouped[sheetName].sort((a, b) => {
+      const byTime = sortTime(b).localeCompare(sortTime(a));
+      if (byTime !== 0) return byTime;
+      return makeMediaKey(a).localeCompare(makeMediaKey(b));
+    });
+  }
+
+  const canonicalDisliked = canonicalizeMediaKeyList(prefs.disliked || []);
+  const uniqueDislikedNewestFirst: string[] = [];
+  const seenDisliked = new Set<string>();
+  for (let i = canonicalDisliked.length - 1; i >= 0; i -= 1) {
+    const key = canonicalDisliked[i];
+    if (!seenDisliked.has(key)) {
+      seenDisliked.add(key);
+      uniqueDislikedNewestFirst.push(key);
+    }
+  }
+
+  const typeCounts = (items: Array<{ media_type?: string }>) => {
+    let movie = 0;
+    let tv = 0;
+    for (const item of items) {
+      if (resolveMediaType(item) === 'tv') tv += 1;
+      else movie += 1;
+    }
+    return { total: items.length, movie, tv };
+  };
+
+  const dislikedTypeCounts = (() => {
+    let movie = 0;
+    let tv = 0;
+    for (const key of uniqueDislikedNewestFirst) {
+      const parsed = parseMediaKey(key);
+      if (parsed?.type === 'tv') tv += 1;
+      else movie += 1;
+    }
+    return { total: uniqueDislikedNewestFirst.length, movie, tv };
+  })();
+
+  const sheetCounts: Record<ContentSheetName, SheetBreakdownCount> = {
+    İzlenen: typeCounts(grouped.İzlenen),
+    İzlenecek: typeCounts(grouped.İzlenecek),
+    İzleniyor: typeCounts(grouped.İzleniyor),
+    İlgilenmiyorum: dislikedTypeCounts,
+  };
+
+  const totalItemsCount =
+    sheetCounts.İzlenen.total +
+    sheetCounts.İzlenecek.total +
+    sheetCounts.İzleniyor.total +
+    sheetCounts.İlgilenmiyorum.total;
+  const totalMovieCount =
+    sheetCounts.İzlenen.movie +
+    sheetCounts.İzlenecek.movie +
+    sheetCounts.İzleniyor.movie +
+    sheetCounts.İlgilenmiyorum.movie;
+  const totalTvCount =
+    sheetCounts.İzlenen.tv +
+    sheetCounts.İzlenecek.tv +
+    sheetCounts.İzleniyor.tv +
+    sheetCounts.İlgilenmiyorum.tv;
+
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const rows: BackupPreviewRow[] = [];
+  const sheetOrder: ContentSheetName[] = ['İzlenen', 'İzlenecek', 'İzleniyor', 'İlgilenmiyorum'];
+  let cursor = 0;
+
+  for (const sheetName of sheetOrder) {
+    if (cursor >= end) break;
+    if (sheetName === 'İlgilenmiyorum') {
+      for (const key of uniqueDislikedNewestFirst) {
+        if (cursor >= end) break;
+        const inPage = cursor >= start;
+        cursor += 1;
+        if (!inPage) continue;
+        const parsed = parseMediaKey(key);
+        if (!parsed) continue;
+        const mediaType: 'movie' | 'tv' = parsed.type === 'tv' ? 'tv' : 'movie';
+        const sourceRecord: Record<string, any> = {
+          id: /^\d+$/.test(String(parsed.id)) ? Number(parsed.id) : parsed.id,
+          media_type: mediaType,
+          ...(hintByKey.get(key) || {}),
+        };
+        rows.push({
+          sheet: sheetName,
+          row: mapRecordToExportRow(
+            sourceRecord,
+            mediaType === 'tv' ? tvCatalog[key] : moviesCatalog[key],
+            mergedGenresMap,
+            tmdbPosterSize
+          ),
+        });
+      }
+      continue;
+    }
+
+    for (const item of grouped[sheetName]) {
+      if (cursor >= end) break;
+      const inPage = cursor >= start;
+      cursor += 1;
+      if (!inPage) continue;
+      const key = makeMediaKey(item);
+      const rawOriginal = rawByKey.get(key);
+      const enrichedSource = rawOriginal ? { ...rawOriginal, ...item } : item;
+      rows.push({
+        sheet: sheetName,
+        row: mapRecordToExportRow(
+          enrichedSource,
+          item.media_type === 'tv' ? tvCatalog[key] : moviesCatalog[key],
+          mergedGenresMap,
+          tmdbPosterSize
+        ),
+      });
+    }
+  }
+
+  const totalPages = totalItemsCount === 0 ? 0 : Math.ceil(totalItemsCount / pageSize);
+
+  return {
+    profileId: String(options.profile.id || 'profile-default'),
+    profileName: String(options.profile.name || 'Profilim'),
+    schemaVersion: options.schemaVersion ?? CURRENT_SCHEMA_VERSION,
+    engineVersion: options.engineVersion ?? ENGINE_VERSION,
+    exportedAtIso: (options.exportedAt || new Date()).toISOString(),
+    completeness: {
+      rawProfileItemsCount: rawItemsClone.length,
+      normalizedSavedItemsCount: normalizedItems.length,
+      rawDislikedCount: Array.isArray(options.profile.preferences?.disliked)
+        ? options.profile.preferences.disliked.length
+        : 0,
+      uniqueDislikedCount: uniqueDislikedNewestFirst.length,
+      favoriteActorsCount,
+      customItemsCount: normalizedItems.filter((item) =>
+        Boolean(item.custom || String(item.id).startsWith('custom-'))
+      ).length,
+      totalItemsCount,
+      totalMovieCount,
+      totalTvCount,
+    },
+    sheetCounts,
+    page,
+    pageSize,
+    totalPages,
+    hasMore: page * pageSize < totalItemsCount,
+    rows,
   };
 }
 
@@ -3247,6 +3509,10 @@ export interface ExecuteProfileBackupOptions {
   posterTimeoutMs?: number;
   posterConcurrency?: number;
   forceExcelErrorForTest?: string;
+  /** B-37: saklama politikası (verilmezse varsayılan politika). */
+  retentionPolicy?: ExportRetentionPolicy;
+  /** Testlerde/paylaşımlı dizinlerde retention'ı kapatır. */
+  skipRetention?: boolean;
 }
 
 /**
@@ -3520,6 +3786,23 @@ async function writeBufferAtomicAsync(targetPath: string, data: Buffer): Promise
   const anySucceeded = targetOutcomes.some(Boolean);
   const allSucceeded = targetOutcomes.length > 0 && targetOutcomes.every(Boolean);
 
+  // B-37: yalnızca yönetilen dışa aktarma dosyaları için saklama politikası.
+  // `data/backups` ve kullanıcı dosyalarına dokunulmaz; yeni dosya korunur.
+  let retention: ExportRetentionReport | undefined;
+  if (!options.skipRetention && (jsonBackup.ok || excelBackup.ok)) {
+    try {
+      const keepFileName = excelBackup.fileName || jsonBackup.fileName;
+      retention = await applyExportRetention(exportsDir, {
+        ...(options.retentionPolicy ? { policy: options.retentionPolicy } : {}),
+        nowMs: now.getTime(),
+        ...(keepFileName ? { keepFileName } : {}),
+      });
+    } catch (error) {
+      retention = undefined;
+      console.warn('Export retention uygulanamadı:', error);
+    }
+  }
+
   return {
     ok: allSucceeded,
     partialFailure: anySucceeded && !allSucceeded,
@@ -3529,5 +3812,6 @@ async function writeBufferAtomicAsync(targetPath: string, data: Buffer): Promise
     jsonBackup,
     excelBackup,
     githubUpload,
+    ...(retention ? { retention } : {}),
   };
 }

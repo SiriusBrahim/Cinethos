@@ -17,36 +17,12 @@ import { loadStockIdb } from '../services/storage-idb.ts';
 import {
   deriveSyncUiBanner,
   type BidirectionalSyncReport,
+  type RemoteSyncStatusPayload,
   type SyncComparisonSummary,
   type SyncOperationKind,
   type SyncSideSummary,
 } from '../core/sync-display.ts';
 
-export interface RemoteSyncStatusPayload {
-  configured?: boolean;
-  syncInProgress?: boolean;
-  isPublicRepo?: boolean;
-  allowPublicPersonalSync?: boolean;
-  personalSyncBlockedByPublicGuard?: boolean;
-  repoVisibilityWarning?: string;
-  lastSyncAt?: string;
-  lastError?: string;
-  profilesCount?: number;
-  catalogCounts?: { movies?: number; tv?: number };
-  remoteTarget?: { owner: string; repo: string; branch: string } | null;
-  configDiagnostics?: { observedRemoteIsPublicRepo?: boolean };
-  localSummary?: SyncSideSummary | null;
-  lastRemoteSummary?: SyncSideSummary | null;
-  lastComparison?: SyncComparisonSummary | null;
-  fileSummaryCounts?: {
-    pending?: number;
-    downloaded?: number;
-    uploaded?: number;
-    merged?: number;
-    skipped?: number;
-    failed?: number;
-  };
-}
 
 interface ConnectionProbeOutcome {
   ok?: boolean;

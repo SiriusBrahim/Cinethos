@@ -39,12 +39,17 @@ import {
   type TokenSourceKind,
 } from './persistent-store.ts';
 import { CorruptJsonFileError } from './atomic-json.ts';
+// F5.3-05: GitHub uzak senkronizasyon motoru yalnızca bu bileşim kökünde
+// kaydedilir. Yerel veri katmanı (persistent-store) GitHub'ı import etmez;
+// entegrasyon kaldırılacağında bu tek satır ve github-sync/ silinir.
+import './github-sync/register.ts';
+import { registerGitHubSyncRoutes } from './github-routes.ts';
 import { hashDocument } from './archive-integrity.ts';
 import { RestoreJournal } from './restore-journal.ts';
 import { DEFAULT_MAX_DATA_BYTES, formatMaxDataLimitMb } from '../core/limits.ts';
-import { createAppEventBus, type AppEventBus } from '../app/app-event-bus.ts';
-import { createModuleRegistry, type ModuleRegistry } from '../app/runtime-module-registry.ts';
-import { createProfileContext, type ProfileContext } from '../app/ProfileContext.ts';
+import { createAppEventBus, type AppEventBus } from '../shared/runtime/app-event-bus.ts';
+import { createModuleRegistry, type ModuleRegistry } from '../shared/runtime/runtime-module-registry.ts';
+import { createProfileContext, type ProfileContext } from '../shared/runtime/ProfileContext.ts';
 import {
   createServerTasteServiceAdapter,
   subscribeTasteAdapterToEventBus,
@@ -180,10 +185,14 @@ function streamRequestBodyToFile(
 
 import {
   executeProfileBackupExport,
-  buildProfileBackupDataset,
+  buildProfileBackupPreviewPage,
   EXPORT_FILE_NAME_PATTERN,
   getPosterCacheStatsAsync,
 } from './excel-profile-backup.ts';
+
+/** B-23 — önizleme sayfalama sınırları (tek kaynak). */
+export const BACKUP_PREVIEW_DEFAULT_PAGE_SIZE = 50;
+export const BACKUP_PREVIEW_MAX_PAGE_SIZE = 200;
 import { createTasteRouter } from './taste-routes.ts';
 import { runHybridMerge } from './hybrid-merge.ts';
 import {
@@ -204,6 +213,7 @@ export interface CineTrackAppOptions extends StorageOptions, SecurityOptions, Tm
   persistentStore?: PersistentDataStore;
   security?: SecurityOptions;
   devMode?: boolean;
+  githubDevSyncEnabled?: boolean;
   maxDataBytes?: number;
   githubToken?: string;
   githubTokenSource?: TokenSourceKind;
@@ -460,6 +470,12 @@ export function resolveExportDocument(storedDoc: DataDocument, reqBody: any): Da
   };
 }
 
+/**
+ * Aşama 2 (B-38): kuyruk dolu / süreçler arası kilit dolu / iptal gibi
+ * çakışmalar 500 değil 409 olarak raporlanır; istemci yeniden denemeyi
+ * ayırt edebilir. Diğer hatalar 500 kalır.
+ */
+
 export function createCineTrackApp(options: CineTrackAppOptions): {
   app: Express;
   storage: ReturnType<typeof createDataStorage>;
@@ -532,19 +548,24 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     new PersistentDataStore({
       dataDir: resolvedDataDir,
       maxDataBytes,
-      githubToken: options.githubToken,
-      githubTokenSource: options.githubTokenSource,
-      githubTokenCandidates: options.githubTokenCandidates,
-      getLiveGitHubTokenCandidates: options.getLiveGitHubTokenCandidates,
-      onAuthFailureRefreshToken: options.onAuthFailureRefreshToken,
-      githubOwner: options.githubOwner,
-      githubRepo: options.githubRepo,
-      githubBranch: options.githubBranch,
-      isPublicRepo: options.isPublicRepo,
-      allowPublicPersonalSync: options.allowPublicPersonalSync,
-      allowPublicCatalogSync: options.allowPublicCatalogSync,
-      processEnvIsPublicRepo: options.processEnvIsPublicRepo,
-      localEnvIsPublicRepo: options.localEnvIsPublicRepo,
+      // F5.3-06: GitHub ayarları tek bir sınır nesnesinde toplanır. Yerel veri
+      // işlemleri bu nesne verilmeden de çalışır (bkz. tests/persistent-store).
+      remoteSync: {
+        enabled: options.githubDevSyncEnabled !== false,
+        token: options.githubToken,
+        tokenSource: options.githubTokenSource,
+        tokenCandidates: options.githubTokenCandidates,
+        getLiveTokenCandidates: options.getLiveGitHubTokenCandidates,
+        onAuthFailureRefreshToken: options.onAuthFailureRefreshToken,
+        owner: options.githubOwner,
+        repo: options.githubRepo,
+        branch: options.githubBranch,
+        isPublicRepo: options.isPublicRepo,
+        allowPublicPersonalSync: options.allowPublicPersonalSync,
+        allowPublicCatalogSync: options.allowPublicCatalogSync,
+        processEnvIsPublicRepo: options.processEnvIsPublicRepo,
+        localEnvIsPublicRepo: options.localEnvIsPublicRepo,
+      },
     });
   persistentStore.attachDataStorage(storage, maxDataBytes);
 
@@ -1993,12 +2014,40 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       return;
     }
 
-    const restored = await storage.restoreBackupSerialized(backupId);
-    if (!restored) {
-      res.status(404).json({ status_message: 'Belirtilen yedek dosyası bulunamadı veya bozuk.', code: 'backup_not_found' });
+    // Aşama 1 (B-08) — revizyon korumalı restore: eski revizyona göre hazırlanmış
+    // bir yedek, eşzamanlı yeni veriyi sessizce ezemez.
+    const { expectedRevision, hasInvalidIfMatch, forceOverwrite } = parseWritePrecondition(req);
+    const bodyExpectedRevision =
+      req.body &&
+      typeof req.body === 'object' &&
+      typeof req.body.expectedRevision === 'number' &&
+      Number.isSafeInteger(req.body.expectedRevision) &&
+      req.body.expectedRevision >= 0
+        ? req.body.expectedRevision
+        : null;
+
+    const result = await storage.restoreBackupGuarded(backupId, {
+      expectedRevision: expectedRevision ?? bodyExpectedRevision,
+      hasInvalidIfMatch,
+      requirePrecondition: !forceOverwrite,
+      forceOverwrite,
+    });
+
+    if (!result.ok) {
+      if (result.currentRevision !== undefined) {
+        res.setHeader('ETag', `"rev-${result.currentRevision}"`);
+      }
+      res.status(result.status).json({
+        ok: false,
+        status_message: result.message,
+        code: result.code,
+        currentRevision: result.currentRevision,
+        expectedRevision: result.expectedRevision,
+      });
       return;
     }
 
+    const restored = result.document;
     const rev = restored.revision ?? 1;
     res.setHeader('ETag', `"rev-${rev}"`);
     res.json({
@@ -2125,308 +2174,17 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
-  app.get('/api/sync/status', syncStatusGuard, (_req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.json(persistentStore.getSyncStatus());
-  });
-
-  app.post('/api/sync/inspect', originGuard, tokenGuard, async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (req.body?.rejectIfBusy === true && persistentStore.isSyncBusy()) {
-      res.status(409).json({
-        ok: false,
-        operation: 'inspect',
-        code: 'sync_in_progress',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'sync_in_progress',
-            message: 'Başka bir GitHub senkronizasyon işlemi devam ediyor.',
-          },
-        ],
-      });
-      return;
-    }
-    try {
-      const report = await persistentStore.inspectGitHub();
-      res.json(report);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'inspect',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'GitHub durum denetimi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
-    }
-  });
-
-  app.post('/api/sync/pull', originGuard, tokenGuard, async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (req.body?.rejectIfBusy === true && persistentStore.isSyncBusy()) {
-      res.status(409).json({
-        ok: false,
-        operation: 'pull',
-        code: 'sync_in_progress',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'sync_in_progress',
-            message: 'Başka bir GitHub senkronizasyon işlemi devam ediyor.',
-          },
-        ],
-      });
-      return;
-    }
-    try {
-      const rawStrategy = req.body?.conflictStrategy;
-      const conflictStrategy: 'ask' | 'merge' | 'overwrite_with_remote' =
-        rawStrategy === 'merge' || rawStrategy === 'overwrite_with_remote' ? rawStrategy : 'ask';
-      const report = await persistentStore.pullFromGitHub({ conflictStrategy });
-      if (typeof report.serverRevision === 'number') {
-        res.setHeader('ETag', `"rev-${report.serverRevision}"`);
-      }
-      res.json(report);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'pull',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'GitHub indirme işlemi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
-    }
-  });
-
-  app.post('/api/sync/push', originGuard, tokenGuard, async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (req.body?.rejectIfBusy === true && persistentStore.isSyncBusy()) {
-      res.status(409).json({
-        ok: false,
-        operation: 'push',
-        code: 'sync_in_progress',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'sync_in_progress',
-            message: 'Başka bir GitHub senkronizasyon işlemi devam ediyor.',
-          },
-        ],
-      });
-      return;
-    }
-    try {
-      const report = await persistentStore.pushToGitHub();
-      res.json(report);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'push',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'GitHub yükleme işlemi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
-    }
-  });
-
-  app.post('/api/sync/reconcile', originGuard, tokenGuard, async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (req.body?.rejectIfBusy === true && persistentStore.isSyncBusy()) {
-      res.status(409).json({
-        ok: false,
-        operation: 'reconcile',
-        code: 'sync_in_progress',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'sync_in_progress',
-            message: 'Başka bir GitHub senkronizasyon işlemi devam ediyor.',
-          },
-        ],
-      });
-      return;
-    }
-    try {
-      const report = await persistentStore.reconcileWithGitHub();
-      if (typeof report.serverRevision === 'number') {
-        res.setHeader('ETag', `"rev-${report.serverRevision}"`);
-      }
-      res.json(report);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        operation: 'reconcile',
-        verifiedEqual: false,
-        errors: [
-          {
-            category: 'http_error',
-            message: redactSecrets(e?.message || 'İki yönlü eşitleme işlemi başarısız oldu.', [
-              options.githubToken,
-            ]),
-          },
-        ],
-      });
-    }
-  });
-
-  app.post('/api/sync/trigger', originGuard, tokenGuard, async (_req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    try {
-      const syncResult = await persistentStore.syncToGitHub();
-      res.json(syncResult);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        error: redactSecrets(e?.message || 'Sync failed', [options.githubToken]),
-      });
-    }
-  });
-
-  app.post('/api/sync/test-connection', originGuard, tokenGuard, async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    try {
-      const forceWriteProbe = Boolean(req.body?.forceWriteProbe);
-      const probeResult = await persistentStore.testSafeConnectionAndProbeManifest({
-        forceWriteProbe,
-      });
-      res.json(probeResult);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        error: redactSecrets(e?.message || 'Bağlantı testi başarısız oldu.', [options.githubToken]),
-      });
-    }
-  });
-
-  app.post('/api/sync/token', originGuard, tokenGuard, (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const rawToken = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-    if (!rawToken) {
-      res.status(400).json({ ok: false, error: 'Token boş olamaz.' });
-      return;
-    }
-    persistentStore.updateGitHubToken(rawToken, 'env:CINETRACK_GITHUB_PAT');
-    res.json({ ok: true, status: persistentStore.getSyncStatus() });
-  });
-
-  app.post('/api/sync/public-consent', originGuard, tokenGuard, (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const allow =
-      typeof req.body?.allowPersonalDataInPublicRepo === 'boolean'
-        ? req.body.allowPersonalDataInPublicRepo
-        : typeof req.body?.allow === 'boolean'
-          ? req.body.allow
-          : undefined;
-    if (typeof allow !== 'boolean') {
-      res.status(400).json({
-        ok: false,
-        status_message: 'allowPersonalDataInPublicRepo alanı boolean (true/false) olmalıdır.',
-      });
-      return;
-    }
-    if (allow && req.body?.confirmPublicVisibility !== true) {
-      res.status(400).json({
-        ok: false,
-        status_message:
-          'Açık depoya kişisel veri senkronizasyonu için confirmPublicVisibility=true onayı zorunludur.',
-      });
-      return;
-    }
-    const updated = persistentStore.setPublicPersonalSyncConsent(allow);
-    res.json({
-      ok: true,
-      ...updated,
-      status: persistentStore.getSyncStatus(),
-    });
-  });
-
-  app.post('/api/sync/public-catalog-consent', originGuard, tokenGuard, (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const allow =
-      typeof req.body?.allowCatalogInPublicRepo === 'boolean'
-        ? req.body.allowCatalogInPublicRepo
-        : typeof req.body?.allow === 'boolean'
-          ? req.body.allow
-          : undefined;
-    if (typeof allow !== 'boolean') {
-      res.status(400).json({
-        ok: false,
-        status_message: 'allowCatalogInPublicRepo alanı boolean (true/false) olmalıdır.',
-      });
-      return;
-    }
-    if (allow && req.body?.confirmTmdbAttribution !== true) {
-      res.status(400).json({
-        ok: false,
-        status_message:
-          'Açık depoya TMDB katalog verisi yüklemek için confirmTmdbAttribution=true onayı zorunludur.',
-      });
-      return;
-    }
-    const updated = persistentStore.setPublicCatalogSyncConsent(allow);
-    res.json({
-      ok: true,
-      ...updated,
-      status: persistentStore.getSyncStatus(),
-    });
-  });
-
-  app.post('/api/sync/staged', originGuard, tokenGuard, async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (req.body?.rejectIfBusy === true && persistentStore.isSyncBusy()) {
-      res.status(409).json({
-        ok: false,
-        code: 'sync_in_progress',
-        error: 'Başka bir GitHub senkronizasyon işlemi devam ediyor.',
-      });
-      return;
-    }
-    try {
-      const forceWriteProbe =
-        typeof req.body?.forceWriteProbe === 'boolean' ? req.body.forceWriteProbe : true;
-      const allowOverride =
-        typeof req.body?.allowPersonalDataInPublicRepo === 'boolean'
-          ? req.body.allowPersonalDataInPublicRepo
-          : undefined;
-      const allowCatalogOverride =
-        typeof req.body?.allowCatalogInPublicRepo === 'boolean'
-          ? req.body.allowCatalogInPublicRepo
-          : undefined;
-      const stagedReport = await persistentStore.runStagedFullSync({
-        forceWriteProbe,
-        ...(allowOverride !== undefined ? { allowPersonalDataInPublicRepo: allowOverride } : {}),
-        ...(allowCatalogOverride !== undefined ? { allowCatalogInPublicRepo: allowCatalogOverride } : {}),
-      });
-      if (typeof stagedReport.bidirectionalReport?.serverRevision === 'number') {
-        res.setHeader('ETag', `"rev-${stagedReport.bidirectionalReport.serverRevision}"`);
-      }
-      res.json(stagedReport);
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        error: redactSecrets(e?.message || 'Aşamalı senkronizasyon başarısız oldu.', [
-          options.githubToken,
-        ]),
-      });
-    }
+  // F5.3-06: GitHub geliştirme uçları ayrı route modülünde toplanır. Yerel veri
+  // API'leri bu modülden bağımsızdır; dev sync kapalıyken yalnızca durum okuması
+  // ve 404 kapısı devrede kalır.
+  registerGitHubSyncRoutes({
+    app,
+    persistentStore,
+    githubDevSyncEnabled: options.githubDevSyncEnabled,
+    githubToken: options.githubToken,
+    originGuard,
+    tokenGuard,
+    syncStatusGuard,
   });
 
   app.get('/api/catalog', async (_req: Request, res: Response) => {
@@ -2646,6 +2404,14 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const includeJson = typeof req.body?.includeJson === 'boolean' ? req.body.includeJson : true;
       const includeXlsx = typeof req.body?.includeXlsx === 'boolean' ? req.body.includeXlsx : true;
       const uploadToGithub = Boolean(req.body?.uploadToGithub);
+      if (uploadToGithub && options.githubDevSyncEnabled !== true) {
+        res.status(403).json({
+          ok: false,
+          code: 'github_dev_sync_disabled',
+          status_message: 'GitHub yedek yükleme yalnızca geliştirme ortamında kullanılabilir.',
+        });
+        return;
+      }
       const allowPersonalDataInPublicRepo =
         typeof req.body?.allowPersonalDataInPublicRepo === 'boolean'
           ? req.body.allowPersonalDataInPublicRepo
@@ -2764,9 +2530,31 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
     }
   });
 
+  // B-23: önizleme sayfalanır. `page`/`pageSize` verilmezse ilk sayfa (50 satır)
+  // döner; geçersiz değerler 400 ile reddedilir. Tam dışa aktarma ayrı uçtadır ve
+  // tüm arşivi eksiksiz üretir.
   app.post('/api/backup/excel/preview', originGuard, tokenGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
+      const rawPage = req.body?.page;
+      const rawPageSize = req.body?.pageSize;
+      const page = rawPage === undefined ? 1 : Number(rawPage);
+      const pageSize = rawPageSize === undefined ? BACKUP_PREVIEW_DEFAULT_PAGE_SIZE : Number(rawPageSize);
+      if (!Number.isInteger(page) || page < 1) {
+        res.status(400).json({ ok: false, status_message: 'Geçersiz sayfa numarası.' });
+        return;
+      }
+      if (
+        !Number.isInteger(pageSize) ||
+        pageSize < 1 ||
+        pageSize > BACKUP_PREVIEW_MAX_PAGE_SIZE
+      ) {
+        res.status(400).json({
+          ok: false,
+          status_message: `Geçersiz sayfa boyutu (1-${BACKUP_PREVIEW_MAX_PAGE_SIZE}).`,
+        });
+        return;
+      }
       // MIA Faz 1 — Adım 1.4: Yedek dışa aktarma okumaları PrimaryDataRepository üzerinden.
       const storedDoc = (await primaryRepository.readRaw()).document;
       const exportDoc = resolveExportDocument(storedDoc, req.body);
@@ -2788,7 +2576,7 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
       const moviesCatalog = (await persistentStore.readCatalogAsync('movie')) || {};
       const tvCatalog = (await persistentStore.readCatalogAsync('tv')) || {};
 
-      const dataset = await buildProfileBackupDataset({
+      const preview = await buildProfileBackupPreviewPage({
         profile,
         schemaVersion: exportDoc.schemaVersion,
         engineVersion: exportDoc.engineVersion,
@@ -2796,23 +2584,24 @@ export function createCineTrackApp(options: CineTrackAppOptions): {
         tvCatalog,
         genresMap,
         dislikedItemsHint,
+        page,
+        pageSize,
       });
 
       res.json({
         ok: true,
-        profileId: dataset.profileId,
-        profileName: dataset.profileName,
-        completeness: {
-          rawProfileItemsCount: dataset.rawProfileItemsCount,
-          normalizedSavedItemsCount: dataset.normalizedSavedItemsCount,
-          rawDislikedCount: dataset.rawDislikedCount,
-          uniqueDislikedCount: dataset.uniqueDislikedCount,
-          favoriteActorsCount: dataset.favoriteActorsCount,
-          customItemsCount: dataset.customItemsCount,
-          totalItemsCount: dataset.totalItemsCount,
+        profileId: preview.profileId,
+        profileName: preview.profileName,
+        completeness: preview.completeness,
+        sheetCounts: preview.sheetCounts,
+        pageInfo: {
+          page: preview.page,
+          pageSize: preview.pageSize,
+          totalPages: preview.totalPages,
+          totalItemsCount: preview.completeness.totalItemsCount,
+          hasMore: preview.hasMore,
         },
-        sheetCounts: dataset.sheetCounts,
-        dataset,
+        rows: preview.rows,
       });
     } catch (err: any) {
       res.status(500).json({

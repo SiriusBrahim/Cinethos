@@ -6,6 +6,7 @@ import { TmdbItem } from '../types/tmdb.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 import { HEADER_NAV_ITEMS } from '../app/navigation.ts';
 import type { ModuleId } from '../app/module-registry.ts';
+import { shouldHandleGlobalShortcut } from '../utils/overlay-guard.ts';
 
 /**
  * MIA Faz 7 — Masaüstü üst sekmeleri uygulama yöneticisinin modül kayıt
@@ -63,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const moreRef = useRef<HTMLDetailsElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
@@ -88,15 +90,11 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  // Global keyboard shortcuts: 'k' or '/' opens search (ignoring when user is typing in inputs or holding modifier keys)
+  // Global keyboard shortcuts: 'k' or '/' opens search. Metin girişinde,
+  // modifier tuşlarıyla ve açık bir modal varken tetiklenmez (B-29).
   useEffect(() => {
     const handleGlobalShortcuts = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
-        return;
-      }
+      if (!shouldHandleGlobalShortcut(event)) return;
       if (event.key === 'k' || event.key === '/') {
         event.preventDefault();
         inputRef.current?.focus();
@@ -226,35 +224,53 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="app-header">
       <div className="shell topbar">
-        {/* Brand Zone */}
-        <div className="brand" onClick={() => onTabChange('discover')} role="button" tabIndex={0}>
+        {/* Brand Zone — gerçek buton: klavye ve ekran okuyucu ile erişilebilir. */}
+        <button
+          type="button"
+          className="brand"
+          onClick={() => onTabChange('discover')}
+          aria-label="Cinethos ana sayfa"
+        >
           <span className="brand-icon" aria-hidden="true">
             <svg className="icon">
               <use href="#icon-film"></use>
             </svg>
           </span>
           <span className="brand-title">Cinethos</span>
-        </div>
+        </button>
 
         {/* Primary Desktop Nav Tabs (Section 4) — kayıt defterinden türetilir */}
         <nav className="header-nav-tabs" role="tablist" aria-label="Ana Gezinme">
           {HEADER_NAV_ITEMS.map((item) => {
             const isActive = tab === item.id;
+            const label = DESKTOP_LABEL_OVERRIDES[item.id] ?? item.label;
             return (
               <button
                 key={item.id}
                 type="button"
                 role="tab"
                 aria-selected={isActive}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={label}
+                aria-description={
+                  item.counter === 'myList' && myListCount > 0
+                    ? `${myListCount} kayıt`
+                    : undefined
+                }
+                title={label}
                 className={`nav-tab-btn ${isActive ? 'is-active' : ''}`}
                 onClick={() => onTabChange(item.id)}
               >
-                <span>{DESKTOP_LABEL_OVERRIDES[item.id] ?? item.label}</span>
+                <svg className="nav-tab-icon" aria-hidden="true">
+                  <use href={item.iconRef} />
+                </svg>
+                <span className="nav-tab-label">{label}</span>
                 {item.counter === 'myList' && myListCount > 0 && (
-                  <>
-                    {' '}
-                    <span className="nav-tab-badge tabular-nums">{myListCount}</span>
-                  </>
+                  <span
+                    className="nav-tab-badge tabular-nums"
+                    data-count={myListCount > 99 ? '99+' : String(myListCount)}
+                    aria-hidden="true"
+                  />
                 )}
               </button>
             );
@@ -269,6 +285,7 @@ export const Header: React.FC<HeaderProps> = ({
           <input
             ref={inputRef}
             id="searchInput"
+            className="search-input"
             type="search"
             role="combobox"
             aria-expanded={dropdownOpen}
@@ -395,7 +412,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Actions Zone: Source tag, PWA, Profile, Add */}
+        {/* Right Actions Zone: kaynak etiketi, ikincil menü, profil, ekle */}
         <div className="topbar-actions">
           {tmdbSource && tmdbSource !== 'live' && (
             <span
@@ -412,36 +429,25 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
-          <PWAInstallButton />
+          <span className="header-secondary">
+            <PWAInstallButton />
+          </span>
 
           {onOpenTvdbStock && (
             <button
               type="button"
-              className="btn profile-btn"
+              className="btn tvdb-stock-btn header-secondary"
               onClick={onOpenTvdbStock}
               title={`TheTVDB v4 Stoğu: ${tvdbCount ?? 0} Yapım • İçe/Dışa Aktar`}
-              aria-label={`TVDB Stok (${tvdbCount ?? 0}) ve İçe Dışa Aktar`}
-              style={{
-                borderColor: 'rgba(99, 184, 171, 0.35)',
-                color: '#63b8ab',
-                backgroundColor: 'rgba(99, 184, 171, 0.1)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '6px 10px',
-                fontSize: '12px',
-                fontWeight: 600,
-              }}
+              aria-label={`TVDB stoğu: ${tvdbCount ?? 0} yapım, içe dışa aktar`}
             >
+              <span className="tvdb-dot" aria-hidden="true" />
+              <span className="tvdb-label">TVDB</span>
               <span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#63b8ab',
-                }}
+                className="tvdb-count tabular-nums"
+                data-count={String(tvdbCount ?? 0)}
+                aria-hidden="true"
               />
-              TVDB {tvdbCount !== undefined ? `(${tvdbCount})` : ''}
             </button>
           )}
 
@@ -455,9 +461,11 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label={`Profil: ${profileName || 'Profilim'}`}
             title="Profil yönetimi ve ayarlar"
           >
-            <span className="profile-avatar-circle" aria-hidden="true">
-              {avatarInitial}
-            </span>
+            <span
+              className="profile-avatar-circle"
+              data-initial={avatarInitial}
+              aria-hidden="true"
+            />
             <span id="profileButtonLabel" className="profile-name-text">
               {profileName || 'Profilim'}
             </span>
@@ -476,6 +484,46 @@ export const Header: React.FC<HeaderProps> = ({
             </svg>
             <span className="add-btn-text">Ekle</span>
           </button>
+
+          {/* Mobil ikincil eylemler — dar ekranda asıl eylemleri gizlemeden menü. */}
+          <details className="header-more" ref={moreRef}>
+            <summary className="header-more-trigger" aria-label="Diğer işlemler ve kısayollar">
+              <svg className="icon" aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.9" fill="currentColor" />
+                <circle cx="12" cy="12" r="1.9" fill="currentColor" />
+                <circle cx="12" cy="19" r="1.9" fill="currentColor" />
+              </svg>
+            </summary>
+            <div className="header-more-panel">
+              {onOpenTvdbStock && (
+                <button
+                  type="button"
+                  className="header-more-item"
+                  onClick={() => {
+                    if (moreRef.current) moreRef.current.open = false;
+                    onOpenTvdbStock();
+                  }}
+                >
+                  <span>TVDB Stoğu</span>
+                  <span className="tabular-nums">{tvdbCount ?? 0}</span>
+                </button>
+              )}
+              <div className="header-more-meta">
+                <span>Katalog</span>
+                <strong>
+                  {tmdbSource === 'stale-cache'
+                    ? 'Eski önbellek'
+                    : tmdbSource === 'demo'
+                    ? 'Örnek katalog'
+                    : 'Canlı TMDB'}
+                </strong>
+              </div>
+              <p className="header-more-hint">
+                Kısayollar: <kbd>1-7</kbd> bölümler · <kbd>0</kbd> profil · <kbd>/</kbd> ara ·{' '}
+                <kbd>N</kbd> ekle
+              </p>
+            </div>
+          </details>
         </div>
       </div>
     </header>

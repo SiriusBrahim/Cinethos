@@ -156,3 +156,14 @@ export function sanitizeProfileId(profileId: string): string {
   // Kanonik kimlik tekilleştirilirken dosya yolu geriye dönük uyumlu kalır.
   return canonical.toLowerCase();
 }
+
+/**
+ * F5.2-05 — `catch` bağlaması `unknown`'dır; kullanıcıya gösterilecek mesajı
+ * tip güvenli biçimde çıkarır. Nesne olmayan/boş hata değerleri için yedek
+ * metin döner (önceki `err?.message || fallback` davranışıyla aynı).
+ */
+export function errorMessageOf(value: unknown, fallback = ''): string {
+  if (value instanceof Error && value.message) return value.message;
+  if (typeof value === 'string' && value) return value;
+  return fallback;
+}

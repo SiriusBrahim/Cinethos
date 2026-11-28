@@ -1,4 +1,5 @@
 import test from 'node:test';
+import '../src/services/core-adapters.ts'; // F5-04: çekirdek portlarının adaptörleri
 import assert from 'node:assert/strict';
 import {
   buildRelationshipGraph,

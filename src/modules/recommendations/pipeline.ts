@@ -16,9 +16,11 @@ import {
   type TasteProfileV3,
   RECOMMENDATION_WEIGHTS_V3,
   TARGET_RECOMMENDATION_COUNT,
+  canonicalizeMediaKey,
   filterOutLastRecommendedCandidates,
   isCandidateEligibleInPool,
   makeMediaKey,
+  resolveMediaType,
   scoreCandidatesV3,
   selectBalancedRecommendations,
 } from '../../core/cinetrack-core.ts';
@@ -149,6 +151,51 @@ export function scoreRecommendationPool(input: PoolScoreInput): PoolScoreResult 
   return { scored, shortlist };
 }
 
+/**
+ * B-12 — ANA SEÇİM ve TOP-UP/OVERFLOW için tek uygunluk politikası.
+ *
+ * Önceden ana yol (kısa liste yeniden puanlama) izlenen/gizlenen/ilgilenilmeyen
+ * içerikleri ve son önerilenleri elerken, yetersiz sonuçta devreye giren overflow
+ * yolu yalnızca anahtar tekrarına bakıyordu. Bu fonksiyon aynı kuralları her iki
+ * yolda da uygular:
+ * - izlenmiş / izlenecek / izleniyor kayıtları,
+ * - gizlenen ve ilgilenilmeyen içerikler,
+ * - son öneri grubunda gösterilenler (ring1),
+ * - seçili medya kapsamı (film-only istekte dizi sızmaz),
+ * - yinelenen TMDB kimlikleri.
+ */
+export function filterEligibleSelectionEntries(input: {
+  readonly entries: readonly any[];
+  readonly savedItems: readonly SavedItem[];
+  readonly preferences: Preferences;
+  readonly lastRecommendedKeys: readonly string[];
+  readonly targetType: TargetMediaType;
+}): ScoredCandidateEntry[] {
+  const excluded = new Set(
+    (input.lastRecommendedKeys ?? []).map((key) => canonicalizeMediaKey(key))
+  );
+  const seen = new Set<string>();
+  const eligible: ScoredCandidateEntry[] = [];
+
+  for (const entry of input.entries ?? []) {
+    if (!entry) continue;
+    const cand = (entry as any).candidate ?? entry;
+    if (!cand || typeof cand !== 'object') continue;
+    if (input.targetType === 'movie' || input.targetType === 'tv') {
+      if (resolveMediaType(cand) !== input.targetType) continue;
+    } else if (resolveMediaType(cand) === 'unknown') {
+      continue;
+    }
+    if (!isCandidateEligibleInPool(cand, [...input.savedItems], input.preferences)) continue;
+    const key = canonicalizeMediaKey(makeMediaKey(cand));
+    if (!key || excluded.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    eligible.push(entry as ScoredCandidateEntry);
+  }
+
+  return eligible;
+}
+
 export interface FinalSelectionInput {
   readonly targetType: TargetMediaType;
   readonly isFilteredView: boolean;
@@ -183,16 +230,37 @@ export function selectRecommendationBatch(input: FinalSelectionInput): FinalSele
     Math.min(100, Math.floor(input.targetTotal ?? TARGET_RECOMMENDATION_COUNT))
   );
 
+  // B-12: dört liste de aynı uygunluk politikasından geçer (tip kapsamı, izlenen/
+  // gizlenen/ilgilenilmeyen, son önerilenler, yinelenen kimlikler).
+  const eligibilityBase = {
+    savedItems: input.savedItems,
+    preferences: input.preferences,
+    lastRecommendedKeys: input.lastRecommendedKeys,
+    targetType: input.targetType,
+  };
+  const enrichedMovies = filterEligibleSelectionEntries({
+    ...eligibilityBase,
+    entries: input.enrichedMovies ?? [],
+  });
+  const enrichedTv = filterEligibleSelectionEntries({
+    ...eligibilityBase,
+    entries: input.enrichedTv ?? [],
+  });
+  const remainingMovies = filterEligibleSelectionEntries({
+    ...eligibilityBase,
+    entries: input.remainingMovies ?? [],
+  });
+  const remainingTv = filterEligibleSelectionEntries({
+    ...eligibilityBase,
+    entries: input.remainingTv ?? [],
+  });
+
   const balanced = selectBalancedRecommendations({
     targetType: input.targetType,
-    scoredMovies: [...(input.enrichedMovies ?? [])],
-    scoredTv: [...(input.enrichedTv ?? [])],
-    remainingMovies: [...(input.remainingMovies ?? [])].filter((entry: any) =>
-      isCandidateEligibleInPool(entry?.candidate ?? entry, [...input.savedItems], input.preferences)
-    ),
-    remainingTv: [...(input.remainingTv ?? [])].filter((entry: any) =>
-      isCandidateEligibleInPool(entry?.candidate ?? entry, [...input.savedItems], input.preferences)
-    ),
+    scoredMovies: enrichedMovies,
+    scoredTv: enrichedTv,
+    remainingMovies,
+    remainingTv,
     lastRecommendedKeys: [...input.lastRecommendedKeys],
     tasteMap: input.tasteMap,
     targetTotal,
@@ -203,16 +271,18 @@ export function selectRecommendationBatch(input: FinalSelectionInput): FinalSele
   const picked = [...balanced.items];
 
   if (input.isFilteredView && input.targetType === 'all' && picked.length < targetTotal) {
-    const pickedKeys = new Set(picked.map((entry: any) => makeMediaKey(entry.candidate ?? entry)));
-    const overflowPool = [
-      ...(input.enrichedMovies ?? []),
-      ...(input.enrichedTv ?? []),
-      ...(input.remainingMovies ?? []),
-      ...(input.remainingTv ?? []),
-    ].sort((a: any, b: any) => Number(b.score) - Number(a.score));
+    const pickedKeys = new Set(
+      picked.map((entry: any) => canonicalizeMediaKey(makeMediaKey(entry.candidate ?? entry)))
+    );
+    // Overflow havuzu da aynı uygunluk politikasından geçmiş listelerden kurulur;
+    // ayrıca burada yeniden filtrelenir (savunma katmanı).
+    const overflowPool = filterEligibleSelectionEntries({
+      ...eligibilityBase,
+      entries: [...enrichedMovies, ...enrichedTv, ...remainingMovies, ...remainingTv],
+    }).sort((a: any, b: any) => Number(b.score) - Number(a.score));
     for (const entry of overflowPool) {
       if (picked.length >= targetTotal) break;
-      const key = makeMediaKey(entry.candidate ?? entry);
+      const key = canonicalizeMediaKey(makeMediaKey(entry.candidate ?? entry));
       if (pickedKeys.has(key)) continue;
       pickedKeys.add(key);
       picked.push(entry);

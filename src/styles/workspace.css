@@ -734,48 +734,7 @@
 
 .ws-health-row:last-child { border-bottom: 0; }
 
-/* --- Üst çubuk: yedi sekmeli gezinme ------------------------------------- */
-
-/* Yedi birincil sekme dar masaüstü genişliklerinde taşmasın: sekme şeridi
-   kendi içinde yatay kayar, belge genişliğini büyütmez. */
-.app-header .shell.topbar {
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.app-header .brand {
-  flex-shrink: 0;
-}
-
-.app-header .header-nav-tabs {
-  flex-shrink: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.app-header .header-nav-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.app-header .nav-tab-btn {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-/* Mobil dock beş öğe taşır (dört modül + Daha fazla); etiketler kırpılmasın. */
-.mobile-tab-bar .mobile-tab-btn {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.mobile-tab-bar .mobile-tab-label {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Üst çubuk / alt gezinme stilleri tek kaynakta: `style.css` "Aşama 4" bloğu. */
 
 /* --- Mobil "Daha fazla" sayfası ------------------------------------------- */
 
@@ -915,4 +874,12 @@
   .ws-section-head { flex-direction: column; }
   .ws-hero-actions .ws-btn { flex: 1; }
   .ws-list-side { flex-direction: column; align-items: flex-end; gap: 2px; }
+}
+
+/* Aşama 4 (B-26): devre dışı eylemler görsel olarak da ayırt edilir. */
+.ws-btn:disabled,
+.ws-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }

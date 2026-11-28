@@ -19,7 +19,7 @@
  * katmanı bu hattın dışındadır.
  */
 
-import { createAppEvent } from '../../app/app-event-bus.ts';
+import { createAppEvent } from '../../shared/runtime/app-event-bus.ts';
 import type {
   IEventPublisher,
   IProfileContext,

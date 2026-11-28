@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(MODULE_DIR, '../..');
@@ -46,16 +47,12 @@ const NODE_BUILTINS = new Set(
   ).split(' '),
 );
 
-const LINE_SPECIFIER_PATTERNS = [
-  /^\s*(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]/,
-  /^\s*from\s*['"]([^'"]+)['"]/,
-  /^\s*import\s+['"]([^'"]+)['"]/,
-];
-
-const INLINE_SPECIFIER_PATTERNS = [
-  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-];
+const SCRIPT_KINDS = new Map([
+  ['.ts', ts.ScriptKind.TS],
+  ['.mts', ts.ScriptKind.TS],
+  ['.cts', ts.ScriptKind.TS],
+  ['.tsx', ts.ScriptKind.TSX],
+]);
 
 function toPosix(value) {
   return value.split(path.sep).join('/');
@@ -85,19 +82,56 @@ function classifyLayer(file) {
   return null;
 }
 
-function extractImports(source) {
+/**
+ * Import/export bağımlılıklarını TypeScript AST'sinden çıkarır.
+ *
+ * Satır tabanlı regex yaklaşımı çok satırlı `import {\n ... \n} from 'x'`
+ * ifadelerini, aynı satırdaki birden fazla dinamik importu ve yorum içindeki
+ * sahte importları kaçırıyordu. AST hem statik (import/export/import =) hem de
+ * desteklenen dinamik (`import('x')`, `require('x')`) biçimlerini güvenilir
+ * biçimde yakalar; yanlış pozitif üretmez.
+ *
+ * @param {string} source
+ * @param {string} file
+ * @returns {Array<{ specifier: string, line: number }>}
+ */
+export function extractImports(source, file = 'module.ts') {
+  const scriptKind = SCRIPT_KINDS.get(path.extname(file).toLowerCase()) ?? ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind);
   const imports = [];
-  source.split(/\r?\n/).forEach((text, index) => {
-    const specifiers = new Set();
-    for (const pattern of LINE_SPECIFIER_PATTERNS) {
-      const match = text.match(pattern);
-      if (match) specifiers.add(match[1]);
+  const seen = new Set();
+
+  const record = (specifier, node) => {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const key = `${line + 1}\u0000${specifier}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    imports.push({ specifier, line: line + 1 });
+  };
+
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      const specifier = node.moduleSpecifier;
+      if (specifier && ts.isStringLiteralLike(specifier)) record(specifier.text, node);
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      node.moduleReference.expression &&
+      ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      record(node.moduleReference.expression.text, node);
+    } else if (ts.isCallExpression(node) && node.arguments.length > 0) {
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+      const first = node.arguments[0];
+      if ((isDynamicImport || isRequire) && ts.isStringLiteralLike(first)) {
+        record(first.text, node);
+      }
     }
-    for (const pattern of INLINE_SPECIFIER_PATTERNS) {
-      for (const match of text.matchAll(pattern)) specifiers.add(match[1]);
-    }
-    for (const specifier of specifiers) imports.push({ specifier, line: index + 1 });
-  });
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
   return imports;
 }
 
@@ -222,7 +256,7 @@ export function runArchitectureScan({ root = DEFAULT_ROOT, rules = null } = {}) 
 
   for (const file of files) {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
-    for (const { specifier, line } of extractImports(source)) {
+    for (const { specifier, line } of extractImports(source, file)) {
       totalImports += 1;
       const resolved = resolveLocalImport(specifier, file, root);
       if (resolved) {
@@ -300,6 +334,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`Yerel import kenarı: ${result.localEdges} / toplam import: ${result.totalImports}`);
     for (const rule of result.ruleResults) {
       console.log(`- ${rule.id}: ${rule.violations.length} ihlal`);
+      for (const violation of rule.violations) {
+        console.log(
+          `    ${violation.file}:${violation.line} → ${violation.specifier} (${violation.reasons.join(', ')})`
+        );
+      }
     }
     console.log(`Döngüsel import: ${result.cycles.length}`);
     console.log('En büyük dosyalar:');

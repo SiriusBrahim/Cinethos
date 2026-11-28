@@ -1,0 +1,94 @@
+{
+  "label": "after",
+  "generatedAt": "2026-11-26T22:52:45.747Z",
+  "node": "v24.22.1",
+  "scale": {
+    "1000": {
+      "localStorage": {
+        "payloadBytes": 995780,
+        "serializationMs": 3.67,
+        "firstWriteMs": 0.16,
+        "repeatWriteMs": 0.02,
+        "compactFallbackSupported": false
+      },
+      "rapidUpdateBurst": {
+        "updates": 50,
+        "totalMs": 8.2,
+        "perUpdateMs": 0.16,
+        "schedulerUsed": true,
+        "distinctKeysWritten": 7
+      },
+      "preview": {
+        "fullDatasetMs": 55.76,
+        "fullDatasetJsonBytes": 466511,
+        "rssDeltaMb": 0,
+        "paginatedPreview": {
+          "ms": 11.22,
+          "bytes": 25594
+        },
+        "peakRssMb": 220.6,
+        "posterCacheDirExists": false
+      }
+    },
+    "5000": {
+      "localStorage": {
+        "payloadBytes": 4987781,
+        "serializationMs": 30.11,
+        "firstWriteMs": 0.03,
+        "repeatWriteMs": 0.01,
+        "compactFallbackSupported": false
+      },
+      "rapidUpdateBurst": {
+        "updates": 50,
+        "totalMs": 72.3,
+        "perUpdateMs": 1.45,
+        "schedulerUsed": true,
+        "distinctKeysWritten": 7
+      },
+      "preview": {
+        "fullDatasetMs": 207.37,
+        "fullDatasetJsonBytes": 2335855,
+        "rssDeltaMb": 0,
+        "paginatedPreview": {
+          "ms": 57,
+          "bytes": 25703
+        },
+        "peakRssMb": 286.5,
+        "posterCacheDirExists": false
+      }
+    },
+    "10000": {
+      "localStorage": {
+        "payloadBytes": 9977780,
+        "serializationMs": 74.27,
+        "firstWriteMs": 0.03,
+        "repeatWriteMs": 0,
+        "compactFallbackSupported": false
+      },
+      "rapidUpdateBurst": {
+        "updates": 50,
+        "totalMs": 134.9,
+        "perUpdateMs": 2.7,
+        "schedulerUsed": true,
+        "distinctKeysWritten": 7
+      },
+      "preview": {
+        "fullDatasetMs": 363.66,
+        "fullDatasetJsonBytes": 4672532,
+        "rssDeltaMb": 0,
+        "paginatedPreview": {
+          "ms": 39.27,
+          "bytes": 25706
+        },
+        "peakRssMb": 394.8,
+        "posterCacheDirExists": false
+      }
+    }
+  },
+  "excelExport1000": {
+    "ms": 518.43,
+    "sizeBytes": 97822,
+    "peakRssMb": 454.7,
+    "rssDeltaMb": 10.5
+  }
+}

@@ -43,9 +43,9 @@ import {
 } from '../../core/cinetrack-core.ts';
 import { makeMediaKey, parseMediaKey } from '../../core/keys.ts';
 import { normalizeProfileId } from '../../core/profile-id.ts';
-import type { ProfileContext } from '../../app/ProfileContext.ts';
-import { diffLibraryEvents } from '../../server/library-event-diff.ts';
-import type { ServerPrimaryDataRepository } from '../../server/primary-data-repository.ts';
+import type { ProfileContext } from '../../shared/runtime/ProfileContext.ts';
+import { diffLibraryEvents } from '../../shared/library-event-diff.ts';
+import type { LibraryWriteRepository } from './ports.ts';
 import {
   buildLibraryItem,
   libraryListToWatchStatus,
@@ -54,7 +54,7 @@ import {
 } from './operations.ts';
 
 export interface LibraryServiceOptions {
-  readonly repository: ServerPrimaryDataRepository;
+  readonly repository: LibraryWriteRepository;
   readonly profileContext: ProfileContext;
   readonly eventPublisher?: IEventPublisher;
   /** Test/denetim için zaman kaynağı. */
@@ -77,7 +77,7 @@ function failure(error: string, retryable = false): OperationOutcome {
 }
 
 export class LibraryService implements ILibraryService {
-  private readonly repository: ServerPrimaryDataRepository;
+  private readonly repository: LibraryWriteRepository;
   private readonly profileContext: ProfileContext;
   private readonly eventPublisher?: IEventPublisher;
   private readonly now: () => string;

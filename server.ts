@@ -14,6 +14,7 @@ import { isAiStudioContainerEnv, resolveConfig } from './src/server/config.ts';
 import { createServerLifecycle } from './src/server/server-lifecycle.ts';
 import { refreshEnvGitHubPat } from './src/server/github-token-refresh.ts';
 import { redactSecrets } from './src/server/persistent-store.ts';
+import { isGitHubDevelopmentSyncEnabled } from './src/server/development-sync-policy.ts';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const CINETRACK_HOST = '127.0.0.1';
@@ -21,6 +22,12 @@ const resolved = resolveConfig({ rootDir: root });
 const port = resolved.port;
 const bindHost = resolved.explicitHost || CINETRACK_HOST;
 const listenHost = resolved.listenHost;
+const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev');
+const githubDevSyncEnabled = isGitHubDevelopmentSyncEnabled({
+  nodeEnv: process.env.NODE_ENV,
+  argv: process.argv,
+  override: process.env.CINETHOS_ENABLE_GITHUB_DEV_SYNC,
+});
 
 const dataDir = path.join(root, 'data');
 const maxDataBytes = DEFAULT_MAX_DATA_BYTES;
@@ -32,7 +39,7 @@ for (const warnMsg of resolved.warnings) {
 }
 
 const envFilePath = path.join(root, '.env');
-let githubTokenLive = resolved.githubToken;
+let githubTokenLive = githubDevSyncEnabled ? resolved.githubToken : '';
 let schedulePostMutationSync: ((reason: string) => void) | null = null;
 
 const { app, storage, persistentStore, startRuntimeModules, stopRuntimeModules } = createCineTrackApp({
@@ -41,45 +48,51 @@ const { app, storage, persistentStore, startRuntimeModules, stopRuntimeModules }
   maxProfiles,
   maxItemsPerProfile,
   bindHost,
+  devMode: isDevMode,
+  githubDevSyncEnabled,
   trustProxy: resolved.trustProxy,
   ...(resolved.tmdbRateLimit !== undefined ? { rateLimitMaxRequests: resolved.tmdbRateLimit } : {}),
   ...(resolved.tmdbRateWindowMs !== undefined ? { rateLimitWindowMs: resolved.tmdbRateWindowMs } : {}),
   tmdbApiKey: resolved.tmdbApiKey,
   tvdbApiKey: resolved.tvdbApiKey,
-  githubToken: resolved.githubToken,
-  githubTokenSource: resolved.githubTokenSource,
-  githubTokenCandidates: resolved.githubTokenCandidates,
-  getLiveGitHubTokenCandidates: () => resolveConfig({ rootDir: root }).githubTokenCandidates,
-  onAuthFailureRefreshToken: async (failedToken: string) => {
-    if (isAiStudioContainerEnv(process.env)) return null;
-    const fresh = await refreshEnvGitHubPat({
-      envFilePath,
-      currentToken: failedToken,
-      username: resolved.githubOwner || '',
-      timeoutMs: 12_000,
-      forceReplaceInvalidToken: true,
-    });
-    if (fresh) {
-      githubTokenLive = fresh;
-      return { token: fresh, source: 'file:.env:CINETRACK_GITHUB_PAT' as const };
-    }
-    return null;
-  },
-  onLocalDataMutated: (reason: string) => {
-    schedulePostMutationSync?.(reason);
-  },
-  githubOwner: resolved.githubOwner,
-  githubRepo: resolved.githubRepo,
-  githubBranch: resolved.githubBranch,
-  isPublicRepo: resolved.isPublicRepo,
-  ...(resolved.allowPublicPersonalSync !== undefined
-    ? { allowPublicPersonalSync: resolved.allowPublicPersonalSync }
+  ...(githubDevSyncEnabled
+    ? {
+        githubToken: resolved.githubToken,
+        githubTokenSource: resolved.githubTokenSource,
+        githubTokenCandidates: resolved.githubTokenCandidates,
+        getLiveGitHubTokenCandidates: () => resolveConfig({ rootDir: root }).githubTokenCandidates,
+        onAuthFailureRefreshToken: async (failedToken: string) => {
+          if (isAiStudioContainerEnv(process.env)) return null;
+          const fresh = await refreshEnvGitHubPat({
+            envFilePath,
+            currentToken: failedToken,
+            username: resolved.githubOwner || '',
+            timeoutMs: 12_000,
+            forceReplaceInvalidToken: true,
+          });
+          if (fresh) {
+            githubTokenLive = fresh;
+            return { token: fresh, source: 'file:.env:CINETRACK_GITHUB_PAT' as const };
+          }
+          return null;
+        },
+        onLocalDataMutated: (reason: string) => {
+          schedulePostMutationSync?.(reason);
+        },
+        githubOwner: resolved.githubOwner,
+        githubRepo: resolved.githubRepo,
+        githubBranch: resolved.githubBranch,
+        isPublicRepo: resolved.isPublicRepo,
+        ...(resolved.allowPublicPersonalSync !== undefined
+          ? { allowPublicPersonalSync: resolved.allowPublicPersonalSync }
+          : {}),
+        ...(resolved.allowPublicCatalogSync !== undefined
+          ? { allowPublicCatalogSync: resolved.allowPublicCatalogSync }
+          : {}),
+        processEnvIsPublicRepo: resolved.processEnvIsPublicRepo,
+        localEnvIsPublicRepo: resolved.localEnvIsPublicRepo,
+      }
     : {}),
-  ...(resolved.allowPublicCatalogSync !== undefined
-    ? { allowPublicCatalogSync: resolved.allowPublicCatalogSync }
-    : {}),
-  processEnvIsPublicRepo: resolved.processEnvIsPublicRepo,
-  localEnvIsPublicRepo: resolved.localEnvIsPublicRepo,
   ...(resolved.authToken ? { authToken: resolved.authToken } : {}),
 });
 
@@ -95,7 +108,7 @@ async function startServer() {
   // GitHub OAuth token'ları (~8 saat) süresi dolduğunda Windows Kimlik Yöneticisi'nden
   // (Git Credential Manager) taze token alınır; .env ve canlı senkron yapılandırması güncellenir.
   const applyFreshGitHubToken = async (reason: string, timeoutMs = 45_000): Promise<void> => {
-    if (isAiStudioContainerEnv(process.env)) return;
+    if (!githubDevSyncEnabled || isAiStudioContainerEnv(process.env)) return;
     try {
       const fresh = await refreshEnvGitHubPat({
         envFilePath,
@@ -128,7 +141,6 @@ async function startServer() {
     console.warn('[Catalog] Başlangıç indeksleme uyarısı:', e?.message || e);
   }
 
-  const isDevMode = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev');
   const httpServer = createHttpServer(app);
 
   if (!isDevMode) {
@@ -181,6 +193,7 @@ async function startServer() {
       console.log('TMDB_API_KEY is not configured; running in fallback demo mode.');
     }
 
+    if (githubDevSyncEnabled) {
     let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingMutationWhileBusy = false;
     const MUTATION_AUTO_SYNC_DEBOUNCE_MS = 3500;
@@ -268,6 +281,7 @@ async function startServer() {
       tokenRefreshTimer.unref();
     }
     registerLifecycleCleanup?.(() => clearInterval(tokenRefreshTimer));
+    }
 
     // HTTP sunucusunun kendisi de kontrollü kapanışa kaydedilir.
     registerLifecycleCleanup?.(() => {

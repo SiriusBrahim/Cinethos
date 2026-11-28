@@ -11,6 +11,7 @@ import {
   matchesSelectedGenre,
 } from '../core/cinetrack-core.ts';
 import { MediaCard } from './MediaCard.tsx';
+import { MapPreparingNotice } from './ui-states.tsx';
 
 interface TasteMapViewProps {
   tasteMap: PersistentTasteMapData;
@@ -343,12 +344,7 @@ export const TasteMapView: React.FC<TasteMapViewProps> = ({
       {displayedEntries.length === 0 ? (
         <div className="message empty-guide-card" role="status">
           {isLoading && entriesList.length === 0 ? (
-            <>
-              <strong>Harita hazırlanıyor…</strong>
-              <p>
-                Aday havuzunuz ve kişisel uyum halkalarınız hesaplanıyor. Bu işlem yalnızca birkaç saniye sürer.
-              </p>
-            </>
+            <MapPreparingNotice />
           ) : entriesList.length === 0 && savedItems.length === 0 ? (
             <>
               <strong>Zevk haritanızı oluşturmak için ilk adımı atın</strong>

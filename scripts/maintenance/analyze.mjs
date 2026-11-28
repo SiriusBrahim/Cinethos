@@ -21,7 +21,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { runArchitectureScan } from './architecture-boundaries.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -688,6 +687,10 @@ async function main() {
   let architecture = null;
   let architectureError = null;
   try {
+    // Mimari tarayıcı TypeScript Compiler API kullanır. `--install` öncesinde
+    // (bağımlılıklar kurulmadan) bu modül yüklenemeyeceği için dinamik import
+    // edilir; aksi halde CI'da npm ci çalışmadan süreç çöker.
+    const { runArchitectureScan } = await import('./architecture-boundaries.mjs');
     architecture = runArchitectureScan({ root: ROOT });
   } catch (error) {
     architectureError = error.message;

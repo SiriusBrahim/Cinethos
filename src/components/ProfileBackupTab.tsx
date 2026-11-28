@@ -11,7 +11,6 @@ import {
 } from '../services/api.ts';
 import { recordManualBackupSuccess } from '../services/auto-backup-service.ts';
 import { BRAND_NAME, brandProfileFileName } from '../shared/brand.ts';
-import type { RemoteSyncStatusPayload } from './ProfileGitHubSyncSection.tsx';
 
 interface ProfileBackupTabProps {
   activeProfileId: string;
@@ -21,7 +20,6 @@ interface ProfileBackupTabProps {
   dislikedItems?: Array<Record<string, unknown>>;
   genresMap: Record<number, string>;
   cinemaKunye?: CinemaKunyeDocument | null;
-  remoteSyncInfo: RemoteSyncStatusPayload | null;
   serverBackups: ServerBackupMetadata[];
   loadingBackups: boolean;
   backupMessage: string;
@@ -47,7 +45,6 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
   dislikedItems,
   genresMap,
   cinemaKunye,
-  remoteSyncInfo,
   serverBackups,
   loadingBackups,
   backupMessage,
@@ -66,7 +63,6 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
   const [sqliteBusy, setSqliteBusy] = useState<'export' | 'restore' | null>(null);
   const sqliteInputRef = useRef<HTMLInputElement>(null);
   const [exportingExcelMode, setExportingExcelMode] = useState<'xlsx_only' | 'json_and_xlsx' | null>(null);
-  const [uploadExcelToGithub, setUploadExcelToGithub] = useState(false);
   const [excelExportReport, setExcelExportReport] = useState<ProfileBackupExportReportClient | null>(null);
   const [downloadingBinaryKind, setDownloadingBinaryKind] = useState<'xlsx' | 'json' | null>(null);
   const [verifiedDownloadInfo, setVerifiedDownloadInfo] = useState<{
@@ -201,7 +197,6 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
         profileId: activeProfileId,
         exportMode: mode,
         includeTasteDnaSheet: true,
-        uploadToGithub: uploadExcelToGithub,
         profileSnapshot: effectiveActiveProfile,
         dislikedItemsHint: dislikedItems,
         genresMap,
@@ -370,22 +365,6 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
           </button>
         </div>
 
-        {remoteSyncInfo?.remoteTarget && (
-          <label className="excel-github-toggle mt-2">
-            <input
-              type="checkbox"
-              aria-label="Oluşturulan xlsx arşivini GitHub deposuna yükle"
-              checked={uploadExcelToGithub}
-              disabled={exportingExcelMode !== null}
-              onChange={(e) => setUploadExcelToGithub(e.target.checked)}
-            />
-            <span>
-              Oluşturulan <code>.xlsx</code> arşivini GitHub deposuna (
-              <code>data/exports/</code>) da yükle ve SHA-256 geri okumasını doğrula
-            </span>
-          </label>
-        )}
-
         {exportingExcelMode !== null && (
           <div className="excel-backup-progress tabular-nums mt-2" role="status" aria-live="polite">
             Poster önbelleği taranıyor ve Excel çalışma kitabı oluşturuluyor (
@@ -453,12 +432,22 @@ export const ProfileBackupTab: React.FC<ProfileBackupTabProps> = ({
               </div>
             </div>
 
-            {excelExportReport.githubUpload.attempted && (
+            {excelExportReport.retention && (
               <div className="excel-github-outcome mt-2">
-                <strong>GitHub Yükleme Durumu:</strong>{' '}
-                {excelExportReport.githubUpload.ok && excelExportReport.githubUpload.verifiedReadBack
-                  ? `Başarılı ve SHA-256 doğrulandı (${excelExportReport.githubUpload.repoPath})`
-                  : excelExportReport.githubUpload.error || 'Yükleme doğrulanamadı.'}
+                <strong>Dışa Aktarma Saklama Politikası (B-37):</strong>{' '}
+                {excelExportReport.retention.kept.length} dosya saklandı · temizlenen:{' '}
+                {excelExportReport.retention.removed.length} · kullanılan alan{' '}
+                {(excelExportReport.retention.totalBytesAfter / (1024 * 1024)).toFixed(2)} MB
+                {excelExportReport.retention.kept.length > 0 && (
+                  <ul className="excel-metric-sub" style={{ marginTop: 4 }}>
+                    {excelExportReport.retention.kept.map((entry) => (
+                      <li key={entry.name}>
+                        {entry.name}
+                        {entry.protectedReason === 'latest' ? ' (son başarılı dışa aktarma)' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 

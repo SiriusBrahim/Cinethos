@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import '../src/services/core-adapters.ts'; // F5-04: çekirdek portlarının adaptörleri
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -804,8 +805,9 @@ test('Set D & BUG-11: no sync file writes on hot paths, CSP worker-src/manifest-
   assert.match(envExample, /^CINETRACK_TOKEN=$/m);
   assert.match(envExample, /^CINETRACK_TMDB_RATE_LIMIT=$/m);
 
+  // F5.1-03: senkron envanteri belgesi yardımcı modüle taşındı; kural korunur.
   const ghSyncSrc = fs.readFileSync(
-    path.resolve(process.cwd(), 'src/server/github-bidirectional-sync.ts'),
+    path.resolve(process.cwd(), 'src/server/github-sync/sync-core.ts'),
     'utf8'
   );
   assert.ok(ghSyncSrc.includes('CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=true'));

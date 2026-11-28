@@ -15,15 +15,15 @@ import {
   ENCODING_LAYOUT_VERSION,
   type ItemFeatureEncoding,
 } from './encoding.ts';
-import { getItemEncodingSync } from '../services/encoding-service.ts';
 import {
-  getSeriesForMediaSync,
-  getSeriesCollectionByKeySync,
-} from '../services/storage-idb.ts';
+  resolveItemEncoding,
+  resolveSeriesCollectionByKey,
+  resolveSeriesForMedia,
+} from './relationship-ports.ts';
 import {
   KNOWN_TV_FRANCHISES,
   buildKnownTvFranchiseCollection,
-} from '../services/series-tv-seeds.ts';
+} from './series-tv-seeds.ts';
 import {
   STOP_WORDS,
   GENERIC_PLOT_WORDS,
@@ -320,7 +320,7 @@ export function precomputeRelationshipContent(item: RelationshipContent): Relati
   const collectionId = getCollectionId(item);
 
   // ct:series-index entegrasyonu (W3)
-  let seriesCol = getSeriesForMediaSync(key);
+  let seriesCol = resolveSeriesForMedia(key);
   if (!seriesCol && mediaType === 'tv') {
     const tvId = Number(item.id);
     for (const franchise of Object.values(KNOWN_TV_FRANCHISES)) {
@@ -341,7 +341,7 @@ export function precomputeRelationshipContent(item: RelationshipContent): Relati
   const dateStr = item.release_date || item.first_air_date || '';
   const year = Number(dateStr.slice(0, 4));
 
-  const encoding = getItemEncodingSync(item);
+  const encoding = resolveItemEncoding(item);
 
   return {
     item,
@@ -422,7 +422,7 @@ export function pairRelationships(
   const serB = bPre.seriesKey;
 
   if ((colA && colB && colA === colB) || (serA && serB && serA === serB)) {
-    const seriesCol = serA ? getSeriesCollectionByKeySync(serA) : null;
+    const seriesCol = serA ? resolveSeriesCollectionByKey(serA) : null;
     const collectionName =
       seriesCol?.name || aPre.item.belongs_to_collection?.name || bPre.item.belongs_to_collection?.name;
     relationships.push({
@@ -839,7 +839,7 @@ export function buildRelationshipGraph(
 
     const profileCentroid = computeProfileCentroid(
       savedItems.map((item) => ({
-        encoding: getItemEncodingSync(item),
+        encoding: resolveItemEncoding(item),
         personal_rating: item.personal_rating,
       })),
     );
@@ -864,7 +864,7 @@ export function buildRelationshipGraph(
           personalScoreFor(item, scores),
           preferences,
         );
-        const enc = getItemEncodingSync(item);
+        const enc = resolveItemEncoding(item);
         const sim = profileCentroid.length > 0 ? cosineSimilarity(profileCentroid, enc.vector) : base.personalScore / 100;
         const angle = (idx / Math.max(1, nodesContent.length)) * 2 * Math.PI;
         const r = 80 + (1 - Math.max(0, Math.min(1, sim))) * 220;

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { DISCOVER_PROVIDER_CHIPS } from '../utils/helpers.ts';
 import type { ModuleId } from '../app/module-ids.ts';
 import { StockHealthPanel } from './StockHealthPanel.tsx';
+import { shouldHideSecondaryToolbar } from '../app/controls-state.ts';
 
 interface ControlsProps {
   tab: ModuleId;
@@ -77,7 +78,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
   const disableProviderFilters = isSearchActive;
   const totalListCount = myListCount || watchingCount + watchlistCount + completedCount;
-  const hideSecondaryToolbar = tab === 'list' && listStatus === 'actors';
+  const hideSecondaryToolbar = shouldHideSecondaryToolbar(tab, listStatus);
 
   return (
     <div className="section-controls-wrap">

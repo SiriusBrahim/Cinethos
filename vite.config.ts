@@ -101,16 +101,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // B-20: yalnızca React çekirdeği ayrı satıcı paketine alınır. Graf
+        // motoru (react-force-graph-2d + d3) elle ayrı chunk'a zorlanmıyor;
+        // tek tüketicisi olan tembel `RelationshipExplorer` chunk'ına düşüyor,
+        // böylece ilk açılışta ön yüklenmiyor.
         manualChunks(id: string) {
           if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
             return 'react-vendor';
-          }
-          if (
-            /[\\/]node_modules[\\/](react-force-graph-2d|force-graph|react-kapsule|three|d3-[^\\/]+)[\\/]/.test(
-              id
-            )
-          ) {
-            return 'd3-graph';
           }
           return undefined;
         },

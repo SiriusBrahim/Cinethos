@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { asExternalRecord, readFiniteNumber, readString } from './external-json.ts';
 
 export interface TvdbProxyOptions {
   tvdbApiKey?: string;
@@ -23,8 +24,8 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
   let configuredApiKey = (options.tvdbApiKey || '').trim();
 
   let cachedToken: TvdbCachedToken | null = null;
-  const responseCache = new Map<string, { body: any; contentType: string; at: number; ttl: number }>();
-  const inFlightRequests = new Map<string, Promise<any>>();
+  const responseCache = new Map<string, { body: unknown; contentType: string; at: number; ttl: number }>();
+  const inFlightRequests = new Map<string, Promise<unknown>>();
 
   function resolveApiKey(req?: Request): string {
     const headerKey = req?.headers?.['x-tvdb-api-key'];
@@ -70,17 +71,22 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
         const status = response.status;
         let errMsg = `TVDB giriş hatası (${status})`;
         try {
-          const errJson = await response.json();
-          if (errJson?.message) errMsg = errJson.message;
+          const errJson = asExternalRecord(await response.json());
+          const nested = asExternalRecord(errJson?.data);
+          errMsg =
+            readString(errJson?.message, 400) ??
+            readString(nested?.message, 400) ??
+            errMsg;
         } catch {
           // ignore parsing error
         }
         return { token: '', error: errMsg };
       }
 
-      const json = await response.json();
-      const token = json?.data?.token;
-      if (typeof token !== 'string' || !token) {
+      const json = asExternalRecord(await response.json());
+      const payload = asExternalRecord(json?.data);
+      const token = readString(payload?.token, 4096);
+      if (!token || !/^[A-Za-z0-9_.-]+$/.test(token)) {
         return { token: '', error: 'TVDB yanıtında geçerli bir JWT token bulunamadı.' };
       }
 
@@ -89,9 +95,10 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
       try {
         const parts = token.split('.');
         if (parts.length >= 2) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-          if (typeof payload.exp === 'number') {
-            expiresAt = payload.exp * 1000;
+          const claims = asExternalRecord(JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')));
+          const exp = readFiniteNumber(claims?.exp);
+          if (exp && exp > 0) {
+            expiresAt = exp * 1000;
           }
         }
       } catch {
@@ -100,8 +107,9 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
 
       cachedToken = { token, expiresAt, apiKey: key };
       return { token };
-    } catch (err: any) {
-      return { token: '', error: err?.message || 'TVDB sunucusuna bağlanılamadı.' };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : undefined;
+      return { token: '', error: message || 'TVDB sunucusuna bağlanılamadı.' };
     }
   }
 
@@ -142,7 +150,9 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
 
   const handleLogin = async (req: Request, res: Response): Promise<void> => {
     res.setHeader('Cache-Control', 'no-store');
-    const apiKey = (req.body?.apikey || req.body?.apiKey || resolveApiKey(req) || '').trim();
+    const bodyRecord = asExternalRecord(req.body);
+    const rawKey = readString(bodyRecord?.apikey, 200) ?? readString(bodyRecord?.apiKey, 200);
+    const apiKey = (rawKey || resolveApiKey(req) || '').trim();
     if (!apiKey) {
       res.status(400).json({ ok: false, status_message: 'apikey parametresi zorunludur.' });
       return;
@@ -205,7 +215,7 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
       return;
     }
 
-    const executeUpstream = async (isRetry = false): Promise<any> => {
+    const executeUpstream = async (isRetry = false): Promise<unknown> => {
       const { token, error } = await getValidToken(apiKey, isRetry);
       if (!token) {
         throw new Error(error || 'TVDB oturum açma başarısız.');
@@ -245,7 +255,7 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
         return null;
       }
 
-      let parsed: any;
+      let parsed: unknown;
       try {
         parsed = JSON.parse(rawText);
       } catch {
@@ -287,10 +297,11 @@ export function createTvdbProxyService(options: TvdbProxyOptions = {}) {
         inFlightRequests.set(cacheKey, pending);
       }
       await pending;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : undefined;
       if (!res.headersSent) {
         res.status(502).json({
-          status_message: err?.message || 'TVDB sunucusuna bağlanırken hata oluştu.',
+          status_message: message || 'TVDB sunucusuna bağlanırken hata oluştu.',
           code: 'upstream_tvdb_error',
         });
       }

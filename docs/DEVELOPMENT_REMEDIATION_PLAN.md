@@ -3,16 +3,17 @@
 > **Durum:** Uygulama planı / PR üzerinden kontrollü yürütme  
 > **Plan tarihi:** 21 Kasım 2026  
 > **Hedef dal:** `master`  
-> **Başlangıç commit'i:** `f87bd9da9775b46856de000d390883d83d402bf5`  
-> **Dayanak:** [Birleştirilmiş teknik denetim](../Cinethos_Master_Audit_Consolidated_2026-11-21.md)  
+> **Başlangıç commit'i:** `c58ec49aef9e309f5a6e673321db387eaa8a3a75` (Aşama 0'ın doğruladığı `master` ucu)
+> **Çalışma dalı / PR:** `remediation/full-project-remediation` — tek uzun ömürlü PR
+> **Dayanak:** [Birleştirilmiş teknik denetim](../Cinethos_Master_Audit_Consolidated_2026-11-21.md) · [Aşama 0 denetimi](audits/PHASE_00_BASELINE_AUDIT.md)  
 > **Kapsam:** Denetimdeki B-01…B-39 bulgularının tamamı ve uygulama sırasında doğrulanacak ek kalite kapıları.
 
-Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerine bağımsız, incelenebilir ve geri alınabilir teslimlere böler. Her uygulama aşaması ayrı bir feature/fix dalı ve ayrı PR olarak yürütülmelidir. Bir aşama PR'ı incelenip `master` dalına birleştirilmeden sonraki aşamanın kod değişikliklerine başlanmamalıdır.
+Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerine **aşama aşama, incelenebilir ve geri alınabilir commit'lere** böler. Yürürlükteki çalışma modeli **tek uzun ömürlü dal + tek PR**'dır: `remediation/full-project-remediation` dalı ve *chore: complete project remediation and quality improvements* PR'ı Aşama 0–10'un tamamını taşır. Her aşama aynı PR'a ayrı commit (veya küçük commit grubu) olarak eklenir; PR açıklamasındaki ilerleme tablosu aşama tamamlandıkça güncellenir. Yeni PR açılmaz, `master`'a doğrudan commit gönderilmez ve kullanıcı açıkça onaylamadan merge yapılmaz. (Bu model, planın ilk sürümündeki "her aşama ayrı PR" kuralının yerini alır — bkz. N-01.)
 
 ## 1. Çalışma ve birleştirme kuralları
 
-1. `master` doğrudan değiştirilmez. Her aşama güncel `master` üzerinden yeni dal açar.
-2. Her PR tek bir aşamanın kapsamını taşır. Birden fazla aşamayı tek PR'da birleştirmek, inceleme ve geri alma sınırlarını bozar.
+1. `master` doğrudan değiştirilmez. Tüm çalışma `remediation/full-project-remediation` dalında yürür ve `master` yalnızca kararlı başlangıç noktasıdır.
+2. Tek PR kullanılır; her aşama ayrı commit olarak eklenir. Bir aşamanın commit'leri, o aşamanın kabul kriterleri ve testleri tamamlanmadan bir sonraki aşamaya geçilmez. Aşama sınırları commit mesajlarında ve PR ilerleme tablosunda görünür kalır.
 3. PR açıklamasında ilgili bulgu ID'leri, değişen davranış, veri geçişi etkisi, test kanıtı, riskler ve geri alma yöntemi yazılır.
 4. PR, testler ve kabul kriterleri tamamlanmadan merge edilmez. Veri bütünlüğü aşamasında özellikle canlı kullanıcı verisi üzerinde test yapılmaz.
 5. Mevcut dosya/fonksiyon adları ve mimari önce koddan doğrulanır. Denetimde geçen veya örnek olarak önerilen adlar mevcut değilse yeni API/katman uydurulmaz; gerçek kod yapısına uyarlanır.
@@ -22,23 +23,30 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 9. Bir PR yalnızca kendi kapsamındaki testleri değil, ilgili regresyon paketini de çalıştırır. Tam doğrulama aşamasında tüm kalite kapıları birlikte çalıştırılır.
 10. PR birleştirme stratejisi (squash/merge commit) proje geçmişiyle uyumlu seçilir; force-push ile `master` geçmişi değiştirilmez.
 
-### Önerilen dal adlandırması
+### Dal ve commit düzeni (yürürlükteki model)
 
-- `fix/phase-01-data-safety`
-- `fix/phase-02-sync-reliability`
-- `perf/phase-03-recommendations`
-- `fix/phase-04-ui-ux`
-- `refactor/phase-05-architecture`
-- `perf/phase-06-client-performance`
-- `security/phase-07-hardening`
-- `feat/phase-08-relationship-graph`
-- `fix/phase-09-backup-recovery-ux`
-- `test/phase-10-release-verification`
+Tek dal: `remediation/full-project-remediation`. Aşamalar commit ön ekiyle ayrılır:
+
+- `fix(phase-01): …` — veri güvenliği ve bütünlüğü
+- `fix(phase-02): …` — senkronizasyon güvenilirliği
+- `perf(phase-03): …` — öneri motoru
+- `fix(phase-04): …` — UI/UX ve erişilebilirlik
+- `refactor(phase-05): …` — mimari ve kod kalitesi
+- `perf(phase-06): …` — istemci performansı
+- `security(phase-07): …` — güvenlik ve gizlilik
+- `feat(phase-08): …` — Zevk Haritası
+- `fix(phase-09): …` — yedek/kurtarma deneyimi
+- `test(phase-10): …` — sürüm doğrulaması
 
 ## 2. Aşama 0 — Başlangıç doğrulaması ve güvenli çalışma zemini
 
-**Tür:** Salt okunur inceleme; uygulama kodu değiştirilmez.  
+**Durum:** ✅ **Tamamlandı — 21 Kasım 2026** (taban: `c58ec49`).  
+**Tür:** Salt okunur inceleme; uygulama kodu değiştirilmedi.  
 **Amaç:** Eski denetim ile güncel `master` arasındaki farkı ve uygulama öncesi gerçek durumu sabitlemek.
+
+**Çıktılar:** [PHASE_00_BASELINE_AUDIT.md](audits/PHASE_00_BASELINE_AUDIT.md) · [PHASE_00_FINDING_MATRIX.md](audits/PHASE_00_FINDING_MATRIX.md) · [PHASE_00_TEST_BASELINE.md](audits/PHASE_00_TEST_BASELINE.md) · [PHASE_00_ARCHITECTURE_MAP.md](audits/PHASE_00_ARCHITECTURE_MAP.md)
+
+**Sonuç özeti:** Denetimden bu yana yalnızca doküman değişti. 39 bulgunun 32'si CONFIRMED, 4'ü PARTIALLY_FIXED, 2'si FIXED (B-26, B-34), 1'i NEEDS_INVESTIGATION (B-27). 5 yeni bulgu (N-01…N-05) kaydedildi. `npm test` 608/608 geçti; ancak test koşusunun gerçek `data/` dizinini değiştirdiği hash karşılaştırmasıyla kanıtlandı (B-14).
 
 ### Yapılacak işler
 
@@ -66,6 +74,12 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 **Çıktılar:** Güncel durum matrisi, test/performans başlangıç ölçümleri, aşama 1 kapsamı.
 
 ## 3. Aşama 1 — Veri güvenliği, test izolasyonu ve kayıpsız veri modeli
+
+> **Durum: TAMAMLANDI (21 Kasım 2026).** Tüm maddeler ve kabul kriterleri
+> karşılandı; kanıt ve sonuçlar §17'de, ayrıntılar
+> [PHASE_01_DATA_INTEGRITY.md](audits/PHASE_01_DATA_INTEGRITY.md) ve
+> [PHASE_01_DATA_INTEGRITY_TESTS.md](audits/PHASE_01_DATA_INTEGRITY_TESTS.md)
+> belgelerinde.
 
 **Öncelik:** P1 / Kritik  
 **Amaç:** Testlerin gerçek kullanıcı verisine dokunmasını önlemek; birleştirme, yedek ve geri yükleme akışlarında sessiz veri kaybını ortadan kaldırmak.
@@ -145,6 +159,7 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 ## 4. Aşama 2 — Senkronizasyon güvenilirliği ve işlem tutarlılığı
 
 **Öncelik:** P1/P2/P3  
+**Durum:** ✅ Tamamlandı (2026-11-21) — ayrıntı: [`docs/audits/PHASE_02_SYNC_RELIABILITY.md`](audits/PHASE_02_SYNC_RELIABILITY.md)  
 **Amaç:** Kuyruk, retry, restore ve senkronizasyon raporlarının gerçek durumu yansıtmasını sağlamak.
 
 ### Yapılacak işler
@@ -166,6 +181,27 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 - Raporlanan sayaçlar test fixture'larıyla doğrulanır.
 - Restore ve senkronizasyon aynı revizyon/serileştirme kurallarına uyar.
 
+### Uygulama sonucu
+
+1. **B-10 ✅** — `SyncOperationQueue` (`idle/queued/running/failed`, depth, lastOutcome),
+   `sync-attempt.json` deneme günlüğü, açılışta `syncing` → `pending` kurtarma,
+   `sync-state.json` v2 (v1 geriye dönük). `/api/sync/status` kuyruk anlık görüntüsünü döner.
+2. **B-38 ✅** — Tüm senkronizasyon yolları tek FIFO kuyruk + `data/locks/github-sync.lock`
+   advisory kilidinden geçer; çakışma 409. `saveDataAsync` serileştirildi, senkron
+   `saveData` eşzamanlı yazmada fail-closed.
+3. **B-39 ✅** — Sayaçlar `sync-counters.ts` ile işlem öncesi/sonrası belgelerden türetilir;
+   türetilmiş profil önbelleği sayılmaz, anahtar düzeyinde çift sayım yok.
+4. **Kesinti/kurtarma ✅** — Deneme günlüğü + dosya durumu kurtarma; uzak PUT'lar `sha`
+   önkoşuluyla idempotent kalır.
+5. **B-30 ✅** — İstemci `http-retry.ts` (Retry-After/reset, sınırlı exponential backoff +
+   jitter, yalnızca idempotent metotlar); sunucu `githubFetch` politikası korundu.
+6. **İstek eşzamanlılığı ✅** — Kuyruk kapasitesi ve bekleme süresi sınırlı; aynı işlem
+   `dedupeKey` ile birleştirilir.
+7. **Hata sınıflandırması ✅** — `sync_queue_*`, `sync_lease_busy`, `sync_aborted` makine
+   okunur kodlar; API 409/500 ayrımı; mevcut `SyncErrorCategory` korunur.
+8. **Gözlemlenebilirlik ✅** — Sonuç/süre/işlem adı kuyruk anlık görüntüsünde; token ve
+   kişisel veri loglanmaz (mevcut `redactSecrets` kullanılır).
+
 ## 5. Aşama 3 — Öneri motoru doğruluğu ve performansı
 
 **Öncelik:** P1/P2/P3  
@@ -173,14 +209,14 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 
 ### Yapılacak işler
 
-1. **Karesel benzerlik maliyeti — B-03:** Sevilen içerik özelliklerini her aday için yeniden üretmek yerine önceden hesapla; tür/kişi/anahtar kelime ters indekslerini değerlendir. Aday başına tam geçmiş taramasını azalt.
-2. **Üst-N ve sınırlandırma:** Ön eleme, üst-N aday seçimi ve gerektiğinde Worker/dilimleme uygula. Sonuç kalitesini düşürmeden işlem miktarını sınırla.
-3. **Film/dizi tercih ayrımı — B-11:** Film ve dizi zevk profillerinin hangi sinyalleri paylaşacağı, hangilerinin ayrı hesaplanacağı açıkça tanımlansın. Film ağırlıklı geçmişin dizi önerisini veya tersini bozmadığı test edilsin.
-4. **Top-up filtreleri — B-12:** Ana seçim yolundaki uygunluk, tekrar gösterim, gizlenen/izlenen içerik ve ring filtreleri top-up/overflow yolunda da aynen uygulansın.
-5. **Ölü sinyal — B-13:** `serverTaste` ya gerçekten skor katkısı yapmalı ya da açıklamalardan ve hesaplamadan kaldırılmalı. UI'da katkı gibi görünen ama ağırlığı olmayan sinyal kalmasın.
-6. **Önbellek sınırı — B-22:** Recommendation cache için LRU/TTL veya revizyon bazlı sınırlama uygula. Eski revizyon girdileri temizlensin.
-7. **Skor açıklaması:** Performans optimizasyonu sonrası kullanıcıya gösterilen sinyal katkıları gerçek hesapla tutarlı olmalı.
-8. **Kalite karşılaştırması:** Eski ve yeni motor aynı veri setinde karşılaştırılsın; öneri sıralaması farkları açıklanabilir olsun.
+1. **Karesel benzerlik maliyeti — B-03 ✅:** Sevilen içerik özelliklerini her aday için yeniden üretmek yerine önceden hesapla; tür/kişi/anahtar kelime ters indekslerini değerlendir. Aday başına tam geçmiş taramasını azalt.
+2. **Üst-N ve sınırlandırma ✅:** Ön eleme, üst-N aday seçimi ve gerektiğinde Worker/dilimleme uygula. Sonuç kalitesini düşürmeden işlem miktarını sınırla. (Ölçüm: üretim boyutu ~80 ms; Worker gerekçesiz karmaşıklık olduğu için eklenmedi.)
+3. **Film/dizi tercih ayrımı — B-11 ✅:** Film ve dizi zevk profillerinin hangi sinyalleri paylaşacağı, hangilerinin ayrı hesaplanacağı açıkça tanımlansın. Film ağırlıklı geçmişin dizi önerisini veya tersini bozmadığı test edilsin.
+4. **Top-up filtreleri — B-12 ✅:** Ana seçim yolundaki uygunluk, tekrar gösterim, gizlenen/izlenen içerik ve ring filtreleri top-up/overflow yolunda da aynen uygulansın.
+5. **Ölü sinyal — B-13 ✅:** `serverTaste` ya gerçekten skor katkısı yapmalı ya da açıklamalardan ve hesaplamadan kaldırılmalı. UI'da katkı gibi görünen ama ağırlığı olmayan sinyal kalmasın. (Seçenek A: açık ağırlıkla gerçek katkı.)
+6. **Önbellek sınırı — B-22 ✅:** Recommendation cache için LRU/TTL veya revizyon bazlı sınırlama uygula. Eski revizyon girdileri temizlensin.
+7. **Skor açıklaması ✅:** Performans optimizasyonu sonrası kullanıcıya gösterilen sinyal katkıları gerçek hesapla tutarlı olmalı.
+8. **Kalite karşılaştırması ✅:** Eski ve yeni motor aynı veri setinde karşılaştırılsın; öneri sıralaması farkları açıklanabilir olsun.
 
 ### Performans test matrisi
 
@@ -192,10 +228,13 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 
 ### Kabul kriterleri
 
-- 5.000×5.000 senaryosu denetimde ölçülen 13–29 saniyelik aralığın belirgin biçimde altına iner; hedef ve cihaz sınıfı aşama 0 ölçümlerinden sonra kesinleştirilir.
-- Film-only kapsamı TV içeriklerini döndürmez; TV sonuçları film hedef sayısını azaltmaz.
-- Top-up yolu ana yol ile aynı eleme kurallarını uygular.
-- Cache büyüklüğü sınırlıdır ve skor açıklamaları gerçek skorla tutarlıdır.
+- 5.000×5.000 senaryosu denetimde ölçülen 13–29 saniyelik aralığın belirgin biçimde altına iner; hedef ve cihaz sınıfı aşama 0 ölçümlerinden sonra kesinleştirilir. → **3,5 s (16,5×)**
+- Film-only kapsamı TV içeriklerini döndürmez; TV sonuçları film hedef sayısını azaltmaz. → ✅ test edildi
+- Top-up yolu ana yol ile aynı eleme kurallarını uygular. → ✅ test edildi
+- Cache büyüklüğü sınırlıdır ve skor açıklamaları gerçek skorla tutarlıdır. → ✅ test edildi
+
+**Aşama 3 tamamlandı.** Ayrıntılı mimari, ölçüm, test ve sınırlar:
+[`docs/audits/PHASE_03_RECOMMENDATION_ENGINE.md`](audits/PHASE_03_RECOMMENDATION_ENGINE.md).
 
 ## 6. Aşama 4 — UI/UX, responsive düzen ve erişilebilirlik
 
@@ -204,14 +243,14 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 
 ### Yapılacak işler
 
-1. **Sekme şeridi — B-24:** 1024–1440 px aralığında tüm sekmelere erişim sağla. Yatay kaydırma ipucu, fade/ok, taşma menüsü veya ikon-only çözümü tasarla; klavye ve fare ile erişim doğrulansın.
-2. **Mobil sticky header — B-25:** Mobilde üst alanı sadeleştir; gereksiz satırları menüye taşı. Sticky alan içerik yüksekliğini gereksiz tüketmesin.
-3. **İşlem Merkezi — B-26:** Retry/iptal/yeniden başlat düğmeleri görev durumuna ve hata türüne göre etkinleştirilsin. 409 gibi tekrar denenemeyen durumlarda retry kapalı ve açıklamalı olsun.
-4. **Kart ve poster düzeni — B-27:** Rozet/poster çakışmaları, son kart kırpılması ve filtre çubuğu taşması giderilsin.
-5. **Modal erişilebilirliği — B-28:** Modal açıkken odak tuzağı, Escape, geri odak, arka plan inert/aria-hidden ve ekran okuyucu duyuruları doğru çalışsın.
-6. **Klavye handler performansı — B-29:** Handler referanslarının gereksiz yeniden bağlanması önlensin; kısayollar modal/form odaklarıyla çakışmasın.
-7. **Responsive kapsam:** 360, 390, 768, 1024, 1280, 1440 ve 1920 px ölçülerinde ekran görüntüsü/otomatik kontrol.
-8. **Erişilebilirlik:** Kontrast, görünür focus, semantik başlıklar, buton adları, reduced-motion ve klavye ile tam kullanım testleri.
+1. **Sekme şeridi — B-24 ✅:** Tek satır header'da 7 modül sekmesi; 1440 px altında etiketler ikona çekilir (`aria-label` + `title` korunur), aktif sekme `aria-current` + altın alt çizgi. 1024/1280/1440/1920 px'te kesilme yok.
+2. **Mobil sticky header — B-25 ✅:** Mobil üst alan 56 px tek satır (marka, arama, profil, ekle, "Diğer"); 5 öğeli sabit alt gezinme + "Daha fazla" sheet'i (Escape, odak dönüşü, scroll lock). Safe-area inset'leri kullanılır.
+3. **İşlem Merkezi — B-26 ✅:** Tek politika kaynağı `modules/operations/task-actions.ts`; retry/iptal görev durumuna bağlı, 409/403/404 kalıcı hatada kapalı + gerekçe, teknik detay `<details>` içinde.
+4. **Kart ve poster düzeni — B-27 ✅:** `aspect-ratio` poster, rozetler başlık hizasında, `auto-fill` grid, uzun başlık clamp, yatay kaydırılabilir filtre çubuğu, yükleme sırasında CLS yok.
+5. **Modal erişilebilirliği — B-28 ✅:** Tek kanonik dialog hook'u; odak tuzağı, Escape, odak dönüşü, scroll lock, kabuk bölgelerinde `inert`, dialog yığını.
+6. **Klavye handler performansı — B-29 ✅:** Ref'li tek dinleyici, `utils/overlay-guard.ts` ile overlay/metin girişi koruması, `/` kısayolu arama alanına odaklanır.
+7. **Responsive kapsam ✅:** 360, 390, 768, 1024, 1280, 1440 ve 1920 px ölçüldü; yatay taşma yok, header 57/65 px, arama 142–538 px.
+8. **Erişilebilirlik ✅:** axe WCAG 2.1 AA taraması 1440/768/360 px'te 0 kritik, 0 ciddi; kontrast, focus halkası, buton adları ve reduced-motion doğrulandı.
 
 ### Kabul kriterleri
 
@@ -220,6 +259,10 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 - Geçersiz görev eylemleri devre dışıdır.
 - Modal açma/kapatma ve odak yönetimi otomatik testlerle doğrulanır.
 - axe veya eşdeğer erişilebilirlik taramasında kritik hata kalmaz; istisnalar belgelenir.
+
+**Aşama 4 tamamlandı.** Ayrıntılı tasarım kararları, bulgu kanıtları, responsive matris,
+axe sonuçları ve sınırlar:
+[`docs/audits/PHASE_04_UI_UX.md`](audits/PHASE_04_UI_UX.md).
 
 ## 7. Aşama 5 — Mimari sadeleştirme ve kod kalitesi
 
@@ -245,10 +288,48 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 - Tip hataları/gevşek sınırlar azaltılmış; public API sözleşmeleri belgelenmiş.
 - Büyük refactor tek dev PR yerine mantıksal, geri alınabilir PR'lara bölünmüş.
 
+### 7.1 Uygulama durumu — TAMAMLANDI (28 Kasım 2026)
+
+Aşama 5 maddelerinin tamamı kod, test ve kapı sonuçlarıyla kapatıldı. Ayrıntılı iş kaydı:
+[audits/PHASE_05_IMPLEMENTATION_RESULTS.md](audits/PHASE_05_IMPLEMENTATION_RESULTS.md) (§13 kapanışı, §14 son doğrulama),
+mimari özet: [../PHASE_05_ARCHITECTURE.md](../PHASE_05_ARCHITECTURE.md).
+
+| # | İş | Durum | Kanıt |
+|---|---|---|---|
+| 1 | Test kalitesi (B-15) | ✅ Tamamlandı | Kaynak metni eşleyen UI testleri gerçek render/ağaç davranışına çevrildi (`react-dom/server` + `tests/helpers/render-tree.mjs`); AST taraması yalnız yapısal kurallar için; `f5-2-ui-render`, `f5-3-*` davranış testleri |
+| 2 | Büyük dosyalar (B-16) | ✅ Tamamlandı | `App.tsx` 2.391→**2.064**; `persistent-store.ts` 4.129→**2.804** (+ `persistent-store/*` okuma/yazma modülleri); `github-bidirectional-sync.ts` 5.118→**859** (+ `github-sync/` 5 işlem modülü, 5.487 satır); `cinetrack-core.ts` 6.445→**5.320** (+ `core/media/*`) |
+| 3 | Tek kaynak politikaları | ✅ Tamamlandı | Katalog/profile/derived-profile/stock/cinema-künye yazımı tek modül; liste sayaçları `app/list-counts.ts`; stok sayaçları `app/stock-stats.ts`; belge birleştirme/uygulama `app/persistence/remote-document-merge.ts`; kanonik tip `core/media/types.ts` |
+| 4 | Core purity (B-17) | ✅ Tamamlandı | 7→0 ihlal, `src/core/ports/` + adaptörler, allowlist boş |
+| 5 | Tip güvenliği (B-16) | ✅ Tamamlandı (kapsam) | `external-json` + `github-response` doğrulayıcıları; `persistent-store.ts` içindeki 38 `any` kaldırıldı, kalan 2 dar geçiş gerekçeli; `noUnusedLocals` kapsam dışı borç (§13.7) |
+| 6 | App kabuğu | ✅ Tamamlandı | Katalog/öneri yükleyici, kalıcılık planı, belge birleştirme/uygulama, liste/stok sayaçları, katalog başlıkları, seri evreni, yayın hatırlatıcıları React dışına alındı; kalan gövde React state/effect/event orkestrasyonu |
+| 7 | Bağımlılık temizliği (B-18) | ✅ Tamamlandı | `@respan/respan` + konfigürasyon tamamen kaldırıldı |
+| 8 | Kod sınırları CI'da | ✅ Tamamlandı | AST tarayıcı, 6 kural, döngü 0 |
+
+Kapılar (28 Kasım 2026, bu ağaçta çalıştırıldı): `npm run lint` **0/0**, `npm test`
+**958/958**, `npm run test:taste` **440/440**, `npm run cycles` **0**, `npm run build` ✅,
+üretim duman testi ✅ (`/`, `/discover/deep-link`, `/api/data`, `/api/tmdb-status`,
+`/api/sync/status` 200; `POST /api/sync/push` 404 = GitHub kapalıyken beklenen),
+data guard `data/` değişmedi. E2E yerelde koşulmadı (tarayıcı yok); CI `Playwright E2E`
+işiyle doğrulanır.
+
+**Aşama 6 tamamlandı (26 Kasım 2026).** Sonuçlar, ölçümler ve kapanış matrisi:
+[docs/audits/PHASE_06_IMPLEMENTATION_RESULTS.md](audits/PHASE_06_IMPLEMENTATION_RESULTS.md).
+Aşama 7 başlatılmadı.
+
 ## 8. Aşama 6 — İstemci performansı, depolama ve bellek
 
 **Öncelik:** P2/P3/P4  
 **Amaç:** Başlangıç yükünü, localStorage yazım maliyetini ve büyük dışa aktarmalarda bellek kullanımını azaltmak.
+
+### Uygulama durumu (26 Kasım 2026)
+
+| Madde | Durum | Ölçülen sonuç |
+|---|---|---|
+| **B-20** Bundle/lazy | ✅ Tamamlandı | İlk yükteki JS 1.360.643 B → 912.432 B (gzip 416.005 → 271.708); ana chunk 773,40 → 527,16 kB; `d3-graph` ön yüklemesi kalktı; 0 etkisiz dinamik import |
+| **B-21** Local persistence | ✅ Tamamlandı | 50 hızlı güncelleme 10.000 kayıtta 3.180 ms → 135 ms; kota kırpması kaldırıldı; gizlenme/kapanma flush'ı |
+| **B-23** Excel önizleme | ✅ Tamamlandı | Önizleme yanıtı 10.000 kayıtta 4,67 MB → 25,7 kB (sayfalı); geçersiz parametre 400; tam export eksiksiz |
+| **B-37** Export retention | ✅ Tamamlandı | Yaş/adet/boyut politikası, en yeni dosya korunur, `data/backups` ve kullanıcı dosyaları kapsam dışı |
+| **B-22** Öneri cache | ✅ Doğrulandı | Aşama 3 LRU/TTL/revizyon davranışı yerinde; regresyon yok, değişiklik yapılmadı |
 
 ### Yapılacak işler
 
@@ -370,43 +451,43 @@ Bu belge, bulguları tek seferde büyük bir değişiklik olarak uygulamak yerin
 |---|---:|---:|---|
 | B-01 | P1 | 1 | Alan düzeyinde eylem zamanı ve kayıpsız merge |
 | B-02 | P2 | 1 | Merge fonksiyonu doğrudan regresyon testleri |
-| B-03 | P1 | 3 | Öneri benzerlik algoritması performansı |
+| B-03 | P1 | 3 | ✅ Öneri benzerlik algoritması performansı |
 | B-04 | P2 | 1 | Profil/kayıt limitlerinde sessiz kırpmayı önleme |
 | B-05 | P1 | 1 | Yedekte tombstone ve silme bilgisini koruma |
 | B-06 | P1 | 1 | Çok profilli tam belge yedeği |
 | B-07 | P2 | 1 | Yedek sürümü doğrulama ve anlaşılır hata |
 | B-08 | P2 | 1 | Restore If-Match/409 |
 | B-09 | P2 | 1 | Tombstone duyarlı veri kaybı koruması |
-| B-10 | P3 | 2 | Kuyruk durumunun doğru modellenmesi |
-| B-11 | P2 | 3 | Film/dizi zevk kapsamlarının ayrıştırılması |
-| B-12 | P2 | 3 | Top-up yolunda tüm aday filtreleri |
-| B-13 | P3 | 3 | Ölü serverTaste sinyalini düzeltme |
+| B-10 | P3 | 2 | ✅ Kuyruk durumunun doğru modellenmesi |
+| B-11 | P2 | 3 | ✅ Film/dizi zevk kapsamlarının ayrıştırılması |
+| B-12 | P2 | 3 | ✅ Top-up yolunda tüm aday filtreleri |
+| B-13 | P3 | 3 | ✅ Ölü serverTaste sinyalini düzeltme |
 | B-14 | P1 | 1 | Test izolasyonu ve gerçek data/ koruması |
 | B-15 | P3 | 5 | Kaynak metni yerine davranışsal test |
 | B-16 | P2 | 5 | Büyük dosya, any, kopya helper ve App ayrıştırma |
 | B-17 | P2 | 5 | Core purity / port-adaptör sınırı |
 | B-18 | P3 | 5 | Kullanılmayan bağımlılık kararının verilmesi |
 | B-19 | P2 | 7 | Üretim bağımlılık açıkları |
-| B-20 | P2 | 6 | Bundle/chunk/lazy loading |
-| B-21 | P2 | 6 | localStorage performansı ve sessiz kırpma |
-| B-22 | P3 | 3 | Öneri cache sınırı |
-| B-23 | P4 | 6 | Excel/önizleme bellek yönetimi |
-| B-24 | P2 | 4 | Masaüstü sekme şeridi erişilebilirliği |
-| B-25 | P2 | 4 | Mobil sticky header yüksekliği |
-| B-26 | P3 | 4 | İşlem Merkezi görev eylemleri |
-| B-27 | P3 | 4 | Poster/kart/filtre görsel düzeni |
-| B-28 | P3 | 4 | Modal erişilebilirliği |
-| B-29 | P3 | 4 | Klavye handler yeniden bağlama |
-| B-30 | P2 | 2 | API 429/5xx retry/backoff |
+| B-20 | P2 | 6 | Bundle/chunk/lazy loading — ✅ Aşama 6 |
+| B-21 | P2 | 6 | localStorage performansı ve sessiz kırpma — ✅ Aşama 6 |
+| B-22 | P3 | 3 | ✅ Öneri cache sınırı |
+| B-23 | P4 | 6 | Excel/önizleme bellek yönetimi — ✅ Aşama 6 (sayfalı önizleme) |
+| B-24 | P2 | 4 | ✅ Masaüstü sekme şeridi erişilebilirliği |
+| B-25 | P2 | 4 | ✅ Mobil sticky header yüksekliği |
+| B-26 | P3 | 4 | ✅ İşlem Merkezi görev eylemleri |
+| B-27 | P3 | 4 | ✅ Poster/kart/filtre görsel düzeni |
+| B-28 | P3 | 4 | ✅ Modal erişilebilirliği |
+| B-29 | P3 | 4 | ✅ Klavye handler yeniden bağlama |
+| B-30 | P2 | 2 | ✅ API 429/5xx retry/backoff |
 | B-31 | P2 | 1 | Token dosyası atomik yazım ve izin |
 | B-32 | P3 | 7 | Public repo onayı / kişisel veri paylaşımı |
 | B-33 | P4 | 7 | CSP daraltma |
 | B-34 | P3 | 8 | Zevk Haritası canonical key |
 | B-35 | P4 | 8 | İlişki ağırlıkları kalibrasyonu |
 | B-36 | P3 | 9 | Restore sonrası geri alma |
-| B-37 | P3 | 6 ve 9 | Export retention ve bellek |
-| B-38 | P3 | 2 | Serileştirilmemiş saveData yolunu kapatma |
-| B-39 | P4 | 2 | Senkron sayaçlarının doğruluğu |
+| B-37 | P3 | 6 ve 9 | Export retention ve bellek — ✅ Aşama 6 (retention); bellek kalemi Aşama 9'da |
+| B-38 | P3 | 2 | ✅ Serileştirilmemiş saveData yolunu kapatma |
+| B-39 | P4 | 2 | ✅ Senkron sayaçlarının doğruluğu |
 
 ## 14. PR başına zorunlu teslim şablonu
 
@@ -437,8 +518,223 @@ Her aşama PR'ında aşağıdaki başlıklar doldurulmalıdır:
 - **Aşama 5–9** mimari, performans, güvenlik, grafik ve kurtarma işlerini tamamlar.
 - **Aşama 10** tüm değişikliklerin birlikte doğrulanmasıdır.
 
-Her PR merge edildikten sonra sonraki dal yeni `master` HEAD'inden açılır. Çakışma çözümünde eski dalı zorla `master` üzerine yazma; güncel `master` ile rebase/merge edip testleri tekrar çalıştır. P1 veri kaybı bulguları kapanmadan çok cihazlı senkronizasyon veya tam yedekleme güvenilir kabul edilmemelidir.
+Yürürlükteki model **tek uzun ömürlü dal + tek PR**'dır: aşamalar `remediation/full-project-remediation` dalında ve PR #65 içinde ayrı commit grupları olarak ilerler; her aşama için yeni dal veya yeni PR açılmaz. Çakışma çözümünde dalı zorla `master` üzerine yazma; güncel `master` ile merge edip testleri tekrar çalıştır. Bir aşama, kendi kabul kriterleri ve tüm kalite kapıları yeşil olmadan tamamlanmış sayılmaz. P1 veri kaybı bulguları kapanmadan çok cihazlı senkronizasyon veya tam yedekleme güvenilir kabul edilmemelidir.
 
 ---
 
-**İlk uygulanacak iş:** Aşama 0'ın güncel master üzerinde yeniden doğrulanması. Aşama 0 raporu tamamlanıp onaylandıktan sonra Aşama 1 ayrı PR olarak açılmalıdır. Bu yol haritası bir uygulama taahhüdü değil; her aşama kendi kanıtı ve kabul kriteriyle tamamlandığında ilerleyen kontrollü bir iş planıdır.
+**İlk uygulanacak iş:** Aşama 1 — veri güvenliği, test izolasyonu ve kayıpsız veri modeli. Aşama 0 tamamlanmış ve doğrulanmıştır; Aşama 1 aynı dal ve aynı PR üzerinde commit olarak ilerler. Bu yol haritası bir uygulama taahhüdü değil; her aşama kendi kanıtı ve kabul kriteriyle tamamlandığında ilerleyen kontrollü bir iş planıdır.
+
+## 16. Aşama 0 sonuçları ve güncel bulgu durumu
+
+**Tarih:** 21 Kasım 2026 · **Taban:** `c58ec49` · **Ayrıntı:** [PHASE_00_BASELINE_AUDIT.md](audits/PHASE_00_BASELINE_AUDIT.md)
+
+### 16.1 Durum değişiklikleri
+
+| Bulgu | Önceki varsayım | Aşama 0 sonucu | Eşleşme değişikliği |
+|---|---|---|---|
+| B-01 | "`addedAt` önceliği" | PARTIALLY_FIXED — kod `ratedAt → completedAt → watchedAt → addedAt → updatedAt` sırasına geçmiş; kalan kusur **yalnızca `updatedAt`'in `addedAt` altında kalması** (puan silme / durum geri alma tek başına kaybediliyor) | Aşama 1 (değişmedi), kabul kriteri S1/S3 senaryolarıyla netleşti |
+| B-02 | Doğrudan test yok | PARTIALLY_FIXED — `reconcileUserDataDocumentsLossless` üzerinden dolaylı kapsama var | Aşama 1 (değişmedi) |
+| B-03 | Karesel benzerlik | **FIXED** — ters indeks + önceden hesaplanmış özellikler; 5.000×5.000 skorlaması 57,6 s → 3,5 s | Aşama 3'ten çıkarıldı; benchmark ve `phase3-loved-similarity-index` testleri kalır |
+| B-11 | Tek/karışık profil | **FIXED** — `buildScopedTasteProfiles`: tür kapsamı ayrı, medya tercihi nötr, soğuk başlangıç işaretli | Aşama 3'ten çıkarıldı; `phase3-taste-scope` testleri kalır |
+| B-12 | Top-up filtreleri | **FIXED** — tek `filterEligibleSelectionEntries`; overflow da aynı kuralları uygular | Aşama 3'ten çıkarıldı; `phase3-selection-filters` testleri kalır |
+| B-13 | Ölü sinyal | **FIXED** — `serverTaste` kendi ağırlığıyla (`0.06`) skora katılır; açıklama gerçek katkıdan üretilir | Aşama 3'ten çıkarıldı; `phase3-server-taste-attribution` testleri kalır |
+| B-22 | Sınırsız cache | **FIXED** — LRU + TTL + revizyon/katalog/kapsam anahtarı + nesil (geç yazma koruması) | Aşama 3'ten çıkarıldı; `phase3-recommendation-cache` testleri kalır |
+| B-26 | Retry düğmesi etkin | **FIXED** (durum koşuluna bağlanmış) | Aşama 4'ten çıkarıldı; yalnızca regresyon testi kalır |
+| B-27 | Görsel taşmalar | NEEDS_INVESTIGATION — bu aşamada görsel koşum yapılmadı | Aşama 4'te ölçümle yeniden açılacak |
+| B-34 | Ham anahtar | **FIXED** (`relationshipNodeKey` → `makeMediaKey`, tercihler kanonik) | Aşama 8'den çıkarıldı; regresyon testi kalır |
+
+### 16.2 Yeni bulguların aşama eşleşmesi
+
+| ID | P | Başlık | Aşama |
+|---|---|---|---|
+| N-01 | P2 | Plan ↔ tek-PR talimatı çelişkisi | 0 (bu güncellemeyle çözüldü) |
+| N-02 | P3 | `npm test` dosya listesi elle yazılmış | 1 (bu turda tamamlandı — Aşama 5 ataması kaldırıldı) |
+| N-03 | P3 | Kurulumda install-script'ler engelli | 10 |
+| N-04 | P3 | Test concurrency belirsiz (B-14 ile birleşik) | 1 |
+| N-05 | P4 | Kökte denetim belgesi birikmesi | 0/5 |
+
+### 16.3 Aşama 1 kapsamı (doğrulanmış)
+
+Yalnızca aşağıdaki işler; her biri ayrı commit + regresyon testi:
+
+1. **B-14 + N-04:** `tests/cinema-kunye-backup-sync.test.mjs:232,346,507` çağrılarını `createDataStorage({ dataDir: tmpDir })` yap; taste testlerinde eksik `dataDir` kalmadığını doğrula; `CINETRACK_DATA_DIR` test guard'ı; `data/` öncesi/sonrası hash kontrolü.
+2. **B-01 + B-02:** Eylem zamanı politikası (puan temizleme ve durum geri alma `updatedAt` ile kazanabilsin) + `mergeTwoSavedItemsLossless` için S1–S6 doğrudan testleri.
+3. **B-05 + B-06 + B-07:** Yedek şeması v4 (tombstone + tüm profiller + aktif profil + revizyon) veya tam belge içe aktarımını açık onayla sınırlama; v4/ileri sürüm için açıklayıcı hata.
+4. **B-04:** Limit aşımında sessiz kırpma yerine ret/uyarı; geçersiz profil kimliğini karantinaya al.
+5. **B-08:** `POST /api/data/restore` → `If-Match`/`expectedRevision` + 409; istemci revizyon gönderir.
+6. **B-09:** `sudden_item_drop` hesabına tombstone ve profil kapsamı ekle.
+7. **B-31:** Token dosyasını `.tmp` + `fsync` + `rename` + `0600` ile yaz.
+
+**Aşama 1'e girmeyenler:** B-03 (Aşama 3), B-10/B-30/B-38/B-39 (Aşama 2), UI ve mimari işleri (Aşama 4–8). Kapsam kayması olmayacak.
+
+### 16.4 Aşama 0'da kapatılan konular
+
+- Tek PR modeli plana işlendi (N-01).
+- `master`'a doğrudan commit gönderilmedi; tüm çalışma `remediation/full-project-remediation` dalında.
+- Uygulama kodu, veri şeması ve kullanıcı verisi değiştirilmedi; test koşusunun `data/` üzerindeki etkisi ölçüldü ve yedek alındı.
+
+## 17. Aşama 1 sonuçları
+
+**Tarih:** 21 Kasım 2026 · **Dal:** `remediation/full-project-remediation` · **PR:** #65
+**Taban:** Aşama 0 `master` @ `c58ec49`; PR #65'in güncel tabanı `master` @ `9be501` · **Ayrıntı:** [PHASE_01_DATA_INTEGRITY.md](audits/PHASE_01_DATA_INTEGRITY.md), [PHASE_01_DATA_INTEGRITY_TESTS.md](audits/PHASE_01_DATA_INTEGRITY_TESTS.md)
+
+### 17.1 Kapanan bulgular
+
+| Bulgu | Çözüm özeti | Commit |
+|---|---|---|
+| B-14, N-02, N-04 | Test veri guard'ı (`dataDir` zorunlu), glob tabanlı test keşfi, `--test-concurrency=1`, `data/` hash kapısı | `3b2df4e` |
+| B-01, B-02 | Alan bazlı `status_changed_at`/`rating_changed_at` + kayıpsız merge, boş puan "görüş yok" | `3945592` |
+| B-05, B-06, B-07 | Yedek v4 tam belge (tüm profiller, tombstone, revizyon); v5+ açık hata; sessiz düşürme yok | `be36d94` |
+| B-08 | Restore `If-Match`/`expectedRevision`, 409/412/428, güvenlik snapshot'ı, atomik yazım | `5e54f7b` |
+| B-09, B-04 | Tombstone/profil duyarlı kayıp koruması; limit aşımında sessiz kırpma yerine 409 | `30eb3cb` |
+| B-31 | Token dosyası: tmp + fsync + rename, `0600`, symlink reddi, sıralı yazma | `f4cac57` |
+| A–G | Uçtan uca entegrasyon testleri (çoklu cihaz, silme, yedek, restore çakışması) | `83ce55f` |
+| B-14 | Sembolik bağlantıları bileşen bazında çözme, ilk kabul düzeltmesi | `78ee260` |
+| B-09, B-04 | Profil kapsamlı kayıp/tombstone karşılaştırması | `29420de` |
+| B-31 | Atomik token yazımında hata güvenliği (`beforeRename` kancası) | `fb4f1a5` |
+| B-14 | İki fazlı TOCTOU kapısı, `ENOENT` dışındaki hatalarda fail-closed, dir kimliği denetimi | `e948072` |
+| B-09 | `preferences.hidden` dâhil genel profil metaverisi koruması | `95db902` |
+| B-31 | Gerçek `rename(2)` hata testleri (`EISDIR`/`ENOTEMPTY`, `ENOENT`) | `eb95605` |
+
+### 17.2 Doğrulama
+
+- `npm run lint`: 0 hata / 0 uyarı
+- `npm run cycles`: döngü yok
+- `npm test`: **720/720** (112 yeni test; kabul düzeltmeleri dâhil), 67 dosya, 0 başarısız
+- `npm run test:taste`: **440/440**
+- `npm run build`: başarılı
+- `data/` hash'leri ve yedek sayısı Aşama 1 başından beri değişmedi
+- `npx playwright test`: **15/15** (Chromium; sistem kütüphaneleri `/tmp` altına çıkarılarak)
+
+### 17.3 Aşama 2'ye devredilenler
+
+- B-08 kabul kriterinin UI kısmı: restore 409 durumunun kullanıcıya gösterimi (Aşama 4).
+- Çok süreçli eşzamanlı yazma senaryosu (Aşama 2, B-38 ile birlikte).
+- Aşama 1 kapsamı dışında kalan bulgular plana uygun şekilde sonraki aşamalarda.
+
+### 17.4 Aşama 1 kabul düzeltmeleri
+
+**B-14 — Symlink ve TOCTOU koruması.** `path.resolve()` tek başına yeterli
+değildi. `canonicalizePath` artık yolu bileşen bileşen çözer (40 atlama sınırı,
+döngüde açık hata), var olmayan kuyruğu en yakın var olan üst dizin üzerinden
+doğrular, Windows'ta harf duyarsız karşılaştırır. Yalnızca `ENOENT` "yol yok"
+sayılır; `EACCES`/`EIO`/`ENOTDIR`/`ELOOP` doğrulamayı durdurur. Her yazma iki
+fazlı kapıdan geçer: `beginGuardedWrite` yolu doğrular ve dizin zincirinin
+`dev`+`inode` kimliğini alır, `completeGuardedWrite` asenkron snapshot/kilit
+beklemesinden hemen sonra yolu ve kimliği yeniden doğrular. Bu kapı
+`persistDocument*`, `writeDiskSnapshot*`, izole yansılar, SQLite birincil yazımı
+ve `taste-store` yazımlarının tamamında uygulanır. Node'da `openat`/`renameat`
+olmadığı için son doğrulama ile `rename(2)` arasındaki mikrosaniyelik pencere
+kapatılamaz; bu sınır belgelenmiştir. Kanıt: `phase1-test-isolation` 28 test
+(18 yeni: asenkron boşlukta symlink değişimi, aynı yolda farklı inode,
+`ENOTDIR`/`EACCES`, yazma sürerken değişim).
+
+**B-09/B-04 — Profil kapsamlı kayıp.** `collectDocumentLossStats` artık
+`profileId` bazlı `items`/`tombstones` haritaları ve zaman damgaları üretir;
+aynı içerik başka profilde dursa da silme görünür. Tombstone'lar anahtar anahtar
+karşılaştırılır; sayı sabitken farklı işaret kaybı ve profile taşıma yakalanır.
+Boş profil silinmesi metaveri varsa `profile_metadata_drop` ile reddedilir;
+metaveri kontrolü alan adlarını saymaz, tüm `preferences` (daha önce atlanan
+`hidden` dâhil), `settings` ve `cinemaKunye` için boş olmayan değer arar. Varsayılan
+`Profilim` adı metaveri sayılmaz, böylece boş profilin meşru silmesi engellenmez.
+Meşru silme (tombstone'lu veya daha yeni etkileşimle yeniden eklenen kayıt) ve
+tek kaydın bilinçli silinmesi engellenmez. Yeni kodlar `api.ts` ve
+`primary-data-repository.ts` çakışma listelerine eklendi. Kanıt:
+`phase1-data-loss-guard` 30 test (17 yeni; `hidden` dolu/boş ve providers dahil).
+
+**B-31 — Atomik yazma hata güvenliği.** `writeFileAtomicSecure` yalnızca
+test/denetim için `beforeRename` kancası aldı. Rename veya yazma hatasında eski
+hedef korunur, geçici dosya temizlenir, hedef yokken yarım dosya kalmaz, hata
+mesajı token içermez ve kuyruk kilitlenmez. Yalnızca kancanın fırlattığı yapay
+hata değil, **gerçek `rename(2)` hataları** da test edilir: hedef dizinle işgal
+edilirse `EISDIR`/`ENOTEMPTY`, geçici dosya kaybolursa `ENOENT`. Kanıt:
+`phase1-atomic-token` 16 test (8 yeni, gerçek dosya sistemi dâhil).
+
+**Kalan risk:** Çok süreçli atomik yazma/dağıtık kilit garanti edilmez; tombstone
+yazmayan istemcide tek kayıplık profil boşalması meşru silmeden ayırt edilemez.
+TOCTOU korumasında son doğrulama ile `rename(2)` arasındaki pencere Node'un
+`openat`/`renameat` sunmaması nedeniyle kapatılamaz; kapatılan şey uzun asenkron
+beklemelerdir.
+
+### 17.5 Aşama 2 — uygulama ve doğrulama
+
+Aşama 2, Aşama 1'in veri güvenliği temelini bozmadan tamamlandı. Ayrıntılı mimari
+kararlar, test kanıtı ve sınırlar için [`docs/audits/PHASE_02_SYNC_RELIABILITY.md`](audits/PHASE_02_SYNC_RELIABILITY.md).
+
+| Bulgu | Çözüm | Ana dosyalar |
+|---|---|---|
+| B-10 | FIFO kuyruk durum modeli, deneme günlüğü, çökme kurtarma, `sync-state` v2 | `core/sync-operation-queue.ts`, `server/sync-attempt-journal.ts`, `server/persistent-store.ts` |
+| B-38 | Kuyruk + süreçler arası dosya kilidi, 409 çakışma, fail-closed senkron yazma | `server/sync-file-lease.ts`, `server/github-bidirectional-sync.ts`, `server/storage.ts`, `server/app.ts` |
+| B-39 | Öncesi/sonrası belgelerden türetilen sayaçlar, `recordsSkipped` | `core/sync-counters.ts`, `core/sync-display.ts` |
+| B-30 | İstemci retry/backoff + Retry-After, yalnızca idempotent metotlar | `services/http-retry.ts`, `services/api-client.ts` |
+
+**Doğrulama:** lint 0/0, cycles 0, `npm test` **754/754** (72 dosya), `test:taste`
+**440/440**, build başarılı, Playwright **15/15**, `data/` sha256 değişmedi.
+
+**Şema/migration:** Kullanıcı veri şeması değişmedi. Yalnızca yardımcı
+`data/sync-state.json` biçimine `syncStateVersion: 2` eklendi; v1 dosyaları okunur,
+gelecek sürümler yok sayılır. Kilit (`data/locks/`) ve deneme günlüğü
+(`data/sync-attempt.json`) yardımcı dosyalardır; silinmeleri veri kaybına yol açmaz.
+
+**Bilinçli sınırlar:** kuyruk süreç içidir; çoklu instance için yalnızca advisory dosya
+kilidi vardır. Bekleyen istekler çökme sonrası otomatik yeniden oluşturulmaz; istemci
+yeniden dener. Canlı GitHub/TMDB/TVDB doğrulaması kimlik bilgisi yokluğunda koşulmadı.
+
+### 17.6 Aşama 3 — uygulama ve doğrulama
+
+Aşama 3, tek öneri hattını ve Aşama 1–2 kazanımlarını bozmadan tamamlandı.
+Ayrıntılı mimari kararlar, ölçüm tablosu, test kanıtı ve sınırlar için
+[`docs/audits/PHASE_03_RECOMMENDATION_ENGINE.md`](audits/PHASE_03_RECOMMENDATION_ENGINE.md).
+
+| Bulgu | Çözüm | Ana dosyalar |
+|---|---|---|
+| B-03 | Önceden hesaplanmış sevilen yapım özellikleri + tür/oyuncu/yönetmen/koleksiyon/kelime ters indeksi + kanıtlı hızlı yol, birebir sonuç | `core/loved-similarity.ts`, `core/cinetrack-core.ts`, `scripts/bench-recommendations.mjs` |
+| B-11 | `buildScopedTasteProfiles`: film/dizi kapsamı ayrı, nötr medya tercihi, işaretli soğuk başlangıç | `core/cinetrack-core.ts`, `app/catalog-loader.ts` |
+| B-12 | Tek uygunluk fonksiyonu; ana seçim + overflow aynı filtreleri uygular | `modules/recommendations/pipeline.ts` |
+| B-13 | `serverTaste` açık ağırlıkla gerçek katkı; açıklama gerçek katkıdan | `core/cinetrack-core.ts` |
+| B-22 | LRU + TTL + revizyon/katalog/kapsam anahtarı + nesil koruması | `modules/recommendations/RecommendationService.ts` |
+
+**Performans:** 1.000×500 skorlaması 1.115 ms → 158 ms (7,1×); 5.000×5.000
+57.636 ms → 3.491 ms (16,5×); skor uyuşmazlığı 0, ilk-20 örtüşmesi 20/20.
+Üretim boyutu (~1.000 aday, ~500 sevilen) ~80 ms olduğu için Worker eklenmedi.
+
+**Doğrulama:** lint 0/0, cycles 0, `npm test` **793/793** (72 dosya; +39 yeni),
+`test:taste` **440/440**, build başarılı, `data/` sha256 değişmedi (15 dosya).
+Playwright E2E bu sandbox'ta Chromium/Skia font katmanı hatası nedeniyle koşulamadı;
+aynı hata değişiklik öncesi commit'te de oluştu (ortam kaynaklı), CI'da koşulmalı.
+
+**Şema/migration:** Kullanıcı veri şeması değişmedi. `LovedItemFeatures.genreKeys`
+türetilmiş ve isteğe bağlı bir alandır; kalıcı veriye yazılmaz. Eski türetilmiş önbellek
+ve Zevk Haritası dosyaları okunmaya devam eder.
+
+**Aşama 1, Aşama 2 ve Aşama 3 tamamlandı; Aşama 4 başlatılmadı.**
+
+### 17.7 Aşama 4 — uygulama ve doğrulama
+
+Aşama 4, iş mantığı ve veri sözleşmesi değiştirilmeden tamamlandı: yalnızca sunum
+katmanı (tasarım token'ları, kabuk, kart/filtre düzeni, dialog ve kısayol altyapısı,
+İşlem Merkezi eylem politikası) yenilendi. Ayrıntılı tasarım envanteri, bulgu bazlı
+kanıt ve responsive matris: [`docs/audits/PHASE_04_UI_UX.md`](audits/PHASE_04_UI_UX.md).
+
+| Bulgu | Çözüm | Ana dosyalar |
+|---|---|---|
+| B-24 | Tek satır kabuk + 7 sekme; <1440 px ikon modu, `aria-current`, mobil 5 öğeli dock + sheet | `src/components/Header.tsx`, `src/app/navigation.ts`, `src/presentation/layouts/MobileLayout.tsx` |
+| B-25 | 64/56 px header, kompakt ikincil eylemler, safe-area, içerik padding'i token'a bağlı | `style.css`, `src/styles/tokens.css` |
+| B-26 | Görev durumu → eylem politikası tek kaynak; kalıcı hata gerekçesi; `allSettled` yükleme | `src/modules/operations/task-actions.ts`, `OperationsSection.tsx` |
+| B-27 | Poster oranı, rozet yerleşimi, `auto-fill` grid, kaydırılabilir filtre, CLS önlemi | `style.css`, `src/styles/workspace.css` |
+| B-28 | Tek dialog hook'u: odak tuzağı, Escape, odak dönüşü, scroll lock, `inert`, yığın | `src/hooks/useDialogAccessibility.ts` |
+| B-29 | Ref'li tek klavye dinleyicisi + overlay/metin girişi guard'ı | `src/hooks/useKeyboardShortcuts.ts`, `src/utils/overlay-guard.ts` |
+
+**Doğrulama:** lint 0 hata/0 uyarı, cycles 0, `npm test` **817/817** (803 → +14),
+`test:taste` **440/440**, build başarılı, `data/` sha256 değişmedi (15 dosya).
+Responsive matris 360–1920 px: yatay taşma yok, nav kesilmesi 0. axe WCAG 2.1 AA:
+1440/768/360 px'te 0 kritik / 0 ciddi. Playwright tam suite yerelde **31/31 geçti**
+(eksik sistem kütüphaneleri kullanıcı alanına indirilerek çalıştırıldı); koşu iki
+gerçek kusur buldu — `.ws-stats`/`.ws-mini-grid` `aria-required-children` ve
+"Yeniden dene"/"İptal" düğmelerinde `label-content-name-mismatch` — ikisi de
+düzeltildi. Tek satırlık hata metni artık özet ile teknik ayrıntıda tekrarlanmıyor.
+
+**Şema/migration:** Kullanıcı veri şeması değişmedi; yeni alan veya migration yok.
+`data/` biçimi ve `schemaVersion` aynı kaldı.
+
+**Aşama 1–4 tamamlandı; Aşama 5 başlatılmadı.** (Güncel durum: Aşama 5 ve Aşama 6 tamamlandı; Aşama 7 başlatılmadı.)

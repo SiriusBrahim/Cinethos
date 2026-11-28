@@ -25,6 +25,12 @@ import {
   type OperationsTaskStatus,
   type PipelineHealth,
 } from '../../services/operations-api.ts';
+import {
+  TASK_STATUS_HUMAN,
+  describeTaskFailure,
+  explainTaskActionError,
+  getTaskActionAvailability,
+} from './task-actions.ts';
 
 /**
  * İşlem Merkezi.
@@ -40,15 +46,6 @@ import {
  */
 
 const POLL_INTERVAL_MS = 12_000;
-
-const TASK_STATUS_LABELS: Record<OperationsTaskStatus, string> = {
-  pending: 'Bekliyor',
-  processing: 'Çalışıyor',
-  completed: 'Tamamlandı',
-  retry_wait: 'Yeniden deneme',
-  failed: 'Başarısız',
-  cancelled: 'İptal',
-};
 
 const TASK_STATUS_TONES: Record<OperationsTaskStatus, BadgeTone> = {
   pending: 'neutral',
@@ -81,10 +78,6 @@ function formatTime(value: string | null): string {
   });
 }
 
-function isActionable(task: OperationsTask): boolean {
-  return task.status !== 'processing';
-}
-
 export interface OperationsSectionProps {
   profileId: string;
   onOpenBackup?: () => void;
@@ -100,21 +93,44 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+  const [taskErrors, setTaskErrors] = useState<
+    Record<string, { message: string; technical: string; permanent: boolean }>
+  >({});
   const mountedRef = useRef(true);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const [nextSnapshot, nextHealth, nextIntel] = await Promise.all([
+        // B-26: uçlar birbirinden bağımsız yüklenir. Görev kuyruğu okunamazsa
+        // modül sağlığı ve içerik zekâsı yine gösterilir.
+        const [snapshotResult, healthResult, intelResult] = await Promise.allSettled([
           fetchOperationsSnapshot({ status: statusFilter, limit: 200, ...(signal ? { signal } : {}) }),
           fetchPipelineHealth(signal),
-          fetchContentIntelligenceSummary(signal).catch(() => null),
+          fetchContentIntelligenceSummary(signal),
         ]);
         if (!mountedRef.current) return;
-        setSnapshot(nextSnapshot);
-        setHealth(nextHealth);
-        setIntel(nextIntel);
-        setError(null);
+
+        if (snapshotResult.status === 'fulfilled') {
+          const nextSnapshot = snapshotResult.value;
+          setSnapshot(nextSnapshot);
+          setError(null);
+          setTaskErrors((prev) => {
+            const present = new Set(nextSnapshot.tasks.map((task) => task.taskId));
+            const next: typeof prev = {};
+            for (const [taskId, value] of Object.entries(prev)) {
+              if (present.has(taskId)) next[taskId] = value;
+            }
+            return next;
+          });
+        } else {
+          const reason = snapshotResult.reason;
+          if (reason?.name !== 'AbortError') {
+            setError(explainTaskActionError(reason).message);
+          }
+        }
+
+        setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null);
+        setIntel(intelResult.status === 'fulfilled' ? intelResult.value : null);
       } catch (err: any) {
         if (err?.name === 'AbortError' || !mountedRef.current) return;
         setError(err?.message || 'Görev kuyruğu okunamadı.');
@@ -150,12 +166,23 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
   const runAction = useCallback(
     async (task: OperationsTask, action: 'retry' | 'cancel') => {
       setBusyTaskId(task.taskId);
+      setTaskErrors((prev) => {
+        if (!prev[task.taskId]) return prev;
+        const next = { ...prev };
+        delete next[task.taskId];
+        return next;
+      });
       try {
         if (action === 'retry') await retryOperationsTask(task.taskId);
         else await cancelOperationsTask(task.taskId);
         await load();
       } catch (err: any) {
-        if (mountedRef.current) setError(err?.message || 'Görev işlemi başarısız oldu.');
+        if (!mountedRef.current) return;
+        const explanation = explainTaskActionError(err);
+        setTaskErrors((prev) => ({ ...prev, [task.taskId]: explanation }));
+        // Kalıcı (4xx) hatalarda liste de tazelenir: düğme durumu sunucu
+        // durumuyla yeniden eşleşsin.
+        if (explanation.permanent) void load();
       } finally {
         if (mountedRef.current) setBusyTaskId(null);
       }
@@ -208,7 +235,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
         />
 
         {counts && (
-          <div className="ws-stats" role="list" aria-label="Görev durum sayaçları">
+          <div className="ws-stats" role="group" aria-label="Görev durum sayaçları">
             <StatTile label="Bekleyen" value={counts.pending} />
             <StatTile label="Çalışan" value={counts.processing} tone="info" />
             <StatTile label="Yeniden deneme" value={counts.retry_wait} tone="warn" />
@@ -257,7 +284,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
               onClick={() => setStatusFilter(status)}
               aria-pressed={statusFilter === status}
             >
-              {TASK_STATUS_LABELS[status]}
+              {TASK_STATUS_HUMAN[status]}
             </button>
           ))}
         </Toolbar>
@@ -286,7 +313,14 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => (
+                {tasks.map((task) => {
+                  const actionError = taskErrors[task.taskId];
+                  const availability = getTaskActionAvailability(task, {
+                    busy: busyTaskId === task.taskId,
+                    blocked: Boolean(actionError?.permanent),
+                  });
+                  const failure = describeTaskFailure(task.lastError);
+                  return (
                   <tr key={task.taskId}>
                     <td data-label="Görev">
                       <span className="ws-table-title">{handlerLabel(task.handlerId)}</span>
@@ -297,7 +331,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
                     </td>
                     <td data-label="Durum">
                       <Badge tone={TASK_STATUS_TONES[task.status]}>
-                        {TASK_STATUS_LABELS[task.status]}
+                        {TASK_STATUS_HUMAN[task.status]}
                       </Badge>
                       {task.status === 'retry_wait' && task.nextRetryAt && (
                         <span className="ws-table-sub">
@@ -310,11 +344,26 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
                     </td>
                     <td data-label="Son hata">
                       {task.lastError ? (
-                        <span className="ws-error-text" title={task.lastError}>
-                          {task.lastError}
-                        </span>
+                        <details className="ws-error-details">
+                          <summary className="ws-error-text">{failure.summary}</summary>
+                          {failure.technical && (
+                            <pre className="ws-error-technical">{failure.technical}</pre>
+                          )}
+                        </details>
                       ) : (
                         <span className="ws-hint">—</span>
+                      )}
+                      {actionError && (
+                        <p
+                          className="ws-table-sub ws-error-text"
+                          role="status"
+                          id={`task-error-${task.taskId}`}
+                        >
+                          {actionError.message}
+                          {actionError.technical && (
+                            <span className="ws-error-technical"> {actionError.technical}</span>
+                          )}
+                        </p>
                       )}
                     </td>
                     <td data-label="Başlangıç / Bitiş">
@@ -325,27 +374,32 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
                       <div className="ws-row-actions">
                         <ActionButton
                           onClick={() => void runAction(task, 'retry')}
-                          disabled={!isActionable(task) || busyTaskId === task.taskId}
-                          ariaLabel={`${handlerLabel(task.handlerId)} görevini yeniden dene`}
+                          disabled={!availability.retry}
+                          ariaLabel={`Yeniden dene: ${handlerLabel(task.handlerId)}`}
                         >
                           Yeniden dene
                         </ActionButton>
                         <ActionButton
                           variant="danger"
                           onClick={() => void runAction(task, 'cancel')}
-                          disabled={
-                            task.status === 'completed' ||
-                            task.status === 'cancelled' ||
-                            busyTaskId === task.taskId
-                          }
-                          ariaLabel={`${handlerLabel(task.handlerId)} görevini iptal et`}
+                          disabled={!availability.cancel}
+                          ariaLabel={`İptal: ${handlerLabel(task.handlerId)}`}
                         >
                           İptal
                         </ActionButton>
                       </div>
+                      {(!availability.retry && availability.retryReason) ||
+                      (!availability.cancel && availability.cancelReason) ? (
+                        <p className="ws-table-sub">
+                          {!availability.retry && availability.retryReason
+                            ? availability.retryReason
+                            : availability.cancelReason}
+                        </p>
+                      ) : null}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -365,7 +419,7 @@ export const OperationsSection: React.FC<OperationsSectionProps> = ({ profileId,
             }
           />
           {intel ? (
-            <div className="ws-mini-grid" role="list" aria-label="İçerik zekâsı özeti">
+            <div className="ws-mini-grid" role="group" aria-label="İçerik zekâsı özeti">
               <span>İndekslenen</span>
               <strong className="tabular-nums">{intel.completed}</strong>
               <span>Bekleyen</span>

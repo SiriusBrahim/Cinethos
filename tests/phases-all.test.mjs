@@ -1,4 +1,5 @@
 import test from 'node:test';
+import '../src/services/core-adapters.ts'; // F5-04: çekirdek portlarının adaptörleri
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -60,6 +61,19 @@ import {
 } from '../src/core/exporters.ts';
 import { createCineTrackApp } from '../src/server/app.ts';
 import { validateTmdbResponseShape } from '../src/services/api.ts';
+import {
+  callCount,
+  constInitializerNumber,
+  constInitializerText,
+  importedNamesFrom,
+  numericLiteralValues,
+  parseFile,
+  stringLiterals,
+} from './helpers/source-ast.mjs';
+import { renderMarkup, renderText } from './helpers/render-tree.mjs';
+import { UI_COPY } from '../src/app/ui-copy.ts';
+import { shouldHideSecondaryToolbar } from '../src/app/controls-state.ts';
+import { ActorsSubtabsBar } from '../src/components/ui-states.tsx';
 import { formatMatchBadge } from '../src/i18n/index.ts';
 import {
   clearOfflineSyncSnapshot,
@@ -541,6 +555,8 @@ test('Faz 4 & 5: HTTP 409 çakışma, ani veri düşüşü koruması, 413 boyut 
           headers: {
             'Content-Type': 'application/json',
             'X-CineTrack-Token': 'gizli-test-token',
+            // Aşama 1 (B-08): restore artık revizyon ön koşulu ister.
+            'If-Match': '"rev-3"',
           },
           body: JSON.stringify({ backupId: snapshotWith8.id }),
         });
@@ -869,16 +885,22 @@ test('Yerel mimari güvenceleri: bun.lock yoktur, VITE_ sırrı yoktur, CINETRAC
   assert.equal(envExample.includes('CINETRACK_TRUST_PROXY=false'), true);
   assert.equal(envExample.includes('CINETRACK_ALLOW_PUBLIC_CATALOG_SYNC=false'), true);
 
-  const apiTs = fs.readFileSync(path.join(repoRoot, 'src/services/api.ts'), 'utf8');
-  assert.equal(apiTs.includes('VITE_CINETRACK_TOKEN'), false, 'İstemci kodunda VITE_CINETRACK_TOKEN bulunmamalı');
+  // F5.1-04: metin araması yerine AST string literal taraması.
+  const apiSource = parseFile(path.join(repoRoot, 'src/services/api.ts'));
+  assert.equal(
+    stringLiterals(apiSource).has('VITE_CINETRACK_TOKEN'),
+    false,
+    'İstemci kodunda VITE_CINETRACK_TOKEN bulunmamalı'
+  );
 
   // 3. server.ts içinde CINETRACK_HOST = '127.0.0.1' ve tek kaynaklı DEFAULT_MAX_DATA_BYTES (25 MiB) sabiti korunmalı
-  const serverTs = fs.readFileSync(path.join(repoRoot, 'server.ts'), 'utf8');
-  const limitsTs = fs.readFileSync(path.join(repoRoot, 'src/core/limits.ts'), 'utf8');
-  assert.ok(serverTs.includes("const CINETRACK_HOST = '127.0.0.1'"), 'CINETRACK_HOST sabiti 127.0.0.1 olmalı');
-  assert.ok(serverTs.includes('const maxDataBytes = DEFAULT_MAX_DATA_BYTES;'), 'server.ts tek kaynaklı DEFAULT_MAX_DATA_BYTES kullanmalı');
-  assert.ok(limitsTs.includes('export const DEFAULT_MAX_DATA_BYTES = 25 * 1024 * 1024;'), 'DEFAULT_MAX_DATA_BYTES 25 MiB olmalı');
-  assert.equal(serverTs.includes('CINETRACK_MAX_DATA_BYTE'), false, 'maxDataBytes ortam değişkenine bağlanmamalı');
+  // F5.1-04: metin araması yerine AST sabit/ifade denetimi.
+  const serverSource = parseFile(path.join(repoRoot, 'server.ts'));
+  const limitsSource = parseFile(path.join(repoRoot, 'src/core/limits.ts'));
+  assert.equal(constInitializerText(serverSource, 'CINETRACK_HOST'), "'127.0.0.1'", 'CINETRACK_HOST sabiti 127.0.0.1 olmalı');
+  assert.equal(constInitializerText(serverSource, 'maxDataBytes'), 'DEFAULT_MAX_DATA_BYTES', 'server.ts tek kaynaklı DEFAULT_MAX_DATA_BYTES kullanmalı');
+  assert.equal(constInitializerNumber(limitsSource, 'DEFAULT_MAX_DATA_BYTES'), 25 * 1024 * 1024, 'DEFAULT_MAX_DATA_BYTES 25 MiB olmalı');
+  assert.equal(stringLiterals(serverSource).has('CINETRACK_MAX_DATA_BYTE'), false, 'maxDataBytes ortam değişkenine bağlanmamalı');
 
   // 4. Sıfır güvenlik seçeneği ile (varsayılan localhost) token istemeden yazma ve hız sınırı olmadan TMDB erişimi çalışmalı
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinetrack-zeroenv-'));
@@ -1278,13 +1300,38 @@ test("Keşfet - 'Listemdekileri Gizle' filtresi: Gündemdekiler, Yüksek Puanlı
   assert.equal(isMediaRegisteredInUserProfile({ id: 501, media_type: 'movie' }, { savedItems, preferences, tasteMap }), true);
   assert.equal(isMediaRegisteredInUserProfile({ id: 509, media_type: 'movie' }, { savedItems, preferences, tasteMap }), false);
 
-  // Controls.tsx ve App.tsx entegrasyon kontrolü
+  // Controls.tsx ve görüntüleme hattı entegrasyon kontrolü (F5.1-04: AST).
   const repoRoot = path.resolve(import.meta.dirname, '..');
-  const controlsTsx = fs.readFileSync(path.join(repoRoot, 'src/components/Controls.tsx'), 'utf8');
-  const appTsx = fs.readFileSync(path.join(repoRoot, 'src/App.tsx'), 'utf8');
-  assert.ok(controlsTsx.includes('Listemdekileri Gizle'), 'Controls.tsx içinde Listemdekileri Gizle etiketi bulunmalı');
-  assert.ok(controlsTsx.includes('type="checkbox"'), 'Controls.tsx içinde checkbox kontrolü bulunmalı');
-  assert.ok(appTsx.includes('filterHiddenUserRegisteredItems'), 'App.tsx veri katmanında filterHiddenUserRegisteredItems kullanmalı');
+  // F5.2-01: ikincil çubuğun gizlenme kararı saf fonksiyonun davranışıyla doğrulanır.
+  assert.equal(
+    shouldHideSecondaryToolbar('list', 'actors'),
+    true,
+    'Favori Oyuncular sekmesinde ikincil filtre çubuğu gizlenmeli'
+  );
+  assert.equal(shouldHideSecondaryToolbar('list', 'all'), false);
+  assert.equal(shouldHideSecondaryToolbar('discover', 'actors'), false);
+  const controlsTsx = parseFile(path.join(repoRoot, 'src/components/Controls.tsx'));
+  assert.ok(
+    importedNamesFrom(controlsTsx, 'app/controls-state.ts').includes('shouldHideSecondaryToolbar'),
+    'Controls.tsx gizleme kararını ortak yardımcıdan almalı'
+  );
+  assert.ok(
+    stringLiterals(controlsTsx).has('Listemdekileri Gizle'),
+    'Controls.tsx içinde Listemdekileri Gizle etiketi bulunmalı'
+  );
+  assert.ok(
+    stringLiterals(controlsTsx).has('checkbox'),
+    'Controls.tsx içinde checkbox kontrolü bulunmalı'
+  );
+  const displayPipeline = parseFile(path.join(repoRoot, 'src/app/displayed-items.ts'));
+  assert.ok(
+    importedNamesFrom(displayPipeline, 'core/cinetrack-core.ts').includes('filterHiddenUserRegisteredItems'),
+    'Görüntüleme hattı filterHiddenUserRegisteredItems kullanmalı'
+  );
+  assert.ok(
+    callCount(displayPipeline, 'filterHiddenUserRegisteredItems') > 0,
+    'Görüntüleme hattı filterHiddenUserRegisteredItems çağırmalı'
+  );
 });
 
 // ============================================================================
@@ -1292,9 +1339,10 @@ test("Keşfet - 'Listemdekileri Gizle' filtresi: Gündemdekiler, Yüksek Puanlı
 // ============================================================================
 test('>2 MB Yedek Yükleme Desteği: 2 MB üzeri büyük yedek dosyaları istemci ve sunucu katmanlarında kesintisiz kabul edilir ve kaydedilir', async () => {
   const repoRoot = path.resolve(import.meta.dirname, '..');
-  const profileModalTsx = fs.readFileSync(path.join(repoRoot, 'src/components/ProfileModal.tsx'), 'utf8');
+  // F5.2-01: kaynak metni yerine AST sayısal sabitleri denetlenir.
+  const profileModalTsx = parseFile(path.join(repoRoot, 'src/components/ProfileModal.tsx'));
   assert.equal(
-    profileModalTsx.includes('2_000_000'),
+    numericLiteralValues(profileModalTsx).some((value) => value >= 2_000_000),
     false,
     'ProfileModal.tsx içinde 2 MB dosya boyutu engeli bulunmamalı'
   );
@@ -1675,18 +1723,28 @@ test('Listem > Favori Oyuncular 2 Sekmeli Yapı (Oyuncular & Öneriler) ve Taş�
   // UI bileşen doğrulaması: Controls.tsx Favori Oyuncular sekmesinde alt filtre barını gizlemeli,
   // MediaGrid.tsx ise 'Oyuncular' ve 'Öneriler' 2 sekmeli yapıyı ve Öneriler alt barını sunmalı
   const repoRoot = path.resolve(import.meta.dirname, '..');
-  const controlsTsx = fs.readFileSync(path.join(repoRoot, 'src/components/Controls.tsx'), 'utf8');
-  const mediaGridTsx = fs.readFileSync(path.join(repoRoot, 'src/components/MediaGrid.tsx'), 'utf8');
 
+  // F5.2-01: sekme etiketleri bileşenin gerçek render çıktısından doğrulanır.
+  const actorsTree = ActorsSubtabsBar({
+    activeSubTab: 'actors',
+    favoriteCount: favoriteActors.length,
+    onSubTabChange: () => {},
+  });
+  const actorsText = renderText(actorsTree);
+  assert.ok(actorsText.includes(UI_COPY.actors.actorsTab), 'Oyuncular sekmesi render edilmeli');
   assert.ok(
-    controlsTsx.includes("const hideSecondaryToolbar = tab === 'list' && listStatus === 'actors';"),
-    'Controls.tsx Favori Oyuncular sekmesinde ikincil filtre barını ayırmalı'
+    actorsText.includes(UI_COPY.actors.recommendationsTab),
+    'Öneriler sekmesi render edilmeli'
   );
-  assert.ok(mediaGridTsx.includes('actors-subtabs-bar'), 'MediaGrid.tsx içinde 2 sekmeli Oyuncular/Öneriler barı bulunmalı');
-  assert.ok(mediaGridTsx.includes('Oyuncular'), 'MediaGrid.tsx içinde Oyuncular sekmesi bulunmalı');
-  assert.ok(mediaGridTsx.includes('Öneriler'), 'MediaGrid.tsx içinde Öneriler sekmesi bulunmalı');
+  assert.ok(renderMarkup(actorsTree).includes('actors-subtabs-bar'));
+
+  const mediaGridTsx = parseFile(path.join(repoRoot, 'src/components/MediaGrid.tsx'));
   assert.ok(
-    mediaGridTsx.includes('actors-recommendations-toolbar'),
+    importedNamesFrom(mediaGridTsx, './ui-states.tsx').includes('ActorsSubtabsBar'),
+    'MediaGrid.tsx 2 sekmeli çubuğu ortak bileşenden kullanmalı'
+  );
+  assert.ok(
+    [...stringLiterals(mediaGridTsx)].some((value) => value.includes('actors-recommendations-toolbar')),
     'MediaGrid.tsx içinde Öneriler sekmesine taşınmış filtre alt barı bulunmalı'
   );
 });

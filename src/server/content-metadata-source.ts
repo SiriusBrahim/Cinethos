@@ -13,6 +13,9 @@
 import path from 'node:path';
 import type { MediaKind } from '../contracts/index.ts';
 import { sanitizeRawContentInput } from '../modules/content/content-metadata-processor.ts';
+import { asExternalRecord } from './external-json.ts';
+import type { ContentMetadataPort } from '../modules/content/ports.ts';
+import { hasSufficientDetail } from '../modules/content/metadata-detail.ts';
 import { readJsonFileWithRecoveryAsync } from './atomic-json.ts';
 import { readTasteMetadataCache } from './taste-metadata-hydrator.ts';
 
@@ -60,28 +63,13 @@ export interface ContentMetadataSourceOptions {
 
 const DEFAULT_FETCH_TIMEOUT_MS = 8000;
 
-export function hasSufficientDetail(payload: Record<string, unknown> | null | undefined): boolean {
-  if (!payload) return false;
-  const hasTitle =
-    (typeof payload.title === 'string' && payload.title.trim().length > 0) ||
-    (typeof payload.name === 'string' && payload.name.trim().length > 0);
-  const hasGenres =
-    (Array.isArray(payload.genre_ids) && payload.genre_ids.length > 0) ||
-    (Array.isArray(payload.genreIds) && payload.genreIds.length > 0) ||
-    (Array.isArray(payload.genres) && payload.genres.length > 0);
-  const hasOverview = typeof payload.overview === 'string' && payload.overview.trim().length > 0;
-  const hasKeywords =
-    (Array.isArray(payload.keywords) && payload.keywords.length > 0) ||
-    Boolean(
-      payload.keywords &&
-        typeof payload.keywords === 'object' &&
-        (Array.isArray((payload.keywords as Record<string, unknown>).keywords) ||
-          Array.isArray((payload.keywords as Record<string, unknown>).results))
-    );
-  return hasTitle && hasGenres && hasOverview && hasKeywords;
-}
+/**
+ * Yeterlilik yüklemi tek kaynaktan gelir: `modules/content/metadata-detail.ts`.
+ * Eski import yolu korunur (sunucu → modules yönü, mimari kurala uygun).
+ */
+export { hasSufficientDetail } from '../modules/content/metadata-detail.ts';
 
-export class ContentMetadataSource {
+export class ContentMetadataSource implements ContentMetadataPort {
   private readonly dataDir: string;
   private readonly tmdbApiKey: string;
   private readonly fetchTimeoutMs: number;
@@ -167,7 +155,9 @@ export class ContentMetadataSource {
       if (!res.ok) {
         return null;
       }
-      const raw = (await res.json()) as Record<string, unknown>;
+      // F5-09: dış JSON güvenilir tip değildir; nesne değilse veri yok sayılır.
+      const raw = asExternalRecord(await res.json());
+      if (!raw) return null;
       return sanitizeRawContentInput({
         ...raw,
         media_type: mediaType,

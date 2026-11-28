@@ -1,15 +1,17 @@
 /**
  * MIA Faz 3 — UI yazma yolları ve tek-kaynak/paralel-sistem denetimi (görev §2-E).
  *
- * Statik kaynak denetimi; uygulama kodunu DEĞİŞTİRMEZ, ihlal bulunursa raporlar:
+ * F5.1-04: Bu suite artık kaynak metnini regex ile eşlemez; TypeScript AST
+ * üzerinden import/export/tanım/çağrı yapısını doğrular. Böylece çok satırlı
+ * import'lar, takma adlar ve yorum içindeki metinler yanlış sonuç üretmez.
+ *
+ * Korunan güvenceler:
  *  - `useItemActions` kayıt üretimini `modules/library/operations.ts`'e devretmeli;
  *    yerel kopya (ikinci kural seti) bulundurmamalı; uyumluluk re-export'ları kalmalı.
- *  - `buildLibraryItem` / `pickContentFields` tek kaynakta tanımlı olmalı
- *    (paralel uygulama çoğaltması yasak).
+ *  - `buildLibraryItem` / `pickContentFields` tek kaynakta tanımlı olmalı.
  *  - `app.ts` servisleri modül fabrikalarından bağlamalı; inline sınıf kopyası olmamalı.
- *  - Faz 3 modülleri paralel Repository/EventBus/ModuleRegistry/SQLite sistemi
- *    KURMAMALI (bağımlılık enjeksiyonu zorunlu).
- *  - Library Manager yalnızca repository üzerinden yazar (doğrudan dosya/DB erişimi yok).
+ *  - Faz 3 modülleri paralel Repository/EventBus/ModuleRegistry/SQLite sistemi KURMAMALI.
+ *  - Library Manager yalnızca repository üzerinden yazar (doğrudan dosya/DB/ağ erişimi yok).
  *  - `ILibraryService` / `IContentService` sözleşmeleri tek yerde tanımlı olmalı.
  */
 
@@ -18,10 +20,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import {
+  callCount,
+  declaredNames,
+  getModuleEdges,
+  hasReExport,
+  importedNamesFrom,
+  interfaceProperties,
+  newExpressionCount,
+  parseFile,
+  stringLiterals,
+  unionLiteralValues,
+} from './helpers/source-ast.mjs';
+
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
-function read(relativePath) {
-  return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+function ast(relativePath) {
+  return parseFile(path.join(ROOT, relativePath));
 }
 
 function walk(dir, out = []) {
@@ -37,44 +52,41 @@ function rel(file) {
   return path.relative(ROOT, file).split(path.sep).join('/');
 }
 
+function sourceFiles() {
+  return walk(path.join(ROOT, 'src')).filter((file) => /\.(ts|tsx)$/.test(file));
+}
+
 // ---------------------------------------------------------------------------
 // E1. useItemActions → operations.ts devri
 // ---------------------------------------------------------------------------
 test('F3-E1 useItemActions: kütüphane kurallarını tek kaynaktan kullanır, yerel kopya bulundurmaz', () => {
-  const source = read('src/hooks/useItemActions.ts');
+  const source = ast('src/hooks/useItemActions.ts');
 
-  // Faz 7: hook adaptördür; kayıt üretimi tek hatta taşındı.
   assert.ok(
-    source.includes("from '../modules/library/client-service.ts'"),
+    importedNamesFrom(source, 'modules/library/client-service.ts').includes(
+      'createClientLibraryService'
+    ),
     'useItemActions kütüphane hattını (modules/library/client-service.ts) kullanmalı'
   );
   assert.ok(
-    source.includes("from '../modules/library/operations.ts'"),
-    'useItemActions kuralları modules/library/operations.ts üzerinden dışa açmalı'
-  );
-  assert.ok(
-    read('src/modules/library/client-service.ts').includes('buildLibraryItem'),
-    'kayıt üretimi buildLibraryItem üzerinden olmalı (tek hat)'
+    hasReExport(source, 'modules/library/operations.ts', [
+      'mapWatchStatusToLibraryList',
+      'resolveItemActionTimestamps',
+    ]),
+    'eski import yolları için re-export uyumluluğu korunmalı'
   );
 
   // Yerel tanım kalıntısı yasak (ikinci kural seti):
+  const declared = declaredNames(source);
   assert.equal(
-    /^export function resolveItemActionTimestamps/m.test(source),
+    declared.functions.includes('resolveItemActionTimestamps'),
     false,
     'resolveItemActionTimestamps hook’ta yeniden tanımlanmamalı (tek kaynak operations.ts)'
   );
   assert.equal(
-    /^export type ItemWatchStatus/m.test(source),
+    declared.types.includes('ItemWatchStatus') || declared.interfaces.includes('ItemWatchStatus'),
     false,
     'ItemWatchStatus hook’ta yeniden tanımlanmamalı'
-  );
-
-  // Uyumluluk re-export'ları korunmalı (eski import yolları bozulmamalı):
-  assert.ok(
-    /export \{ mapWatchStatusToLibraryList, resolveItemActionTimestamps \} from '\.\.\/modules\/library\/operations\.ts'/.test(
-      source
-    ),
-    'eski import yolları için re-export uyumluluğu korunmalı'
   );
 });
 
@@ -82,17 +94,12 @@ test('F3-E1 useItemActions: kütüphane kurallarını tek kaynaktan kullanır, y
 // E2. Tek kaynak: paralel uygulama çoğaltması yok
 // ---------------------------------------------------------------------------
 test('F3-E2 buildLibraryItem ve pickContentFields tek kaynakta tanımlı', () => {
-  const srcFiles = walk(path.join(ROOT, 'src')).filter((file) =>
-    /\.(ts|tsx)$/.test(file)
-  );
   const definitions = { buildLibraryItem: [], pickContentFields: [] };
 
-  for (const file of srcFiles) {
-    const source = fs.readFileSync(file, 'utf8');
+  for (const file of sourceFiles()) {
+    const declared = declaredNames(parseFile(file));
     for (const name of Object.keys(definitions)) {
-      if (new RegExp(`export function ${name}\\b`).test(source)) {
-        definitions[name].push(rel(file));
-      }
+      if (declared.functions.includes(name)) definitions[name].push(rel(file));
     }
   }
 
@@ -109,17 +116,12 @@ test('F3-E2 buildLibraryItem ve pickContentFields tek kaynakta tanımlı', () =>
 });
 
 test('F3-E3 ILibraryService ve IContentService sözleşmeleri tek yerde tanımlı', () => {
-  const srcFiles = walk(path.join(ROOT, 'src')).filter((file) =>
-    /\.(ts|tsx)$/.test(file)
-  );
   const counts = { ILibraryService: [], IContentService: [] };
 
-  for (const file of srcFiles) {
-    const source = fs.readFileSync(file, 'utf8');
+  for (const file of sourceFiles()) {
+    const declared = declaredNames(parseFile(file));
     for (const name of Object.keys(counts)) {
-      if (new RegExp(`export interface ${name}\\b`).test(source)) {
-        counts[name].push(rel(file));
-      }
+      if (declared.interfaces.includes(name)) counts[name].push(rel(file));
     }
   }
 
@@ -139,24 +141,33 @@ test('F3-E3 ILibraryService ve IContentService sözleşmeleri tek yerde tanıml�
 // E3. app.ts bağlaması — inline kopya yok
 // ---------------------------------------------------------------------------
 test('F3-E3b app.ts: servisler modül fabrikalarından bağlanır, inline sınıf kopyası yok', () => {
-  const source = read('src/server/app.ts');
+  const source = ast('src/server/app.ts');
+  const edges = getModuleEdges(source);
+  const imports = edges.filter((edge) => !edge.exportFrom).map((edge) => edge.module);
 
   assert.ok(
-    source.includes("from '../modules/library/service.ts'"),
+    imports.some((module) => module.endsWith('modules/library/service.ts')),
     'app.ts Library Manager’ı modül dosyasından import etmeli'
   );
   assert.ok(
-    source.includes("from '../modules/content/service.ts'"),
+    imports.some((module) => module.endsWith('modules/content/service.ts')),
     'app.ts Content Manager’ı modül dosyasından import etmeli'
   );
   assert.ok(
-    source.includes('createLibraryService({') && source.includes('createContentService({'),
+    callCount(source, 'createLibraryService') > 0 && callCount(source, 'createContentService') > 0,
     'app.ts servisleri fabrikalarla oluşturmalı'
   );
+
+  const declared = declaredNames(source);
   assert.equal(
-    /class LibraryService|class ContentService/.test(source),
+    declared.classes.includes('LibraryService') || declared.classes.includes('ContentService'),
     false,
     'app.ts içinde servis sınıfının kopyası bulunmamalı'
+  );
+  assert.equal(
+    newExpressionCount(source, 'LibraryService') + newExpressionCount(source, 'ContentService'),
+    0,
+    'app.ts servis sınıflarını doğrudan örneklememeli'
   );
 });
 
@@ -169,24 +180,32 @@ test('F3-E4 Faz 3 modülleri paralel Repository/EventBus/Registry/SQLite sistemi
     path.join(ROOT, 'src', 'modules', 'content', 'service.ts'),
   ];
 
-  const forbiddenPatterns = [
-    { re: /createAppEventBus\s*\(/, why: 'ikinci EventBus kurulumu' },
-    { re: /createProfileContext\s*\(/, why: 'ikinci ProfileContext kurulumu' },
-    { re: /createContentIntelligenceRepository\s*\(/, why: 'ikinci repository kurulumu' },
-    { re: /new\s+DatabaseSync\s*\(/, why: 'doğrudan SQLite kurulumu' },
-    { re: /from\s+'node:sqlite'/, why: 'doğrudan node:sqlite erişimi' },
-    { re: /createModuleRegistry\s*\(/, why: 'ikinci ModuleRegistry kurulumu' },
-  ];
-
   for (const file of faz3Files) {
-    const source = fs.readFileSync(file, 'utf8');
-    for (const { re, why } of forbiddenPatterns) {
+    const source = parseFile(file);
+    const modules = getModuleEdges(source).map((edge) => edge.module);
+
+    for (const factory of [
+      'createAppEventBus',
+      'createProfileContext',
+      'createContentIntelligenceRepository',
+      'createModuleRegistry',
+    ]) {
       assert.equal(
-        re.test(source),
-        false,
-        `${rel(file)} paralel sistem kurmamalı (${why}) — bağımlılık enjeksiyonu zorunlu`
+        callCount(source, factory),
+        0,
+        `${rel(file)} paralel sistem kurmamalı (${factory}) — bağımlılık enjeksiyonu zorunlu`
       );
     }
+    assert.equal(
+      newExpressionCount(source, 'DatabaseSync'),
+      0,
+      `${rel(file)} doğrudan SQLite kurmamalı — bağımlılık enjeksiyonu zorunlu`
+    );
+    assert.equal(
+      modules.some((module) => module === 'node:sqlite'),
+      false,
+      `${rel(file)} doğrudan node:sqlite erişmemeli`
+    );
   }
 });
 
@@ -194,51 +213,67 @@ test('F3-E4 Faz 3 modülleri paralel Repository/EventBus/Registry/SQLite sistemi
 // E5. Library Manager yazma sınırı: yalnızca repository üzerinden
 // ---------------------------------------------------------------------------
 test('F3-E5 Library Manager: yazım yalnızca saveForProfileOrThrow üzerinden; doğrudan dosya/DB yazımı yok', () => {
-  const source = read('src/modules/library/service.ts');
+  const source = ast('src/modules/library/service.ts');
+  const text = source.getFullText();
 
   assert.ok(
-    source.includes('saveForProfileOrThrow'),
+    text.includes('saveForProfileOrThrow'),
     'kütüphane yazımı repository.saveForProfileOrThrow üzerinden olmalı'
   );
 
-  for (const { re, why } of [
-    { re: /writeFile|appendFile|createWriteStream/, why: 'doğrudan dosya yazımı' },
-    { re: /node:fs(?![a-z])/, why: 'fs erişimi' },
-    { re: /fetch\s*\(/, why: 'doğrudan ağ çağrısı' },
-    { re: /TMDB_API_KEY|api\.themoviedb/, why: 'doğrudan TMDB erişimi' },
-  ]) {
+  for (const forbidden of ['writeFile', 'appendFile', 'createWriteStream', 'fetch']) {
     assert.equal(
-      re.test(source),
-      false,
-      `LibraryService ${why} YAPMAMALI (veri erişimi repository sınırından geçmeli)`
+      callCount(source, forbidden),
+      0,
+      `LibraryService doğrudan ${forbidden} çağırmamalı (veri erişimi repository sınırından geçmeli)`
     );
   }
+
+  const modules = getModuleEdges(source).map((edge) => edge.module);
+  assert.equal(
+    modules.some((module) => module === 'node:fs' || module.startsWith('node:fs/')),
+    false,
+    'LibraryService node:fs erişmemeli'
+  );
+  assert.equal(
+    modules.some((module) => module === 'node:sqlite'),
+    false,
+    'LibraryService node:sqlite erişmemeli'
+  );
+
+  const literals = stringLiterals(source);
+  assert.equal(literals.has('TMDB_API_KEY'), false, 'LibraryService TMDB anahtarı kullanmamalı');
+  assert.equal(
+    [...literals].some((value) => value.includes('api.themoviedb')),
+    false,
+    'LibraryService doğrudan TMDB erişmemeli'
+  );
 });
 
 // ---------------------------------------------------------------------------
 // E6. Eski API sözleşmeleri korunuyor
 // ---------------------------------------------------------------------------
 test('F3-E6 eski sözleşmeler: AddLibraryItemInput mevcut alanları koruyor, yenileri opsiyonel', () => {
-  const source = read('src/contracts/services.ts');
+  const source = ast('src/contracts/services.ts');
+  const properties = interfaceProperties(source, 'AddLibraryItemInput');
+  assert.ok(properties, 'AddLibraryItemInput sözleşmesi bulunmalı');
 
-  // Mevcut alanlar:
-  for (const field of ['readonly ref: WriteProfileRef', 'readonly mediaKey: string', 'readonly mediaType: MediaKind', 'readonly list: LibraryListId']) {
-    assert.ok(source.includes(field), `sözleşme alanı korunmalı: ${field}`);
+  const byName = new Map(properties.map((property) => [property.name, property]));
+  for (const field of ['ref', 'mediaKey', 'mediaType', 'list']) {
+    assert.ok(byName.has(field), `zorunlu sözleşme alanı korunmalı: ${field}`);
+    assert.equal(byName.get(field).optional, false, `${field} zorunlu kalmalı`);
   }
-  // Yeni alanlar geriye dönük uyumlu (opsiyonel):
-  assert.ok(
-    /readonly metadata\?: Readonly<Record<string, unknown>>;/.test(source),
-    'metadata alanı opsiyonel olmalı'
-  );
-  assert.ok(
-    /readonly progress\?: \{/.test(source),
-    'progress alanı opsiyonel olmalı'
-  );
-  // not-interested hâlâ LibraryListId üyesi:
-  assert.ok(
-    /'watched' \| 'watching' \| 'watchlist' \| 'not-interested'/.test(
-      read('src/contracts/common.ts')
-    ),
-    'not-interested liste kimliği korunmalı'
+  for (const optionalField of ['metadata', 'progress', 'rating']) {
+    const property = byName.get(optionalField);
+    if (property) {
+      assert.equal(property.optional, true, `${optionalField} alanı opsiyonel olmalı`);
+    }
+  }
+
+  const lists = unionLiteralValues(ast('src/contracts/common.ts'), 'LibraryListId');
+  assert.deepEqual(
+    lists,
+    ['watched', 'watching', 'watchlist', 'not-interested'],
+    'not-interested dahil liste kimlikleri korunmalı'
   );
 });

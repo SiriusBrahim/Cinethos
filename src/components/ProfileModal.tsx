@@ -17,14 +17,21 @@ import {
 import { recordManualBackupSuccess } from '../services/auto-backup-service.ts';
 import { resetDerivedCachesPreserveProfileAndStock } from '../services/idb-schema-version.ts';
 import { PROVIDER_OPTIONS } from '../utils/helpers.ts';
-import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility.ts';
 import { ProfileStatsTab } from './ProfileStatsTab.tsx';
 import { ProfileBackupTab } from './ProfileBackupTab.tsx';
-import {
-  ProfileGitHubSyncSection,
-  type RemoteSyncStatusPayload,
-} from './ProfileGitHubSyncSection.tsx';
+import type { RemoteSyncStatusPayload } from '../core/sync-display.ts';
+
+// F5.3-05: GitHub geliştirme paneli statik modül grafiğinin parçası değildir.
+// Yalnızca senkron sekmesi açıldığında (ve geliştirme modunda) yüklenir; böylece
+// entegrasyon kaldırıldığında bu tek satır ve bileşen dosyası silinir.
+const LazyProfileGitHubSyncSection = React.lazy(() =>
+  import('./ProfileGitHubSyncSection.tsx').then((mod) => ({
+    default: mod.ProfileGitHubSyncSection,
+  }))
+);
 import { DuplicateMergePanel } from './DuplicateMergePanel.tsx';
+import { DerivedCacheResetControl } from './ui-states.tsx';
 
 export type ProfileModalTabKey = 'stats' | 'profile' | 'backup' | 'sync';
 
@@ -524,7 +531,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 dislikedItems={dislikedItems}
                 genresMap={genresMap}
                 cinemaKunye={cinemaKunye}
-                remoteSyncInfo={remoteSyncInfo}
                 serverBackups={serverBackups}
                 loadingBackups={loadingBackups}
                 backupMessage={backupMessage}
@@ -542,39 +548,38 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
           {activeTab === 'sync' && (
             <div className="profile-tab-panel">
-              {/* GitHub Çift Yönlü Senkronizasyon Paneli */}
-              <ProfileGitHubSyncSection
-                remoteSyncInfo={remoteSyncInfo}
-                onRemoteSyncInfoChange={setRemoteSyncInfo}
-                profiles={profiles}
-                savedItems={savedItems}
-                onBeforeSyncFlush={onBeforeSyncFlush}
-                onMergeSyncedDocument={onMergeSyncedDocument}
-                onApplyRestoredDocument={onApplyRestoredDocument}
-                onCinemaKunyeSynced={onCinemaKunyeSynced}
-              />
+              {remoteSyncInfo?.githubSyncEnabled === false ? (
+                <div className="profile-tools-section">
+                  <strong className="profile-tools-heading">GitHub senkronizasyonu kapalı</strong>
+                  <p className="cache-reset-note">
+                    Yayın sürümünde veriler bu cihazda yerel olarak saklanır. GitHub üzerinden
+                    veri yükleme ve indirme yalnızca geliştirme ortamında kullanılabilir.
+                  </p>
+                </div>
+              ) : (
+                <React.Suspense fallback={null}>
+                  <LazyProfileGitHubSyncSection
+                    remoteSyncInfo={remoteSyncInfo}
+                    onRemoteSyncInfoChange={setRemoteSyncInfo}
+                    profiles={profiles}
+                    savedItems={savedItems}
+                    onBeforeSyncFlush={onBeforeSyncFlush}
+                    onMergeSyncedDocument={onMergeSyncedDocument}
+                    onApplyRestoredDocument={onApplyRestoredDocument}
+                    onCinemaKunyeSynced={onCinemaKunyeSynced}
+                  />
+                </React.Suspense>
+              )}
 
               {/* IMP-15: Çift Kayıt Temizliği */}
               <DuplicateMergePanel items={savedItems} onMergePair={onMergeDuplicates} />
 
-              {/* REG-03: Türetilmiş Önbellekleri Sıfırla */}
-              <div className="profile-tools-section">
-                <strong className="profile-tools-heading">Önbellek Bakımı (Vektör & Harita)</strong>
-                <p className="cache-reset-note">
-                  Zevk vektörü (<code>ct:encodings</code>) ve ilişki haritası önbelleğini temizler. İzleme listenize, profil ayarlarınıza ve yerel stok havuzunuza (<code>ct:stock</code>) dokunulmaz.
-                </p>
-                <div className="csv-actions-row">
-                  <button
-                    type="button"
-                    className="btn whitespace-nowrap"
-                    disabled={isResettingCaches}
-                    onClick={() => void handleResetDerivedCaches()}
-                  >
-                    {isResettingCaches ? 'Önbellekler sıfırlanıyor…' : 'Önbellekleri Sıfırla'}
-                  </button>
-                </div>
-                {cacheResetMessage && <p className="provider-message">{cacheResetMessage}</p>}
-              </div>
+              {/* REG-03: Türetilmiş Önbellekleri Sıfırla (F5.2-01: ortak durum bileşeni) */}
+              <DerivedCacheResetControl
+                resetting={isResettingCaches}
+                message={cacheResetMessage}
+                onReset={() => void handleResetDerivedCaches()}
+              />
             </div>
           )}
         </div>

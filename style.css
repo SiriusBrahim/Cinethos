@@ -1213,7 +1213,7 @@
   }
 
   .card-genres {
-    color: var(--text-3);
+    color: var(--text-2);
     min-width: 0;
     flex: 1;
   }
@@ -4069,5 +4069,743 @@
     text-overflow: ellipsis;
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+}
+
+/* =========================================================
+   Aşama 4 (B-24, B-25, B-27) — Kabuk ve gezinme
+   Bu blok, yukarıdaki eski header/topbar kurallarının yerini alır.
+   Yeni kural eklerken önce buradaki token'ları kullan; ikinci bir
+   header stili yazma.
+   ========================================================= */
+@layer components {
+  /* --- Atlama bağlantısı: klavye kullanıcısı doğrudan içeriğe geçer --- */
+  .skip-link {
+    position: absolute;
+    top: -100px;
+    left: 12px;
+    z-index: 1000;
+    padding: 10px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--gold);
+    background: var(--bg-elevated);
+    color: var(--text-1);
+    font-weight: 600;
+    transition: top var(--dur-fast) var(--ease);
+  }
+
+  .skip-link:focus-visible {
+    top: calc(8px + var(--safe-top));
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  /* --- Üst çubuk: tek satır, kompakt, içerik için yer bırakır --- */
+  .app-header {
+    padding-top: var(--safe-top);
+    background-color: rgba(10, 11, 14, 0.92);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .app-header .shell.topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--header-h);
+    min-width: 0;
+    padding-block: var(--space-2);
+  }
+
+  .brand {
+    order: 1;
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    padding: 4px 6px 4px 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-1);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    cursor: pointer;
+  }
+
+  .brand:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: var(--text-on-gold);
+    background: linear-gradient(135deg, var(--gold-hover), var(--gold-deep));
+    box-shadow: none;
+  }
+
+  .brand-icon .icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .brand-title {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+  }
+
+  /* --- Masaüstü sekmeleri: yedi modül, 1024 px'te de kesilmez --- */
+  .header-nav-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    /* Sekmeler sıkıştırılmaz; yer ihtiyacı aramadan karşılanır. */
+    flex: 0 0 auto;
+    order: 2;
+    min-width: 0;
+    padding: 3px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background-color: rgba(255, 255, 255, 0.02);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .header-nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    height: 34px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+
+  .nav-tab-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .nav-tab-btn:hover {
+    color: var(--text-1);
+    background-color: var(--bg-hover);
+  }
+
+  .nav-tab-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .nav-tab-btn.is-active,
+  .nav-tab-btn.nav-tab-active {
+    color: var(--text-1);
+    background-color: rgba(211, 181, 121, 0.1);
+    box-shadow: none;
+  }
+
+  .nav-tab-btn.is-active .nav-tab-icon,
+  .nav-tab-btn.nav-tab-active .nav-tab-icon {
+    opacity: 1;
+    color: var(--gold);
+  }
+
+  .nav-tab-btn.is-active::after,
+  .nav-tab-btn.nav-tab-active::after {
+    content: none;
+  }
+
+  .nav-tab-badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    background-color: var(--gold-soft);
+    color: var(--gold);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  /* Sayaç görünür metin yerine CSS içeriği olarak çizilir: sekmenin erişilebilir
+     adı yalnızca modül adı olur, ekran okuyucu sayacı `aria-description`'dan alır. */
+  .nav-tab-badge::before {
+    content: attr(data-count);
+  }
+
+  /* --- Arama: esnek, odakta genişler, mobilde tam genişlik --- */
+  .app-header .search {
+    order: 3;
+    flex: 1 1 160px;
+    max-width: 380px;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .app-header .search input.search-input {
+    height: var(--control-h);
+    padding: 0 36px 0 38px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-surface);
+    font-size: var(--text-sm);
+    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+
+  .app-header .search input.search-input:focus-visible {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: var(--focus-ring);
+  }
+
+  .app-header .search-icon {
+    left: 12px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .app-header .search-clear {
+    width: 26px;
+    height: 26px;
+    right: 6px;
+  }
+
+  /* --- Sağ eylemler --- */
+  .topbar-actions {
+    order: 4;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .topbar-actions .btn {
+    min-height: var(--control-h);
+    padding: 0 12px;
+    font-size: var(--text-sm);
+    border-radius: var(--radius-md);
+  }
+
+  .tvdb-stock-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-color: var(--accent-border);
+    color: var(--accent);
+    background-color: var(--accent-soft);
+  }
+
+  .tvdb-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+  }
+
+  .tvdb-count::before {
+    content: attr(data-count);
+  }
+
+  .profile-avatar-circle::before {
+    content: attr(data-initial);
+  }
+
+  .profile-avatar-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: var(--gold-soft);
+    border: 1px solid var(--gold-glow);
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  .add-custom-btn .icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Mobilde ikincil eylemler menüsü (masaüstünde gizli) */
+  .header-more {
+    display: none;
+    position: relative;
+  }
+
+  .header-more-trigger {
+    display: grid;
+    place-items: center;
+    width: var(--control-h);
+    height: var(--control-h);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-surface);
+    color: var(--text-2);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .header-more-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .header-more-trigger .icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .header-more[open] .header-more-trigger {
+    color: var(--text-1);
+    border-color: var(--border-strong);
+  }
+
+  .header-more-trigger:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .header-more-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: var(--z-dropdown);
+    width: min(280px, calc(100vw - 24px));
+    padding: var(--space-2);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-strong);
+    background-color: var(--bg-elevated);
+    box-shadow: var(--shadow-float);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .header-more-item,
+  .header-more-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 40px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-1);
+    font-size: var(--text-sm);
+  }
+
+  .header-more-item {
+    cursor: pointer;
+  }
+
+  .header-more-item:hover {
+    background-color: var(--bg-hover);
+  }
+
+  .header-more-item:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .header-more-meta span {
+    color: var(--text-2);
+  }
+
+  .header-more-hint {
+    margin: var(--space-1) var(--space-2) var(--space-2);
+    font-size: var(--text-2xs);
+    line-height: var(--leading-base);
+    color: var(--text-3);
+  }
+
+  .header-more-hint kbd {
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  /* --- Mobil "Daha fazla" sayfası --- */
+  .mobile-more-head h2 {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  .mobile-more-sheet {
+    padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+  }
+
+  /* --- İçerik ve alt bilgi --- */
+  main.shell {
+    padding-block: var(--space-5) var(--space-7);
+  }
+
+  .footer-shell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-block: var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--text-2);
+  }
+
+  .footer-shortcuts-hint {
+    color: var(--text-2);
+  }
+
+  /* --- Mobil: tek satır kompakt header + 5 öğeli alt gezinme --- */
+  @media (max-width: 768px) {
+    .app-header .shell.topbar {
+      min-height: var(--header-h-mobile);
+      gap: var(--space-2);
+      padding-block: 6px;
+      flex-wrap: nowrap;
+    }
+
+    .app-header .search input.search-input {
+      height: 36px;
+      padding: 0 28px 0 32px;
+      font-size: var(--text-xs);
+    }
+
+    .app-header .search .search-icon {
+      left: 10px;
+      width: 15px;
+      height: 15px;
+    }
+
+    .app-header .search-clear {
+      width: 22px;
+      height: 22px;
+      right: 4px;
+    }
+
+    .brand-title,
+    .header-nav-tabs,
+    .header-secondary,
+    .profile-name-text,
+    .add-btn-text,
+    .topbar-source-badge {
+      display: none;
+    }
+
+    .brand-icon {
+      width: 30px;
+      height: 30px;
+    }
+
+    .app-header .search {
+      flex: 1 1 auto;
+      max-width: none;
+    }
+
+    .header-more {
+      display: block;
+    }
+
+    .topbar-actions {
+      gap: 6px;
+    }
+
+    .topbar-actions .btn {
+      padding: 0 10px;
+    }
+
+    .add-custom-btn {
+      min-width: var(--control-h);
+      justify-content: center;
+    }
+
+    .footer-shortcuts-hint {
+      display: none;
+    }
+
+    .footer-shell {
+      font-size: 11px;
+      padding-block: var(--space-3);
+    }
+
+    body {
+      padding-bottom: calc(64px + var(--safe-bottom));
+    }
+
+    .mobile-tab-bar {
+      display: flex;
+      position: fixed;
+      inset: auto 0 0 0;
+      z-index: var(--z-header);
+      height: calc(64px + var(--safe-bottom));
+      padding: 6px 8px calc(6px + var(--safe-bottom));
+      gap: 4px;
+      background-color: rgba(12, 13, 17, 0.94);
+      border-top: 1px solid var(--border-subtle);
+      justify-content: stretch;
+    }
+
+    .mobile-tab-btn {
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 48px;
+      gap: 4px;
+      border-radius: var(--radius-md);
+      background-color: transparent;
+      color: var(--text-3);
+      font-size: 10.5px;
+      letter-spacing: 0.01em;
+    }
+
+    .mobile-tab-btn .icon {
+      width: 19px;
+      height: 19px;
+    }
+
+    .mobile-tab-btn:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+
+    .mobile-tab-btn.active {
+      color: var(--gold);
+      background-color: var(--gold-soft);
+    }
+
+    .mobile-tab-badge {
+      background-color: var(--gold);
+      color: var(--text-on-gold);
+    }
+
+    /* Sayaç CSS içeriği olarak çizilir; düğmenin erişilebilir adı etiketle eşleşir. */
+    .mobile-tab-badge::before {
+      content: attr(data-count);
+    }
+  }
+
+  /* Masaüstü: kaynak durumu yalnızca alt bilgide ve "Diğer" menüsünde gösterilir,
+     PWA düğmesi ikon moduna geçer; böylece arama alanı her genişlikte kullanılabilir
+     kalır (kabuk en fazla 1400 px'e yayıldığı için etiketler sığmıyordu). */
+  @media (min-width: 769px) {
+    .topbar-source-badge {
+      display: none;
+    }
+
+    /* PWA düğmesi ikon moduna geçer (işlev korunur, ~110 px kazanılır). */
+    .pwa-install-label {
+      display: none;
+    }
+
+    .pwa-install-btn {
+      padding: 0 10px;
+      min-width: var(--control-h);
+      justify-content: center;
+    }
+  }
+
+  /* Sekme etiketleri 1439 px altında ikonlara çekilir: hiçbir genişlikte kesilme
+     olmaz; erişilebilir ad (`aria-label`, `title`) korunur. */
+  @media (min-width: 769px) and (max-width: 1439px) {
+    .nav-tab-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .nav-tab-btn {
+      padding: 0 9px;
+    }
+  }
+
+  /* Kısayol ipuçları yalnızca hassas işaretçili (klavye/fare) cihazlarda. */
+  @media (hover: none), (pointer: coarse) {
+    .footer-shortcuts-hint {
+      display: none;
+    }
+  }
+}
+
+/* =========================================================
+   Aşama 4 (B-27) — Kart, poster, grid ve filtre düzeni
+   ========================================================= */
+@layer components {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 158px), 1fr));
+    gap: var(--space-4);
+    padding-bottom: var(--space-1);
+  }
+
+  @media (max-width: 639px) {
+    .grid {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 128px), 1fr));
+      gap: var(--space-3);
+    }
+  }
+
+  .card {
+    border-radius: var(--radius-lg);
+    background-color: var(--bg-elevated);
+  }
+
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.8);
+  }
+
+  /* Klavye odağı kartın içindeki postere geçtiğinde kart sınırı görünür olur. */
+  .card:focus-within {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: var(--focus-ring);
+  }
+
+  .poster-badges-row {
+    top: 6px;
+    left: 6px;
+    right: 6px;
+    max-height: calc(100% - 12px);
+    overflow: hidden;
+    gap: 4px;
+  }
+
+  .badge,
+  .match-badge,
+  .release-countdown,
+  .source-tag {
+    font-size: 9.5px;
+    padding: 2px 6px;
+    border-radius: var(--radius-xs);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Tür ayrımı (film/dizi) renkle değil, etiket + ikonla okunur. */
+  .card-series-label {
+    color: var(--accent);
+  }
+
+  .card-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: calc(2 * 1.25em);
+    overflow-wrap: anywhere;
+  }
+
+  /* Filtre çubuğu dar ekranda taşmaz: tek satırda kayar, etiketler kırpılmaz. */
+  .controls {
+    gap: var(--space-3);
+    margin: var(--space-4) 0 var(--space-3);
+    align-items: flex-start;
+  }
+
+  .section-controls-wrap {
+    margin-block: var(--space-4) var(--space-3);
+  }
+
+  .list-status-chips-bar,
+  .category-scroll-strip,
+  .provider-chips {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .list-status-chip,
+  .category-pill,
+  .provider-chip {
+    min-height: var(--control-h);
+  }
+
+  /* Dar ekranda filtre şeritleri tek satırda kayar; sayfa taşmaz. */
+  @media (max-width: 768px) {
+    .list-status-chips-bar,
+    .category-scroll-strip,
+    .provider-chips,
+    .secondary-toolbar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .list-status-chips-bar::-webkit-scrollbar,
+    .category-scroll-strip::-webkit-scrollbar,
+    .provider-chips::-webkit-scrollbar,
+    .secondary-toolbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .list-status-chip,
+    .category-pill,
+    .provider-chip {
+      flex: 0 0 auto;
+    }
+  }
+
+  /* İşlem Merkezi — hata ayrıntısı açılır panel. */
+  .ws-error-details summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .ws-error-details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .ws-error-details summary:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .ws-error-technical {
+    display: block;
+    margin: 4px 0 0;
+    max-width: 320px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-3);
   }
 }

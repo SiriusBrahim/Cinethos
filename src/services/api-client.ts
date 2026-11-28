@@ -9,6 +9,12 @@
  *   istemini gösterir.
  */
 
+import {
+  fetchWithHttpRetry,
+  type HttpRetryOptions,
+} from './http-retry.ts';
+import { registerApiFetchPort } from '../core/ports/api-port.ts';
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -85,10 +91,20 @@ export function notifyAuthRequired(status: number): void {
  * `fetch` sarmalayıcısı: token ekler ve kimlik hatasını tek yerden bildirir.
  * Çağıranlar `response.ok` kontrolünü korur; ağ hatası `ApiError(0)` olarak döner.
  */
-export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  retryOptions: HttpRetryOptions = {}
+): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(input, { ...init, headers: withClientAuth(init.headers) });
+    // B-30: yalnızca güvenle tekrarlanabilir istekler (varsayılan GET) 429/5xx
+    // ve ağ hatasında sınırlı backoff ile yeniden denenir.
+    response = await fetchWithHttpRetry(
+      input,
+      { ...init, headers: withClientAuth(init.headers) },
+      { signal: init.signal ?? undefined, ...retryOptions }
+    );
   } catch (error: any) {
     if (error?.name === 'AbortError') throw error;
     throw new ApiError(
@@ -117,3 +133,6 @@ export async function readApiErrorMessage(
     return { message: fallback };
   }
 }
+
+/** F5-04: çekirdek API portunu bu adaptörle besler (davranış aynı). */
+registerApiFetchPort(apiFetch);

@@ -1,43 +1,33 @@
 import { normalizeProfileId } from './profile-id.ts';
-import { backfillInteractionDates, resolveItemSignalDate } from './item-dates.ts';
+import { resolveItemSignalDate } from './item-dates.ts';
 export { PROFILE_ID_PATTERN, normalizeProfileId } from './profile-id.ts';
-import { get as idbGet, set as idbSet, createStore as createIdbStore, type UseStore } from 'idb-keyval';
-import { apiFetch } from '../services/api-client.ts';
+import { getKvStoreFactory, type CoreKvStore } from './ports/kv-store-port.ts';
+import { coreApiFetch } from './ports/api-port.ts';
 import { getCandidatePoolStorePort } from './candidate-pool-store-port.ts';
-import {
-  DEFAULT_MAX_DATA_BYTES,
-  DEFAULT_MAX_ITEMS_PER_PROFILE,
-  DEFAULT_MAX_PROFILES,
-  formatMaxDataLimitMb,
-  measureUtf8Bytes,
-} from './limits.ts';
-import {
-  enrichSavedItemsFromCinemaKunye,
-  extractCinemaKunyeFromItems,
-  mergeCinemaKunyeDocumentsLossless,
-  normalizeCinemaKunyeActorList,
-  normalizeCinemaKunyeDocument,
-  type CinemaKunyeDocument,
-} from './cinema-kunye.ts';
 
-let discoveryHistoryIdbStore: UseStore | undefined;
-let candidatePoolIdbStore: UseStore | undefined;
+let discoveryHistoryIdbStore: CoreKvStore | undefined;
+let candidatePoolIdbStore: CoreKvStore | undefined;
 const idbHydratedTasteMaps = new Map<string, any>();
 const idbHydratedPools = new Map<string, any>();
 const pendingCoreIdbWrites = new Set<Promise<void>>();
 
-function getDiscoveryHistoryIdbStore(): UseStore | undefined {
+function getDiscoveryHistoryIdbStore(): CoreKvStore | undefined {
+  // Depo fabrikası uygulama katmanından kaydedilir (F5-04); yoksa IDB kullanılmaz.
   if (typeof indexedDB === 'undefined') return undefined;
+  const factory = getKvStoreFactory();
+  if (!factory) return undefined;
   if (!discoveryHistoryIdbStore) {
-    discoveryHistoryIdbStore = createIdbStore('cinetrack-discovery-history-db', 'ct_discovery_history');
+    discoveryHistoryIdbStore = factory('cinetrack-discovery-history-db', 'ct_discovery_history');
   }
   return discoveryHistoryIdbStore;
 }
 
-function getCandidatePoolIdbStore(): UseStore | undefined {
+function getCandidatePoolIdbStore(): CoreKvStore | undefined {
   if (typeof indexedDB === 'undefined') return undefined;
+  const factory = getKvStoreFactory();
+  if (!factory) return undefined;
   if (!candidatePoolIdbStore) {
-    candidatePoolIdbStore = createIdbStore('cinetrack-candidate-pool-db', 'ct_candidate_pool');
+    candidatePoolIdbStore = factory('cinetrack-candidate-pool-db', 'ct_candidate_pool');
   }
   return candidatePoolIdbStore;
 }
@@ -64,114 +54,26 @@ export function resetCoreIdbMirrorsForTests(): void {
   candidatePoolIdbStore = undefined;
 }
 
-export const REMINDER_WINDOW_DAYS = 3;
+export * from './media/document-types.ts';
+export * from './media/document-normalize.ts';
+export * from './media/backup-parse.ts';
 
-export interface NextEpisode {
-  air_date: string;
-  episode_number: number;
-  season_number: number;
-}
+import {
+  ENGINE_VERSION,
+  SERVER_TASTE_EXPLANATION_PART_THRESHOLD,
+  SERVER_TASTE_WEIGHT,
+  TARGET_RECOMMENDATION_COUNT,
+  type FavoriteActorInfo,
+  type Preferences,
+  type SavedItem,
+} from './media/document-types.ts';
+import {
+  filterDislikedByType,
+  filterHistoryByType,
+  findSavedItem,
+  isItemSaved,
+} from './media/document-normalize.ts';
 
-export interface SavedItem {
-  id: number | string;
-  media_type: 'movie' | 'tv';
-  title: string;
-  name?: string;
-  original_title?: string;
-  original_name?: string;
-  release_date?: string;
-  first_air_date?: string;
-  last_air_date?: string;
-  vote_average: number;
-  vote_count: number;
-  popularity: number;
-  poster_url?: string;
-  poster_path?: string;
-  backdrop_path?: string;
-  overview?: string;
-  genre_ids: number[];
-  genres?: string[] | { id: number; name: string }[];
-  runtime?: number;
-  episode_run_time?: number[];
-  number_of_seasons?: number;
-  number_of_episodes?: number;
-  season_progress?: Record<number, number>;
-  season_episode_counts?: Record<number, number>;
-  /** Sezon → izlenmiş bölüm numaraları (sırasız izleme desteği). */
-  watched_episodes?: Record<number, number[]>;
-  /** Sezon ilerlemesinin son bilinçli değişim anı (geri alma ve çakışma çözümü). */
-  progress_updated_at?: Record<number, string>;
-  next_episode_to_air?: NextEpisode | null;
-  current_season?: number;
-  episodes_watched?: number;
-  next_episode?: number;
-  status: 'watching' | 'watchlist' | 'completed';
-  personal_rating: number | '';
-  personal_rating_cleared?: boolean;
-  ratedAt?: string;
-  /** İzleme etkileşiminin (bölüm işaretleme dahil) son anı. `updatedAt` değildir. */
-  watchedAt?: string;
-  completedAt?: string;
-  addedAt?: string;
-  firstAddedAt?: string;
-  totalWatchTimeMinutes?: number;
-  updatedAt?: string;
-  custom?: boolean;
-  cast?: { id: number; name: string; popularity?: number; profile_path?: string; character?: string }[];
-  crew?: { id: number; name: string; job: string; department?: string }[];
-  poolSource?: string;
-  poolReason?: string;
-  poolSources?: number;
-  belongs_to_collection?: {
-    id: number;
-    name: string;
-    poster_path?: string | null;
-    backdrop_path?: string | null;
-  } | null;
-  isDemo?: boolean;
-}
-
-export interface Preferences {
-  disliked: string[];
-  hidden?: string[];
-  providers: string[];
-  mood: string;
-  reminders: boolean;
-  notified: string[];
-}
-
-export interface FavoriteActorInfo {
-  id: number;
-  name: string;
-  profile_path?: string | null;
-  character?: string;
-  [key: string]: any;
-}
-
-export interface Profile {
-  id: string;
-  name: string;
-  createdAt: string;
-  preferences: Preferences;
-  items: SavedItem[];
-  favoriteActors?: FavoriteActorInfo[];
-  deleted_keys?: Record<string, string>;
-  isDemo?: boolean;
-}
-
-export const CURRENT_SCHEMA_VERSION = 3;
-export const ENGINE_VERSION = 'v3.2.0';
-export const TOMBSTONE_RETENTION_DAYS = 30;
-
-export interface DataDocument {
-  version: 3;
-  schemaVersion: number;
-  engineVersion?: string;
-  activeProfileId: string;
-  profiles: Profile[];
-  revision?: number;
-  updatedAt?: string;
-}
 
 import {
   makeMediaKey,
@@ -183,6 +85,8 @@ import {
   migratePersistentTasteMapData,
 } from './keys.ts';
 
+import { canonicalGenreKeys } from './genre-matching.ts';
+
 import {
   type LovedItemFeatures,
   type LovedSimBreakdown,
@@ -194,12 +98,17 @@ import {
   calculateEraSim,
   computeItemToItemLovedSim,
   computeLovedSimilarityScore,
+  clearLovedSimilarityIndexCache,
+  getLovedSimilarityStats,
+  resetLovedSimilarityStats,
+  type LovedSimilarityStatsSnapshot,
 } from './loved-similarity.ts';
 
 export {
   type LovedItemFeatures,
   type LovedSimBreakdown,
   type LovedSimMatchResult,
+  type LovedSimilarityStatsSnapshot,
   calculateGenreSim,
   calculateStorySim,
   calculateCastSim,
@@ -207,6 +116,9 @@ export {
   calculateEraSim,
   computeItemToItemLovedSim,
   computeLovedSimilarityScore,
+  clearLovedSimilarityIndexCache,
+  getLovedSimilarityStats,
+  resetLovedSimilarityStats,
 };
 
 export {
@@ -219,802 +131,6 @@ export {
   migratePersistentTasteMapData,
 };
 
-export function normalizeFavoriteActor(raw: any): FavoriteActorInfo | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const id = Number(raw.id);
-  if (!Number.isSafeInteger(id) || id <= 0) return null;
-  const name = String(raw.name || '').trim();
-  if (!name) return null;
-  return {
-    id,
-    name: name.slice(0, 100),
-    profile_path: typeof raw.profile_path === 'string' ? raw.profile_path : null,
-    character: typeof raw.character === 'string' ? raw.character.slice(0, 100) : undefined,
-  };
-}
-
-export function normalizeFavoriteActors(raw: any, maxActors = 100): FavoriteActorInfo[] {
-  if (!Array.isArray(raw)) return [];
-  const list: FavoriteActorInfo[] = [];
-  const seen = new Set<number>();
-  for (const item of raw) {
-    if (list.length >= maxActors) break;
-    const actor = normalizeFavoriteActor(item);
-    if (!actor || seen.has(actor.id)) continue;
-    seen.add(actor.id);
-    list.push(actor);
-  }
-  return list;
-}
-
-export function validItemId(value: unknown): boolean {
-  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0;
-  return (
-    typeof value === 'string' &&
-    (/^[1-9]\d{0,11}$/.test(value) || /^custom-[A-Za-z0-9_-]{1,80}$/.test(value))
-  );
-}
-
-export function escapeHTML(value: unknown): string {
-  return String(value ?? '').replace(
-    /[&<>"']/g,
-    (char) =>
-      ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-      })[char] || char
-  );
-}
-
-export function safeHttpsUrl(value: unknown): string {
-  if (typeof value !== 'string' || !value) return '';
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'https:' ? parsed.href : '';
-  } catch {
-    return '';
-  }
-}
-
-export function isValidCalendarDate(airDate: string): boolean {
-  const parsed = new Date(`${airDate}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return false;
-  return (
-    `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(
-      parsed.getDate()
-    ).padStart(2, '0')}` === airDate
-  );
-}
-
-export function sanitizeNextEpisode(value: any): NextEpisode | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const airDate =
-    typeof value.air_date === 'string' && isValidCalendarDate(value.air_date) ? value.air_date : '';
-  if (!airDate) return null;
-  const integerAtLeastZero = (input: any) => {
-    const numeric = Number(input);
-    return Number.isFinite(numeric) && numeric >= 0 ? Math.min(10000, Math.floor(numeric)) : 0;
-  };
-  return {
-    air_date: airDate,
-    episode_number: integerAtLeastZero(value.episode_number),
-    season_number: integerAtLeastZero(value.season_number),
-  };
-}
-
-export function sanitizeSeasonMap(
-  value: any,
-  { maxSeason = 300, maxValue = 10000, allowZero = true } = {}
-): Record<number, number> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const output: Record<number, number> = {};
-  for (const [key, rawCount] of Object.entries(value)) {
-    const season = Number(key);
-    if (!Number.isSafeInteger(season) || season < 1 || season > maxSeason) continue;
-    const count = Number(rawCount);
-    if (!Number.isFinite(count) || count < 0 || (!allowZero && count < 1)) continue;
-    output[season] = Math.min(maxValue, Math.floor(count));
-  }
-  return output;
-}
-
-export function sanitizeSeasonProgress(value: any): Record<number, number> {
-  return sanitizeSeasonMap(value, { maxSeason: 300, maxValue: 10000, allowZero: true }) || {};
-}
-
-/** Sezon → izlenmiş bölüm numaraları (sırasız izleme) haritasını güvenli biçimde normalize eder. */
-export function sanitizeSeasonWatchedMarks(value: any): Record<number, number[]> {
-  const out: Record<number, number[]> = {};
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
-  for (const [rawSeason, rawEpisodes] of Object.entries(value as Record<string, any>)) {
-    const season = Number(rawSeason);
-    if (!Number.isSafeInteger(season) || season < 1 || season > 300) continue;
-    if (!Array.isArray(rawEpisodes)) continue;
-    const episodes = Array.from(
-      new Set(
-        rawEpisodes
-          .map((ep) => Number(ep))
-          .filter((ep) => Number.isSafeInteger(ep) && ep >= 1 && ep <= 10000)
-      )
-    ).sort((a, b) => a - b);
-    if (episodes.length > 0) out[season] = episodes;
-  }
-  return out;
-}
-
-/** Sezon → ISO damga haritasını güvenli biçimde normalize eder. */
-export function sanitizeSeasonProgressTimestamps(value: any): Record<number, string> {
-  const out: Record<number, string> = {};
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
-  for (const [rawSeason, rawIso] of Object.entries(value as Record<string, any>)) {
-    const season = Number(rawSeason);
-    if (!Number.isSafeInteger(season) || season < 1 || season > 300) continue;
-    if (typeof rawIso !== 'string' || !rawIso.trim()) continue;
-    if (!Number.isFinite(Date.parse(rawIso))) continue;
-    out[season] = rawIso.trim();
-  }
-  return out;
-}
-
-export type SeasonWatchedMarks = Record<number, number[]>;
-export type SeasonProgressTimestamps = Record<number, string>;
-
-export function sanitizeSeasonCounts(value: any): Record<number, number> {
-  return sanitizeSeasonMap(value, { maxSeason: 300, maxValue: 10000, allowZero: true }) || {};
-}
-
-export function buildSeasonCounts(details: any): Record<number, number> {
-  const seasons = Array.isArray(details?.seasons) ? details.seasons : [];
-  const counts: Record<number, number> = {};
-  for (const season of seasons) {
-    const number = Number(season?.season_number);
-    if (!Number.isSafeInteger(number) || number < 1 || number > 300) continue;
-    const count = Number(season?.episode_count);
-    counts[number] = Number.isSafeInteger(count) && count > 0 ? Math.min(count, 10000) : 0;
-  }
-  return counts;
-}
-
-export function defaultCurrentSeason(
-  progress: Record<number, number> = {},
-  counts: Record<number, number> = {}
-): number {
-  const seasons = [
-    ...new Set([
-      ...Object.keys(progress || {}).map(Number),
-      ...Object.keys(counts || {}).map(Number),
-    ]),
-  ]
-    .filter((season) => Number.isSafeInteger(season) && season >= 1)
-    .sort((a, b) => a - b);
-  if (!seasons.length) return 1;
-  const watched = (season: number) => (progress || {})[season] || 0;
-  const totalOf = (season: number) => {
-    const value = Number((counts || {})[season]);
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  };
-  const partiallyWatched = seasons.find((season) => {
-    const total = totalOf(season);
-    return total !== null && watched(season) > 0 && watched(season) < total;
-  });
-  if (partiallyWatched) return partiallyWatched;
-  const queuedZero = [...seasons]
-    .reverse()
-    .find(
-      (season) =>
-        watched(season) === 0 &&
-        seasons.some((previous) => previous < season && watched(previous) > 0)
-    );
-  if (queuedZero) return queuedZero;
-  const started = [...seasons].reverse().find((season) => watched(season) > 0);
-  return started || seasons[0];
-}
-
-export function normalizeSavedItem(item: any): SavedItem | null {
-  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-  if (!validItemId(item.id) || !['movie', 'tv'].includes(item.media_type)) return null;
-  const rating = Number(item.personal_rating);
-  const validRating = Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : 0;
-  const numeric = (value: any, min: number, max: number) =>
-    Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.floor(Number(value)))) : 0;
-  let seasonProgress = sanitizeSeasonProgress(item.season_progress);
-  if (!Object.keys(seasonProgress).length) {
-    const legacySeason = numeric(item.current_season, 0, 300) || 1;
-    const legacyWatched = numeric(item.episodes_watched, 0, 10000);
-    seasonProgress = legacyWatched > 0 ? { [legacySeason]: legacyWatched } : {};
-  }
-  const totalWatched = Object.values(seasonProgress).reduce((sum, count) => sum + count, 0);
-  const seasonCounts = sanitizeSeasonCounts(item.season_episode_counts);
-  const watchedEpisodes = sanitizeSeasonWatchedMarks(item.watched_episodes);
-  const progressUpdatedAt = sanitizeSeasonProgressTimestamps(item.progress_updated_at);
-  const normalizedStatus: SavedItem['status'] = ['watching', 'watchlist', 'completed'].includes(
-    item.status
-  )
-    ? item.status
-    : 'watchlist';
-  const normalizedRatedAt =
-    validRating > 0 && typeof item.ratedAt === 'string' && item.ratedAt.trim()
-      ? item.ratedAt.trim()
-      : undefined;
-  const normalizedCompletedAt =
-    normalizedStatus === 'completed' &&
-    typeof item.completedAt === 'string' &&
-    item.completedAt.trim()
-      ? item.completedAt.trim()
-      : undefined;
-  const normalizedWatchedAt =
-    typeof item.watchedAt === 'string' && item.watchedAt.trim() && Number.isFinite(Date.parse(item.watchedAt))
-      ? item.watchedAt.trim()
-      : undefined;
-  const normalizedCast = Array.isArray(item.cast)
-    ? normalizeCinemaKunyeActorList(item.cast, 12)
-    : [];
-  const normalizedCrew: NonNullable<SavedItem['crew']> = Array.isArray(item.crew)
-    ? item.crew
-        .filter((c: any) => c && typeof c.name === 'string' && c.name.trim())
-        .slice(0, 10)
-        .map((c: any) => ({
-          id: Number.isSafeInteger(Number(c.id)) && Number(c.id) > 0 ? Number(c.id) : 0,
-          name: String(c.name).trim().slice(0, 120),
-          job: typeof c.job === 'string' && c.job.trim() ? c.job.trim().slice(0, 80) : 'Crew',
-          ...(typeof c.department === 'string' && c.department.trim()
-            ? { department: c.department.trim().slice(0, 80) }
-            : {}),
-        }))
-    : [];
-
-  return {
-    id: typeof item.id === 'string' && /^\d+$/.test(item.id) ? Number(item.id) : item.id,
-    media_type: item.media_type,
-    title: String(item.title || item.name || 'Başlıksız içerik').slice(0, 160),
-    release_date:
-      typeof (item.release_date || item.releaseDate) === 'string'
-        ? (item.release_date || item.releaseDate).slice(0, 10)
-        : '',
-    first_air_date: typeof item.first_air_date === 'string' ? item.first_air_date.slice(0, 10) : '',
-    last_air_date: typeof item.last_air_date === 'string' ? item.last_air_date.slice(0, 10) : '',
-    vote_average: Number(item.vote_average ?? (Number.parseFloat(item.rating) || 0)) || 0,
-    vote_count: Number(item.vote_count) || 0,
-    popularity: Number(item.popularity) || 0,
-    poster_url: safeHttpsUrl(item.poster_url || item.poster),
-    poster_path: typeof item.poster_path === 'string' ? item.poster_path : '',
-    backdrop_path: typeof item.backdrop_path === 'string' ? item.backdrop_path : '',
-    overview: typeof item.overview === 'string' ? item.overview.slice(0, 5000) : '',
-    genre_ids:
-      Array.isArray(item.genre_ids) && item.genre_ids.length
-        ? item.genre_ids
-            .filter((id: any) => Number.isSafeInteger(Number(id)) && Number(id) > 0)
-            .map(Number)
-        : Array.isArray(item.genres)
-        ? item.genres
-            .map((g: any) => (typeof g === 'object' && g ? g.id : g))
-            .filter((id: any) => Number.isSafeInteger(Number(id)) && Number(id) > 0)
-            .map(Number)
-        : [],
-    genres: Array.isArray(item.genres)
-      ? item.genres
-          .map((genre: any) => (typeof genre === 'string' ? genre : genre?.name))
-          .filter((name: any) => typeof name === 'string')
-          .slice(0, 12)
-      : [],
-    runtime: Number(item.runtime) || 0,
-    episode_run_time: Array.isArray(item.episode_run_time)
-      ? item.episode_run_time.filter((value: any) => Number.isFinite(Number(value))).map(Number).slice(0, 5)
-      : [],
-    number_of_seasons: numeric(item.number_of_seasons, 0, 300),
-    number_of_episodes: numeric(item.number_of_episodes, 0, 10000),
-    season_progress: seasonProgress,
-    season_episode_counts: seasonCounts,
-    ...(Object.keys(watchedEpisodes).length > 0 ? { watched_episodes: watchedEpisodes } : {}),
-    ...(Object.keys(progressUpdatedAt).length > 0
-      ? { progress_updated_at: progressUpdatedAt }
-      : {}),
-    next_episode_to_air: sanitizeNextEpisode(item.next_episode_to_air),
-    current_season: numeric(item.current_season, 0, 300) || defaultCurrentSeason(seasonProgress, seasonCounts),
-    episodes_watched: totalWatched,
-    next_episode: numeric(item.next_episode, 0, 10000),
-    status: normalizedStatus,
-    personal_rating: validRating || '',
-    personal_rating_cleared: validRating ? false : item.personal_rating_cleared === true,
-    ...(normalizedRatedAt ? { ratedAt: normalizedRatedAt } : {}),
-    ...(normalizedWatchedAt ? { watchedAt: normalizedWatchedAt } : {}),
-    ...(normalizedCompletedAt ? { completedAt: normalizedCompletedAt } : {}),
-    addedAt: typeof item.addedAt === 'string' ? item.addedAt : '',
-    firstAddedAt:
-      typeof item.firstAddedAt === 'string'
-        ? item.firstAddedAt
-        : typeof item.addedAt === 'string'
-        ? item.addedAt
-        : '',
-    totalWatchTimeMinutes:
-      Number.isFinite(Number(item.totalWatchTimeMinutes)) && Number(item.totalWatchTimeMinutes) >= 0
-        ? Math.floor(Number(item.totalWatchTimeMinutes))
-        : undefined,
-    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
-    custom: Boolean(item.custom || String(item.id).startsWith('custom-')),
-    ...(normalizedCast.length > 0 ? { cast: normalizedCast } : {}),
-    ...(normalizedCrew.length > 0 ? { crew: normalizedCrew } : {}),
-    isDemo: item.isDemo === true,
-  };
-}
-
-/**
- * Robust item lookup in the user's saved list.
- * Matches by ID and media_type, avoiding cross-matching between movies and tv shows with the same numeric ID.
- */
-export function findSavedItem(
-  savedItems: SavedItem[] | undefined | null,
-  item: any
-): SavedItem | undefined {
-  if (!Array.isArray(savedItems) || !item || item.id == null) return undefined;
-  const targetId = String(item.id);
-  const targetType =
-    item.media_type || (item.title ? 'movie' : (item.name ? 'tv' : undefined));
-
-  // 1. Exact match by ID and media_type if type is known
-  if (targetType) {
-    const exact = savedItems.find(
-      (entry) => String(entry.id) === targetId && entry.media_type === targetType
-    );
-    if (exact) return exact;
-  }
-
-  // 2. Fallback: match by ID alone ONLY when targetType was not specified at all
-  if (!targetType) {
-    const byId = savedItems.filter((entry) => String(entry.id) === targetId);
-    if (byId.length > 0) return byId[0];
-  }
-
-  // 3. Fallback: match by title/name if available, respecting media_type if specified
-  const rawTitle = (item.title || item.name || '').trim().toLowerCase();
-  if (rawTitle) {
-    const byTitle = savedItems.filter(
-      (entry) =>
-        (entry.title || '').trim().toLowerCase() === rawTitle &&
-        (!targetType || entry.media_type === targetType)
-    );
-    if (byTitle.length > 0) {
-      return byTitle[0];
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Checks if an item is already in the user's saved list using standardized makeMediaKey.
- */
-export function isItemSaved(
-  savedItems: SavedItem[] | undefined | null,
-  item: any,
-  defaultType?: string
-): boolean {
-  if (!Array.isArray(savedItems) || !item || item.id == null) return false;
-  const itemType = defaultType || item.media_type || (item.title ? 'movie' : (item.name ? 'tv' : 'movie'));
-  const itemKey = makeMediaKey(itemType, item.id);
-  if (savedItems.some((s) => makeMediaKey(s) === itemKey)) return true;
-  const found = findSavedItem(savedItems, { ...item, media_type: itemType });
-  return found != null;
-}
-
-export function filterHistoryByType(
-  savedItems: SavedItem[] | undefined | null,
-  mediaType: string = 'all'
-): SavedItem[] {
-  if (!Array.isArray(savedItems)) return [];
-  if (mediaType !== 'movie' && mediaType !== 'tv') return [...savedItems];
-  return savedItems.filter((item) => item.media_type === mediaType);
-}
-
-export function filterDislikedByType(
-  dislikedKeys: string[] | undefined | null,
-  mediaType: string = 'all'
-): string[] {
-  if (!Array.isArray(dislikedKeys)) return [];
-  const canonical = canonicalizeMediaKeyList(dislikedKeys);
-  if (mediaType !== 'movie' && mediaType !== 'tv') return canonical;
-  return canonical.filter((key) => key.startsWith(`${mediaType}:`));
-}
-
-export const TARGET_RECOMMENDATION_COUNT = 20;
-
-
-export function dedupeItems(items: SavedItem[]): SavedItem[] {
-  const unique = new Map<string, SavedItem>();
-  for (const item of items) {
-    const key = makeMediaKey(item);
-    const existing = unique.get(key);
-    if (!existing) {
-      unique.set(key, item);
-      continue;
-    }
-    const existingTime = existing.updatedAt || existing.addedAt || '';
-    const incomingTime = item.updatedAt || item.addedAt || '';
-    const newest = incomingTime > existingTime ? item : existing;
-    const older = newest === item ? existing : item;
-
-    let rating = newest.personal_rating;
-    let ratingCleared = newest.personal_rating_cleared === true;
-    if (!rating && !ratingCleared && older.personal_rating !== '' && Number(older.personal_rating) > 0) {
-      rating = older.personal_rating;
-    }
-    if (rating) ratingCleared = false;
-    const isDemo = newest.isDemo === true && older.isDemo === true;
-    const mergedRatedAt = ratingCleared ? undefined : newest.ratedAt || older.ratedAt;
-    const mergedCompletedAt =
-      newest.status === 'completed' ? newest.completedAt || older.completedAt : undefined;
-    const mergedGenreIds = Array.from(
-      new Set<number>([...(older.genre_ids || []), ...(newest.genre_ids || [])])
-    );
-    const mergedCast = [...(newest.cast || []), ...(older.cast || [])];
-    const mergedCrew = [...(newest.crew || []), ...(older.crew || [])];
-    const normalized = normalizeSavedItem({
-      ...older,
-      ...newest,
-      genre_ids: mergedGenreIds,
-      ...(mergedCast.length > 0 ? { cast: mergedCast } : {}),
-      ...(mergedCrew.length > 0 ? { crew: mergedCrew } : {}),
-      isDemo,
-      status: newest.status,
-      personal_rating: rating || '',
-      personal_rating_cleared: ratingCleared,
-      ...(mergedRatedAt ? { ratedAt: mergedRatedAt } : {}),
-      ...(mergedCompletedAt ? { completedAt: mergedCompletedAt } : {}),
-      season_progress: { ...older.season_progress, ...newest.season_progress },
-      season_episode_counts: { ...older.season_episode_counts, ...newest.season_episode_counts },
-      watched_episodes: { ...(older.watched_episodes || {}), ...(newest.watched_episodes || {}) },
-      progress_updated_at: {
-        ...(older.progress_updated_at || {}),
-        ...(newest.progress_updated_at || {}),
-      },
-      next_episode_to_air:
-        sanitizeNextEpisode(newest.next_episode_to_air) || sanitizeNextEpisode(older.next_episode_to_air),
-      addedAt: [existing.addedAt, item.addedAt].filter(Boolean).sort()[0] || '',
-      updatedAt: newest.updatedAt || newest.addedAt || '',
-    });
-    if (normalized) {
-      unique.set(key, normalized);
-    }
-  }
-  return [...unique.values()];
-}
-
-export function parseBackupText(
-  text: string,
-  options: { maxBytes?: number } = {}
-): {
-  items: SavedItem[];
-  profileName: string;
-  preferences: any;
-  favoriteActors: FavoriteActorInfo[];
-  cinemaKunye: CinemaKunyeDocument;
-  isDemo?: boolean;
-  schemaVersion: number;
-} {
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_DATA_BYTES;
-  if (typeof text !== 'string' || measureUtf8Bytes(text) > maxBytes) {
-    throw new Error(
-      `Gönderilen yedek dosyası izin verilen sınırı (${formatMaxDataLimitMb(maxBytes)}) aşıyor.`
-    );
-  }
-  const backup = JSON.parse(text);
-  if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
-    throw new Error('Bu dosya geçerli bir Cinethos yedeği değil.');
-  }
-  if (![1, 2, 3].includes(backup.version)) {
-    throw new Error('Bu dosya geçerli bir Cinethos yedeği değil.');
-  }
-
-  let rawItems: any[] = [];
-  let rawProfileName = '';
-  let rawPreferences: any = null;
-  let rawFavoriteActors: any[] = [];
-  let rawProfileKunye: any = null;
-  let isDemo = false;
-
-  if (Array.isArray(backup.profiles) && backup.profiles.length > 0) {
-    const active =
-      backup.profiles.find((p: any) => p && p.id === backup.activeProfileId) || backup.profiles[0];
-    if (active) {
-      rawItems = Array.isArray(active.items) ? active.items : [];
-      rawProfileName = typeof active.name === 'string' ? active.name : '';
-      rawPreferences = active.preferences || null;
-      rawFavoriteActors = Array.isArray(active.favoriteActors) ? active.favoriteActors : [];
-      rawProfileKunye = active.cinemaKunye || active.sinemaKunyesi || null;
-      isDemo = active.isDemo === true;
-    }
-  } else if (Array.isArray(backup.items)) {
-    rawItems = backup.items;
-    rawProfileName = typeof backup.profileName === 'string' ? backup.profileName : '';
-    rawPreferences = backup.preferences || null;
-    rawFavoriteActors = Array.isArray(backup.favoriteActors) ? backup.favoriteActors : [];
-    isDemo = backup.isDemo === true;
-  } else {
-    throw new Error('Bu dosya geçerli bir Cinethos yedeği değil.');
-  }
-
-  if (
-    rawItems.some(
-      (item: any) =>
-        !item ||
-        typeof item !== 'object' ||
-        !validItemId(item.id) ||
-        !['movie', 'tv'].includes(item.media_type)
-    )
-  ) {
-    throw new Error('Yedekte geçersiz içerik kimliği veya türü var. Güvenlik nedeniyle içe aktarma durduruldu.');
-  }
-
-  const rawSchemaVer = Number(backup.schemaVersion || backup.version);
-  const schemaVersion =
-    Number.isSafeInteger(rawSchemaVer) && rawSchemaVer > 0 ? rawSchemaVer : CURRENT_SCHEMA_VERSION;
-  const dedupedItems = dedupeItems(rawItems.map(normalizeSavedItem).filter(Boolean) as SavedItem[]);
-
-  const rawBackupKunye = backup.cinemaKunye || backup.sinemaKunyesi || null;
-  const combinedExplicitKunye = mergeCinemaKunyeDocumentsLossless(
-    normalizeCinemaKunyeDocument(rawBackupKunye),
-    normalizeCinemaKunyeDocument(rawProfileKunye)
-  );
-  const derivedKunye = extractCinemaKunyeFromItems(dedupedItems);
-  const cinemaKunye = mergeCinemaKunyeDocumentsLossless(combinedExplicitKunye, derivedKunye);
-  const enrichedItems = enrichSavedItemsFromCinemaKunye(dedupedItems, cinemaKunye);
-
-  return {
-    items: enrichedItems,
-    profileName: rawProfileName.trim().slice(0, 40),
-    preferences:
-      rawPreferences && typeof rawPreferences === 'object' && !Array.isArray(rawPreferences)
-        ? rawPreferences
-        : null,
-    favoriteActors: normalizeFavoriteActors(rawFavoriteActors),
-    cinemaKunye,
-    isDemo,
-    schemaVersion,
-  };
-}
-
-
-export const DISLIKED_KEY_PATTERN = /^(?:movie|tv)[:-](?:[1-9]\d{0,11}|custom-[A-Za-z0-9_-]{1,80})$/;
-
-export function normalizePreferences(
-  raw: any,
-  { knownMoods = null }: { knownMoods?: string[] | null } = {}
-): Preferences {
-  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  return {
-    disliked: Array.isArray(source.disliked)
-      ? source.disliked
-          .filter((key: any) => typeof key === 'string' && DISLIKED_KEY_PATTERN.test(key))
-          .map((key: string) => {
-            const parsed = parseMediaKey(key);
-            return parsed ? makeMediaKey(parsed.type, parsed.id) : key;
-          })
-          .slice(-500)
-      : [],
-    ...(Array.isArray(source.hidden)
-      ? {
-          hidden: source.hidden
-            .filter((key: any) => typeof key === 'string' && DISLIKED_KEY_PATTERN.test(key))
-            .map((key: string) => {
-              const parsed = parseMediaKey(key);
-              return parsed ? makeMediaKey(parsed.type, parsed.id) : key;
-            })
-            .slice(-500),
-        }
-      : {}),
-    providers: Array.isArray(source.providers)
-      ? source.providers
-          .filter(
-            (id: any) =>
-              (typeof id === 'number' && Number.isSafeInteger(id) && id > 0 && id <= 999_999) ||
-              (typeof id === 'string' && /^\d{1,6}$/.test(id))
-          )
-          .map(String)
-          .slice(-20)
-      : [],
-    mood:
-      typeof source.mood === 'string'
-        ? knownMoods
-          ? knownMoods.includes(source.mood)
-            ? source.mood
-            : ''
-          : source.mood.slice(0, 20)
-        : '',
-    reminders: source.reminders === true,
-    notified: Array.isArray(source.notified)
-      ? source.notified.filter((key: any) => typeof key === 'string' && key.length <= 200).slice(-200)
-      : [],
-  };
-}
-
-export function normalizeDeletedKeys(
-  raw: unknown,
-  options: { nowMs?: number; maxEntries?: number; retentionDays?: number } = {}
-): Record<string, string> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const nowMs = options.nowMs ?? Date.now();
-  const maxEntries = options.maxEntries ?? 2000;
-  const retentionMs = (options.retentionDays ?? TOMBSTONE_RETENTION_DAYS) * 24 * 60 * 60 * 1000;
-  const cutoffMs = nowMs - retentionMs;
-
-  const validEntries: Array<[string, string]> = [];
-  for (const [rawKey, rawTs] of Object.entries(raw as Record<string, unknown>)) {
-    const parsedKey = parseMediaKey(rawKey);
-    if (!parsedKey) continue;
-    const canonical = `${parsedKey.type}:${parsedKey.id}`;
-    if (!DISLIKED_KEY_PATTERN.test(canonical)) continue;
-    if (typeof rawTs !== 'string' || !rawTs.trim()) continue;
-    const tsMs = Date.parse(rawTs);
-    if (!Number.isFinite(tsMs) || tsMs < cutoffMs) continue;
-    const iso = new Date(tsMs).toISOString();
-    validEntries.push([canonical, iso]);
-  }
-
-  validEntries.sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0]));
-  const out: Record<string, string> = {};
-  for (const [k, ts] of validEntries.slice(-maxEntries)) {
-    if (!out[k] || ts > out[k]) {
-      out[k] = ts;
-    }
-  }
-  return out;
-}
-
-export function normalizeProfile(
-  raw: any,
-  { maxItems = DEFAULT_MAX_ITEMS_PER_PROFILE, knownMoods = null }: { maxItems?: number; knownMoods?: string[] | null } = {}
-): Profile | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const canonicalId = normalizeProfileId(raw.id);
-  if (!canonicalId) return null;
-  const items = Array.isArray(raw.items)
-    ? (raw.items.map(normalizeSavedItem).filter(Boolean) as SavedItem[])
-    : [];
-  const deduped = dedupeItems(items).slice(0, maxItems);
-  const liveKeys = new Set(deduped.map((it) => makeMediaKey(it)));
-  const normalizedTombstones = normalizeDeletedKeys(raw.deleted_keys);
-  for (const key of Object.keys(normalizedTombstones)) {
-    if (liveKeys.has(key)) {
-      delete normalizedTombstones[key];
-    }
-  }
-  return {
-    id: canonicalId,
-    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 40) : 'Profilim',
-    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt.slice(0, 40) : '',
-    preferences: normalizePreferences(raw.preferences, { knownMoods }),
-    items: deduped,
-    favoriteActors: normalizeFavoriteActors(raw.favoriteActors),
-    ...(Object.keys(normalizedTombstones).length > 0 ? { deleted_keys: normalizedTombstones } : {}),
-    isDemo: raw.isDemo === true,
-  };
-}
-
-export function normalizeDataDocument(
-  raw: any,
-  {
-    maxProfiles = DEFAULT_MAX_PROFILES,
-    maxItems = DEFAULT_MAX_ITEMS_PER_PROFILE,
-  }: { maxProfiles?: number; maxItems?: number } = {}
-): DataDocument | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  let candidates: any[];
-  let activeCandidate = '';
-  if (Array.isArray(raw.profiles)) {
-    candidates = raw.profiles;
-    activeCandidate = normalizeProfileId(raw.activeProfileId) ?? '';
-  } else if (Array.isArray(raw.items)) {
-    candidates = [
-      {
-        id: normalizeProfileId(raw.profileId) ?? 'PROFILE-DEFAULT',
-        name: typeof raw.profileName === 'string' ? raw.profileName : 'Profilim',
-        createdAt: '',
-        preferences: raw.preferences,
-        items: raw.items,
-        favoriteActors: raw.favoriteActors,
-        isDemo: raw.isDemo === true,
-      },
-    ];
-    activeCandidate = candidates[0].id;
-  } else {
-    return null;
-  }
-  const profiles: Profile[] = [];
-  const byCanonicalId = new Map<string, Profile>();
-  for (const candidate of candidates) {
-    const profile = normalizeProfile(candidate, { maxItems });
-    if (!profile) continue;
-    // Faz 3 migration: eski kayıtları yeni etkileşim alanlarıyla (watchedAt/
-    // firstAddedAt) güvenli ve idempotent biçimde zenginleştir. Var olan değerler
-    // korunur; `updatedAt` izlenme tarihi olarak kullanılmaz.
-    if (Array.isArray(profile.items) && profile.items.length > 0) {
-      profile.items = backfillInteractionDates(profile.items).items;
-    }
-    const existing = byCanonicalId.get(profile.id);
-    if (existing) {
-      existing.items = dedupeItems([...existing.items, ...profile.items]).slice(0, maxItems);
-      existing.favoriteActors = normalizeFavoriteActors([
-        ...(existing.favoriteActors || []),
-        ...(profile.favoriteActors || []),
-      ]);
-      existing.preferences = normalizePreferences({
-        ...existing.preferences,
-        disliked: [...(existing.preferences.disliked || []), ...(profile.preferences.disliked || [])],
-        hidden: [...(existing.preferences.hidden || []), ...(profile.preferences.hidden || [])],
-        providers: [...(existing.preferences.providers || []), ...(profile.preferences.providers || [])],
-        mood: existing.preferences.mood || profile.preferences.mood,
-        reminders: existing.preferences.reminders || profile.preferences.reminders,
-        notified: [...(existing.preferences.notified || []), ...(profile.preferences.notified || [])],
-      });
-      const mergedDeleted = normalizeDeletedKeys({
-        ...(existing.deleted_keys || {}),
-        ...(profile.deleted_keys || {}),
-      });
-      if (Object.keys(mergedDeleted).length) existing.deleted_keys = mergedDeleted;
-      existing.isDemo = existing.isDemo && profile.isDemo;
-      continue;
-    }
-    if (profiles.length >= maxProfiles) break;
-    byCanonicalId.set(profile.id, profile);
-    profiles.push(profile);
-  }
-  if (!profiles.length) return null;
-  const rawRev = Number(raw.revision);
-  const rawSchemaVer = Number(raw.schemaVersion || raw.version);
-  const schemaVersion =
-    Number.isSafeInteger(rawSchemaVer) && rawSchemaVer > 0 ? rawSchemaVer : CURRENT_SCHEMA_VERSION;
-  return {
-    version: 3,
-    schemaVersion,
-    engineVersion: ENGINE_VERSION,
-    activeProfileId: byCanonicalId.has(normalizeProfileId(activeCandidate) ?? '') ? (normalizeProfileId(activeCandidate) ?? profiles[0].id) : profiles[0].id,
-    profiles,
-    revision: Number.isSafeInteger(rawRev) && rawRev > 0 ? rawRev : 1,
-    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
-  };
-}
-
-export function resolveAirDate(item: SavedItem | any): string {
-  if (!item || typeof item !== 'object') return '';
-  if (item.media_type === 'tv') {
-    const next = item.next_episode_to_air;
-    if (next?.air_date) return next.air_date;
-    return typeof item.first_air_date === 'string' ? item.first_air_date : '';
-  }
-  return typeof item.release_date === 'string' ? item.release_date : '';
-}
-
-export function reminderDaysUntil(airDate: string, today: Date = new Date()): number | null {
-  if (typeof airDate !== 'string' || !isValidCalendarDate(airDate)) return null;
-  const release = new Date(`${airDate}T00:00:00`);
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const days = Math.ceil((release.getTime() - startOfToday.getTime()) / 86_400_000);
-  return days >= 0 && days <= REMINDER_WINDOW_DAYS ? days : null;
-}
-
-export function createRequestGate() {
-  let current = 0;
-  let controller: AbortController | null = null;
-  return {
-    begin() {
-      current += 1;
-      controller?.abort();
-      controller = new AbortController();
-      return { id: current, signal: controller.signal };
-    },
-    isCurrent(id: number) {
-      return id === current;
-    },
-    invalidate() {
-      current += 1;
-      controller?.abort();
-      controller = null;
-    },
-  };
-}
 
 export const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 export const clamp11 = (value: number) => Math.min(1, Math.max(-1, value));
@@ -1337,6 +453,9 @@ export function buildTasteProfileV3(
         media_type: item.media_type || (item.title ? 'movie' : 'tv'),
         title: String(item.title || item.name || '').trim(),
         genre_ids: itemGenres,
+        // B-03: kanonik tür anahtarları profil kurulurken bir kez hesaplanır;
+        // benzerlik karşılaştırmasında yeniden üretilmez.
+        genreKeys: Array.from(canonicalGenreKeys(itemGenres)),
         overviewTokens: new Set(itemTokens),
         castIds: itemCastIds,
         directorIds: itemDirectorIds,
@@ -1522,6 +641,99 @@ export function buildTasteProfileV3(
     positiveGenres,
     coOccurredPairs,
     lovedItemFeatures,
+  };
+}
+
+/**
+ * B-11 — Film ve dizi zevk kapsamlarının ayrıştırılması.
+ *
+ * Politika (tek kaynak, kod ve testlerle sabitlenmiştir):
+ * - Film profili YALNIZCA film geçmişinden, dizi profili YALNIZCA dizi geçmişinden
+ *   kurulur; bir türdeki kayıt sayısı diğer türün profilini ağırlıklandırmaz.
+ * - Türler arası otomatik sinyal paylaşımı YOKTUR: favori oyuncular zaten ayrı bir
+ *   ürün sinyalidir (`favoriteActors`), puanlar/favoriler ise türüne aittir.
+ * - Kapsamlı profillerde medya tipi tercihi nötrlenir: seçim zaten film/dizi
+ *   dengesini ayrı yönettiği için "500 film izleyen kullanıcı" film adaylarına
+ *   yapay bir tip bonusu vermez.
+ * - Bir türde hiç geçmiş yoksa o kapsam soğuk başlangıç olarak genel profilden
+ *   türetilir (yine nötr medya tercihiyle) ve `*ColdStart` ile işaretlenir; böylece
+ *   yeni kullanıcı boş öneri listesi görmez.
+ */
+export interface ScopedTasteProfiles {
+  readonly general: TasteProfileV3;
+  readonly movie: TasteProfileV3;
+  readonly tv: TasteProfileV3;
+  readonly movieColdStart: boolean;
+  readonly tvColdStart: boolean;
+  readonly movieItemCount: number;
+  readonly tvItemCount: number;
+}
+
+export function neutralizeMediaPreference(profile: TasteProfileV3): TasteProfileV3 {
+  return { ...profile, mediaPreference: { movie: 0.5, tv: 0.5 } };
+}
+
+export function buildScopedTasteProfiles(
+  items: any[],
+  {
+    lambda = 1,
+    now = Date.now(),
+    dislikedKeys = [] as string[],
+    filterDemoIfLiveExists = true,
+  }: {
+    lambda?: number;
+    now?: number;
+    dislikedKeys?: string[];
+    filterDemoIfLiveExists?: boolean;
+  } = {}
+): ScopedTasteProfiles {
+  const list = Array.isArray(items) ? items : [];
+  const canonicalDisliked = canonicalizeMediaKeyList(dislikedKeys);
+  const movieDisliked = canonicalDisliked.filter((key) => key.startsWith('movie:'));
+  const tvDisliked = canonicalDisliked.filter((key) => key.startsWith('tv:'));
+
+  const general = buildTasteProfileV3(list, {
+    lambda,
+    now,
+    dislikedKeys: canonicalDisliked,
+    filterDemoIfLiveExists,
+  });
+
+  const movieItems = list.filter((item) => item?.media_type === 'movie');
+  const tvItems = list.filter((item) => item?.media_type === 'tv');
+
+  const movieColdStart = movieItems.length === 0;
+  const tvColdStart = tvItems.length === 0;
+
+  const movie = neutralizeMediaPreference(
+    movieColdStart
+      ? general
+      : buildTasteProfileV3(movieItems, {
+          lambda,
+          now,
+          dislikedKeys: movieDisliked,
+          filterDemoIfLiveExists,
+        })
+  );
+  const tv = neutralizeMediaPreference(
+    tvColdStart
+      ? general
+      : buildTasteProfileV3(tvItems, {
+          lambda,
+          now,
+          dislikedKeys: tvDisliked,
+          filterDemoIfLiveExists,
+        })
+  );
+
+  return {
+    general,
+    movie,
+    tv,
+    movieColdStart,
+    tvColdStart,
+    movieItemCount: movieItems.length,
+    tvItemCount: tvItems.length,
   };
 }
 
@@ -2226,7 +1438,7 @@ export async function hydrateDiscoveryHistoryIdb(profileId: string): Promise<Per
   const store = getDiscoveryHistoryIdbStore();
   if (store) {
     try {
-      const idbVal = await idbGet<PersistentTasteMapData>(key, store);
+      const idbVal = await store.get<PersistentTasteMapData>(key);
       if (idbVal && typeof idbVal.entries === 'object') {
         const sanitized = sanitizeLoadedTasteMapObject(profileId, idbVal);
         if (sanitized) {
@@ -2295,7 +1507,7 @@ export function savePersistentTasteMap(profileId: string, data: PersistentTasteM
       }
     } catch {}
     trackCoreIdbWrite(
-      idbSet(key, normalizedData, store).catch((err) => {
+      store.set(key, normalizedData).catch((err) => {
         console.warn('[Cinethos] Discovery history IDB write failed:', err);
       })
     );
@@ -3281,14 +2493,17 @@ export function scoreCandidatesV3(
     const knownGenreScores = genreIds
       .map((gid: string) => profile.genres?.[gid])
       .filter((s: unknown): s is number => typeof s === 'number');
-    let genreScore = knownGenreScores.length
+    const genreScore = knownGenreScores.length
       ? clamp01(knownGenreScores.reduce((sum: number, s: number) => sum + (s + 1) / 2, 0) / knownGenreScores.length)
       : 0.5;
 
-    // 1b. Sunucu zevk profili (Faz 1/2 metrik motoru). Yalnızca yeterli güvene
-    // sahipse ve hesaplanabilirse tür puanına sınırlı ağırlıkla karışır; aksi
-    // halde sıralama yerel profille birebir aynı kalır (geri dönüş güvenli).
-    let serverTasteScore: number | null = null;
+    // 1b. Sunucu zevk profili (Faz 1/2 metrik motoru).
+    // B-13: Bu sinyal artık `parts` içinde KENDİ AĞIRLIĞIYLA yer alır. Daha önce
+    // yalnızca tür puanına gizlice karışıyor, kırılımdaki `serverTaste` anahtarı ise
+    // hiçbir ağırlığa bağlı olmadığı için açıklamada "katkı varmış gibi" görünüyordu.
+    // Şimdi katkı tek yerde (kendi ağırlığıyla) hesaplanır; açıklama etiketi de bu
+    // gerçek katkıdan üretilir. Sinyal yoksa/düşük güvenliyse davranış birebir eskidir.
+    let serverTastePart: number | null = null;
     if (serverTaste && serverTaste.confidence >= 0.35 && serverTaste.metricIdFor) {
       const affinities = genreIds
         .map((gid: string) => {
@@ -3298,9 +2513,9 @@ export function scoreCandidatesV3(
         .filter((val: unknown): val is number => typeof val === 'number');
       if (affinities.length > 0) {
         const avg = affinities.reduce((sum: number, val: number) => sum + val, 0) / affinities.length;
-        const weight = 0.25 * Math.max(0, Math.min(1, serverTaste.confidence));
-        serverTasteScore = avg;
-        genreScore = clamp01(genreScore * (1 - weight) + ((avg + 1) / 2) * weight);
+        const confidence = Math.max(0, Math.min(1, serverTaste.confidence));
+        // 0.5 nötr; güven arttıkça afiniteye doğru açılır.
+        serverTastePart = clamp01(0.5 + (avg / 2) * confidence);
       }
     }
 
@@ -3483,12 +2698,16 @@ export function scoreCandidatesV3(
       context: contextScore,
       franchise: franchiseScore,
       sourceSignal: sourceSignalScore,
-      ...(serverTasteScore !== null ? { serverTaste: (serverTasteScore + 1) / 2 } : {}),
+      ...(serverTastePart !== null ? { serverTaste: serverTastePart } : {}),
     };
 
     // Raw score formula: S_ham = 100 * (sum(w_j * s_j) / sum(w_j))
-    const totalWeight = Object.values(weights).reduce((sum, w) => sum + (Number(w) || 0), 0);
-    const weightedSum = Object.entries(weights).reduce(
+    // Sunucu sinyali varsa kendi ağırlığıyla eklenir; yoksa ağırlık kümesi ve
+    // dolayısıyla puanlar birebir eskisi gibi kalır (geriye dönük uyum).
+    const effectiveWeights =
+      serverTastePart !== null ? { ...weights, serverTaste: SERVER_TASTE_WEIGHT } : weights;
+    const totalWeight = Object.values(effectiveWeights).reduce((sum, w) => sum + (Number(w) || 0), 0);
+    const weightedSum = Object.entries(effectiveWeights).reduce(
       (sum, [key, w]) => sum + (parts[key] ?? 0.5) * (Number(w) || 0),
       0
     );
@@ -3529,7 +2748,7 @@ export function scoreCandidatesV3(
     if (explorationScore >= 0.75 && tags.length < 3) {
       tags.push('Yeni keşif için');
     }
-    if (serverTasteScore !== null && serverTasteScore >= 0.25 && tags.length < 5) {
+    if (serverTastePart !== null && serverTastePart >= SERVER_TASTE_EXPLANATION_PART_THRESHOLD && tags.length < 5) {
       tags.push('Sunucu zevk profilinle uyumlu');
     }
 
@@ -3822,7 +3041,7 @@ export async function fetchActorCreditsBatch(
             let data: any = null;
             const fetcher = fetchTmdbFn || (async (p: string, params?: Record<string, string>) => {
               // P0-02: doğrudan fetch yerine ortak apiFetch (LAN token + 401/503 bildirimi)
-              const res = await apiFetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
+              const res = await coreApiFetch(`/api/tmdb?path=${encodeURIComponent(p)}&${new URLSearchParams(params || {}).toString()}`);
               return res.json();
             });
 
@@ -5577,7 +4796,7 @@ export async function hydrateCandidatePoolsIdb(
     for (const mediaType of ['movie', 'tv'] as const) {
       const key = `cinetrack_pool_${mediaType}_${profileId}`;
       try {
-        const idbVal = await idbGet<PersistentCandidatePoolData>(key, store);
+        const idbVal = await store.get<PersistentCandidatePoolData>(key);
         if (idbVal && idbVal.mediaType === mediaType && Array.isArray(idbVal.items)) {
           idbHydratedPools.set(key, {
             mediaType,
@@ -5693,7 +4912,7 @@ export function savePersistentPoolData(
       }
     } catch {}
     trackCoreIdbWrite(
-      idbSet(key, poolRecord, store).catch((err) => {
+      store.set(key, poolRecord).catch((err) => {
         console.warn('[Cinethos] Candidate pool IDB write failed:', err);
       })
     );

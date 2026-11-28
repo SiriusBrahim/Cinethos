@@ -3,7 +3,7 @@ import { Command } from 'cmdk';
 import type { SavedItem } from '../core/cinetrack-core.ts';
 import { fetchTmdb } from '../services/api.ts';
 import { displayTitle, getPoster, releaseYear } from '../utils/helpers.ts';
-import { useDialogAccessibility } from '../utils/useDialogAccessibility.ts';
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility.ts';
 import { MODULES, type ModuleId } from '../app/module-registry.ts';
 
 /**

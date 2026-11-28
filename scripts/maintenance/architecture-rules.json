@@ -1,11 +1,11 @@
 {
-  "version": 1,
-  "comment": "M0 mimari sınır kuralları. Yalnızca ölçüm/rapor içindir; otomatik düzeltme yapılmaz. Her kural ARCHITECTURE.md'deki bir sınıra dayanır.",
+  "version": 2,
+  "comment": "Mimari sınır kuralları (Aşama 5 / F5-02). Yalnızca ölçüm/rapor içindir; otomatik düzeltme yapılmaz. Import tespiti TypeScript AST üzerinden yapılır (scripts/maintenance/architecture-boundaries.mjs). Her kural ARCHITECTURE.md'deki bir sınıra dayanır.",
   "rules": [
     {
       "id": "core-purity",
       "description": "src/core yalnızca saf ve deterministik iş mantığı içerir; sunucu, istemci servisleri ve arayüz katmanlarına bağımlı olamaz.",
-      "rationale": "ARCHITECTURE.md §1 — Çekirdek Katman: tarayıcı DOM'undan ve Express sunucusundan bağımsız, saf ve deterministik modüller.",
+      "rationale": "ARCHITECTURE.md §1 — Çekirdek Katman: tarayıcı DOM'undan ve Express sunucusundan bağımsız, saf ve deterministik modüller. Ortam bağımlılıkları src/core/ports/ portları arkasından enjekte edilir.",
       "from": ["src/core/**"],
       "forbidLayers": [
         "server",
@@ -32,10 +32,10 @@
     },
     {
       "id": "server-isolation",
-      "description": "Sunucu katmanı istemci arayüzüne (React bileşenleri, hook'lar, design-system) bağımlı olamaz.",
-      "rationale": "ARCHITECTURE.md §1 — Sunucu Katmanı çekirdek, sözleşme ve kalıcı veri modülleriyle çalışır; arayüz katmanından bağımsızdır.",
+      "description": "Sunucu katmanı istemci arayüzüne (React bileşenleri, hook'lar, app, design-system) bağımlı olamaz.",
+      "rationale": "ARCHITECTURE.md §1 — Sunucu Katmanı çekirdek, sözleşme ve kalıcı veri modülleriyle çalışır; arayüz katmanından bağımsızdır. Ortak çalışma zamanı primitifleri (olay yolu, profil bağlamı, modül kayıt defteri) src/shared/ altındadır.",
       "from": ["server.ts", "src/server/**"],
-      "forbidLayers": ["components", "hooks", "features", "design-system"],
+      "forbidLayers": ["app", "components", "hooks", "features", "design-system"],
       "forbidPackages": [
         "react",
         "react-dom",
@@ -78,6 +78,33 @@
         "design-system"
       ],
       "forbidPackages": ["react", "react-dom", "express"],
+      "forbidNodeBuiltins": true
+    },
+    {
+      "id": "modules-no-server",
+      "description": "src/modules, sunucu uygulama katmanına (src/server, server.ts) bağımlı olamaz.",
+      "rationale": "ARCHITECTURE.md §1 — modül sözleşmeleri uygulamadan bağımsızdır. Modülün ihtiyaç duyduğu yüzey kendi portunda (src/modules/*/ports.ts) tanımlanır; sunucu adaptörü bu portu uygular. Yön daima server → modules.",
+      "from": ["src/modules/**"],
+      "forbidLayers": ["server"],
+      "forbidPackages": ["express", "exceljs"],
+      "forbidNodeBuiltins": true
+    },
+    {
+      "id": "shared-isolation",
+      "description": "src/shared yalnızca katmanlar arası ortak, saf primitifleri içerir; sunucu, arayüz, modül veya servis katmanlarına bağımlı olamaz.",
+      "rationale": "Aşama 5 / F5-02 — olay yolu, profil bağlamı, modül kayıt defteri ve kabuk olayları gibi hem sunucunun hem istemcinin kullandığı primitifler src/shared/ altında tutulur; bu katman kendisini tüketen katmanlara bağımlı olamaz.",
+      "from": ["src/shared/**"],
+      "forbidLayers": [
+        "server",
+        "app",
+        "components",
+        "hooks",
+        "features",
+        "modules",
+        "services",
+        "design-system"
+      ],
+      "forbidPackages": ["react", "react-dom", "express", "exceljs"],
       "forbidNodeBuiltins": true
     }
   ]

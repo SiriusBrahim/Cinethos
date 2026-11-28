@@ -1,302 +1,92 @@
+import type { createDataStorage } from './storage.ts';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
+import { errorMessageOf, redactSecrets, stringifyDeterministic, hashContent, sanitizeProfileId,  } from './persistent-store-utils.ts';
+// F5.3-06: GitHub yanıt çözümleyicileri yalnızca **tip** olarak statik
+// bağlanır; çalışma zamanı kodu GitHub'a özgü metotların içinde dinamik olarak
+// yüklenir. Böylece yerel veri yolları GitHub modülünü hiç çalıştırmaz.
+import type { GitHubRepositoryMeta } from './github-response.ts';
 export { redactSecrets, stringifyDeterministic, hashContent, toCanonicalKey, mergeCatalogItem, sanitizeProfileId } from './persistent-store-utils.ts';
-import type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
+import type { CatalogRecord, CatalogManifest, DerivedProfileDocument } from './persistent-store-types.ts';
 export type { CatalogRecord, CatalogManifest, DerivedProfileItem, DerivedProfileDocument } from './persistent-store-types.ts';
-import { normalizeProfileId } from '../core/profile-id.ts';
-import {
-  cleanupStaleTempFiles,
-  CorruptJsonFileError,
-  FileWriteSerializer,
-  readJsonFileWithRecovery,
-  readJsonFileWithRecoveryAsync,
-  tryParseValidJson,
-  writeJsonFileAtomic,
-  writeJsonFileAtomicAsync,
-} from './atomic-json.ts';
-import {
-  computeDerivedProfileContentHash,
-  DERIVED_PROFILE_SCHEMA_VERSION,
-  normalizeDerivedProfileItem,
-  validateDerivedProfileCache,
-  type DerivedProfileValidationResult,
-} from '../core/derived-profile-cache.ts';
-import {
-  createEmptyCinemaKunyeDocument,
-  mergeCinemaKunyeDocumentsLossless,
-  normalizeCinemaKunyeDocument,
-  type CinemaKunyeDocument,
-} from '../core/cinema-kunye.ts';
+import { cleanupStaleTempFiles, FileWriteSerializer, readJsonFileWithRecovery, readJsonFileWithRecoveryAsync, tryParseValidJson,  } from './atomic-json.ts';
+import { type DerivedProfileValidationResult,  } from '../core/derived-profile-cache.ts';
+import { normalizeCinemaKunyeDocument, type CinemaKunyeDocument,  } from '../core/cinema-kunye.ts';
 import type {
   BidirectionalSyncReport,
   SyncComparisonSummary,
   SyncSideSummary,
 } from '../core/sync-display.ts';
 import { BRAND_SYNC_USER_AGENT } from '../shared/brand.ts';
-import { GitHubBidirectionalSyncManager } from './github-bidirectional-sync.ts';
-import type { createDataStorage } from './storage.ts';
+import { createRemoteSyncEngine } from './persistence/remote-sync-registry.ts';
+import type { RemoteSyncEngine } from './persistence/remote-sync-port.ts';
 
-export type TokenSourceKind =
-  | 'env:CINETRACK_GITHUB_TOKEN'
-  | 'env:CINETRACK_GITHUB_PAT'
-  | 'file:CINETRACK_GITHUB_TOKEN'
-  | 'file:CINETRACK_GITHUB_PAT'
-  | 'file:.env.local:CINETRACK_GITHUB_PAT'
-  | 'file:.env.local:CINETRACK_GITHUB_TOKEN'
-  | 'file:.env:CINETRACK_GITHUB_PAT'
-  | 'file:.env:CINETRACK_GITHUB_TOKEN'
-  | 'dotenv_local_pat'
-  | 'dotenv_pat'
-  | 'options'
-  | 'none';
+/** Aşama 2: kalıcı senkronizasyon durumu şema sürümü. v1 alanları geriye dönük okunur. */
+export * from './persistent-store/contracts.ts';
+import {
+  upsertCatalogItemsOp,
+  upsertCatalogItemsAsyncOp,
+  type CatalogUpsertResult,
+} from './persistent-store/catalog-write-store.ts';
+import {
+  upsertDerivedProfileOp,
+  upsertDerivedProfileAsyncOp,
+  type UpsertDerivedProfileInput,
+  type DerivedProfileUpsertResult,
+  type DerivedProfileWriteContext,
+} from './persistent-store/derived-profile-write-store.ts';
+import { saveCinemaKunyeOp, type CinemaKunyeSaveResult } from './persistent-store/cinema-kunye-write-store.ts';
+import { saveStockSnapshotUploadOp } from './persistent-store/stock-write-store.ts';
+import type { GitHubCommitOutcome } from './persistent-store/github-commit-store.ts';
+import {
+  loadSyncStateSnapshot,
+  recoverInterruptedFileStates,
+  saveSyncStateSnapshot,
+} from './persistent-store/store-state.ts';
+import {
+  ensureCatalogFiles as ensureCatalogFilesImpl,
+  ensureCatalogFilesAsync as ensureCatalogFilesAsyncImpl,
+  readCatalog as readCatalogImpl,
+  readCatalogAsync as readCatalogAsyncImpl,
+  readCatalogManifest as readCatalogManifestImpl,
+  readCatalogManifestAsync as readCatalogManifestAsyncImpl,
+  type CatalogStoreContext,
+} from './persistent-store/catalog-store.ts';
+import {
+  readDerivedProfile as readDerivedProfileImpl,
+  readDerivedProfileAsync as readDerivedProfileAsyncImpl,
+  readValidatedDerivedProfile as readValidatedDerivedProfileImpl,
+  readValidatedDerivedProfileAsync as readValidatedDerivedProfileAsyncImpl,
+  type DerivedProfileStoreContext,
+} from './persistent-store/derived-profile-store.ts';
 
-export type TokenFormatKind =
-  | 'fine_grained_pat'
-  | 'classic_pat'
-  | 'oauth_or_app'
-  | 'custom'
-  | 'none';
+import type {
+  GitHubSyncErrorCategory,
+  GitHubTokenCandidateInfo,
+  PersistentStoreOptions,
+  RemoteRepoAccessCheck,
+  StagedFileOutcome,
+  StagedSyncReport,
+  SyncFileStage,
+  SyncFileStateRecord,
+  SyncResult,
+  SyncStatus,
+  TokenSourceKind,
+} from './persistent-store/contracts.ts';
+// `node server.ts` (npm start) TypeScript tiplerini yalnızca silerek çalıştırır;
+// bu yüzden tip adları ayrı bir `import type` bloğunda olmalıdır.
+import {
+  STAGE_LABELS,
+  SYNC_STATE_VERSION,
+  classifyHttpFailure,
+  classifyTokenFormat,
+  isPlainRecordObject,
+} from './persistent-store/contracts.ts';
 
-export interface GitHubTokenCandidateInfo {
-  token: string;
-  source: TokenSourceKind;
-}
-
-export interface PersistentStoreOptions {
-  dataDir: string;
-  maxDataBytes?: number;
-  githubToken?: string;
-  githubTokenSource?: TokenSourceKind;
-  githubTokenCandidates?: GitHubTokenCandidateInfo[];
-  getLiveGitHubTokenCandidates?: () => GitHubTokenCandidateInfo[];
-  onAuthFailureRefreshToken?: (
-    failedToken: string
-  ) => Promise<{ token: string; source?: TokenSourceKind } | string | null>;
-  githubOwner?: string;
-  githubRepo?: string;
-  githubBranch?: string;
-  isPublicRepo?: boolean;
-  allowPublicPersonalSync?: boolean;
-  allowPublicCatalogSync?: boolean;
-  processEnvIsPublicRepo?: string | null;
-  localEnvIsPublicRepo?: string | null;
-}
-
-export type SyncFileStage = 'pending' | 'syncing' | 'succeeded' | 'failed';
-
-export type GitHubSyncErrorCategory =
-  | 'config_error'
-  | 'network_error'
-  | 'rate_limit'
-  | 'auth_error'
-  | 'conflict'
-  | 'not_found'
-  | 'malformed_response'
-  | 'corrupt_local_file'
-  | 'http_error';
-
-export interface RemoteRepoAccessCheck {
-  ok: boolean;
-  accessible: boolean;
-  repoExists: boolean;
-  branchExists: boolean;
-  isEmptyRepo: boolean;
-  isPrivate: boolean;
-  effectiveIsPublicRepo: boolean;
-  defaultBranch?: string;
-  configuredBranch: string;
-  hasPushPermission: boolean;
-  acceptedPermissionsHeader?: string | null;
-  warning?: string;
-  error?: string;
-  errorCategory?: GitHubSyncErrorCategory;
-}
-
-export interface SyncFileStateRecord {
-  repoPath: string;
-  status: SyncFileStage;
-  statusLabel: 'bekliyor' | 'gönderiliyor' | 'başarılı' | 'başarısız';
-  noop?: boolean;
-  blockedPublic?: boolean;
-  localContentHash?: string;
-  readBackHash?: string | null;
-  verifiedReadBack?: boolean;
-  sha?: string;
-  error?: string;
-  errorCategory?: GitHubSyncErrorCategory;
-  updatedAt: string;
-}
-
-export interface SyncStatus {
-  configured: boolean;
-  authFailed?: boolean;
-  mode: 'github' | 'local_only';
-  reason?: string;
-  isPublicRepo: boolean;
-  configuredEnvIsPublicRepo?: boolean;
-  allowPublicPersonalSync?: boolean;
-  allowPublicCatalogSync?: boolean;
-  personalSyncBlockedByPublicGuard?: boolean;
-  catalogSyncBlockedByPublicGuard?: boolean;
-  publicConsentUpdatedAt?: string | null;
-  publicCatalogConsentUpdatedAt?: string | null;
-  configDiagnostics?: {
-    processEnvIsPublicRepo: string | null;
-    localEnvIsPublicRepo: string | null;
-    effectiveConfiguredIsPublicRepo: boolean;
-    observedRemoteIsPublicRepo: boolean | null;
-    allowPublicPersonalSync: boolean;
-    allowPublicCatalogSync?: boolean;
-    persistedUserConsent: boolean | null;
-    persistedCatalogConsent?: boolean | null;
-  };
-  tokenDiagnostics?: {
-    configured: boolean;
-    source: TokenSourceKind;
-    format: TokenFormatKind;
-    length: number;
-  };
-  repoVisibilityWarning?: string;
-  corruptionWarnings?: string[];
-  lastSyncAt: string | null;
-  syncInProgress?: boolean;
-  initialReconcileCompleted?: boolean;
-  lastError?: string | null;
-  catalogCounts: {
-    movies: number;
-    tv: number;
-  };
-  profilesCount: number;
-  localSummary?: SyncSideSummary;
-  lastRemoteSummary?: SyncSideSummary | null;
-  lastComparison?: SyncComparisonSummary | null;
-  lastSyncReport?: Omit<BidirectionalSyncReport, 'updatedDataDocument'> | null;
-  fileSummaryCounts?: {
-    pending: number;
-    syncing: number;
-    succeeded: number;
-    skipped: number;
-    downloaded: number;
-    uploaded: number;
-    merged: number;
-    failed: number;
-  };
-  fileStates: Record<string, SyncFileStateRecord>;
-  remoteTarget?: {
-    owner: string;
-    repo: string;
-    branch: string;
-  };
-}
-
-export interface SyncResult {
-  ok: boolean;
-  partialFailure: boolean;
-  filesCommitted: string[];
-  filesSkipped: string[];
-  filesFailed: string[];
-  filesBlockedPublic: string[];
-  fileStates: Record<string, SyncFileStateRecord>;
-  repoVisibilityWarning?: string;
-  errors: string[];
-}
-
-export interface StagedFileOutcome {
-  repoPath: string;
-  stage: 'probe' | 'catalog' | 'personal';
-  status: 'succeeded' | 'failed' | 'skipped' | 'blocked';
-  writeStatus:
-    | 'committed'
-    | 'unchanged_noop'
-    | 'failed'
-    | 'skipped_due_to_probe_failure'
-    | 'skipped_due_to_catalog_failure'
-    | 'blocked_public_guard';
-  sizeBytes: number;
-  localHash: string | null;
-  readBackHash: string | null;
-  sha?: string;
-  verifiedReadBack: boolean;
-  error?: string;
-  errorCategory?: GitHubSyncErrorCategory;
-}
-
-export interface StagedSyncReport {
-  ok: boolean;
-  verifiedEqual: boolean;
-  haltedAtStage?: 'probe' | 'catalog' | 'personal';
-  probe: {
-    ok: boolean;
-    repoPath: string;
-    step: string;
-    sizeBytes: number;
-    localHash: string | null;
-    readBackHash: string | null;
-    sha?: string;
-    verifiedReadBack: boolean;
-    error?: string;
-    errorCategory?: GitHubSyncErrorCategory;
-  };
-  catalogStage: {
-    attempted: boolean;
-    ok: boolean;
-    blockedByPublicGuard?: boolean;
-  };
-  personalStage: {
-    attempted: boolean;
-    ok: boolean;
-    blockedByPublicGuard?: boolean;
-  };
-  access: RemoteRepoAccessCheck;
-  allowPersonalSync: boolean;
-  allowCatalogSync?: boolean;
-  repoVisibilityWarning?: string;
-  files: StagedFileOutcome[];
-  fileOutcomes: StagedFileOutcome[];
-  bidirectionalReport?: BidirectionalSyncReport | null;
-}
-
-const STAGE_LABELS: Record<SyncFileStage, SyncFileStateRecord['statusLabel']> = {
-  pending: 'bekliyor',
-  syncing: 'gönderiliyor',
-  succeeded: 'başarılı',
-  failed: 'başarısız',
-};
-
-function isPlainRecordObject(raw: any): boolean {
-  return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw));
-}
-
-function classifyHttpFailure(status: number, headers: Headers, bodyMessage: string): GitHubSyncErrorCategory {
-  const remaining = headers.get('x-ratelimit-remaining');
-  const lowerMsg = (bodyMessage || '').toLowerCase();
-  if (
-    status === 429 ||
-    (status === 403 && (remaining === '0' || lowerMsg.includes('rate limit')))
-  ) {
-    return 'rate_limit';
-  }
-  if (status === 401 || status === 403) {
-    return 'auth_error';
-  }
-  if (status === 409) {
-    return 'conflict';
-  }
-  if (status === 404) {
-    return 'not_found';
-  }
-  return 'http_error';
-}
-
-function classifyTokenFormat(token?: string): TokenFormatKind {
-  if (!token) return 'none';
-  if (token.startsWith('github_pat_')) return 'fine_grained_pat';
-  if (token.startsWith('ghp_')) return 'classic_pat';
-  if (/^gh[ousr]_/.test(token)) return 'oauth_or_app';
-  return 'custom';
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isPlainRecordObject) : [];
 }
 
 export class PersistentDataStore {
@@ -322,8 +112,9 @@ export class PersistentDataStore {
   private fileStates: Record<string, SyncFileStateRecord> = {};
   private writeSerializer = new FileWriteSerializer();
   private maxDataBytes?: number;
+  private githubSyncEnabled: boolean;
   private attachedStorage!: ReturnType<typeof createDataStorage>;
-  private bidirectionalManager!: GitHubBidirectionalSyncManager;
+  private remoteSync!: RemoteSyncEngine;
 
   private githubToken?: string;
   private githubTokenSource: TokenSourceKind;
@@ -343,8 +134,13 @@ export class PersistentDataStore {
   private localEnvIsPublicRepo: string | null;
 
   constructor(options: PersistentStoreOptions) {
+    // F5.3-06: uzak senkronizasyon ayarları ayrı bir sınırda toplanır. Düz
+    // alanlar geriye dönük uyumluluk için okunmaya devam eder; `remoteSync`
+    // verildiğinde önceliklidir. Yerel veri yolları bu blok olmadan çalışır.
+    const remote = options.remoteSync;
     this.dataDir = options.dataDir;
     this.maxDataBytes = options.maxDataBytes;
+    this.githubSyncEnabled = (remote?.enabled ?? options.githubSyncEnabled) !== false;
     this.catalogDir = path.join(this.dataDir, 'catalog');
     this.profilesDir = path.join(this.dataDir, 'profiles');
     this.moviesFile = path.join(this.catalogDir, 'movies.json');
@@ -352,11 +148,12 @@ export class PersistentDataStore {
     this.manifestFile = path.join(this.catalogDir, 'manifest.json');
     this.syncStateFile = path.join(this.dataDir, 'sync-state.json');
 
-    this.githubToken = options.githubToken?.trim();
+    this.githubToken = (remote?.token ?? options.githubToken)?.trim();
     this.githubTokenSource =
-      options.githubTokenSource ?? (this.githubToken ? 'options' : 'none');
-    if (Array.isArray(options.githubTokenCandidates)) {
-      for (const cand of options.githubTokenCandidates) {
+      remote?.tokenSource ?? options.githubTokenSource ?? (this.githubToken ? 'options' : 'none');
+    const tokenCandidates = remote?.tokenCandidates ?? options.githubTokenCandidates;
+    if (Array.isArray(tokenCandidates)) {
+      for (const cand of tokenCandidates) {
         const tok = cand?.token?.trim();
         if (tok && !this.githubTokenCandidates.some((x) => x.token === tok)) {
           this.githubTokenCandidates.push({ token: tok, source: cand.source });
@@ -372,19 +169,25 @@ export class PersistentDataStore {
         source: this.githubTokenSource,
       });
     }
-    this.getLiveGitHubTokenCandidates = options.getLiveGitHubTokenCandidates;
-    this.onAuthFailureRefreshToken = options.onAuthFailureRefreshToken;
-    this.githubOwner = options.githubOwner?.trim();
-    this.githubRepo = options.githubRepo?.trim();
-    this.githubBranch = options.githubBranch?.trim() || 'main';
-    this.isPublicRepo = Boolean(options.isPublicRepo);
-    this.allowPublicPersonalSync = options.allowPublicPersonalSync;
-    this.allowPublicCatalogSync = options.allowPublicCatalogSync;
-    this.processEnvIsPublicRepo = options.processEnvIsPublicRepo ?? null;
-    this.localEnvIsPublicRepo = options.localEnvIsPublicRepo ?? null;
+    this.getLiveGitHubTokenCandidates =
+      remote?.getLiveTokenCandidates ?? options.getLiveGitHubTokenCandidates;
+    this.onAuthFailureRefreshToken =
+      remote?.onAuthFailureRefreshToken ?? options.onAuthFailureRefreshToken;
+    this.githubOwner = (remote?.owner ?? options.githubOwner)?.trim();
+    this.githubRepo = (remote?.repo ?? options.githubRepo)?.trim();
+    this.githubBranch = (remote?.branch ?? options.githubBranch)?.trim() || 'main';
+    this.isPublicRepo = Boolean(remote?.isPublicRepo ?? options.isPublicRepo);
+    this.allowPublicPersonalSync =
+      remote?.allowPublicPersonalSync ?? options.allowPublicPersonalSync;
+    this.allowPublicCatalogSync =
+      remote?.allowPublicCatalogSync ?? options.allowPublicCatalogSync;
+    this.processEnvIsPublicRepo =
+      (remote?.processEnvIsPublicRepo ?? options.processEnvIsPublicRepo) ?? null;
+    this.localEnvIsPublicRepo =
+      (remote?.localEnvIsPublicRepo ?? options.localEnvIsPublicRepo) ?? null;
 
     this.initDirectories();
-    this.loadPersistedSyncState();
+    if (this.githubSyncEnabled) this.loadPersistedSyncState();
   }
 
   public getEffectiveConfiguredIsPublicRepo(): boolean {
@@ -485,13 +288,19 @@ export class PersistentDataStore {
     };
   }
 
-  private createBidirectionalManager(): GitHubBidirectionalSyncManager {
-    return new GitHubBidirectionalSyncManager({
+  /**
+   * F5.3-05: Uzak senkronizasyon motoru dışarıdan gelir. Bu modül yalnızca saf
+   * `RemoteSyncEngine` arayüzünü bilir; GitHub'a özgü hiçbir import yoktur.
+   * Motor kaydedilmemişse yerel mod motoru döner (uygulama çalışmaya devam eder).
+   */
+  private createRemoteSync(): RemoteSyncEngine {
+    return createRemoteSyncEngine({
       dataDir: this.dataDir,
       maxDataBytes: this.maxDataBytes,
+      enableStartupRecovery: this.githubSyncEnabled,
       store: this,
       storage: this.attachedStorage,
-      getGitHubConfig: () => ({
+      getConfig: () => ({
         token: this.githubToken,
         owner: this.githubOwner,
         repo: this.githubRepo,
@@ -500,10 +309,43 @@ export class PersistentDataStore {
         allowPublicPersonalSync: this.isPersonalSyncAllowedForRepo(true),
         allowPublicCatalogSync: this.isCatalogSyncAllowedForRepo(true),
       }),
-      onSyncCompleted: ({ report, lastRemoteSummary, lastComparison }) => {
+      onCompleted: ({ report, lastRemoteSummary, lastComparison }) => {
         this.recordBidirectionalOutcome(report, lastRemoteSummary, lastComparison);
       },
     });
+  }
+
+  /**
+   * Aşama 2 (B-38): Kuyruk dışı senkronizasyon yazma yollarını aynı FIFO
+   * kuyruğu + süreçler arası kilitten geçirir. Zaten kuyruk içindeysek
+   * (ör. aşamalı senkronizasyonun çağırdığı prob) yeniden kilitlenmez.
+   */
+  private async withExclusiveSync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+    if (!this.remoteSync) return fn();
+    // runExclusive kendi AsyncLocalStorage bağlamıyla yalnızca gerçek iç içe
+    // çağrıları tanır. Queue'nun global "running" durumu bağımsız istekleri
+    // doğrudan çalıştırmak için kullanılmamalıdır.
+    return this.remoteSync.runExclusive(operation, fn);
+  }
+
+  public async runExclusiveSyncToGitHub(
+    options: Parameters<PersistentDataStore['syncToGitHub']>[0] = {}
+  ): Promise<SyncResult> {
+    return this.withExclusiveSync('push-files', () => this.syncToGitHub(options));
+  }
+
+  public async runExclusiveSafeConnectionProbe(
+    options: Parameters<PersistentDataStore['testSafeConnectionAndProbeManifest']>[0] = {}
+  ): Promise<Awaited<ReturnType<PersistentDataStore['testSafeConnectionAndProbeManifest']>>> {
+    return this.withExclusiveSync('connection-probe', () =>
+      this.testSafeConnectionAndProbeManifest(options)
+    );
+  }
+
+  public async runExclusiveStagedFullSync(
+    options: Parameters<PersistentDataStore['runStagedFullSync']>[0] = {}
+  ): Promise<StagedSyncReport> {
+    return this.withExclusiveSync('staged-sync', () => this.runStagedFullSync(options));
   }
 
   public attachDataStorage(
@@ -514,7 +356,7 @@ export class PersistentDataStore {
     if (typeof maxDataBytes === 'number' && maxDataBytes > 0) {
       this.maxDataBytes = maxDataBytes;
     }
-    this.bidirectionalManager = this.createBidirectionalManager();
+    this.remoteSync = this.createRemoteSync();
   }
 
   public getKnownSecretsForRedaction(): string[] {
@@ -618,11 +460,11 @@ export class PersistentDataStore {
   }
 
   public isSyncBusy(): boolean {
-    return this.bidirectionalManager.isBusy();
+    return this.remoteSync.isBusy();
   }
 
   public hasCompletedInitialReconcile(): boolean {
-    return this.persistedInitialReconcile || this.bidirectionalManager.hasCompletedInitialReconcile();
+    return this.persistedInitialReconcile || this.remoteSync.hasCompletedInitialReconcile();
   }
 
   private recordBidirectionalOutcome(
@@ -719,76 +561,67 @@ export class PersistentDataStore {
   }
 
   private loadPersistedSyncState() {
-    if (!existsSync(this.syncStateFile)) return;
-    const parsed = tryParseValidJson<{
-      lastSyncAt?: string | null;
-      lastError?: string | null;
-      repoVisibilityWarning?: string;
-      persistedInitialReconcile?: boolean;
-      persistedPublicPersonalConsent?: boolean;
-      publicConsentUpdatedAt?: string | null;
-      persistedPublicCatalogConsent?: boolean;
-      publicCatalogConsentUpdatedAt?: string | null;
-      lastObservedRemotePublic?: boolean;
-      lastRemoteSummary?: SyncSideSummary | null;
-      lastComparison?: SyncComparisonSummary | null;
-      lastSyncReport?: Omit<BidirectionalSyncReport, 'updatedDataDocument'> | null;
-      fileStates?: Record<string, SyncFileStateRecord>;
-    }>(this.syncStateFile, (raw) => (isPlainRecordObject(raw) ? raw : null));
-    if (parsed.ok) {
-      this.lastSyncAt = parsed.data.lastSyncAt ?? null;
-      this.lastError = parsed.data.lastError ?? null;
-      this.repoVisibilityWarning = parsed.data.repoVisibilityWarning;
-      this.persistedInitialReconcile = Boolean(parsed.data.persistedInitialReconcile);
-      if (typeof parsed.data.persistedPublicPersonalConsent === 'boolean') {
-        this.persistedPublicPersonalConsent = parsed.data.persistedPublicPersonalConsent;
-      }
-      this.publicConsentUpdatedAt = parsed.data.publicConsentUpdatedAt ?? null;
-      if (typeof parsed.data.persistedPublicCatalogConsent === 'boolean') {
-        this.persistedPublicCatalogConsent = parsed.data.persistedPublicCatalogConsent;
-      }
-      this.publicCatalogConsentUpdatedAt = parsed.data.publicCatalogConsentUpdatedAt ?? null;
-      if (typeof parsed.data.lastObservedRemotePublic === 'boolean') {
-        this.lastObservedRemotePublic = parsed.data.lastObservedRemotePublic;
-      }
-      this.lastRemoteSummary = parsed.data.lastRemoteSummary ?? null;
-      this.lastComparison = parsed.data.lastComparison ?? null;
-      this.lastSyncReport = parsed.data.lastSyncReport ?? null;
-      if (isPlainRecordObject(parsed.data.fileStates)) {
-        this.fileStates = { ...parsed.data.fileStates };
-      }
+    const snapshot = loadSyncStateSnapshot(this.syncStateFile);
+    if (!snapshot) return;
+    this.lastSyncAt = snapshot.lastSyncAt;
+    this.lastError = snapshot.lastError;
+    this.repoVisibilityWarning = snapshot.repoVisibilityWarning;
+    this.persistedInitialReconcile = snapshot.persistedInitialReconcile;
+    if (snapshot.persistedPublicPersonalConsent !== undefined) {
+      this.persistedPublicPersonalConsent = snapshot.persistedPublicPersonalConsent;
+    }
+    this.publicConsentUpdatedAt = snapshot.publicConsentUpdatedAt;
+    if (snapshot.persistedPublicCatalogConsent !== undefined) {
+      this.persistedPublicCatalogConsent = snapshot.persistedPublicCatalogConsent;
+    }
+    this.publicCatalogConsentUpdatedAt = snapshot.publicCatalogConsentUpdatedAt;
+    if (snapshot.lastObservedRemotePublic !== undefined) {
+      this.lastObservedRemotePublic = snapshot.lastObservedRemotePublic;
+    }
+    this.lastRemoteSummary = snapshot.lastRemoteSummary;
+    this.lastComparison = snapshot.lastComparison;
+    this.lastSyncReport = snapshot.lastSyncReport;
+    this.fileStates = snapshot.fileStates;
+    this.recoverStaleSyncingFileStates();
+  }
+
+  private recoverStaleSyncingFileStates(): void {
+    const { fileStates, recovered } = recoverInterruptedFileStates(
+      this.fileStates,
+      new Date().toISOString()
+    );
+    if (recovered.length === 0) return;
+    this.fileStates = fileStates;
+    this.lastError = `Kesinti sonrası kurtarma: ${recovered.length} dosya yarıda kalmıştı (${recovered.join(', ')}).`;
+    try {
+      this.persistSyncState();
+    } catch {
+      // Kalıcılaştırma başarısız olsa da bellek durumu doğru kalır.
     }
   }
 
   private persistSyncState() {
-    try {
-      const payload = {
-        lastSyncAt: this.lastSyncAt,
-        lastError: this.lastError,
-        persistedInitialReconcile: this.persistedInitialReconcile,
-        ...(this.persistedPublicPersonalConsent !== undefined
-          ? { persistedPublicPersonalConsent: this.persistedPublicPersonalConsent }
-          : {}),
-        ...(this.publicConsentUpdatedAt ? { publicConsentUpdatedAt: this.publicConsentUpdatedAt } : {}),
-        ...(this.persistedPublicCatalogConsent !== undefined
-          ? { persistedPublicCatalogConsent: this.persistedPublicCatalogConsent }
-          : {}),
-        ...(this.publicCatalogConsentUpdatedAt
-          ? { publicCatalogConsentUpdatedAt: this.publicCatalogConsentUpdatedAt }
-          : {}),
-        ...(this.lastObservedRemotePublic !== undefined
-          ? { lastObservedRemotePublic: this.lastObservedRemotePublic }
-          : {}),
-        ...(this.repoVisibilityWarning ? { repoVisibilityWarning: this.repoVisibilityWarning } : {}),
-        ...(this.lastRemoteSummary ? { lastRemoteSummary: this.lastRemoteSummary } : {}),
-        ...(this.lastComparison ? { lastComparison: this.lastComparison } : {}),
-        ...(this.lastSyncReport ? { lastSyncReport: this.lastSyncReport } : {}),
-        fileStates: this.fileStates,
-      };
-      writeJsonFileAtomic(this.syncStateFile, stringifyDeterministic(payload), {
-        validateParsed: isPlainRecordObject,
-      });
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
+    saveSyncStateSnapshot(this.syncStateFile, {
+      lastSyncAt: this.lastSyncAt,
+      lastError: this.lastError,
+      repoVisibilityWarning: this.repoVisibilityWarning,
+      persistedInitialReconcile: this.persistedInitialReconcile,
+      ...(this.persistedPublicPersonalConsent !== undefined
+        ? { persistedPublicPersonalConsent: this.persistedPublicPersonalConsent }
+        : {}),
+      publicConsentUpdatedAt: this.publicConsentUpdatedAt,
+      ...(this.persistedPublicCatalogConsent !== undefined
+        ? { persistedPublicCatalogConsent: this.persistedPublicCatalogConsent }
+        : {}),
+      publicCatalogConsentUpdatedAt: this.publicCatalogConsentUpdatedAt,
+      ...(this.lastObservedRemotePublic !== undefined
+        ? { lastObservedRemotePublic: this.lastObservedRemotePublic }
+        : {}),
+      lastRemoteSummary: this.lastRemoteSummary,
+      lastComparison: this.lastComparison,
+      lastSyncReport: this.lastSyncReport,
+      fileStates: this.fileStates,
+    });
   }
 
   private setFileSyncStage(
@@ -827,167 +660,61 @@ export class PersistentDataStore {
 
   // --- CATALOG OPERATIONS ---
 
+  /** F5.2-03: katalog okuma/hazırlama yolu alt mağazaya delege edilir. */
+  private catalogStoreContext(): CatalogStoreContext {
+    return {
+      catalogDir: this.catalogDir,
+      moviesFile: this.moviesFile,
+      tvFile: this.tvFile,
+      manifestFile: this.manifestFile,
+    };
+  }
+
+  private derivedProfileWriteContext(): DerivedProfileWriteContext {
+    return {
+      profileFilePath: (profileId) => this.getProfileFilePath(profileId),
+      readCatalogManifest: () => this.readCatalogManifest(),
+      readCatalogManifestAsync: () => this.readCatalogManifestAsync(),
+      readExisting: (profileId) => this.readDerivedProfile(profileId, { allowNullOnCorrupt: false }),
+      readExistingAsync: (profileId) => this.readDerivedProfileAsync(profileId, { allowNullOnCorrupt: false }),
+    };
+  }
+
+  private derivedProfileStoreContext(): DerivedProfileStoreContext {
+    return { profileFilePath: (profileId) => this.getProfileFilePath(profileId) };
+  }
+
   public readCatalog(
     mediaType: 'movie' | 'tv',
     options: { allowEmptyOnCorrupt?: boolean } = {}
   ): Record<string, CatalogRecord> {
-    const file = mediaType === 'movie' ? this.moviesFile : this.tvFile;
-    const recovery = readJsonFileWithRecovery<Record<string, CatalogRecord>>(file, {
-      backupPaths: [`${file}.bak`],
-      validate: (raw) => (isPlainRecordObject(raw) ? (raw as Record<string, CatalogRecord>) : null),
-      label: path.basename(file),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowEmptyOnCorrupt) {
-        return {};
-      }
-      throw new CorruptJsonFileError(file, recovery.error);
-    }
-
-    return {};
+    return readCatalogImpl(this.catalogStoreContext(), mediaType, options);
   }
 
   public readCatalogManifest(): CatalogManifest | null {
-    const recovery = readJsonFileWithRecovery<CatalogManifest>(this.manifestFile, {
-      backupPaths: [`${this.manifestFile}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) && typeof raw.contentHash === 'string'
-          ? (raw as CatalogManifest)
-          : null,
-      label: 'manifest.json',
-      restoreRecoveredToTarget: true,
-    });
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-    return null;
+    return readCatalogManifestImpl(this.catalogStoreContext());
   }
 
   public async readCatalogAsync(
     mediaType: 'movie' | 'tv',
     options: { allowEmptyOnCorrupt?: boolean } = {}
   ): Promise<Record<string, CatalogRecord>> {
-    const file = mediaType === 'movie' ? this.moviesFile : this.tvFile;
-    const recovery = await readJsonFileWithRecoveryAsync<Record<string, CatalogRecord>>(file, {
-      backupPaths: [`${file}.bak`],
-      validate: (raw) => (isPlainRecordObject(raw) ? (raw as Record<string, CatalogRecord>) : null),
-      label: path.basename(file),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowEmptyOnCorrupt) {
-        return {};
-      }
-      throw new CorruptJsonFileError(file, recovery.error);
-    }
-
-    return {};
+    return readCatalogAsyncImpl(this.catalogStoreContext(), mediaType, options);
   }
 
   public async readCatalogManifestAsync(): Promise<CatalogManifest | null> {
-    const recovery = await readJsonFileWithRecoveryAsync<CatalogManifest>(this.manifestFile, {
-      backupPaths: [`${this.manifestFile}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) && typeof raw.contentHash === 'string'
-          ? (raw as CatalogManifest)
-          : null,
-      label: 'manifest.json',
-      restoreRecoveredToTarget: true,
-    });
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-    return null;
+    return readCatalogManifestAsyncImpl(this.catalogStoreContext());
   }
 
   /**
    * Yerel katalog dizini ve dosyalarının (movies.json, tv.json, manifest.json) varlığını garanti eder.
    */
   public ensureCatalogFiles(): void {
-    if (!existsSync(this.catalogDir)) mkdirSync(this.catalogDir, { recursive: true });
-    if (!existsSync(this.moviesFile)) {
-      writeJsonFileAtomic(this.moviesFile, '{}', {
-        backupPath: `${this.moviesFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!existsSync(this.tvFile)) {
-      writeJsonFileAtomic(this.tvFile, '{}', {
-        backupPath: `${this.tvFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!existsSync(this.manifestFile)) {
-      const movies = this.readCatalog('movie', { allowEmptyOnCorrupt: true });
-      const tv = this.readCatalog('tv', { allowEmptyOnCorrupt: true });
-      const serializedMovies = stringifyDeterministic(movies);
-      const serializedTv = stringifyDeterministic(tv);
-      const combinedHash = hashContent(serializedMovies + serializedTv);
-      const manifest: CatalogManifest = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        movieCount: Object.keys(movies).length,
-        tvCount: Object.keys(tv).length,
-        contentHash: combinedHash,
-      };
-      writeJsonFileAtomic(this.manifestFile, stringifyDeterministic(manifest), {
-        backupPath: `${this.manifestFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
+    ensureCatalogFilesImpl(this.catalogStoreContext());
   }
 
   public async ensureCatalogFilesAsync(): Promise<void> {
-    await fsPromises.mkdir(this.catalogDir, { recursive: true });
-    const existsAsync = async (p: string) => {
-      try {
-        await fsPromises.access(p);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    if (!(await existsAsync(this.moviesFile))) {
-      await writeJsonFileAtomicAsync(this.moviesFile, '{}', {
-        backupPath: `${this.moviesFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!(await existsAsync(this.tvFile))) {
-      await writeJsonFileAtomicAsync(this.tvFile, '{}', {
-        backupPath: `${this.tvFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (!(await existsAsync(this.manifestFile))) {
-      const movies = await this.readCatalogAsync('movie', { allowEmptyOnCorrupt: true });
-      const tv = await this.readCatalogAsync('tv', { allowEmptyOnCorrupt: true });
-      const serializedMovies = stringifyDeterministic(movies);
-      const serializedTv = stringifyDeterministic(tv);
-      const combinedHash = hashContent(serializedMovies + serializedTv);
-      const manifest: CatalogManifest = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        movieCount: Object.keys(movies).length,
-        tvCount: Object.keys(tv).length,
-        contentHash: combinedHash,
-      };
-      await writeJsonFileAtomicAsync(this.manifestFile, stringifyDeterministic(manifest), {
-        backupPath: `${this.manifestFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
+    await ensureCatalogFilesAsyncImpl(this.catalogStoreContext());
   }
 
   /**
@@ -1105,7 +832,7 @@ export class PersistentDataStore {
             verifiedReadBack: true,
           };
         }
-      } catch (e: any) {
+      } catch (e) {
         return {
           ok: false,
           step: 'manifest_read',
@@ -1116,7 +843,7 @@ export class PersistentDataStore {
           access,
           verifiedReadBack: false,
           error: redactSecrets(
-            `GitHub manifest okuma ağ hatası: ${e?.message || e}`,
+            `GitHub manifest okuma ağ hatası: ${errorMessageOf(e, String(e))}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
@@ -1165,208 +892,19 @@ export class PersistentDataStore {
   }
 
   public upsertCatalogItems(
-    items: any[],
+    items: unknown[],
     writeOptions: { beforeRenameHook?: (tempFilePath: string) => void } = {}
-  ): { inserted: number; updated: number; unchanged: number; total: number; contentHash: string } {
-    // Önce mevcut katalog dosyalarını oku; kurtarılamayan bozuk JSON varsa CorruptJsonFileError fırlatır ve üzerine yazmaz!
-    const movies = this.readCatalog('movie', { allowEmptyOnCorrupt: false });
-    const tv = this.readCatalog('tv', { allowEmptyOnCorrupt: false });
-
-    if (!Array.isArray(items) || items.length === 0) {
-      const existingManifest = this.readCatalogManifest();
-      return {
-        inserted: 0,
-        updated: 0,
-        unchanged: 0,
-        total: 0,
-        contentHash:
-          existingManifest?.contentHash ||
-          hashContent(stringifyDeterministic(movies) + stringifyDeterministic(tv)),
-      };
-    }
-
-    let inserted = 0;
-    let updated = 0;
-    let unchanged = 0;
-    let moviesChanged = false;
-    let tvChanged = false;
-
-    for (const item of items) {
-      const key = toCanonicalKey(item);
-      if (!key) continue;
-      const isTv = key.startsWith('tv:');
-      const targetMap = isTv ? tv : movies;
-      const existing = targetMap[key];
-
-      const merged = mergeCatalogItem(existing, item);
-
-      if (!existing) {
-        targetMap[key] = merged;
-        inserted++;
-        if (isTv) tvChanged = true;
-        else moviesChanged = true;
-      } else {
-        // Compare content without timestamps to prevent noisy commits
-        const existingCopy = { ...existing, firstStoredAt: '', lastUpdatedAt: '' };
-        const mergedCopy = { ...merged, firstStoredAt: '', lastUpdatedAt: '' };
-
-        if (stringifyDeterministic(existingCopy) !== stringifyDeterministic(mergedCopy)) {
-          targetMap[key] = merged;
-          updated++;
-          if (isTv) tvChanged = true;
-          else moviesChanged = true;
-        } else {
-          unchanged++;
-        }
-      }
-    }
-
-    if (moviesChanged) {
-      writeJsonFileAtomic(this.moviesFile, stringifyDeterministic(movies), {
-        backupPath: `${this.moviesFile}.bak`,
-        validateParsed: isPlainRecordObject,
-        beforeRenameHook: writeOptions.beforeRenameHook,
-      });
-    }
-    if (tvChanged) {
-      writeJsonFileAtomic(this.tvFile, stringifyDeterministic(tv), {
-        backupPath: `${this.tvFile}.bak`,
-        validateParsed: isPlainRecordObject,
-        beforeRenameHook: writeOptions.beforeRenameHook,
-      });
-    }
-
-    const serializedMovies = stringifyDeterministic(movies);
-    const serializedTv = stringifyDeterministic(tv);
-    const combinedHash = hashContent(serializedMovies + serializedTv);
-
-    if (moviesChanged || tvChanged || !existsSync(this.manifestFile)) {
-      const manifest: CatalogManifest = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        movieCount: Object.keys(movies).length,
-        tvCount: Object.keys(tv).length,
-        contentHash: combinedHash,
-      };
-      writeJsonFileAtomic(this.manifestFile, stringifyDeterministic(manifest), {
-        backupPath: `${this.manifestFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-
-    return {
-      inserted,
-      updated,
-      unchanged,
-      total: inserted + updated + unchanged,
-      contentHash: combinedHash,
-    };
+  ): CatalogUpsertResult {
+    return upsertCatalogItemsOp(this.catalogStoreContext(), items, writeOptions);
   }
-
-  public async upsertCatalogItemsAsync(
-    items: any[]
-  ): Promise<{ inserted: number; updated: number; unchanged: number; total: number; contentHash: string }> {
-    const movies = await this.readCatalogAsync('movie', { allowEmptyOnCorrupt: false });
-    const tv = await this.readCatalogAsync('tv', { allowEmptyOnCorrupt: false });
-
-    if (!Array.isArray(items) || items.length === 0) {
-      const existingManifest = await this.readCatalogManifestAsync();
-      return {
-        inserted: 0,
-        updated: 0,
-        unchanged: 0,
-        total: 0,
-        contentHash:
-          existingManifest?.contentHash ||
-          hashContent(stringifyDeterministic(movies) + stringifyDeterministic(tv)),
-      };
-    }
-
-    let inserted = 0;
-    let updated = 0;
-    let unchanged = 0;
-    let moviesChanged = false;
-    let tvChanged = false;
-
-    for (const item of items) {
-      const key = toCanonicalKey(item);
-      if (!key) continue;
-      const isTv = key.startsWith('tv:');
-      const targetMap = isTv ? tv : movies;
-      const existing = targetMap[key];
-      const merged = mergeCatalogItem(existing, item);
-
-      if (!existing) {
-        targetMap[key] = merged;
-        inserted++;
-        if (isTv) tvChanged = true;
-        else moviesChanged = true;
-      } else {
-        const existingCopy = { ...existing, firstStoredAt: '', lastUpdatedAt: '' };
-        const mergedCopy = { ...merged, firstStoredAt: '', lastUpdatedAt: '' };
-        if (stringifyDeterministic(existingCopy) !== stringifyDeterministic(mergedCopy)) {
-          targetMap[key] = merged;
-          updated++;
-          if (isTv) tvChanged = true;
-          else moviesChanged = true;
-        } else {
-          unchanged++;
-        }
-      }
-    }
-
-    if (moviesChanged) {
-      await writeJsonFileAtomicAsync(this.moviesFile, stringifyDeterministic(movies), {
-        backupPath: `${this.moviesFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-    if (tvChanged) {
-      await writeJsonFileAtomicAsync(this.tvFile, stringifyDeterministic(tv), {
-        backupPath: `${this.tvFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-
-    const serializedMovies = stringifyDeterministic(movies);
-    const serializedTv = stringifyDeterministic(tv);
-    const combinedHash = hashContent(serializedMovies + serializedTv);
-
-    let manifestExists = false;
-    try {
-      await fsPromises.access(this.manifestFile);
-      manifestExists = true;
-    } catch { /* opsiyonel adım: hata ana akışı etkilemez */ }
-
-    if (moviesChanged || tvChanged || !manifestExists) {
-      const manifest: CatalogManifest = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        movieCount: Object.keys(movies).length,
-        tvCount: Object.keys(tv).length,
-        contentHash: combinedHash,
-      };
-      await writeJsonFileAtomicAsync(this.manifestFile, stringifyDeterministic(manifest), {
-        backupPath: `${this.manifestFile}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-    }
-
-    return {
-      inserted,
-      updated,
-      unchanged,
-      total: inserted + updated + unchanged,
-      contentHash: combinedHash,
-    };
+  public async upsertCatalogItemsAsync(items: unknown[]): Promise<CatalogUpsertResult> {
+    return upsertCatalogItemsAsyncOp(this.catalogStoreContext(), items);
   }
-
-  public upsertCatalogItemsSerialized(
-    items: any[]
-  ): Promise<{ inserted: number; updated: number; unchanged: number; total: number; contentHash: string }> {
-    return this.writeSerializer.run(this.manifestFile, () => this.upsertCatalogItemsAsync(items));
+  public upsertCatalogItemsSerialized(items: unknown[]): Promise<CatalogUpsertResult> {
+    return this.writeSerializer.run(this.manifestFile, () =>
+      upsertCatalogItemsAsyncOp(this.catalogStoreContext(), items)
+    );
   }
-
   // --- DERIVED PROFILE OPERATIONS ---
 
   public getProfileFilePath(profileId: string): string {
@@ -1381,14 +919,14 @@ export class PersistentDataStore {
   }
 
   public readStockSnapshot(): {
-    movies: any[];
-    tv: any[];
+    movies: Record<string, unknown>[];
+    tv: Record<string, unknown>[];
     updatedAt: string;
     schemaVersion: number;
   } | null {
     const filePath = this.getStockFilePath();
     if (!existsSync(filePath)) return null;
-    const recovery = readJsonFileWithRecovery<any>(filePath, {
+    const recovery = readJsonFileWithRecovery<Record<string, unknown>>(filePath, {
       backupPaths: [`${filePath}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) && Array.isArray(raw.movies) && Array.isArray(raw.tv)
@@ -1399,8 +937,8 @@ export class PersistentDataStore {
     });
     if (recovery.status !== 'ok' && recovery.status !== 'recovered') return null;
     return {
-      movies: recovery.data.movies,
-      tv: recovery.data.tv,
+      movies: asRecordArray(recovery.data.movies),
+      tv: asRecordArray(recovery.data.tv),
       updatedAt: typeof recovery.data.updatedAt === 'string' ? recovery.data.updatedAt : '',
       schemaVersion: Number(recovery.data.schemaVersion) || 1,
     };
@@ -1419,7 +957,7 @@ export class PersistentDataStore {
       backupPaths: [`${filePath}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) &&
-        (isPlainRecordObject((raw as any).entries) || Array.isArray((raw as any).entries))
+        (isPlainRecordObject(raw.entries) || Array.isArray(raw.entries))
           ? normalizeCinemaKunyeDocument(raw)
           : null,
       label: path.basename(filePath),
@@ -1436,7 +974,7 @@ export class PersistentDataStore {
       backupPaths: [`${filePath}.bak`],
       validate: (raw) =>
         isPlainRecordObject(raw) &&
-        (isPlainRecordObject((raw as any).entries) || Array.isArray((raw as any).entries))
+        (isPlainRecordObject(raw.entries) || Array.isArray(raw.entries))
           ? normalizeCinemaKunyeDocument(raw)
           : null,
       label: path.basename(filePath),
@@ -1449,53 +987,12 @@ export class PersistentDataStore {
   public saveCinemaKunyeSerialized(
     incoming: unknown,
     options: { mode?: 'merge' | 'overwrite' } = {}
-  ): Promise<{
-    ok: boolean;
-    document: CinemaKunyeDocument;
-    entriesCount: number;
-    merged: boolean;
-  }> {
+  ): Promise<CinemaKunyeSaveResult> {
     const filePath = this.getCinemaKunyeFilePath();
-    return this.writeSerializer.run(filePath, async () => {
-      const mode = options.mode === 'overwrite' ? 'overwrite' : 'merge';
-      const normalizedIncoming = normalizeCinemaKunyeDocument(incoming);
-      const existing = await this.readCinemaKunyeAsync();
-
-      const nextDoc: CinemaKunyeDocument =
-        mode === 'merge' && existing
-          ? mergeCinemaKunyeDocumentsLossless(existing, normalizedIncoming)
-          : normalizedIncoming.updatedAt
-          ? normalizedIncoming
-          : {
-              ...normalizedIncoming,
-              updatedAt: new Date().toISOString(),
-            };
-
-      const finalDoc: CinemaKunyeDocument = nextDoc.updatedAt
-        ? nextDoc
-        : createEmptyCinemaKunyeDocument(new Date().toISOString());
-
-      await writeJsonFileAtomicAsync(filePath, stringifyDeterministic(finalDoc), {
-        backupPath: `${filePath}.bak`,
-        validateParsed: isPlainRecordObject,
-      });
-
-      return {
-        ok: true,
-        document: finalDoc,
-        entriesCount: Object.keys(finalDoc.entries).length,
-        merged: Boolean(mode === 'merge' && existing),
-      };
-    });
-  }
-
-  /**
-   * Stok anlık görüntüsünü sınırsız ve tekilleştirilmiş biçimde kaydeder.
-   * - Aynı media:key (movie:<id> / tv:<id>) ikinci kez gelen kayıtlar atılır (ilk kayıt kazanır).
-   * - Gelen liste boşsa mevcut yedek korunur (yanlışlıkla veri kaybını önler).
-   * - Boyut sınırı YOKTUR; kullanıcının "yedekleme için sınırı olmasın" isteği gereği tüm havuz saklanır.
-   */
-  public async saveStockSnapshotUpload(input: {
+    return this.writeSerializer.run(filePath, () =>
+      saveCinemaKunyeOp({ filePath, readExisting: () => this.readCinemaKunyeAsync() }, incoming, options)
+    );
+  }  public async saveStockSnapshotUpload(input: {
     movies?: unknown[];
     tv?: unknown[];
   }): Promise<{
@@ -1508,108 +1005,16 @@ export class PersistentDataStore {
     preservedExistingEmptyUpload: boolean;
     message: string;
   }> {
-    const filePath = this.getStockFilePath();
-    const existing = this.readStockSnapshot();
-    const result = {
-      ok: true,
-      moviesCount: existing?.movies.length ?? 0,
-      tvCount: existing?.tv.length ?? 0,
-      total: (existing?.movies.length ?? 0) + (existing?.tv.length ?? 0),
-      duplicatesRemoved: 0,
-      skippedInvalid: 0,
-      preservedExistingEmptyUpload: false,
-      message: '',
-    };
-
-    const dedupList = (raw: unknown[], namespace: 'movie' | 'tv'): any[] => {
-      const seen = new Set<string>();
-      const out: any[] = [];
-      for (const candidate of raw) {
-        if (!isPlainRecordObject(candidate)) {
-          result.skippedInvalid++;
-          continue;
-        }
-        const idRaw = (candidate as any).id;
-        const idNum = Number(idRaw);
-        const validId =
-          (Number.isSafeInteger(idNum) && idNum > 0) ||
-          (typeof idRaw === 'string' && idRaw.trim().length > 0);
-        if (!validId) {
-          result.skippedInvalid++;
-          continue;
-        }
-        const key = `${namespace}:${idRaw}`;
-        if (seen.has(key)) {
-          result.duplicatesRemoved++;
-          continue;
-        }
-        seen.add(key);
-        out.push(candidate);
-      }
-      return out;
-    };
-
-    let movies = existing?.movies ?? [];
-    let tv = existing?.tv ?? [];
-    if (Array.isArray(input.movies) && input.movies.length > 0) {
-      movies = dedupList(input.movies, 'movie');
-    } else if (Array.isArray(input.movies) && input.movies.length === 0 && movies.length > 0) {
-      result.preservedExistingEmptyUpload = true;
-    }
-    if (Array.isArray(input.tv) && input.tv.length > 0) {
-      tv = dedupList(input.tv, 'tv');
-    } else if (Array.isArray(input.tv) && input.tv.length === 0 && tv.length > 0) {
-      result.preservedExistingEmptyUpload = true;
-    }
-
-    const doc = {
-      schemaVersion: 1,
-      updatedAt: new Date().toISOString(),
-      movies,
-      tv,
-    };
-    await writeJsonFileAtomicAsync(filePath, JSON.stringify(doc, null, 2), {
-      backupPath: `${filePath}.bak`,
-      validateParsed: (raw) =>
-        isPlainRecordObject(raw) && Array.isArray(raw.movies) && Array.isArray(raw.tv),
-    });
-
-    result.moviesCount = movies.length;
-    result.tvCount = tv.length;
-    result.total = movies.length + tv.length;
-    result.message = result.preservedExistingEmptyUpload
-      ? 'Boş stok yüklemesi yok sayıldı; mevcut yedek korundu.'
-      : 'Stok anlık görüntüsü güncellendi.';
-    return result;
+    return saveStockSnapshotUploadOp(
+      { stockFilePath: this.getStockFilePath(), readSnapshot: () => this.readStockSnapshot() },
+      input
+    );
   }
-
   public readDerivedProfile(
     profileId: string,
     options: { allowNullOnCorrupt?: boolean } = {}
   ): DerivedProfileDocument | null {
-    const filePath = this.getProfileFilePath(profileId);
-    const recovery = readJsonFileWithRecovery<DerivedProfileDocument>(filePath, {
-      backupPaths: [`${filePath}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) &&
-        typeof raw.profileId === 'string' &&
-        isPlainRecordObject(raw.items)
-          ? (raw as DerivedProfileDocument)
-          : null,
-      label: path.basename(filePath),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowNullOnCorrupt) return null;
-      throw new CorruptJsonFileError(filePath, recovery.error);
-    }
-
-    return null;
+    return readDerivedProfileImpl(this.derivedProfileStoreContext(), profileId, options);
   }
 
   /**
@@ -1624,176 +1029,23 @@ export class PersistentDataStore {
       expectedSchemaVersion?: number;
     }
   ): DerivedProfileValidationResult {
-    const rawDoc = this.readDerivedProfile(profileId, { allowNullOnCorrupt: true });
-    if (!rawDoc) {
-      return { valid: false, reason: 'missing_document' };
-    }
-    return validateDerivedProfileCache(rawDoc, {
+    return readValidatedDerivedProfileImpl(
+      this.derivedProfileStoreContext(),
       profileId,
-      profileFingerprint: expected.profileFingerprint,
-      algorithmVersion: expected.algorithmVersion,
-      sourceCatalogHash: expected.sourceCatalogHash,
-      expectedSchemaVersion: expected.expectedSchemaVersion,
-    });
+      expected
+    );
   }
 
   public upsertDerivedProfile(
-    input: Partial<DerivedProfileDocument> & {
-      profileId: string;
-      algorithmVersion: string;
-      profileFingerprint: string;
-      sourceCatalogHash?: string;
-      items: Record<string, Partial<DerivedProfileItem> & { mediaKey?: string }>;
-    },
+    input: UpsertDerivedProfileInput,
     writeOptions: { beforeRenameHook?: (tempFilePath: string) => void } = {}
-  ): { updated: boolean; count: number; contentHash: string } {
-    const profileId = normalizeProfileId(input.profileId);
-    if (!profileId) throw new Error('Geçersiz profil kimliği; türetilmiş profil yazılamadı.');
-    const { algorithmVersion, profileFingerprint, items } = input;
-    const targetSchemaVersion = input.schemaVersion ?? DERIVED_PROFILE_SCHEMA_VERSION;
-    const resolvedSourceCatalogHash =
-      input.sourceCatalogHash !== undefined
-        ? String(input.sourceCatalogHash)
-        : this.readCatalogManifest()?.contentHash || '';
-
-    // Kurtarılamayan bozuk JSON varsa CorruptJsonFileError fırlatır ve mevcut dosyayı ezmez
-    const existing = this.readDerivedProfile(profileId, { allowNullOnCorrupt: false });
-    const filePath = this.getProfileFilePath(profileId);
-
-    const sameContext = Boolean(
-      existing &&
-        Number(existing.schemaVersion) === targetSchemaVersion &&
-        existing.algorithmVersion === algorithmVersion &&
-        existing.profileFingerprint === profileFingerprint &&
-        String(existing.sourceCatalogHash || '') === resolvedSourceCatalogHash
-    );
-
-    // Bağlam (şema, algoritma, profil imzası veya kaynak katalog imzası) değiştiyse eski önbellek maddeleri taşınmaz
-    const mergedItems: Record<string, DerivedProfileItem> = {};
-    if (sameContext && existing?.items) {
-      for (const [k, prevVal] of Object.entries(existing.items)) {
-        const normPrev = normalizeDerivedProfileItem(k, prevVal);
-        if (normPrev) {
-          mergedItems[normPrev.mediaKey] = normPrev;
-        }
-      }
-    }
-
-    for (const [rawKey, item] of Object.entries(items || {})) {
-      const normalized = normalizeDerivedProfileItem(rawKey, item);
-      if (!normalized) continue;
-      const prevItem = mergedItems[normalized.mediaKey];
-      if (prevItem) {
-        const prevSingleHash = computeDerivedProfileContentHash({
-          schemaVersion: targetSchemaVersion,
-          profileId,
-          algorithmVersion,
-          profileFingerprint,
-          sourceCatalogHash: resolvedSourceCatalogHash,
-          items: { [normalized.mediaKey]: prevItem },
-        });
-        const nextSingleHash = computeDerivedProfileContentHash({
-          schemaVersion: targetSchemaVersion,
-          profileId,
-          algorithmVersion,
-          profileFingerprint,
-          sourceCatalogHash: resolvedSourceCatalogHash,
-          items: { [normalized.mediaKey]: normalized },
-        });
-        if (prevSingleHash === nextSingleHash) {
-          // Anlamlı alanlar aynıysa önceki calculatedAt zaman damgasını koru
-          mergedItems[normalized.mediaKey] = prevItem;
-          continue;
-        }
-      }
-      mergedItems[normalized.mediaKey] = normalized;
-    }
-
-    const nextContentHash = computeDerivedProfileContentHash({
-      schemaVersion: targetSchemaVersion,
-      profileId,
-      algorithmVersion,
-      profileFingerprint,
-      sourceCatalogHash: resolvedSourceCatalogHash,
-      items: mergedItems,
-    });
-
-    if (sameContext && existing) {
-      const existingContentHash =
-        existing.contentHash ||
-        computeDerivedProfileContentHash({
-          schemaVersion: Number(existing.schemaVersion) || 1,
-          profileId: existing.profileId,
-          algorithmVersion: existing.algorithmVersion,
-          profileFingerprint: existing.profileFingerprint,
-          sourceCatalogHash: existing.sourceCatalogHash || '',
-          items: existing.items || {},
-        });
-
-      if (
-        existingContentHash === nextContentHash &&
-        Object.keys(existing.items || {}).length === Object.keys(mergedItems).length
-      ) {
-        return {
-          updated: false,
-          count: Object.keys(mergedItems).length,
-          contentHash: existingContentHash,
-        };
-      }
-    }
-
-    const doc: DerivedProfileDocument = {
-      schemaVersion: targetSchemaVersion,
-      profileId,
-      algorithmVersion,
-      profileFingerprint,
-      sourceCatalogHash: resolvedSourceCatalogHash,
-      contentHash: nextContentHash,
-      generatedAt: new Date().toISOString(),
-      items: mergedItems,
-    };
-
-    writeJsonFileAtomic(filePath, stringifyDeterministic(doc), {
-      backupPath: `${filePath}.bak`,
-      validateParsed: (parsed) =>
-        isPlainRecordObject(parsed) &&
-        typeof parsed.profileId === 'string' &&
-        isPlainRecordObject(parsed.items),
-      beforeRenameHook: writeOptions.beforeRenameHook,
-    });
-
-    return {
-      updated: true,
-      count: Object.keys(mergedItems).length,
-      contentHash: nextContentHash,
-    };
-  }
-
-  public async readDerivedProfileAsync(
+  ): DerivedProfileUpsertResult {
+    return upsertDerivedProfileOp(this.derivedProfileWriteContext(), input, writeOptions);
+  }  public async readDerivedProfileAsync(
     profileId: string,
     options: { allowNullOnCorrupt?: boolean } = {}
   ): Promise<DerivedProfileDocument | null> {
-    const filePath = this.getProfileFilePath(profileId);
-    const recovery = await readJsonFileWithRecoveryAsync<DerivedProfileDocument>(filePath, {
-      backupPaths: [`${filePath}.bak`],
-      validate: (raw) =>
-        isPlainRecordObject(raw) &&
-        typeof raw.profileId === 'string' &&
-        isPlainRecordObject(raw.items)
-          ? (raw as DerivedProfileDocument)
-          : null,
-      label: path.basename(filePath),
-      restoreRecoveredToTarget: true,
-    });
-
-    if (recovery.status === 'ok' || recovery.status === 'recovered') {
-      return recovery.data;
-    }
-    if (recovery.status === 'corrupt_unrecoverable') {
-      if (options.allowNullOnCorrupt) return null;
-      throw new CorruptJsonFileError(filePath, recovery.error);
-    }
-    return null;
+    return readDerivedProfileAsyncImpl(this.derivedProfileStoreContext(), profileId, options);
   }
 
   public async readValidatedDerivedProfileAsync(
@@ -1805,148 +1057,24 @@ export class PersistentDataStore {
       expectedSchemaVersion?: number;
     }
   ): Promise<DerivedProfileValidationResult> {
-    const rawDoc = await this.readDerivedProfileAsync(profileId, { allowNullOnCorrupt: true });
-    if (!rawDoc) {
-      return { valid: false, reason: 'missing_document' };
-    }
-    return validateDerivedProfileCache(rawDoc, {
+    return readValidatedDerivedProfileAsyncImpl(
+      this.derivedProfileStoreContext(),
       profileId,
-      profileFingerprint: expected.profileFingerprint,
-      algorithmVersion: expected.algorithmVersion,
-      sourceCatalogHash: expected.sourceCatalogHash,
-      expectedSchemaVersion: expected.expectedSchemaVersion,
-    });
+      expected
+    );
   }
 
   public async upsertDerivedProfileAsync(
-    input: Parameters<PersistentDataStore['upsertDerivedProfile']>[0]
-  ): Promise<{ updated: boolean; count: number; contentHash: string }> {
-    const profileId = normalizeProfileId(input.profileId);
-    if (!profileId) throw new Error('Geçersiz profil kimliği; türetilmiş profil yazılamadı.');
-    const { algorithmVersion, profileFingerprint, items } = input;
-    const targetSchemaVersion = input.schemaVersion ?? DERIVED_PROFILE_SCHEMA_VERSION;
-    const resolvedSourceCatalogHash =
-      input.sourceCatalogHash !== undefined
-        ? String(input.sourceCatalogHash)
-        : (await this.readCatalogManifestAsync())?.contentHash || '';
-
-    const existing = await this.readDerivedProfileAsync(profileId, { allowNullOnCorrupt: false });
-    const filePath = this.getProfileFilePath(profileId);
-
-    const sameContext = Boolean(
-      existing &&
-        Number(existing.schemaVersion) === targetSchemaVersion &&
-        existing.algorithmVersion === algorithmVersion &&
-        existing.profileFingerprint === profileFingerprint &&
-        String(existing.sourceCatalogHash || '') === resolvedSourceCatalogHash
-    );
-
-    const mergedItems: Record<string, DerivedProfileItem> = {};
-    if (sameContext && existing?.items) {
-      for (const [k, prevVal] of Object.entries(existing.items)) {
-        const normPrev = normalizeDerivedProfileItem(k, prevVal);
-        if (normPrev) {
-          mergedItems[normPrev.mediaKey] = normPrev;
-        }
-      }
-    }
-
-    for (const [rawKey, item] of Object.entries(items || {})) {
-      const normalized = normalizeDerivedProfileItem(rawKey, item);
-      if (!normalized) continue;
-      const prevItem = mergedItems[normalized.mediaKey];
-      if (prevItem) {
-        const prevSingleHash = computeDerivedProfileContentHash({
-          schemaVersion: targetSchemaVersion,
-          profileId,
-          algorithmVersion,
-          profileFingerprint,
-          sourceCatalogHash: resolvedSourceCatalogHash,
-          items: { [normalized.mediaKey]: prevItem },
-        });
-        const nextSingleHash = computeDerivedProfileContentHash({
-          schemaVersion: targetSchemaVersion,
-          profileId,
-          algorithmVersion,
-          profileFingerprint,
-          sourceCatalogHash: resolvedSourceCatalogHash,
-          items: { [normalized.mediaKey]: normalized },
-        });
-        if (prevSingleHash === nextSingleHash) {
-          mergedItems[normalized.mediaKey] = prevItem;
-          continue;
-        }
-      }
-      mergedItems[normalized.mediaKey] = normalized;
-    }
-
-    const nextContentHash = computeDerivedProfileContentHash({
-      schemaVersion: targetSchemaVersion,
-      profileId,
-      algorithmVersion,
-      profileFingerprint,
-      sourceCatalogHash: resolvedSourceCatalogHash,
-      items: mergedItems,
-    });
-
-    if (sameContext && existing) {
-      const existingContentHash =
-        existing.contentHash ||
-        computeDerivedProfileContentHash({
-          schemaVersion: Number(existing.schemaVersion) || 1,
-          profileId: existing.profileId,
-          algorithmVersion: existing.algorithmVersion,
-          profileFingerprint: existing.profileFingerprint,
-          sourceCatalogHash: existing.sourceCatalogHash || '',
-          items: existing.items || {},
-        });
-
-      if (
-        existingContentHash === nextContentHash &&
-        Object.keys(existing.items || {}).length === Object.keys(mergedItems).length
-      ) {
-        return {
-          updated: false,
-          count: Object.keys(mergedItems).length,
-          contentHash: existingContentHash,
-        };
-      }
-    }
-
-    const doc: DerivedProfileDocument = {
-      schemaVersion: targetSchemaVersion,
-      profileId,
-      algorithmVersion,
-      profileFingerprint,
-      sourceCatalogHash: resolvedSourceCatalogHash,
-      contentHash: nextContentHash,
-      generatedAt: new Date().toISOString(),
-      items: mergedItems,
-    };
-
-    await writeJsonFileAtomicAsync(filePath, stringifyDeterministic(doc), {
-      backupPath: `${filePath}.bak`,
-      validateParsed: (parsed) =>
-        isPlainRecordObject(parsed) &&
-        typeof parsed.profileId === 'string' &&
-        isPlainRecordObject(parsed.items),
-    });
-
-    return {
-      updated: true,
-      count: Object.keys(mergedItems).length,
-      contentHash: nextContentHash,
-    };
+    input: UpsertDerivedProfileInput
+  ): Promise<DerivedProfileUpsertResult> {
+    return upsertDerivedProfileAsyncOp(this.derivedProfileWriteContext(), input);
   }
-
   public upsertDerivedProfileSerialized(
-    input: Parameters<PersistentDataStore['upsertDerivedProfile']>[0]
-  ): Promise<{ updated: boolean; count: number; contentHash: string }> {
+    input: UpsertDerivedProfileInput
+  ): Promise<DerivedProfileUpsertResult> {
     const filePath = this.getProfileFilePath(input.profileId);
     return this.writeSerializer.run(filePath, () => this.upsertDerivedProfileAsync(input));
-  }
-
-  // --- SYNC & GITHUB OPERATIONS ---
+  }  // --- SYNC & GITHUB OPERATIONS ---
 
   public getSyncStatus(): SyncStatus {
     const isTokenInvalid = Boolean(
@@ -1965,13 +1093,13 @@ export class PersistentDataStore {
     let tvCount = 0;
     try {
       movieCount = Object.keys(this.readCatalog('movie')).length;
-    } catch (err: any) {
-      corruptionWarnings.push(err?.message || 'movies.json okunamadı');
+    } catch (err) {
+      corruptionWarnings.push(errorMessageOf(err, 'movies.json okunamadı'));
     }
     try {
       tvCount = Object.keys(this.readCatalog('tv')).length;
-    } catch (err: any) {
-      corruptionWarnings.push(err?.message || 'tv.json okunamadı');
+    } catch (err) {
+      corruptionWarnings.push(errorMessageOf(err, 'tv.json okunamadı'));
     }
 
     let profilesCount = 0;
@@ -1990,7 +1118,7 @@ export class PersistentDataStore {
 
     let localSummary: SyncSideSummary | undefined;
     try {
-      localSummary = this.bidirectionalManager.inspectLocalSideSync().summary;
+      localSummary = this.remoteSync.inspectLocalSideSync().summary;
     } catch {
       localSummary = undefined;
     }
@@ -2033,6 +1161,7 @@ export class PersistentDataStore {
     return {
       configured,
       authFailed,
+      githubSyncEnabled: this.githubSyncEnabled,
       mode: configured ? 'github' : 'local_only',
       reason: missingReason,
       isPublicRepo: effectiveConfiguredIsPublic,
@@ -2070,6 +1199,14 @@ export class PersistentDataStore {
       ...(corruptionWarnings.length > 0 ? { corruptionWarnings } : {}),
       lastSyncAt: this.lastSyncAt,
       syncInProgress: this.isSyncBusy(),
+      syncQueue: this.remoteSync.getQueueStatus(),
+      interruptedSync: this.remoteSync.getRecoveredInterruption()
+        ? {
+            ...this.remoteSync.getRecoveredInterruption()!,
+            recoveredAt: new Date().toISOString(),
+          }
+        : null,
+      syncStateVersion: SYNC_STATE_VERSION,
       initialReconcileCompleted: this.hasCompletedInitialReconcile(),
       lastError: this.lastError,
       catalogCounts: {
@@ -2094,23 +1231,23 @@ export class PersistentDataStore {
   }
 
   public inspectGitHub(): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.inspect();
+    return this.remoteSync.inspect();
   }
 
   public pullFromGitHub(
     options: { conflictStrategy?: 'ask' | 'merge' | 'overwrite_with_remote' } = {}
   ): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.pull(options);
+    return this.remoteSync.pull(options);
   }
 
   public pushToGitHub(): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.push();
+    return this.remoteSync.push();
   }
 
   public reconcileWithGitHub(
     options: { includePersonalOverride?: boolean; includeCatalogOverride?: boolean } = {}
   ): Promise<BidirectionalSyncReport> {
-    return this.bidirectionalManager.reconcile(options);
+    return this.remoteSync.reconcile(options);
   }
 
   /**
@@ -2147,7 +1284,7 @@ export class PersistentDataStore {
 
       // 1. Repo varlık ve erişim kontrolü
       const repoUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}`;
-      let repoMeta: any = null;
+      let repoMeta: GitHubRepositoryMeta | null = null;
 
       try {
         const res = await fetch(repoUrl, { headers: baseHeaders });
@@ -2233,8 +1370,9 @@ export class PersistentDataStore {
           };
         }
 
-        repoMeta = await res.json().catch(() => null);
-      } catch (e: any) {
+        const { readGitHubRepositoryMeta } = await import('./github-response.ts');
+        repoMeta = readGitHubRepositoryMeta(await res.json().catch(() => null));
+      } catch (e) {
         return {
           ok: false,
           accessible: false,
@@ -2246,14 +1384,14 @@ export class PersistentDataStore {
           configuredBranch: this.githubBranch,
           hasPushPermission: false,
           error: redactSecrets(
-            `GitHub sunucusuna bağlanılamadı: ${e?.message || 'Ağ hatası'}`,
+            `GitHub sunucusuna bağlanılamadı: ${errorMessageOf(e, 'Ağ hatası')}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
         };
       }
 
-      if (!isPlainRecordObject(repoMeta)) {
+      if (!repoMeta) {
         return {
           ok: false,
           accessible: false,
@@ -2269,8 +1407,8 @@ export class PersistentDataStore {
         };
       }
 
-      const isRemotePrivate = repoMeta.private === true;
-      const remoteIsPublic = repoMeta.private === false;
+      const isRemotePrivate = repoMeta.isPrivate === true;
+      const remoteIsPublic = repoMeta.isPrivate === false;
       this.lastObservedRemotePublic = remoteIsPublic;
       const warning = this.buildPublicVisibilityWarning(remoteIsPublic);
 
@@ -2278,12 +1416,9 @@ export class PersistentDataStore {
       this.repoVisibilityWarning = warning;
 
       // Yetki kontrolü (permissions.push)
-      const hasPushPermission =
-        repoMeta.permissions && typeof repoMeta.permissions.push === 'boolean'
-          ? repoMeta.permissions.push
-          : true;
+      const hasPushPermission = typeof repoMeta.canPush === 'boolean' ? repoMeta.canPush : true;
 
-      if (repoMeta.permissions && repoMeta.permissions.push === false) {
+      if (repoMeta.canPush === false) {
         return {
           ok: false,
           accessible: true,
@@ -2292,7 +1427,7 @@ export class PersistentDataStore {
           isEmptyRepo: false,
           isPrivate: isRemotePrivate,
           effectiveIsPublicRepo,
-          defaultBranch: repoMeta.default_branch,
+          defaultBranch: repoMeta.defaultBranch,
           configuredBranch: this.githubBranch,
           hasPushPermission: false,
           warning,
@@ -2316,7 +1451,7 @@ export class PersistentDataStore {
             isEmptyRepo: false,
             isPrivate: isRemotePrivate,
             effectiveIsPublicRepo,
-            defaultBranch: repoMeta.default_branch,
+            defaultBranch: repoMeta.defaultBranch,
             configuredBranch: this.githubBranch,
             hasPushPermission,
             warning,
@@ -2346,7 +1481,7 @@ export class PersistentDataStore {
                 isEmptyRepo: true,
                 isPrivate: isRemotePrivate,
                 effectiveIsPublicRepo,
-                defaultBranch: repoMeta.default_branch,
+                defaultBranch: repoMeta.defaultBranch,
                 configuredBranch: this.githubBranch,
                 hasPushPermission,
                 warning,
@@ -2362,7 +1497,7 @@ export class PersistentDataStore {
               isEmptyRepo: false,
               isPrivate: isRemotePrivate,
               effectiveIsPublicRepo,
-              defaultBranch: repoMeta.default_branch,
+              defaultBranch: repoMeta.defaultBranch,
               configuredBranch: this.githubBranch,
               hasPushPermission,
               warning,
@@ -2372,7 +1507,7 @@ export class PersistentDataStore {
           // Depo boş değil ama belirtilen dal mevcut değil!
           const branchErrMsg = redactSecrets(
             `Yapılandırılmış dal ('${this.githubBranch}') depoda bulunamadı (HTTP 404). Mevcut varsayılan dal: '${
-              repoMeta.default_branch || 'bilinmiyor'
+              repoMeta.defaultBranch || 'bilinmiyor'
             }'.`,
             this.getKnownSecretsForRedaction()
           );
@@ -2384,7 +1519,7 @@ export class PersistentDataStore {
             isEmptyRepo: false,
             isPrivate: isRemotePrivate,
             effectiveIsPublicRepo,
-            defaultBranch: repoMeta.default_branch,
+            defaultBranch: repoMeta.defaultBranch,
             configuredBranch: this.githubBranch,
             hasPushPermission,
             warning,
@@ -2405,7 +1540,7 @@ export class PersistentDataStore {
             isEmptyRepo: false,
             isPrivate: isRemotePrivate,
             effectiveIsPublicRepo,
-            defaultBranch: repoMeta.default_branch,
+            defaultBranch: repoMeta.defaultBranch,
             configuredBranch: this.githubBranch,
             hasPushPermission,
             warning,
@@ -2418,7 +1553,7 @@ export class PersistentDataStore {
             errorCategory: category,
           };
         }
-      } catch (e: any) {
+      } catch (e) {
         return {
           ok: false,
           accessible: false,
@@ -2427,12 +1562,12 @@ export class PersistentDataStore {
           isEmptyRepo: false,
           isPrivate: isRemotePrivate,
           effectiveIsPublicRepo,
-          defaultBranch: repoMeta.default_branch,
+          defaultBranch: repoMeta.defaultBranch,
           configuredBranch: this.githubBranch,
           hasPushPermission,
           warning,
           error: redactSecrets(
-            `Dal kontrolünde ağ hatası: ${e?.message || 'bağlantı hatası'}`,
+            `Dal kontrolünde ağ hatası: ${errorMessageOf(e, 'bağlantı hatası')}`,
             this.getKnownSecretsForRedaction()
           ),
           errorCategory: 'network_error',
@@ -2447,7 +1582,7 @@ export class PersistentDataStore {
         isEmptyRepo: false,
         isPrivate: isRemotePrivate,
         effectiveIsPublicRepo,
-        defaultBranch: repoMeta.default_branch,
+        defaultBranch: repoMeta.defaultBranch,
         configuredBranch: this.githubBranch,
         hasPushPermission,
         warning,
@@ -2489,30 +1624,9 @@ export class PersistentDataStore {
    * bounded retry, error classification, read-back hash verification, and token redaction.
    */
   private async fetchBlobTextBySha(sha: string): Promise<string | null> {
-    if (!this.githubToken || !this.githubOwner || !this.githubRepo || !sha) return null;
-    const blobUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/git/blobs/${encodeURIComponent(
-      sha
-    )}`;
-    try {
-      const res = await fetch(blobUrl, {
-        headers: {
-          Authorization: `Bearer ${this.githubToken}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': BRAND_SYNC_USER_AGENT,
-        },
-      });
-      if (res.status !== 200) return null;
-      const data: any = await res.json().catch(() => null);
-      if (data && typeof data.content === 'string' && data.encoding === 'base64') {
-        return Buffer.from(data.content.replace(/\s+/g, ''), 'base64').toString('utf8');
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
+    const { fetchBlobTextByShaImpl } = await import('./persistent-store/github-commit-store.ts');
+    return fetchBlobTextByShaImpl({ token: this.githubToken, owner: this.githubOwner, repo: this.githubRepo }, sha);
+  }  /**
    * Commit a file to GitHub via Contents API with SHA conflict management,
    * bounded retry, error classification, read-back hash verification (>1 MB Git Blob dahil), and token redaction.
    */
@@ -2521,343 +1635,24 @@ export class PersistentDataStore {
     contentString: string,
     commitMessage: string,
     options?: { isEmptyRepo?: boolean; branchToUse?: string }
-  ): Promise<{
-    ok: boolean;
-    sha?: string;
-    readBackHash?: string;
-    error?: string;
-    errorCategory?: GitHubSyncErrorCategory;
-    skippedNoop?: boolean;
-    verifiedReadBack?: boolean;
-  }> {
-    if (!this.githubToken || !this.githubOwner || !this.githubRepo) {
-      return {
-        ok: false,
-        error: 'GitHub senkronizasyon yapılandırması eksik.',
-        errorCategory: 'config_error',
-      };
-    }
-
-    const apiUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/contents/${repoPath}`;
-    const makeAuthHeaders = (tok: string) => ({
-      Authorization: `Bearer ${tok}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': BRAND_SYNC_USER_AGENT,
-    });
-    const targetBranch = options?.branchToUse || this.githubBranch;
-    const isEmptyRepo = Boolean(options?.isEmptyRepo);
-
-    let remoteSha: string | undefined;
-    let remoteContent: string | undefined;
-
-    // 1. Fetch current remote file SHA & content (skip ref param if empty repo)
-    if (!isEmptyRepo) {
-      try {
-        let usedGetToken = this.githubToken;
-        let getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(targetBranch)}`, {
-          headers: makeAuthHeaders(usedGetToken),
-        });
-        if (getRes.status === 401) {
-          const recovered = await this.recoverGitHubTokenOn401(usedGetToken);
-          if (recovered) {
-            usedGetToken = recovered;
-            getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(targetBranch)}`, {
-              headers: makeAuthHeaders(usedGetToken),
-            });
-          }
-        }
-        if (getRes.status === 200) {
-          let fileData: any = null;
-          try {
-            fileData = await getRes.json();
-          } catch {
-            return {
-              ok: false,
-              error: 'GitHub dosya okuma yanıtı geçerli JSON değil.',
-              errorCategory: 'malformed_response',
-            };
-          }
-          if (!fileData || typeof fileData !== 'object' || typeof fileData.sha !== 'string') {
-            return {
-              ok: false,
-              error: 'GitHub dosya yanıtında geçerli SHA alanı bulunamadı.',
-              errorCategory: 'malformed_response',
-            };
-          }
-          remoteSha = fileData.sha;
-          if (
-            typeof fileData.content === 'string' &&
-            fileData.encoding !== 'none' &&
-            (fileData.content.length > 0 || fileData.size === 0)
-          ) {
-            remoteContent = Buffer.from(fileData.content.replace(/\s+/g, ''), 'base64').toString('utf8');
-          } else if (remoteSha) {
-            const blobText = await this.fetchBlobTextBySha(remoteSha);
-            if (blobText !== null) remoteContent = blobText;
-          }
-        } else if (getRes.status === 403) {
-          const errBody: any = await getRes.json().catch(() => ({}));
-          const rawMsg = String(errBody?.message || '');
-          const isTooLarge =
-            Array.isArray(errBody?.errors) &&
-            errBody.errors.some((e: any) => e?.code === 'too_large');
-          if (isTooLarge) {
-            const parentDir = path.posix.dirname(repoPath);
-            const baseName = path.posix.basename(repoPath);
-            const dirRes = await fetch(
-              `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/contents/${parentDir}?ref=${encodeURIComponent(
-                targetBranch
-              )}`,
-              { headers: makeAuthHeaders(this.githubToken) }
-            );
-            if (dirRes.status === 200) {
-              const list = await dirRes.json().catch(() => null);
-              if (Array.isArray(list)) {
-                const found = list.find(
-                  (it: any) => it && it.name === baseName && typeof it.sha === 'string'
-                );
-                if (found) {
-                  remoteSha = found.sha;
-                  const blobText = await this.fetchBlobTextBySha(found.sha);
-                  if (blobText !== null) remoteContent = blobText;
-                }
-              }
-            }
-          }
-          if (!remoteSha) {
-            const category = classifyHttpFailure(getRes.status, getRes.headers, rawMsg);
-            return {
-              ok: false,
-              error: redactSecrets(
-                `GitHub okuma hatası (${category}): HTTP ${getRes.status}${rawMsg ? ` - ${rawMsg}` : ''}`,
-                this.getKnownSecretsForRedaction()
-              ),
-              errorCategory: category,
-            };
-          }
-        } else if (getRes.status !== 404) {
-          const errBody = await getRes.json().catch(() => ({}));
-          const rawMsg = String(errBody?.message || '');
-          const category = classifyHttpFailure(getRes.status, getRes.headers, rawMsg);
-          return {
-            ok: false,
-            error: redactSecrets(
-              `GitHub okuma hatası (${category}): HTTP ${getRes.status}${rawMsg ? ` - ${rawMsg}` : ''}`,
-              this.getKnownSecretsForRedaction()
-            ),
-            errorCategory: category,
-          };
-        }
-      } catch (e: any) {
-        return {
-          ok: false,
-          error: redactSecrets(
-            `GitHub ağ bağlantı hatası: ${e?.message || 'bağlantı kurulamadı'}`,
-            this.getKnownSecretsForRedaction()
-          ),
-          errorCategory: 'network_error',
-        };
-      }
-    }
-
-    // 2. Prevent no-op commit if content is identical
-    if (remoteContent !== undefined && remoteContent.trim() === contentString.trim()) {
-      return {
-        ok: true,
-        sha: remoteSha,
-        readBackHash: hashContent(remoteContent.trim()),
-        skippedNoop: true,
-        verifiedReadBack: true,
-      };
-    }
-
-    // 3. Put content (with bounded retry up to 3 attempts on 409 conflict, 401 token failover, or transient network error)
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const activePutToken = this.githubToken || '';
-      const baseHeaders = makeAuthHeaders(activePutToken);
-      const payload: Record<string, any> = {
-        message: commitMessage,
-        content: Buffer.from(contentString, 'utf8').toString('base64'),
-      };
-      // Boş depolarda ilk commit'te branch verilmez; GitHub varsayılan dalı başlatır
-      if (!isEmptyRepo) {
-        payload.branch = targetBranch;
-      }
-      if (remoteSha) payload.sha = remoteSha;
-
-      try {
-        const putRes = await fetch(apiUrl, {
-          method: 'PUT',
-          headers: { ...baseHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (putRes.status === 401 && attempt < maxAttempts) {
-          const recovered = await this.recoverGitHubTokenOn401(activePutToken);
-          if (recovered) {
-            continue;
-          }
-        }
-
-        if (putRes.status === 200 || putRes.status === 201) {
-          let resData: any = null;
-          try {
-            resData = await putRes.json();
-          } catch {
-            return {
-              ok: false,
-              error: 'GitHub yazma yanıtı geçerli JSON değil.',
-              errorCategory: 'malformed_response',
-            };
-          }
-          if (!resData || typeof resData !== 'object') {
-            return {
-              ok: false,
-              error: 'GitHub yazma yanıtı beklenmeyen biçimde döndü.',
-              errorCategory: 'malformed_response',
-            };
-          }
-          const committedSha = resData.content?.sha || remoteSha;
-
-          // 4. Yazma sonrası GitHub'dan geri okuma ve içerik hash doğrulaması (>1 MB dosyalarda Git Blob API ile)
-          const expectedHash = hashContent(contentString.trim());
-          let readBackHash: string | undefined;
-          let verifiedReadBack = false;
-          try {
-            const verifyRefParam = encodeURIComponent(targetBranch);
-            const readBackRes = await fetch(`${apiUrl}?ref=${verifyRefParam}`, {
-              headers: baseHeaders,
-            });
-            let readBackText: string | null = null;
-            if (readBackRes.status === 200) {
-              const readBackData = await readBackRes.json().catch(() => null);
-              if (
-                readBackData &&
-                typeof readBackData.content === 'string' &&
-                readBackData.encoding !== 'none' &&
-                (readBackData.content.length > 0 || readBackData.size === 0)
-              ) {
-                readBackText = Buffer.from(
-                  readBackData.content.replace(/\s+/g, ''),
-                  'base64'
-                ).toString('utf8');
-              } else if (committedSha) {
-                readBackText = await this.fetchBlobTextBySha(committedSha);
-              }
-            } else if (readBackRes.status === 403 && committedSha) {
-              readBackText = await this.fetchBlobTextBySha(committedSha);
-            }
-
-            if (readBackText !== null) {
-              readBackHash = hashContent(readBackText.trim());
-              if (readBackHash !== expectedHash) {
-                return {
-                  ok: false,
-                  readBackHash,
-                  verifiedReadBack: false,
-                  error: `${repoPath}: Yazma sonrası hash doğrulaması başarısız oldu (GitHub özeti: ${readBackHash.slice(
-                    0,
-                    8
-                  )}, beklenen yerel özet: ${expectedHash.slice(0, 8)}).`,
-                  errorCategory: 'conflict',
-                };
-              }
-              verifiedReadBack = true;
-            } else if (committedSha) {
-              verifiedReadBack = true;
-            }
-          } catch {
-            if (committedSha) verifiedReadBack = true;
-          }
-
-          return {
-            ok: true,
-            sha: committedSha,
-            verifiedReadBack,
-            ...(readBackHash ? { readBackHash } : {}),
-          };
-        }
-
-        if (putRes.status === 409) {
-          if (attempt < maxAttempts) {
-            const refetch = await fetch(`${apiUrl}?ref=${encodeURIComponent(targetBranch)}`, {
-              headers: baseHeaders,
-            });
-            if (refetch.status === 200) {
-              const refetchedData = await refetch.json().catch(() => null);
-              if (refetchedData && typeof refetchedData.sha === 'string') {
-                remoteSha = refetchedData.sha;
-                if (typeof refetchedData.content === 'string' && refetchedData.encoding !== 'none') {
-                  const latestRemote = Buffer.from(
-                    refetchedData.content.replace(/\s+/g, ''),
-                    'base64'
-                  ).toString('utf8');
-                  if (latestRemote.trim() === contentString.trim()) {
-                    return {
-                      ok: true,
-                      sha: remoteSha,
-                      readBackHash: hashContent(latestRemote.trim()),
-                      skippedNoop: true,
-                      verifiedReadBack: true,
-                    };
-                  }
-                }
-                continue;
-              }
-            }
-          }
-          return {
-            ok: false,
-            error: `GitHub SHA çakışması (HTTP 409): ${maxAttempts} deneme sonunda giderilemedi.`,
-            errorCategory: 'conflict',
-          };
-        }
-
-        const errJson = await putRes.json().catch(() => ({}));
-        const rawErrDetail = String(errJson?.message || '');
-        const acceptedPerms = putRes.headers.get('x-accepted-github-permissions');
-        const category = classifyHttpFailure(putRes.status, putRes.headers, rawErrDetail);
-        let errDetail = rawErrDetail;
-        if (
-          putRes.status === 403 &&
-          rawErrDetail.toLowerCase().includes('resource not accessible by personal access token')
-        ) {
-          errDetail += ` (Kişisel Erişim Anahtarının (Fine-grained PAT) '${this.githubOwner}/${this.githubRepo}' deposu için 'Contents: Read and write' iznine sahip olduğunu doğrulayın${
-            acceptedPerms ? `; beklenen izin: ${acceptedPerms}` : ''
-          })`;
-        }
-        return {
-          ok: false,
-          error: redactSecrets(
-            `GitHub yazma reddedildi (${category}): HTTP ${putRes.status}${
-              errDetail ? ` - ${errDetail}` : ''
-            }`,
-            this.getKnownSecretsForRedaction()
-          ),
-          errorCategory: category,
-        };
-      } catch (e: any) {
-        if (attempt === maxAttempts) {
-          return {
-            ok: false,
-            error: redactSecrets(
-              `GitHub ağ hatası (${maxAttempts} deneme başarısız): ${e?.message || 'bağlantı hatası'}`,
-              this.getKnownSecretsForRedaction()
-            ),
-            errorCategory: 'network_error',
-          };
-        }
-      }
-    }
-
-    return {
-      ok: false,
-      error: 'GitHub yazma yeniden deneme sınırı aşıldı.',
-      errorCategory: 'conflict',
-    };
+  ): Promise<GitHubCommitOutcome> {
+    const { commitFileToGitHubImpl } = await import('./persistent-store/github-commit-store.ts');
+    return commitFileToGitHubImpl(
+      {
+        token: this.githubToken,
+        owner: this.githubOwner,
+        repo: this.githubRepo,
+        branch: this.githubBranch,
+        getKnownSecretsForRedaction: () => this.getKnownSecretsForRedaction(),
+        recoverGitHubTokenOn401: (failedToken?: string) => this.recoverGitHubTokenOn401(failedToken),
+        fetchBlobTextBySha: (sha: string) => this.fetchBlobTextBySha(sha),
+      },
+      repoPath,
+      contentString,
+      commitMessage,
+      options
+    );
   }
-
   private collectPersonalSyncItems(): Array<{
     repoPath: string;
     localPath: string;
@@ -3639,30 +2434,9 @@ export class PersistentDataStore {
   }
 
   private async fetchBlobBufferBySha(sha: string): Promise<Buffer | null> {
-    if (!this.githubToken || !this.githubOwner || !this.githubRepo || !sha) return null;
-    const blobUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/git/blobs/${encodeURIComponent(
-      sha
-    )}`;
-    try {
-      const res = await fetch(blobUrl, {
-        headers: {
-          Authorization: `Bearer ${this.githubToken}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': BRAND_SYNC_USER_AGENT,
-        },
-      });
-      if (res.status !== 200) return null;
-      const data: any = await res.json().catch(() => null);
-      if (data && typeof data.content === 'string' && data.encoding === 'base64') {
-        return Buffer.from(data.content.replace(/\s+/g, ''), 'base64');
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
+    const { fetchBlobBufferByShaImpl } = await import('./persistent-store/github-commit-store.ts');
+    return fetchBlobBufferByShaImpl({ token: this.githubToken, owner: this.githubOwner, repo: this.githubRepo }, sha);
+  }  /**
    * Uploads a binary backup archive (e.g. `.xlsx`) under `data/exports/` on GitHub
    * without overwriting different timestamped files, enforcing public-repo personal-data
    * privacy consent, and verifying post-upload binary SHA-256 read-back (including >1 MB Git Blobs).
@@ -3684,6 +2458,13 @@ export class PersistentDataStore {
     repoVisibilityWarning?: string;
     error?: string;
   }> {
+    const {
+      findGitHubDirectoryEntry,
+      isGitHubTooLargeError,
+      readGitHubCommittedSha,
+      readGitHubErrorMessage,
+      readGitHubFileEnvelope,
+    } = await import('./github-response.ts');
     const localHash = crypto.createHash('sha256').update(params.contentBuffer).digest('hex');
     const safeBase = path.posix.basename(String(params.fileName || '').trim());
     if (!/^Cinethos_Profile_\d{4}-\d{2}-\d{2}_\d{4}(?:_\d{2,14})?\.(?:xlsx|json)$/.test(safeBase)) {
@@ -3772,12 +2553,11 @@ export class PersistentDataStore {
           }
 
           if (getRes.status === 200) {
-            const fileData: any = await getRes.json().catch(() => null);
-            const remoteSha = typeof fileData?.sha === 'string' ? fileData.sha : undefined;
+            const fileData = readGitHubFileEnvelope(await getRes.json().catch(() => null));
+            const remoteSha = fileData?.sha;
             let existingBuf: Buffer | null = null;
             if (
-              fileData &&
-              typeof fileData.content === 'string' &&
+              fileData?.content !== undefined &&
               fileData.encoding !== 'none' &&
               fileData.content.replace(/\s+/g, '').length > 0
             ) {
@@ -3806,10 +2586,8 @@ export class PersistentDataStore {
           }
 
           if (getRes.status === 403) {
-            const errBody: any = await getRes.json().catch(() => ({}));
-            const isTooLarge =
-              Array.isArray(errBody?.errors) &&
-              errBody.errors.some((e: any) => e?.code === 'too_large');
+            const errBody = await getRes.json().catch(() => ({}));
+            const isTooLarge = isGitHubTooLargeError(errBody);
             if (isTooLarge) {
               // Large file already occupies this timestamped slot; inspect directory listing to check hash or pick next suffix
               const dirUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/contents/data/exports?ref=${encodeURIComponent(
@@ -3817,10 +2595,10 @@ export class PersistentDataStore {
               )}`;
               const dirRes = await fetch(dirUrl, { headers: baseHeaders });
               if (dirRes.status === 200) {
-                const list = await dirRes.json().catch(() => null);
-                const found = Array.isArray(list)
-                  ? list.find((it: any) => it && it.name === candidateName && typeof it.sha === 'string')
-                  : null;
+                const found = findGitHubDirectoryEntry(
+                  await dirRes.json().catch(() => null),
+                  candidateName
+                );
                 if (found?.sha) {
                   const blobBuf = await this.fetchBlobBufferBySha(found.sha);
                   if (blobBuf) {
@@ -3860,8 +2638,8 @@ export class PersistentDataStore {
             };
           }
 
-          const errBody: any = await getRes.json().catch(() => ({}));
-          const rawMsg = String(errBody?.message || '');
+          const errBody = await getRes.json().catch(() => ({}));
+          const rawMsg = readGitHubErrorMessage(errBody);
           const category = classifyHttpFailure(getRes.status, getRes.headers, rawMsg);
           return {
             attempted: true,
@@ -3876,7 +2654,7 @@ export class PersistentDataStore {
               [this.githubToken]
             ),
           };
-        } catch (e: any) {
+        } catch (e) {
           return {
             attempted: true,
             ok: false,
@@ -3886,7 +2664,7 @@ export class PersistentDataStore {
             verifiedReadBack: false,
             ...warningPatch,
             error: redactSecrets(
-              `GitHub ağ bağlantı hatası: ${e?.message || 'bağlantı kurulamadı'}`,
+              `GitHub ağ bağlantı hatası: ${errorMessageOf(e, 'bağlantı kurulamadı')}`,
               [this.githubToken]
             ),
           };
@@ -3895,7 +2673,7 @@ export class PersistentDataStore {
     }
 
     const putUrl = `https://api.github.com/repos/${this.githubOwner}/${this.githubRepo}/contents/${chosenRepoPath}`;
-    const putPayload: Record<string, any> = {
+    const putPayload: Record<string, unknown> = {
       message: `chore(backup): archive profile export ${path.posix.basename(chosenRepoPath)} [skip ci]`,
       content: params.contentBuffer.toString('base64'),
     };
@@ -3911,8 +2689,8 @@ export class PersistentDataStore {
       });
 
       if (putRes.status !== 200 && putRes.status !== 201) {
-        const errJson: any = await putRes.json().catch(() => ({}));
-        const rawDetail = String(errJson?.message || '');
+        const errJson = await putRes.json().catch(() => ({}));
+        const rawDetail = readGitHubErrorMessage(errJson);
         const acceptedPerms = putRes.headers.get('x-accepted-github-permissions');
         const category = classifyHttpFailure(putRes.status, putRes.headers, rawDetail);
         let detail = rawDetail;
@@ -3939,9 +2717,8 @@ export class PersistentDataStore {
         };
       }
 
-      const resData: any = await putRes.json().catch(() => null);
-      const committedSha: string | undefined =
-        typeof resData?.content?.sha === 'string' ? resData.content.sha : undefined;
+      const putResponse = await putRes.json().catch(() => null);
+      const committedSha: string | undefined = readGitHubCommittedSha(putResponse);
 
       // Mandatory post-upload binary read-back SHA-256 verification
       const readBackUrl = `${putUrl}?ref=${encodeURIComponent(targetBranch)}`;
@@ -3949,17 +2726,15 @@ export class PersistentDataStore {
       let readBackBuffer: Buffer | null = null;
 
       if (readBackRes.status === 200) {
-        const readBackData: any = await readBackRes.json().catch(() => null);
+        const readBackData = readGitHubFileEnvelope(await readBackRes.json().catch(() => null));
         if (
-          readBackData &&
-          typeof readBackData.content === 'string' &&
+          readBackData?.content !== undefined &&
           readBackData.encoding !== 'none' &&
           readBackData.content.replace(/\s+/g, '').length > 0
         ) {
           readBackBuffer = Buffer.from(readBackData.content.replace(/\s+/g, ''), 'base64');
         } else {
-          const blobSha =
-            typeof readBackData?.sha === 'string' ? readBackData.sha : committedSha;
+          const blobSha = readBackData?.sha ?? committedSha;
           if (blobSha) {
             readBackBuffer = await this.fetchBlobBufferBySha(blobSha);
           }
@@ -4010,7 +2785,7 @@ export class PersistentDataStore {
         verifiedReadBack: true,
         ...warningPatch,
       };
-    } catch (e: any) {
+    } catch (e) {
       return {
         attempted: true,
         ok: false,
@@ -4020,7 +2795,7 @@ export class PersistentDataStore {
         verifiedReadBack: false,
         ...warningPatch,
         error: redactSecrets(
-          `GitHub ağ hatası: ${e?.message || 'bağlantı hatası'}`,
+          `GitHub ağ hatası: ${errorMessageOf(e, 'bağlantı hatası')}`,
           [this.githubToken]
         ),
       };
