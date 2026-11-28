@@ -811,3 +811,98 @@ Bu CI tablosunu ekleyen commit yalnızca bu dokümanı değiştirir; kod commit'
 
 **Aşama 5 durumu: TAMAMLANDI.** Engelleyici eksiklik kalmadı; kalan maddeler
 yukarıda gerekçeli "kabul edilen borç" olarak sınıflandırıldı.
+
+---
+
+## 14. Aşama 5 — Son doğrulama ve kapanış (28 Kasım 2026)
+
+**Başlangıç HEAD:** `2ba073c` (uzak dal ile aynı, `0 0`) · **Kod commit'i:** `3437209`
+**Dal:** `remediation/full-project-remediation` · **PR:** #65 (açık, `merged:false`)
+
+Bu bölüm, §13'teki kapanışın güncel kod üzerinde gerçekten geçerli olduğunu
+doğrular ve kalan gerçek kopyayı kapatır. Önceki raporlar kanıt olarak
+kullanılmadı; her iddia bu ağaçta yeniden okundu/çalıştırıldı.
+
+### 14.1 Envanter doğrulaması (kanıt)
+
+| İddia | Doğrulama |
+|---|---|
+| `applyDataDocumentToState`/`useDataDocumentApply` modülde | `src/app/persistence/remote-document-merge.ts` + `tests/f5-3-app-remote-document-merge.test.mjs` (9 test) |
+| Liste sayaçları tek kaynak | `src/app/list-counts.ts` + `tests/f5-3-app-list-counts.test.mjs` (5 test) |
+| Yazma sorumlulukları ayrı modüllerde ve facade delege ediyor | `persistent-store.ts:898` → `upsertCatalogItemsOp`, `:1043` → `upsertDerivedProfileOp`, `:993` `saveCinemaKunyeOp`, `:1008` `saveStockSnapshotUploadOp` |
+| Atomik yazma/kilit/journal korunuyor | `tests/f5-3-local-store-reliability.test.mjs` (12 test, gerçek dosya sistemi) |
+| GitHub yapılandırması olmadan açılış | `tests/f5-3-github-boundary.test.mjs` + §14.4 duman testi |
+| App.tsx bağımsız iş mantığı taşınmış | 2.064 satır; kalan gövde React state/effect/event orkestrasyonu (aşağıdaki tek istisna düzeltildi) |
+
+### 14.2 Kapatılan gerçek eksik: F5.3-08 stok sayaçları
+
+`App.tsx` film/dizi/TVDB sayaçlarını **iki ayrı yerde** kopyalıyordu:
+abonelik yolunda `getStockMovies/getStockSeries` sonucundan, ilk yüklemede
+`loadStockIdb()` + `isCandidateEligibleForStock` sonucundan. İki yol da
+`source === 'tvdb'` filtresini ve `{ movieCount, tvCount }` nesnesini yeniden
+yazıyordu.
+
+- Yeni `src/app/stock-stats.ts`: `summarizeStockPool(movies, tv)` — yalnızca
+  **zaten filtrelenmiş** listeleri sayar, hangi kaydın uygun olduğuna karar
+  vermez. Geçersiz girdi boş liste sayılır, `source` tam olarak `tvdb` olan
+  nesneler sayılır, girdi değiştirilmez.
+- `App.tsx` iki çağrı noktası da bu fonksiyona bağlandı; kopya `source ===
+  'tvdb'` filtreleri kaldırıldı (`grep` ile doğrulandı: App.tsx'te kalmadı).
+- **Korunan davranış ayrımı:** ilk yüklemede TVDB sayacı geçmişte *tüm* havuzdan,
+  liste sayaçları ise *filtrelenmiş* havuzdan geliyordu. Bu ayrım birebir
+  korundu (`summarizeStockPool(allM, allT).tvdbCount` + ayrı `cleanStats`).
+- Test: `tests/f5-3-app-stock-stats.test.mjs` (5 davranış testi: boş/eksik
+  girdi, tür ayrımı, `tvdb` kuralı, geçersiz kayıtlar, girdinin değişmemesi).
+
+### 14.3 Kapılar (bu ağaçta gerçekten çalıştırıldı)
+
+| Kapı | Komut | Sonuç |
+|---|---|---|
+| ESLint + 2 × `tsc --noEmit` | `npm run lint` | ✅ 0 hata / 0 uyarı |
+| Birim testleri + veri kapısı | `npm test` | ✅ **958/958** (953 → +5), `data/` değişmedi (100 test dosyası) |
+| Taste testleri | `npm run test:taste` | ✅ **440/440**, veri kapısı OK |
+| Döngü denetimi | `npm run cycles` | ✅ 0 döngü |
+| Production build | `npm run build` | ✅ başarılı (4,95 s) |
+| Üretim duman testi (GitHub yapılandırması yok) | `PORT=3111 NODE_ENV=production node server.ts` | ✅ `/` 200, `/discover/deep-link` 200, `/api/data` 200, `/api/tmdb-status` 200, `/api/sync/status` 200, `POST /api/sync/push` 404 (beklenen) |
+| Playwright E2E | — | ⏹ yerelde koşulmadı (tarayıcı yok); CI'da doğrulandı |
+
+### 14.4 Yerel veri mimarisi doğrulaması
+
+- Uygulama GitHub token/repo olmadan açıldı; yerel okuma uçları (`/api/data`,
+  `/api/tmdb-status`, `/api/sync/status`) 200 döndü, senkron tetikleme ucu
+  kapalıyken 404 verdi. Yerel veri yolları ağ beklemiyor.
+- `f5-3-local-store-reliability` (12) + `f5-3-persistent-store-write-modules` (15)
+  + `f5-3-github-isolation` (7) + `f5-3-github-boundary` (6) yeşil.
+- Atomic write sırası, kilit/lease, journal, recovery ve yedekleme yolları bu
+  oturumda değiştirilmedi; `data/` hiç okunmadı/yazılmadı (veri kapısı bunu
+  doğruladı).
+
+### 14.5 CI (güncel SHA için)
+
+`3437209` (kod + test + plan güncellemesi) — önceki commit'lerin sonuçları
+bu SHA'ya sayılmadı:
+
+| Kontrol | Durum | Bitiş (UTC) |
+|---|---|---|
+| `Lint, Test, Build & Production Smoke Test` | ✅ success | 11:44:37 |
+| `Playwright E2E` | ✅ success | 11:42:22 |
+| `Salt okunur bakım analizi` | ✅ success | 11:45:15 |
+| `Vercel Preview Comments` | ✅ success | 11:41:16 |
+
+4/4 success. Bu bölümü ekleyen dokümantasyon commit'inin CI sonucu, ilgili SHA
+için ayrıca sorgulanır (kod değişikliği içermez).
+
+### 14.6 Aşama 5 kapanış matrisi (nihai)
+
+| Alan | Sonuç | Kanıt | Kalan iş |
+|---|---|---|---|
+| App.tsx ayrıştırma | **TAMAM** | 2.064 satır; `app/{catalog-loader,list-counts,stock-stats,displayed-items,series-universe,release-reminders,catalog-titles,user-data-payload,profile/profile-coordinator,persistence/*}`; ilgili davranış testleri | Kalan gövde React orkestrasyonu; taşınacak bağımsız kural yok |
+| PersistentDataStore | **TAMAM** | Okuma: `catalog-store`, `derived-profile-store`; yazma: `catalog-write-store`, `derived-profile-write-store`, `stock-write-store`, `cinema-kunye-write-store`, `store-state`; atomic/kilit/journal facade'da korunuyor; 27 davranış testi | GitHub'a özgü senkron metotları bilinçli borç (§13.7) |
+| Davranış testleri | **TAMAM** | 958/958 (+5 yeni); güvenilirlik 12, yazma modülleri 15, belge birleştirme 9, izolasyon 7, sınır 6, sayaçlar 5+5 | — |
+| Yerel veri mimarisi | **TAMAM** | §14.4 duman testi + izolasyon/sınır testleri | — |
+| Mimari kalite | **TAMAM** | lint 0/0, 0 döngü, AST sınır taraması 0 ihlal, kullanılmayan import yok | — |
+| CI ve build | **TAMAM** | build ✅, üretim duman testi ✅, CI `3437209` 4/4 success | — |
+| Teknik borç | **KABUL** | §13.7 sınıflandırması; Aşama 5'i engelleyen eksiklik yok | Gerekçeli maddeler |
+
+**Aşama 5 durumu: TAMAMLANDI.** Engelleyici eksiklik yok; PR #65 açık ve
+birleştirilmemiş (merge/kapatma işlemi yapılmadı, `master`'a commit yok).
